@@ -920,6 +920,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         SDLActivity.nativeQuit();
 
         super.onDestroy();
+
+        // We must kill the process completely to ensure a fresh start on next launch on android.
+        System.exit(0);
     }
 
     @Override
