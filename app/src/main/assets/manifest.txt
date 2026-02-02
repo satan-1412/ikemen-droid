@@ -1,4 +1,4 @@
-video/
+video/ik_logo.webm
 stages/stage3d_outline.def
 stages/stage0-720.sff
 stages/stage3d.def
