@@ -1,7 +1,7 @@
 # I.K.E.M.E.N-Go for Android
 
 ## Instructions for building (debug)
-
+增加了自定义布局系统
 ### Requirements: Android Studio, Android NDK r27d.
 
 1. Build the main I.K.E.M.E.N-Go engine for Android using Android NDK r27d. You will need to point the environment variable `ANDROID_NDK_HOME` to your NDK location before running `build/build.sh android` on Linux or macOS (builds from Windows currently not supported).
