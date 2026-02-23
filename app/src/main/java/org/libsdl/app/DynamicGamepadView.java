@@ -1,4 +1,4 @@
-package org.ikemen_engine.ikemen_go; // 确保包名一致
+package org.libsdl.app;
 
 import android.app.AlertDialog;
 import android.content.Context;
@@ -32,7 +32,6 @@ public class DynamicGamepadView extends View {
     public boolean isEditMode = false;
     private VirtualButton draggedButton = null;
 
-    // 左上角设置按钮的区域
     private final RectF menuButtonRect = new RectF(20, 20, 200, 100);
 
     public static class VirtualButton {
@@ -103,7 +102,6 @@ public class DynamicGamepadView extends View {
     }
 
     private void loadDefaultLayout() {
-        // 默认按键
         buttons.add(new VirtualButton("UP", 300, 550, 90, Color.DKGRAY, 120, KeyEvent.KEYCODE_W));
         buttons.add(new VirtualButton("DOWN", 300, 850, 90, Color.DKGRAY, 120, KeyEvent.KEYCODE_S));
         buttons.add(new VirtualButton("LEFT", 150, 700, 90, Color.DKGRAY, 120, KeyEvent.KEYCODE_A));
@@ -123,19 +121,17 @@ public class DynamicGamepadView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        // --- 绘制左上角设置按钮 ---
         paintMenu.setColor(Color.argb(180, 50, 50, 50));
         canvas.drawRoundRect(menuButtonRect, 20, 20, paintMenu);
         paintText.setTextSize(40f);
-        canvas.drawText("⚙ 设置", menuButtonRect.centerX(), menuButtonRect.centerY() + 15, paintText);
+        canvas.drawText("SETTING", menuButtonRect.centerX(), menuButtonRect.centerY() + 15, paintText);
 
         if (isEditMode) {
-            canvas.drawColor(Color.argb(80, 255, 0, 0)); // 红色全屏遮罩提醒
+            canvas.drawColor(Color.argb(80, 255, 0, 0));
             paintText.setTextSize(60f);
-            canvas.drawText("编辑模式：请随意拖动按键，完成后点击左上角保存", getWidth() / 2f, 150, paintText);
+            canvas.drawText("EDIT MODE ON - DRAG BUTTONS", getWidth() / 2f, 150, paintText);
         }
 
-        // --- 绘制所有虚拟按键 ---
         for (int i = 0; i < buttons.size(); i++) {
             VirtualButton btn = buttons.get(i);
             paintBtn.setColor(btn.color);
@@ -156,27 +152,25 @@ public class DynamicGamepadView extends View {
         }
     }
 
-    // 弹出设置菜单
     private void showSettingsMenu() {
-        String modeText = isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键位置编辑";
-        CharSequence[] options = {modeText, "➕ 添加新按键 (M宏键)", "🔄 恢复默认布局"};
+        String modeText = isEditMode ? "Save and Exit Edit Mode" : "Toggle Edit Mode";
+        CharSequence[] options = {modeText, "Add New Button (M)", "Reset to Default Layout"};
 
         new AlertDialog.Builder(getContext())
-                .setTitle("虚拟面板设置")
+                .setTitle("Gamepad Settings")
                 .setItems(options, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         if (which == 0) {
                             isEditMode = !isEditMode;
                             if (!isEditMode) {
-                                saveConfig(); // 退出时自动保存
+                                saveConfig();
                                 performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
                             }
                             invalidate();
                         } else if (which == 1) {
-                            // 动态添加一个新按键，默认出现在屏幕中间，映射到键盘的 M 键
-                            buttons.add(new VirtualButton("M宏", getWidth() / 2f, getHeight() / 2f, 90, Color.parseColor("#FF9800"), 180, KeyEvent.KEYCODE_M));
-                            isEditMode = true; // 自动开启编辑模式方便拖拽
+                            buttons.add(new VirtualButton("M", getWidth() / 2f, getHeight() / 2f, 90, Color.parseColor("#FF9800"), 180, KeyEvent.KEYCODE_M));
+                            isEditMode = true;
                             invalidate();
                         } else if (which == 2) {
                             buttons.clear();
@@ -197,7 +191,6 @@ public class DynamicGamepadView extends View {
         float x = event.getX(pointerIndex);
         float y = event.getY(pointerIndex);
 
-        // === 拦截左上角设置按钮的点击 ===
         if (action == MotionEvent.ACTION_DOWN && menuButtonRect.contains(x, y)) {
             showSettingsMenu();
             return true;
@@ -229,7 +222,6 @@ public class DynamicGamepadView extends View {
             return true;
         }
 
-        // === 正常游玩模式 ===
         switch (action) {
             case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_POINTER_DOWN:

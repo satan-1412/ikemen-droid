@@ -491,14 +491,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         mSDButton.setZ(100f); // Force it to the top of the Z-axis
 
-        //mControllerOverlay = new ControllerOverlay(this);
+        //mControllerOverlay = new ControllerOverlay(this); 
         //RelativeLayout.LayoutParams lp = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
        // mLayout.addView(mControllerOverlay, lp);
-
-// --- 1. ³¹µ×ÇÐ¶Ï¾É°æ ControllerOverlay ---
-// (ÒÑ½«Ô­ÓÐµÄ mControllerOverlay ×¢ÊÍµô)
-
-// --- 2. ×¢ÈëÎÒÃÇµÄ¼«ÖÂÓÅ»¯°æ¶¯Ì¬Ãæ°å (DynamicGamepadView) ---
 DynamicGamepadView dynamicGamepad = new DynamicGamepadView(this);
 android.widget.RelativeLayout.LayoutParams lp = new android.widget.RelativeLayout.LayoutParams(
         android.view.ViewGroup.LayoutParams.MATCH_PARENT, 
@@ -2367,7 +2362,7 @@ class SDLInputConnection extends BaseInputConnection {
             }
             matchLength += Character.charCount(codePoint);
         }
-        /* FIXME: This doesn't handle graphemes, like 'ðŸŒ¬ï¸„1¤7' */
+        /* FIXME: This doesn't handle graphemes, like 'ðŸŒ¬ï¸„1ï¿½7' */
         for (offset = matchLength; offset < mCommittedText.length(); ) {
             int codePoint = mCommittedText.codePointAt(offset);
             nativeGenerateScancodeForUnichar('\b');
