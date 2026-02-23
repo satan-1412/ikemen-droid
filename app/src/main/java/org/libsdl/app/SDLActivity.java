@@ -491,9 +491,19 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         mSDButton.setZ(100f); // Force it to the top of the Z-axis
 
-        mControllerOverlay = new ControllerOverlay(this);
-        RelativeLayout.LayoutParams lp = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
-        mLayout.addView(mControllerOverlay, lp);
+        //mControllerOverlay = new ControllerOverlay(this);
+        //RelativeLayout.LayoutParams lp = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+       // mLayout.addView(mControllerOverlay, lp);
+
+// --- 1. ≥πµ◊«–∂œæ…∞Ê ControllerOverlay ---
+// (“—Ω´‘≠”–µƒ mControllerOverlay ◊¢ ÕµÙ)
+
+// --- 2. ◊¢»ÎŒ“√«µƒº´÷¬”≈ªØ∞Ê∂ØÃ¨√Ê∞Â (DynamicGamepadView) ---
+DynamicGamepadView dynamicGamepad = new DynamicGamepadView(this);
+android.widget.RelativeLayout.LayoutParams lp = new android.widget.RelativeLayout.LayoutParams(
+        android.view.ViewGroup.LayoutParams.MATCH_PARENT, 
+        android.view.ViewGroup.LayoutParams.MATCH_PARENT);
+mLayout.addView(dynamicGamepad, lp);
 
 //        setContentView(mLayout); // WHAT IT WAS
         setContentView(rootLayout);
@@ -2357,7 +2367,7 @@ class SDLInputConnection extends BaseInputConnection {
             }
             matchLength += Character.charCount(codePoint);
         }
-        /* FIXME: This doesn't handle graphemes, like 'üå¨Ô∏è' */
+        /* FIXME: This doesn't handle graphemes, like 'üå¨Ô∏Ñ1§7' */
         for (offset = matchLength; offset < mCommittedText.length(); ) {
             int codePoint = mCommittedText.codePointAt(offset);
             nativeGenerateScancodeForUnichar('\b');
