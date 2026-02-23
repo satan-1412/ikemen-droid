@@ -13,9 +13,7 @@ import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -41,7 +39,6 @@ public class DynamicGamepadView extends View {
     private static final String KEY_LAYOUT_PREFIX = "LayoutSlot_";
     
     private int currentSlot = 0;
-    // 摇杆模式：0=四键分离(默认), 1=现代圆盘摇杆, 2=经典街机摇杆
     public int joystickMode = 0; 
 
     private final List<VirtualButton> buttons = new ArrayList<>();
@@ -57,8 +54,8 @@ public class DynamicGamepadView extends View {
     private float downX, downY;
 
     private final RectF menuButtonRect = new RectF(20, 20, 250, 110);
-    // 记录正在编辑的按钮，用于接收相册返回的图片
     public VirtualButton currentlyEditingButton = null;
+    public static DynamicGamepadView instance;
 
     public static class VirtualButton {
         public String id;
@@ -67,9 +64,9 @@ public class DynamicGamepadView extends View {
         public String keyMapStr = "";
         public List<Integer> keyCodes = new ArrayList<>();
         public boolean isPressed = false;
-        public String customImageUri = ""; // 升级：使用 Android 原生 Uri 存储相册图片路径
+        public String customImageUri = ""; 
         public Bitmap skinBitmap = null;
-        public boolean isDirectional = false; // 标识是否属于方向键（用于摇杆模式切换）
+        public boolean isDirectional = false; 
 
         public VirtualButton(String id, float cx, float cy, float radius, int color, int alpha, String keyMapStr, boolean isDir) {
             this.id = id; this.cx = cx; this.cy = cy;
@@ -132,153 +129,10 @@ public class DynamicGamepadView extends View {
         loadConfig(currentSlot);
     }
 
-    // ========== 核心渲染层 (彻底修复 Alpha 穿透问题) ==========
-    @Override
-    protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
-
-        // 绘制现代化菜单入口
-        paintMenu.setColor(Color.argb(200, 30, 33, 40));
-        paintMenu.setShadowLayer(8f, 0, 4f, Color.BLACK);
-        canvas.drawRoundRect(menuButtonRect, 30, 30, paintMenu);
-        paintText.setTextSize(40f);
-        paintText.setAlpha(255);
-        paintMenu.clearShadowLayer();
-        canvas.drawText("⚙ 高级设置", menuButtonRect.centerX(), menuButtonRect.centerY() + 15, paintText);
-
-        if (isEditMode) {
-            canvas.drawColor(Color.argb(120, 0, 0, 0));
-            paintText.setTextSize(45f);
-            canvas.drawText("【布局编辑】拖拽调整，轻触按键高级设置", getWidth() / 2f, 150, paintText);
-        }
-
-        for (VirtualButton btn : buttons) {
-            // 如果开启了现代摇杆模式，且该按键是方向键，则由新的渲染逻辑接管（下半部分实现）
-            if (joystickMode > 0 && btn.isDirectional) continue;
-
-            int currentAlpha = (btn.isPressed && !isEditMode) ? 255 : btn.alpha;
-            
-            if (btn.skinBitmap != null) {
-                // 修复：图片也完美支持透明度调整
-                paintBtn.setAlpha(currentAlpha);
-                canvas.drawBitmap(btn.skinBitmap, btn.cx - btn.radius, btn.cy - btn.radius, paintBtn);
-            } else {
-                // 修复：将透明度直接注入到 RGB 色值中，解决 RadialGradient 忽略 setAlpha 的 Bug
-                int baseColor = Color.argb(currentAlpha, Color.red(btn.color), Color.green(btn.color), Color.blue(btn.color));
-                int darkColor = Color.argb(currentAlpha, Math.max(0, Color.red(btn.color)-80), Math.max(0, Color.green(btn.color)-80), Math.max(0, Color.blue(btn.color)-80));
-                
-                RadialGradient gradient = new RadialGradient(
-                        btn.cx - btn.radius * 0.3f, btn.cy - btn.radius * 0.3f, 
-                        btn.radius * 1.3f, baseColor, darkColor, Shader.TileMode.CLAMP);
-                
-                paintBtn.setShader(gradient);
-                // 只有不透明度较高时才绘制阴影，防止阴影显得脏
-                if (currentAlpha > 100) paintBtn.setShadowLayer(15.0f, 0.0f, 10.0f, Color.argb(currentAlpha/2, 0, 0, 0));
-                else paintBtn.clearShadowLayer();
-                
-                canvas.drawCircle(btn.cx, btn.cy, btn.radius, paintBtn);
-                paintBtn.clearShadowLayer();
-                paintBtn.setShader(null);
-            }
-
-            // 绘制键位名称
-            paintText.setAlpha(currentAlpha);
-            paintText.setTextSize(btn.radius * 0.55f);
-            canvas.drawText(btn.id, btn.cx, btn.cy + (btn.radius * 0.2f), paintText);
-
-            if (isEditMode) {
-                paintBtn.setStyle(Paint.Style.STROKE);
-                paintBtn.setStrokeWidth(4f);
-                paintBtn.setColor(Color.WHITE);
-                paintBtn.setAlpha(255);
-                canvas.drawCircle(btn.cx, btn.cy, btn.radius + 6, paintBtn);
-                paintBtn.setStyle(Paint.Style.FILL);
-            }
-        }
-    }
-
-    // ========== 核心物理反馈层 (彻底修复滑动断触Bug) ==========
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        int action = event.getActionMasked();
-
-        if (action == MotionEvent.ACTION_DOWN && menuButtonRect.contains(event.getX(), event.getY())) {
-            showMainMenu();
-            return true;
-        }
-
-        if (isEditMode) {
-            handleEditTouch(event); // 编辑模式逻辑抽出
-            return true;
-        }
-
-        // 游玩模式：全局指针扫描算法，完美解决滑动按键卡死问题
-        for (VirtualButton btn : buttons) {
-            boolean isTouchedNow = false;
-            // 扫描当前屏幕上所有的手指
-            for (int i = 0; i < event.getPointerCount(); i++) {
-                if (Math.hypot(event.getX(i) - btn.cx, event.getY(i) - btn.cy) < btn.radius) {
-                    isTouchedNow = true;
-                    break;
-                }
-            }
-
-            // 状态变更：手指刚刚滑入或按下
-            if (!btn.isPressed && isTouchedNow) {
-                btn.isPressed = true;
-                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                for (int code : btn.keyCodes) SDLActivity.onNativeKeyDown(code);
-            } 
-            // 状态变更：手指刚刚滑出或抬起
-            else if (btn.isPressed && !isTouchedNow) {
-                btn.isPressed = false;
-                for (int code : btn.keyCodes) SDLActivity.onNativeKeyUp(code);
-            }
-        }
-        invalidate();
-        return true;
-    }
-
-    private void handleEditTouch(MotionEvent event) {
-        int action = event.getActionMasked();
-        float x = event.getX(0);
-        float y = event.getY(0);
-
-        switch (action) {
-            case MotionEvent.ACTION_DOWN:
-                downTime = System.currentTimeMillis();
-                downX = x; downY = y;
-                for (int i = buttons.size() - 1; i >= 0; i--) {
-                    if (Math.hypot(x - buttons.get(i).cx, y - buttons.get(i).cy) < buttons.get(i).radius * 1.3f) {
-                        draggedButton = buttons.get(i);
-                        break;
-                    }
-                }
-                break;
-            case MotionEvent.ACTION_MOVE:
-                if (draggedButton != null) {
-                    draggedButton.cx = x; draggedButton.cy = y;
-                    invalidate();
-                }
-                break;
-            case MotionEvent.ACTION_UP:
-                if (draggedButton != null && System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) {
-                    showButtonSettingsDialog(draggedButton); // 呼出大厂UI设置
-                }
-                draggedButton = null;
-                break;
-        }
-    }
-    // ==========================================
-    // 下半部分：摇杆渲染、大厂 UI、相册选择与触控引擎 (幽灵Fragment无侵入版)
-    // ==========================================
-
-    public static DynamicGamepadView instance;
-
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        instance = this; // 暴露单例供幽灵 Fragment 传回图片
+        instance = this; 
     }
 
     @Override
@@ -287,7 +141,6 @@ public class DynamicGamepadView extends View {
         if (instance == this) instance = null;
     }
 
-    // 接收相册选好的图片 Uri
     public void onImagePicked(String uriStr) {
         if (currentlyEditingButton != null) {
             currentlyEditingButton.customImageUri = uriStr;
@@ -298,16 +151,11 @@ public class DynamicGamepadView extends View {
         }
     }
 
-    // ---------------------------------------------------------
-    // 【黑魔法】幽灵 Fragment：用于在 View 内部直接调用相册并接收回调
-    // 完全免去了修改 SDLActivity.java 的麻烦！
-    // ---------------------------------------------------------
     @SuppressWarnings("deprecation")
     public static class ImagePickerFragment extends android.app.Fragment {
         @Override
         public void onCreate(android.os.Bundle savedInstanceState) {
             super.onCreate(savedInstanceState);
-            // 启动系统原生文件/相册选择器
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             intent.setType("image/*");
@@ -320,7 +168,6 @@ public class DynamicGamepadView extends View {
             if (requestCode == 43 && resultCode == android.app.Activity.RESULT_OK && data != null) {
                 android.net.Uri uri = data.getData();
                 try {
-                    // 申请持久化权限，防止重启游戏后图片无法读取
                     getActivity().getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 } catch (Exception e) { e.printStackTrace(); }
                 
@@ -328,11 +175,9 @@ public class DynamicGamepadView extends View {
                     DynamicGamepadView.instance.onImagePicked(uri.toString());
                 }
             }
-            // 选完图片后，这个幽灵 Fragment 就自动销毁，不留痕迹
             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
         }
     }
-    // ---------------------------------------------------------
 
     private void loadConfig(int slot) {
         currentSlot = slot;
@@ -388,7 +233,6 @@ public class DynamicGamepadView extends View {
 
     private void loadDefaultLayout() {
         buttons.clear();
-        // 匹配 config.ini 的 P1 键位，方向键 isDirectional = true
         buttons.add(new VirtualButton("UP", 250, 550, 80, Color.DKGRAY, 120, "UP", true));
         buttons.add(new VirtualButton("DOWN", 250, 850, 80, Color.DKGRAY, 120, "DOWN", true));
         buttons.add(new VirtualButton("LEFT", 100, 700, 80, Color.DKGRAY, 120, "LEFT", true));
@@ -404,11 +248,68 @@ public class DynamicGamepadView extends View {
         buttons.add(new VirtualButton("START", 1100, 150, 60, Color.GRAY, 180, "RETURN", false));
     }
 
-    // ========== 摇杆渲染引擎 ==========
     private float joyBaseX = 250, joyBaseY = 700;
     private float joyKnobX = 250, joyKnobY = 700;
     private float joyRadius = 180;
     private int joyPointerId = -1;
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+
+        paintMenu.setColor(Color.argb(200, 30, 33, 40));
+        paintMenu.setShadowLayer(8f, 0, 4f, Color.BLACK);
+        canvas.drawRoundRect(menuButtonRect, 30, 30, paintMenu);
+        paintText.setTextSize(40f);
+        paintText.setAlpha(255);
+        paintMenu.clearShadowLayer();
+        canvas.drawText("⚙ 高级设置", menuButtonRect.centerX(), menuButtonRect.centerY() + 15, paintText);
+
+        if (isEditMode) {
+            canvas.drawColor(Color.argb(120, 0, 0, 0));
+            paintText.setTextSize(45f);
+            canvas.drawText("【布局编辑】拖拽调整，轻触按键高级设置", getWidth() / 2f, 150, paintText);
+        }
+
+        for (VirtualButton btn : buttons) {
+            if (joystickMode > 0 && btn.isDirectional) continue;
+
+            int currentAlpha = (btn.isPressed && !isEditMode) ? 255 : btn.alpha;
+            
+            if (btn.skinBitmap != null) {
+                paintBtn.setAlpha(currentAlpha);
+                canvas.drawBitmap(btn.skinBitmap, btn.cx - btn.radius, btn.cy - btn.radius, paintBtn);
+            } else {
+                int baseColor = Color.argb(currentAlpha, Color.red(btn.color), Color.green(btn.color), Color.blue(btn.color));
+                int darkColor = Color.argb(currentAlpha, Math.max(0, Color.red(btn.color)-80), Math.max(0, Color.green(btn.color)-80), Math.max(0, Color.blue(btn.color)-80));
+                
+                RadialGradient gradient = new RadialGradient(
+                        btn.cx - btn.radius * 0.3f, btn.cy - btn.radius * 0.3f, 
+                        btn.radius * 1.3f, baseColor, darkColor, Shader.TileMode.CLAMP);
+                
+                paintBtn.setShader(gradient);
+                if (currentAlpha > 100) paintBtn.setShadowLayer(15.0f, 0.0f, 10.0f, Color.argb(currentAlpha/2, 0, 0, 0));
+                else paintBtn.clearShadowLayer();
+                
+                canvas.drawCircle(btn.cx, btn.cy, btn.radius, paintBtn);
+                paintBtn.clearShadowLayer();
+                paintBtn.setShader(null);
+            }
+
+            paintText.setAlpha(currentAlpha);
+            paintText.setTextSize(btn.radius * 0.55f);
+            canvas.drawText(btn.id, btn.cx, btn.cy + (btn.radius * 0.2f), paintText);
+
+            if (isEditMode) {
+                paintBtn.setStyle(Paint.Style.STROKE);
+                paintBtn.setStrokeWidth(4f);
+                paintBtn.setColor(Color.WHITE);
+                paintBtn.setAlpha(255);
+                canvas.drawCircle(btn.cx, btn.cy, btn.radius + 6, paintBtn);
+                paintBtn.setStyle(Paint.Style.FILL);
+            }
+        }
+    }
 
     @Override
     protected void dispatchDraw(Canvas canvas) {
@@ -429,14 +330,12 @@ public class DynamicGamepadView extends View {
 
     private void drawJoystick(Canvas canvas) {
         if (joystickMode == 1) {
-            // 现代白色磨砂圆盘
             paintBtn.setColor(Color.WHITE);
             paintBtn.setAlpha(60);
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius, paintBtn);
             paintBtn.setAlpha(200);
             canvas.drawCircle(joyKnobX, joyKnobY, joyRadius * 0.35f, paintBtn);
         } else if (joystickMode == 2) {
-            // 经典街机红色摇杆
             RadialGradient baseGrad = new RadialGradient(joyBaseX, joyBaseY, joyRadius, 
                     Color.parseColor("#444444"), Color.parseColor("#111111"), Shader.TileMode.CLAMP);
             paintBtn.setShader(baseGrad);
@@ -460,13 +359,12 @@ public class DynamicGamepadView extends View {
         }
     }
 
-    // ========== 现代化高级设置 UI ==========
     private void showMainMenu() {
         String modeText = isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键拖拽编辑";
         String joyText = "🕹️ 摇杆模式: " + (joystickMode==0?"独立十字键":joystickMode==1?"现代漂浮圆盘":"经典街机摇杆");
         CharSequence[] options = {modeText, "➕ 新建组合键/宏按键", joyText, "📂 布局存档管理", "🔄 恢复初始默认布局"};
 
-        new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+        new AlertDialog.Builder(getContext())
                 .setTitle("⚙️ 游戏面板全局设置")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
@@ -494,7 +392,7 @@ public class DynamicGamepadView extends View {
 
     private void showProfileManager() {
         CharSequence[] options = {"📂 读取 方案 1", "💾 覆盖保存至 方案 1", "📂 读取 方案 2", "💾 覆盖保存至 方案 2"};
-        new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+        new AlertDialog.Builder(getContext())
                 .setTitle("布局方案存档 (适配不同人物)")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) loadConfig(1);
@@ -506,7 +404,7 @@ public class DynamicGamepadView extends View {
 
     private void showButtonSettingsDialog(final VirtualButton btn) {
         currentlyEditingButton = btn;
-        AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Light_Dialog_Alert);
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
         builder.setTitle("🔧 配置按键: " + btn.id);
 
         ScrollView scroll = new ScrollView(getContext());
@@ -555,7 +453,6 @@ public class DynamicGamepadView extends View {
         final SeekBar sizeBar = createColorBar(layout, "按键大小", (int)btn.radius);
         sizeBar.setMax(300);
 
-        // 核心修改：使用幽灵 Fragment 调用相册
         layout.addView(createTitle("5. 自定义图片皮肤:"));
         Button btnPickImage = new Button(getContext());
         btnPickImage.setText("🖼️ 从系统相册选择图片");
@@ -618,7 +515,6 @@ public class DynamicGamepadView extends View {
         return sb;
     }
 
-    // ========== 核心物理触控层 (完美解决滑动断触与摇杆八向) ==========
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
@@ -633,7 +529,6 @@ public class DynamicGamepadView extends View {
             return true;
         }
 
-        // --- 摇杆控制处理 (模式1和2) ---
         if (joystickMode > 0) {
             boolean joyTouched = false;
             for (int i = 0; i < event.getPointerCount(); i++) {
@@ -690,7 +585,6 @@ public class DynamicGamepadView extends View {
             }
         }
 
-        // --- 全局按键防断触扫描算法 ---
         for (VirtualButton btn : buttons) {
             if (joystickMode > 0 && btn.isDirectional) continue;
 
