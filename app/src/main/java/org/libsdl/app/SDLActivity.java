@@ -470,7 +470,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
 
         if (USE_FOLDER_SELECT) {
-            mLayout.addView(mSDButton, params);
+            //mLayout.addView(mSDButton, params);
             mSDButton.setOnClickListener(v -> checkAndPickFolder());
             mUIHandler.postDelayed(hideRunnable, 5000);
         }
