@@ -159,6 +159,19 @@ public class DynamicGamepadView extends View {
         super.onDetachedFromWindow();
         if (instance == this) instance = null;
     }
+    
+    // --- 补充这个被删掉的方法 ---
+    public void onImagePicked(String uriStr) {
+        if (currentlyEditingButton != null) {
+            currentlyEditingButton.customImageUri = uriStr;
+            currentlyEditingButton.loadSkinFromUri(getContext());
+            saveConfig();
+            invalidate();
+            Toast.makeText(getContext(), "图片皮肤应用成功！", Toast.LENGTH_SHORT).show();
+        }
+    }
+    // -------------------------
+
 
     // =====================================
     // 渲染引擎 (包含按键与摇杆)
