@@ -674,7 +674,44 @@ public class DynamicGamepadView extends View {
         });
         builder.show();
     }
-    
+        // =====================================
+    // 补回被误删的 UI 绘制辅助方法
+    // =====================================
+
+    private EditText createEditText(String hint, String text) {
+        EditText et = new EditText(getContext());
+        et.setHint(hint);
+        et.setText(text);
+        et.setTextColor(Color.BLACK); // 输入框内必须黑字
+        et.setHintTextColor(Color.GRAY);
+        et.setBackgroundColor(Color.WHITE); // 强制白色背景，黑白分明防瞎眼
+        et.setPadding(20, 20, 20, 20);
+        return et;
+    }
+
+    private TextView createTitle(String text) {
+        TextView tv = new TextView(getContext());
+        tv.setText(text);
+        tv.setTextSize(16f);
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setTextColor(Color.WHITE); // 外部标题强制纯白
+        tv.setPadding(0, 40, 0, 10);
+        return tv;
+    }
+
+    private SeekBar createColorBar(LinearLayout parent, String label, int progress) {
+        TextView tv = new TextView(getContext());
+        tv.setText(label);
+        tv.setTextColor(Color.WHITE); // 滑动条上的文字强制纯白
+        tv.setPadding(0, 10, 0, 0);
+        SeekBar sb = new SeekBar(getContext());
+        sb.setMax(255);
+        sb.setProgress(progress);
+        sb.setPadding(0, 10, 0, 20);
+        parent.addView(tv);
+        parent.addView(sb);
+        return sb;
+    }
 
     // =====================================
     // 幽灵 Fragment：接管全部系统文件与相册请求
