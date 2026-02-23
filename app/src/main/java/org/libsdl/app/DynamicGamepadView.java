@@ -319,20 +319,28 @@ public class DynamicGamepadView extends View {
                 float px = event.getX(i), py = event.getY(i);
                 if (px < getWidth() / 2f) {
                     if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
-                        if (Math.hypot(px - joyBaseX, py - joyBaseY) < joyRadius * 2.5f) joyPointerId = event.getPointerId(i);
+                        if (Math.hypot(px - joyBaseX, py - joyBaseY) < joyRadius * 1.5f) joyPointerId = event.getPointerId(i);
                     }
-                    if (event.getPointerId(i) == joyPointerId) {
+                                        if (event.getPointerId(i) == joyPointerId) {
                         joyTouched = true;
                         float dx = px - joyBaseX, dy = py - joyBaseY;
                         float dist = (float) Math.hypot(dx, dy);
-                        if (dist > joyRadius) { joyKnobX = joyBaseX + (dx / dist) * joyRadius; joyKnobY = joyBaseY + (dy / dist) * joyRadius; } 
-                        else { joyKnobX = px; joyKnobY = py; }
+                        
+                        // 【核心修改：限制摇杆帽只能在底座半径的 75% 范围内活动，且优化了误触范围】
+                        float maxDist = joyRadius * 0.75f; 
+                        if (dist > maxDist) { 
+                            joyKnobX = joyBaseX + (dx / dist) * maxDist; 
+                            joyKnobY = joyBaseY + (dy / dist) * maxDist; 
+                        } else { 
+                            joyKnobX = px; joyKnobY = py; 
+                        }
                         
                         float angle = (float) Math.toDegrees(Math.atan2(dy, dx));
                         if (angle < 0) angle += 360;
                         boolean up = angle > 200 && angle < 340, down = angle > 20 && angle < 160;
                         boolean left = angle > 110 && angle < 250, right = angle < 70 || angle > 290;
-                        if (dist < joyRadius * 0.3f) up = down = left = right = false;
+                        // 触发阈值同步缩小
+                        if (dist < joyRadius * 0.2f) up = down = left = right = false;
                         triggerDirection("UP", up); triggerDirection("DOWN", down); triggerDirection("LEFT", left); triggerDirection("RIGHT", right);
                     }
                 }
@@ -622,7 +630,12 @@ public class DynamicGamepadView extends View {
         layout.addView(DynamicGamepadView.this.createTitle("4. 键盘键位映射 (多键用+连接):"));
         final EditText inputKey = DynamicGamepadView.this.createEditText("如: Z, UP, Z+X, ENTER", btn.keyMapStr); layout.addView(inputKey);
 
-        layout.addView(DynamicGamepadView.this.createTitle("5. 按键背景色 (RGB色盘):"));
+                layout.addView(DynamicGamepadView.this.createTitle("5. 按键背景色 (HEX代码或RGB色盘):"));
+        
+        // 【新增：颜色代码输入框，默认显示当前颜色的 HEX 代码】
+        final EditText hexInput = DynamicGamepadView.this.createEditText("如: #FF0000", String.format("#%06X", (0xFFFFFF & btn.color))); 
+        layout.addView(hexInput);
+        
         final View colorPreview = new View(getContext());
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150);
         previewParams.setMargins(0, 10, 0, 30); colorPreview.setLayoutParams(previewParams); colorPreview.setBackgroundColor(btn.color);
@@ -662,13 +675,21 @@ public class DynamicGamepadView extends View {
         btnClearImage.setOnClickListener(v -> { btn.customImageUri = ""; btn.skinBitmap = null; Toast.makeText(getContext(), "已清除图片皮肤", Toast.LENGTH_SHORT).show(); invalidate(); });
         layout.addView(btnClearImage);
 
-        builder.setView(scroll);
-        builder.setPositiveButton("💾 保存", (dialog, which) -> {
+                builder.setPositiveButton("💾 保存", (dialog, which) -> {
             btn.id = inputName.getText().toString(); btn.textColor = TEXT_COLOR_VALUES[textColorSpinner.getSelectedItemPosition()];
             btn.shape = shapeSpinner.getSelectedItemPosition(); btn.keyMapStr = inputKey.getText().toString().trim().toUpperCase(); btn.parseKeyCodes();
-            btn.color = Color.rgb(rgb[0], rgb[1], rgb[2]); btn.alpha = alphaBar.getProgress(); btn.radius = Math.max(40, sizeBar.getProgress());
+            
+            // 【核心修改：优先读取你输入的 HEX 颜色代码，如果代码填错了，再使用下方滑块的颜色】
+            try {
+                btn.color = Color.parseColor(hexInput.getText().toString().trim());
+            } catch (Exception e) {
+                btn.color = Color.rgb(redBar.getProgress(), greenBar.getProgress(), blueBar.getProgress());
+            }
+            
+            btn.alpha = alphaBar.getProgress(); btn.radius = Math.max(40, sizeBar.getProgress());
             btn.loadSkinFromUri(getContext()); saveConfig(); invalidate();
         });
+        
         builder.setNegativeButton("🗑️ 删除此键", (dialog, which) -> {
             new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("⚠️ 确认删除").setMessage("确定要彻底删除按键 [" + btn.id + "] 吗？").setPositiveButton("确定", (d, w) -> { buttons.remove(btn); saveConfig(); invalidate(); }).setNegativeButton("取消", null).show();
         });
@@ -765,7 +786,7 @@ public class DynamicGamepadView extends View {
                         Toast.makeText(getActivity(), "✅ 导出成功！", Toast.LENGTH_SHORT).show();
                     } catch (Exception e) { Toast.makeText(getActivity(), "❌ 导出失败", Toast.LENGTH_SHORT).show(); }
                 } else if (requestCode == 45 && DynamicGamepadView.instance != null) { // 导入数据读取
-                    try {
+                                       try {
                         java.io.InputStream is = getActivity().getContentResolver().openInputStream(uri);
                         BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
                         StringBuilder sb = new StringBuilder(); String line;
@@ -773,17 +794,20 @@ public class DynamicGamepadView extends View {
                         reader.close(); is.close();
                         
                         JSONObject root = new JSONObject(sb.toString());
-                        DynamicGamepadView.instance.joystickMode = root.optInt("joystickMode", 0);
-                        DynamicGamepadView.instance.joyBaseX = (float) root.optDouble("joyBaseX", 250);
-                        DynamicGamepadView.instance.joyBaseY = (float) root.optDouble("joyBaseY", 700);
-                        DynamicGamepadView.instance.joyRadius = (float) root.optDouble("joyRadius", 180);
-                        DynamicGamepadView.instance.joyAlpha = root.optInt("joyAlpha", 200);
-                        DynamicGamepadView.instance.isVibrationOn = root.optBoolean("isVibrationOn", true);
-                        
                         JSONArray btnArray = root.getJSONArray("buttons");
-                        DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                            .edit().putString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, btnArray.toString()).apply();
                         
+                        // 【核心修复：在导入时，立刻把所有摇杆设置强行写入 SharedPreferences 存档】
+                        SharedPreferences.Editor editor = DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
+                        editor.putString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, btnArray.toString());
+                        editor.putInt("JoystickMode_" + DynamicGamepadView.instance.currentSlot, root.optInt("joystickMode", 0));
+                        editor.putFloat("JoyX_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyBaseX", 250));
+                        editor.putFloat("JoyY_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyBaseY", 700));
+                        editor.putFloat("JoyR_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyRadius", 180));
+                        editor.putInt("JoyA_" + DynamicGamepadView.instance.currentSlot, root.optInt("joyAlpha", 200));
+                        editor.putBoolean("Vibration_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isVibrationOn", true));
+                        editor.apply(); // 必须先应用保存
+                        
+                        // 然后再调用读取，摇杆就会瞬间飞到新存档的位置了！
                         DynamicGamepadView.instance.loadConfig(DynamicGamepadView.instance.currentSlot);
                         Toast.makeText(getActivity(), "✅ 布局导入成功！", Toast.LENGTH_LONG).show();
                     } catch (Exception e) { Toast.makeText(getActivity(), "❌ 导入失败，文件可能已损坏", Toast.LENGTH_SHORT).show(); }
