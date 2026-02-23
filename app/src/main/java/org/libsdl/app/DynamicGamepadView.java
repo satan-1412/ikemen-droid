@@ -493,7 +493,7 @@ public class DynamicGamepadView extends View {
 
     // 【新增】带二次确认的导出功能
     private void exportLayoutToFile() {
-        new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("📤 导出确认")
             .setMessage("确定要将当前布局导出为 JSON 文件吗？\n文件将保存在游戏数据目录的 [布局] 文件夹下，方便分享给其他玩家。")
             .setPositiveButton("确定导出", (dialog, which) -> {
@@ -547,12 +547,12 @@ public class DynamicGamepadView extends View {
         String[] fileNames = new String[files.length];
         for (int i = 0; i < files.length; i++) fileNames[i] = files[i].getName();
 
-        new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("📥 选择要导入的布局方案")
             .setItems(fileNames, (dialog, which) -> {
                 File selectedFile = files[which];
                 // 二次确认覆盖
-                new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+                new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                     .setTitle("⚠️ 覆盖警告")
                     .setMessage("导入操作将【永久覆盖】你当前正在使用的布局，确定要导入 [" + selectedFile.getName() + "] 吗？")
                     .setPositiveButton("确定覆盖", (d, w) -> {
@@ -599,7 +599,7 @@ public class DynamicGamepadView extends View {
         String vibText = "📳 物理震动: " + (isVibrationOn?"已开启":"已关闭");
         CharSequence[] options = {modeText, "➕ 新建组合键/宏", joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局"};
 
-        new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("⚙️ 游戏面板全局设置")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
@@ -623,7 +623,7 @@ public class DynamicGamepadView extends View {
                         showProfileManager();
                     } else if (which == 5) {
                         // 恢复默认的防手滑确认
-                        new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+                        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                             .setTitle("⚠️ 警告")
                             .setMessage("确定要清空所有自定义修改，恢复为原版默认按键布局吗？")
                             .setPositiveButton("确定恢复", (d, w) -> {
@@ -638,26 +638,26 @@ public class DynamicGamepadView extends View {
 
     private void showProfileManager() {
         CharSequence[] options = {"📂 读取云端方案 1", "💾 覆盖保存至方案 1", "📂 读取云端方案 2", "💾 覆盖保存至方案 2", "📤 导出布局到本地文件夹", "📥 从本地文件夹导入布局"};
-        new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("布局方案存档与分享")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
-                        new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+                        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                             .setTitle("⚠️ 读取确认").setMessage("确定读取方案 1？当前未保存的修改将会丢失。")
                             .setPositiveButton("确定", (d, w) -> loadConfig(1)).setNegativeButton("取消", null).show();
                     }
                     if (which == 1) {
-                        new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+                        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                             .setTitle("⚠️ 覆盖确认").setMessage("确定将当前的按键排布覆盖保存至方案 1？")
                             .setPositiveButton("确定", (d, w) -> { currentSlot = 1; saveConfig(); Toast.makeText(getContext(),"✅ 已存入方案1",Toast.LENGTH_SHORT).show();}).setNegativeButton("取消", null).show();
                     }
                     if (which == 2) {
-                        new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+                        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                             .setTitle("⚠️ 读取确认").setMessage("确定读取方案 2？当前未保存的修改将会丢失。")
                             .setPositiveButton("确定", (d, w) -> loadConfig(2)).setNegativeButton("取消", null).show();
                     }
                     if (which == 3) {
-                        new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+                        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                             .setTitle("⚠️ 覆盖确认").setMessage("确定将当前的按键排布覆盖保存至方案 2？")
                             .setPositiveButton("确定", (d, w) -> { currentSlot = 2; saveConfig(); Toast.makeText(getContext(),"✅ 已存入方案2",Toast.LENGTH_SHORT).show();}).setNegativeButton("取消", null).show();
                     }
@@ -667,7 +667,7 @@ public class DynamicGamepadView extends View {
     }
 
     private void showJoystickSettingsDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert);
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
         builder.setTitle("🕹️ 摇杆独立设置");
 
         LinearLayout layout = new LinearLayout(getContext());
@@ -701,7 +701,7 @@ public class DynamicGamepadView extends View {
 
     private void showButtonSettingsDialog(final VirtualButton btn) {
         currentlyEditingButton = btn;
-        AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert);
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
         builder.setTitle("🔧 配置按键: " + btn.id);
 
         ScrollView scroll = new ScrollView(getContext());
@@ -802,7 +802,7 @@ public class DynamicGamepadView extends View {
         });
         builder.setNegativeButton("🗑️ 删除此键", (dialog, which) -> {
             // 删除时也加上二次确认
-            new AlertDialog.Builder(getContext(), android.R.style.Theme_Device_Default_Dialog_Alert)
+            new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("⚠️ 确认删除")
                 .setMessage("确定要彻底删除按键 [" + btn.id + "] 吗？此操作不可逆。")
                 .setPositiveButton("确定删除", (d, w) -> {
