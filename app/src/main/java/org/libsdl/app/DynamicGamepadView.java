@@ -2,7 +2,6 @@ package org.libsdl.app;
 
 import android.app.AlertDialog;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -12,15 +11,17 @@ import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.graphics.Typeface;
+import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
-import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
-import android.widget.Spinner;
 import android.widget.TextView;
 
 import org.json.JSONArray;
@@ -31,8 +32,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DynamicGamepadView extends View {
-    private static final String PREFS_NAME = "IkemenGamepadPrefs_V2";
-    private static final String KEY_LAYOUT = "ButtonLayoutData";
+    private static final String PREFS_NAME = "IkemenGamepad_Pro";
+    private static final String KEY_LAYOUT_PREFIX = "LayoutSlot_";
+    
+    private int currentSlot = 0; // 当前使用的存档槽位(0为默认自动保存)
 
     private final List<VirtualButton> buttons = new ArrayList<>();
     private final Paint paintBtn = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -46,57 +49,81 @@ public class DynamicGamepadView extends View {
     private long downTime;
     private float downX, downY;
 
-    private final RectF menuButtonRect = new RectF(20, 20, 220, 100);
-
-    // 预设颜色表
-    private final String[] colorNames = {"灰色 (Gray)", "红色 (Red)", "蓝色 (Blue)", "绿色 (Green)", "黄色 (Yellow)", "青色 (Cyan)", "紫色 (Magenta)", "黑色 (Black)"};
-    private final int[] colorValues = {Color.DKGRAY, Color.RED, Color.BLUE, Color.parseColor("#4CAF50"), Color.parseColor("#FFEB3B"), Color.CYAN, Color.MAGENTA, Color.BLACK};
+    private final RectF menuButtonRect = new RectF(20, 20, 250, 110);
 
     public static class VirtualButton {
         public String id;
         public float cx, cy, radius;
-        public int color, alpha, sdlKeyCode;
+        public int color, alpha;
+        public String keyMapStr = ""; // 保存用户输入的字符串，如 "A", "Z+X", "UP"
+        public List<Integer> keyCodes = new ArrayList<>(); // 解析后的底层组合键
         public boolean isPressed = false;
-        public String skinName = ""; // 自定义皮肤图片的文件名
+        public String skinName = "";
         public Bitmap skinBitmap = null;
 
-        public VirtualButton(String id, float cx, float cy, float radius, int color, int alpha, int sdlKeyCode) {
+        public VirtualButton(String id, float cx, float cy, float radius, int color, int alpha, String keyMapStr) {
             this.id = id; this.cx = cx; this.cy = cy;
             this.radius = radius; this.color = color;
-            this.alpha = alpha; this.sdlKeyCode = sdlKeyCode;
+            this.alpha = alpha; this.keyMapStr = keyMapStr;
+            parseKeyCodes();
+        }
+
+        // 核心：支持 "+" 号组合键解析
+        public void parseKeyCodes() {
+            keyCodes.clear();
+            if (keyMapStr == null || keyMapStr.isEmpty()) return;
+            String[] parts = keyMapStr.toUpperCase().split("\\+");
+            for (String p : parts) {
+                int code = mapStringToKeyCode(p.trim());
+                if (code != KeyEvent.KEYCODE_UNKNOWN) {
+                    keyCodes.add(code);
+                }
+            }
         }
 
         public void loadSkin(Context context) {
             if (skinName != null && !skinName.isEmpty()) {
                 try {
-                    // 默认去手机的 Android/data/包名/files/ 或者 SD卡的根目录寻找
                     File file = new File(context.getExternalFilesDir(null), skinName);
                     if (file.exists()) {
                         Bitmap raw = BitmapFactory.decodeFile(file.getAbsolutePath());
                         skinBitmap = Bitmap.createScaledBitmap(raw, (int)(radius*2), (int)(radius*2), true);
-                    }
-                } catch (Exception e) {
-                    skinBitmap = null;
-                }
-            } else {
-                skinBitmap = null;
-            }
+                    } else { skinBitmap = null; }
+                } catch (Exception e) { skinBitmap = null; }
+            } else { skinBitmap = null; }
         }
+    }
+
+    // 将用户输入的字母或单词映射到安卓系统按键
+    private static int mapStringToKeyCode(String k) {
+        if (k.equals("UP")) return KeyEvent.KEYCODE_DPAD_UP;
+        if (k.equals("DOWN")) return KeyEvent.KEYCODE_DPAD_DOWN;
+        if (k.equals("LEFT")) return KeyEvent.KEYCODE_DPAD_LEFT;
+        if (k.equals("RIGHT")) return KeyEvent.KEYCODE_DPAD_RIGHT;
+        if (k.equals("ENTER") || k.equals("RETURN")) return KeyEvent.KEYCODE_ENTER;
+        if (k.equals("SPACE")) return KeyEvent.KEYCODE_SPACE;
+        if (k.equals("ESC") || k.equals("ESCAPE")) return KeyEvent.KEYCODE_ESCAPE;
+        if (k.length() == 1) {
+            char c = k.charAt(0);
+            if (c >= 'A' && c <= 'Z') return KeyEvent.KEYCODE_A + (c - 'A');
+            if (c >= '0' && c <= '9') return KeyEvent.KEYCODE_0 + (c - '0');
+        }
+        return KeyEvent.keyCodeFromString("KEYCODE_" + k);
     }
 
     public DynamicGamepadView(Context context) {
         super(context);
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        
-        // 开启硬件加速下的阴影支持
         setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         paintText.setColor(Color.WHITE);
         paintText.setTextAlign(Paint.Align.CENTER);
-        loadConfig();
+        paintText.setTypeface(Typeface.DEFAULT_BOLD);
+        loadConfig(currentSlot);
     }
 
-    private void loadConfig() {
-        String jsonStr = prefs.getString(KEY_LAYOUT, null);
+    private void loadConfig(int slot) {
+        currentSlot = slot;
+        String jsonStr = prefs.getString(KEY_LAYOUT_PREFIX + slot, null);
         buttons.clear();
         if (jsonStr != null) {
             try {
@@ -106,7 +133,7 @@ public class DynamicGamepadView extends View {
                     VirtualButton btn = new VirtualButton(
                             obj.getString("id"),
                             (float) obj.getDouble("cx"), (float) obj.getDouble("cy"), (float) obj.getDouble("radius"),
-                            obj.getInt("color"), obj.getInt("alpha"), obj.getInt("sdlKeyCode")
+                            obj.getInt("color"), obj.getInt("alpha"), obj.getString("keyMapStr")
                     );
                     if (obj.has("skinName")) {
                         btn.skinName = obj.getString("skinName");
@@ -114,12 +141,12 @@ public class DynamicGamepadView extends View {
                     }
                     buttons.add(btn);
                 }
+                invalidate();
                 return;
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            } catch (Exception e) { e.printStackTrace(); }
         }
         loadDefaultLayout();
+        invalidate();
     }
 
     private void saveConfig() {
@@ -131,94 +158,83 @@ public class DynamicGamepadView extends View {
                 obj.put("cx", b.cx);  obj.put("cy", b.cy);
                 obj.put("radius", b.radius);
                 obj.put("color", b.color); obj.put("alpha", b.alpha);
-                obj.put("sdlKeyCode", b.sdlKeyCode);
+                obj.put("keyMapStr", b.keyMapStr);
                 obj.put("skinName", b.skinName);
                 array.put(obj);
             }
-            prefs.edit().putString(KEY_LAYOUT, array.toString()).apply();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+            prefs.edit().putString(KEY_LAYOUT_PREFIX + currentSlot, array.toString()).apply();
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     private void loadDefaultLayout() {
-        // 匹配 XML 的默认按键数量与基础功能
-        buttons.add(new VirtualButton("UP", 250, 550, 80, Color.DKGRAY, 120, KeyEvent.KEYCODE_W));
-        buttons.add(new VirtualButton("DOWN", 250, 850, 80, Color.DKGRAY, 120, KeyEvent.KEYCODE_S));
-        buttons.add(new VirtualButton("LEFT", 100, 700, 80, Color.DKGRAY, 120, KeyEvent.KEYCODE_A));
-        buttons.add(new VirtualButton("RIGHT", 400, 700, 80, Color.DKGRAY, 120, KeyEvent.KEYCODE_D));
+        buttons.clear();
+        // 严格按照 config.ini 中 P1 的按键进行默认映射
+        buttons.add(new VirtualButton("UP", 250, 550, 80, Color.DKGRAY, 120, "UP"));
+        buttons.add(new VirtualButton("DOWN", 250, 850, 80, Color.DKGRAY, 120, "DOWN"));
+        buttons.add(new VirtualButton("LEFT", 100, 700, 80, Color.DKGRAY, 120, "LEFT"));
+        buttons.add(new VirtualButton("RIGHT", 400, 700, 80, Color.DKGRAY, 120, "RIGHT"));
         
-        buttons.add(new VirtualButton("X", 1600, 600, 90, Color.parseColor("#FFC107"), 150, KeyEvent.KEYCODE_U));
-        buttons.add(new VirtualButton("Y", 1800, 500, 90, Color.parseColor("#00BCD4"), 150, KeyEvent.KEYCODE_I));
-        buttons.add(new VirtualButton("Z", 2000, 400, 90, Color.parseColor("#9C27B0"), 150, KeyEvent.KEYCODE_O));
-        buttons.add(new VirtualButton("A", 1700, 800, 90, Color.parseColor("#F44336"), 150, KeyEvent.KEYCODE_J));
-        buttons.add(new VirtualButton("B", 1900, 700, 90, Color.parseColor("#3F51B5"), 150, KeyEvent.KEYCODE_K));
-        buttons.add(new VirtualButton("C", 2100, 600, 90, Color.parseColor("#4CAF50"), 150, KeyEvent.KEYCODE_L));
+        buttons.add(new VirtualButton("X", 1600, 600, 90, Color.parseColor("#FFC107"), 150, "A"));
+        buttons.add(new VirtualButton("Y", 1800, 500, 90, Color.parseColor("#00BCD4"), 150, "S"));
+        buttons.add(new VirtualButton("Z", 2000, 400, 90, Color.parseColor("#9C27B0"), 150, "D"));
+        buttons.add(new VirtualButton("A", 1700, 800, 90, Color.parseColor("#F44336"), 150, "Z"));
+        buttons.add(new VirtualButton("B", 1900, 700, 90, Color.parseColor("#3F51B5"), 150, "X"));
+        buttons.add(new VirtualButton("C", 2100, 600, 90, Color.parseColor("#4CAF50"), 150, "C"));
         
-        buttons.add(new VirtualButton("START", 1100, 150, 60, Color.GRAY, 180, KeyEvent.KEYCODE_ENTER));
-        buttons.add(new VirtualButton("MENU", 1250, 150, 60, Color.GRAY, 180, KeyEvent.KEYCODE_ESCAPE));
+        buttons.add(new VirtualButton("START", 1100, 150, 60, Color.GRAY, 180, "RETURN"));
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        // 左上角设置按钮
-        paintMenu.setColor(Color.argb(200, 30, 30, 30));
-        paintMenu.setShadowLayer(10f, 0, 5f, Color.BLACK);
-        canvas.drawRoundRect(menuButtonRect, 20, 20, paintMenu);
-        paintText.setTextSize(40f);
+        paintMenu.setColor(Color.argb(220, 40, 40, 40));
+        paintMenu.setShadowLayer(8f, 0, 4f, Color.BLACK);
+        canvas.drawRoundRect(menuButtonRect, 25, 25, paintMenu);
+        paintText.setTextSize(45f);
         paintMenu.clearShadowLayer();
-        canvas.drawText("⚙ 设置", menuButtonRect.centerX(), menuButtonRect.centerY() + 15, paintText);
+        canvas.drawText("⚙ 面板设置", menuButtonRect.centerX(), menuButtonRect.centerY() + 15, paintText);
 
         if (isEditMode) {
-            canvas.drawColor(Color.argb(90, 255, 0, 0));
+            canvas.drawColor(Color.argb(100, 0, 0, 0));
             paintText.setTextSize(50f);
-            canvas.drawText("编辑模式：拖动调整位置，【轻触按键】可独立设置外观与键值", getWidth() / 2f, 150, paintText);
+            canvas.drawText("【编辑模式】拖拽调整位置，轻触按键呼出高级设置", getWidth() / 2f, 150, paintText);
         }
 
-        // 绘制按键
         for (VirtualButton btn : buttons) {
             int currentAlpha = (btn.isPressed && !isEditMode) ? 255 : btn.alpha;
+            paintBtn.setAlpha(currentAlpha);
             
             if (btn.skinBitmap != null) {
-                // 画皮肤
-                paintBtn.setAlpha(currentAlpha);
                 canvas.drawBitmap(btn.skinBitmap, btn.cx - btn.radius, btn.cy - btn.radius, paintBtn);
             } else {
-                // 画高质感渐变圆
-                paintBtn.setAlpha(currentAlpha);
-                int darkerColor = darkenColor(btn.color, 0.6f);
+                int darkerColor = darkenColor(btn.color, 0.5f);
                 RadialGradient gradient = new RadialGradient(
-                        btn.cx - btn.radius * 0.2f, btn.cy - btn.radius * 0.2f, 
-                        btn.radius * 1.2f, 
+                        btn.cx - btn.radius * 0.3f, btn.cy - btn.radius * 0.3f, 
+                        btn.radius * 1.3f, 
                         btn.color, darkerColor, Shader.TileMode.CLAMP);
                 paintBtn.setShader(gradient);
-                paintBtn.setShadowLayer(15.0f, 0.0f, 10.0f, Color.argb(150, 0, 0, 0));
-                
+                paintBtn.setShadowLayer(15.0f, 0.0f, 10.0f, Color.argb(180, 0, 0, 0));
                 canvas.drawCircle(btn.cx, btn.cy, btn.radius, paintBtn);
                 paintBtn.clearShadowLayer();
                 paintBtn.setShader(null);
             }
 
-            // 画文字
             paintText.setAlpha(currentAlpha);
-            paintText.setTextSize(btn.radius * 0.5f);
-            canvas.drawText(btn.id, btn.cx, btn.cy + (btn.radius * 0.18f), paintText);
+            paintText.setTextSize(btn.radius * 0.55f);
+            canvas.drawText(btn.id, btn.cx, btn.cy + (btn.radius * 0.2f), paintText);
 
-            // 编辑模式下的选中框
             if (isEditMode) {
                 paintBtn.setStyle(Paint.Style.STROKE);
-                paintBtn.setStrokeWidth(4f);
+                paintBtn.setStrokeWidth(5f);
                 paintBtn.setColor(Color.WHITE);
                 paintBtn.setAlpha(255);
-                canvas.drawCircle(btn.cx, btn.cy, btn.radius + 5, paintBtn);
+                canvas.drawCircle(btn.cx, btn.cy, btn.radius + 8, paintBtn);
                 paintBtn.setStyle(Paint.Style.FILL);
             }
         }
     }
 
-    // 颜色加深算法，用于生成 3D 质感
     private int darkenColor(int color, float factor) {
         int a = Color.alpha(color);
         int r = Math.max((int)(Color.red(color) * factor), 0);
@@ -229,22 +245,23 @@ public class DynamicGamepadView extends View {
 
     private void showMainMenu() {
         String modeText = isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键编辑模式";
-        CharSequence[] options = {modeText, "➕ 新建一个空白按键", "🔄 恢复默认原始布局"};
+        CharSequence[] options = {modeText, "➕ 新建组合键/宏按键", "📂 布局方案管理", "🔄 恢复默认原始布局"};
 
         new AlertDialog.Builder(getContext())
-                .setTitle("游戏面板设置")
+                .setTitle("虚拟面板全局设置")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
                         isEditMode = !isEditMode;
                         if (!isEditMode) saveConfig();
                         invalidate();
                     } else if (which == 1) {
-                        VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90, colorValues[1], 180, KeyEvent.KEYCODE_UNKNOWN);
+                        VirtualButton newBtn = new VirtualButton("大招", getWidth() / 2f, getHeight() / 2f, 100, Color.RED, 180, "Z+X");
                         buttons.add(newBtn);
                         isEditMode = true;
-                        showButtonSettingsDialog(newBtn); // 直接弹出设置框
+                        showButtonSettingsDialog(newBtn);
                     } else if (which == 2) {
-                        buttons.clear();
+                        showProfileManager();
+                    } else if (which == 3) {
                         loadDefaultLayout();
                         saveConfig();
                         invalidate();
@@ -252,79 +269,90 @@ public class DynamicGamepadView extends View {
                 }).show();
     }
 
-    // 呼出独立按键设置面板
+    private void showProfileManager() {
+        CharSequence[] options = {"读取 方案 1", "保存至 方案 1", "读取 方案 2", "保存至 方案 2"};
+        new AlertDialog.Builder(getContext())
+                .setTitle("布局方案管理")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) loadConfig(1);
+                    if (which == 1) { currentSlot = 1; saveConfig(); }
+                    if (which == 2) loadConfig(2);
+                    if (which == 3) { currentSlot = 2; saveConfig(); }
+                }).show();
+    }
+
+    // 高级单键设置面板（带取色器）
     private void showButtonSettingsDialog(final VirtualButton btn) {
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
-        builder.setTitle("配置按键: " + btn.id);
+        builder.setTitle("按键独立设置");
 
+        ScrollView scroll = new ScrollView(getContext());
         LinearLayout layout = new LinearLayout(getContext());
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(50, 20, 50, 20);
+        layout.setPadding(60, 30, 60, 30);
+        scroll.addView(layout);
 
-        // 1. 按键名称
+        // 1. 名字
+        layout.addView(createTitle("按键显示名称:"));
         final EditText inputName = new EditText(getContext());
-        inputName.setHint("按键显示名称 (如 A, 宏)");
         inputName.setText(btn.id);
-        layout.addView(createLabel("按键屏幕名称:"));
         layout.addView(inputName);
 
-        // 2. 物理键值映射
+        // 2. 宏绑定
+        layout.addView(createTitle("按键映射 (组合键用 + 隔开):"));
         final EditText inputKey = new EditText(getContext());
-        inputKey.setHint("输入键盘按键 (如 J, ENTER, SPACE)");
-        inputKey.setText(KeyEvent.keyCodeToString(btn.sdlKeyCode).replace("KEYCODE_", ""));
-        layout.addView(createLabel("映射键盘键位:"));
+        inputKey.setHint("如: UP, Z, Z+X, ENTER");
+        inputKey.setText(btn.keyMapStr);
         layout.addView(inputKey);
 
-        // 3. 颜色选择器
-        final Spinner colorSpinner = new Spinner(getContext());
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, colorNames);
-        colorSpinner.setAdapter(adapter);
-        // 自动定位当前颜色
-        for (int i=0; i<colorValues.length; i++) {
-            if (colorValues[i] == btn.color) { colorSpinner.setSelection(i); break; }
-        }
-        layout.addView(createLabel("按键颜色:"));
-        layout.addView(colorSpinner);
+        // 3. 颜色调节 (RGB)
+        layout.addView(createTitle("自定义颜色 (RGB):"));
+        final View colorPreview = new View(getContext());
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 120);
+        previewParams.setMargins(0, 10, 0, 30);
+        colorPreview.setLayoutParams(previewParams);
+        colorPreview.setBackgroundColor(btn.color);
+        layout.addView(colorPreview);
 
-        // 4. 透明度
-        final SeekBar alphaBar = new SeekBar(getContext());
-        alphaBar.setMax(255); alphaBar.setProgress(btn.alpha);
-        layout.addView(createLabel("不透明度 (0-255):"));
-        layout.addView(alphaBar);
+        final int[] rgb = {Color.red(btn.color), Color.green(btn.color), Color.blue(btn.color)};
+        SeekBar redBar = createColorBar(layout, "红 (R)", rgb[0]);
+        SeekBar greenBar = createColorBar(layout, "绿 (G)", rgb[1]);
+        SeekBar blueBar = createColorBar(layout, "蓝 (B)", rgb[2]);
 
-        // 5. 大小
-        final SeekBar sizeBar = new SeekBar(getContext());
-        sizeBar.setMax(300); sizeBar.setProgress((int)btn.radius);
-        layout.addView(createLabel("按键尺寸大小:"));
-        layout.addView(sizeBar);
+        SeekBar.OnSeekBarChangeListener colorUpdater = new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                rgb[0] = redBar.getProgress(); rgb[1] = greenBar.getProgress(); rgb[2] = blueBar.getProgress();
+                colorPreview.setBackgroundColor(Color.rgb(rgb[0], rgb[1], rgb[2]));
+            }
+            public void onStartTrackingTouch(SeekBar seekBar) {} public void onStopTrackingTouch(SeekBar seekBar) {}
+        };
+        redBar.setOnSeekBarChangeListener(colorUpdater);
+        greenBar.setOnSeekBarChangeListener(colorUpdater);
+        blueBar.setOnSeekBarChangeListener(colorUpdater);
 
-        // 6. 自定义皮肤图片名
+        // 4. 透明度与大小
+        layout.addView(createTitle("外观与尺寸:"));
+        final SeekBar alphaBar = createColorBar(layout, "不透明度 (0-255)", btn.alpha);
+        final SeekBar sizeBar = createColorBar(layout, "按键大小", (int)btn.radius);
+        sizeBar.setMax(300);
+
+        // 5. 皮肤
+        layout.addView(createTitle("自定义皮肤文件 (放于应用目录下):"));
         final EditText inputSkin = new EditText(getContext());
-        inputSkin.setHint("输入图片名(如 a.png)。留空则用纯色");
+        inputSkin.setHint("如: btn_punch.png (留空恢复纯色)");
         inputSkin.setText(btn.skinName);
-        layout.addView(createLabel("自定义皮肤(放置在应用数据目录):"));
         layout.addView(inputSkin);
 
-        builder.setView(layout);
+        builder.setView(scroll);
         builder.setPositiveButton("保存设置", (dialog, which) -> {
             btn.id = inputName.getText().toString();
-            
-            // 强大的键值转换逻辑 (将用户输入的字母转为安卓 KEYCODE)
-            String keyStr = inputKey.getText().toString().trim().toUpperCase();
-            int newCode = KeyEvent.keyCodeFromString("KEYCODE_" + keyStr);
-            if (newCode == KeyEvent.KEYCODE_UNKNOWN && keyStr.length() == 1) {
-                // 如果用户输入了单个字符，尝试直接映射
-                newCode = KeyEvent.keyCodeFromString("KEYCODE_" + keyStr);
-            }
-            btn.sdlKeyCode = (newCode != KeyEvent.KEYCODE_UNKNOWN) ? newCode : btn.sdlKeyCode;
-
-            btn.color = colorValues[colorSpinner.getSelectedItemPosition()];
+            btn.keyMapStr = inputKey.getText().toString().trim().toUpperCase();
+            btn.parseKeyCodes();
+            btn.color = Color.rgb(rgb[0], rgb[1], rgb[2]);
             btn.alpha = alphaBar.getProgress();
-            btn.radius = Math.max(30, sizeBar.getProgress()); // 防止设为0
-            
+            btn.radius = Math.max(40, sizeBar.getProgress());
             btn.skinName = inputSkin.getText().toString().trim();
-            btn.loadSkin(getContext()); // 重新加载皮肤
-            
+            btn.loadSkin(getContext());
             saveConfig();
             invalidate();
         });
@@ -336,12 +364,27 @@ public class DynamicGamepadView extends View {
         builder.show();
     }
 
-    private TextView createLabel(String text) {
+    private TextView createTitle(String text) {
         TextView tv = new TextView(getContext());
         tv.setText(text);
-        tv.setPadding(0, 20, 0, 5);
-        tv.setTextColor(Color.DKGRAY);
+        tv.setTextSize(16f);
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setTextColor(Color.parseColor("#333333"));
+        tv.setPadding(0, 30, 0, 10);
         return tv;
+    }
+
+    private SeekBar createColorBar(LinearLayout parent, String label, int progress) {
+        TextView tv = new TextView(getContext());
+        tv.setText(label);
+        tv.setPadding(0, 10, 0, 0);
+        SeekBar sb = new SeekBar(getContext());
+        sb.setMax(255);
+        sb.setProgress(progress);
+        sb.setPadding(0, 10, 0, 20);
+        parent.addView(tv);
+        parent.addView(sb);
+        return sb;
     }
 
     @Override
@@ -362,7 +405,7 @@ public class DynamicGamepadView extends View {
                     downTime = System.currentTimeMillis();
                     downX = x; downY = y;
                     for (int i = buttons.size() - 1; i >= 0; i--) {
-                        if (Math.hypot(x - buttons.get(i).cx, y - buttons.get(i).cy) < buttons.get(i).radius * 1.5f) {
+                        if (Math.hypot(x - buttons.get(i).cx, y - buttons.get(i).cy) < buttons.get(i).radius * 1.3f) {
                             draggedButton = buttons.get(i);
                             break;
                         }
@@ -375,7 +418,6 @@ public class DynamicGamepadView extends View {
                     }
                     break;
                 case MotionEvent.ACTION_UP:
-                    // 智能识别：如果是轻触（时间短，距离近），则打开此按键的专属设置！
                     if (draggedButton != null && System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) {
                         showButtonSettingsDialog(draggedButton);
                     }
@@ -385,7 +427,6 @@ public class DynamicGamepadView extends View {
             return true;
         }
 
-        // 游玩模式多点触控发送信号
         switch (action) {
             case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_POINTER_DOWN:
@@ -393,7 +434,7 @@ public class DynamicGamepadView extends View {
                     if (!btn.isPressed && Math.hypot(x - btn.cx, y - btn.cy) < btn.radius) {
                         btn.isPressed = true;
                         performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                        SDLActivity.onNativeKeyDown(btn.sdlKeyCode);
+                        for (int code : btn.keyCodes) SDLActivity.onNativeKeyDown(code);
                         invalidate();
                     }
                 }
@@ -404,7 +445,7 @@ public class DynamicGamepadView extends View {
                 for (VirtualButton btn : buttons) {
                     if (btn.isPressed && Math.hypot(x - btn.cx, y - btn.cy) < btn.radius) {
                         btn.isPressed = false;
-                        SDLActivity.onNativeKeyUp(btn.sdlKeyCode);
+                        for (int code : btn.keyCodes) SDLActivity.onNativeKeyUp(code);
                         invalidate();
                     }
                 }
