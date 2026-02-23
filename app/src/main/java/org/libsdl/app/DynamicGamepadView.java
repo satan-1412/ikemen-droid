@@ -577,21 +577,25 @@ public class DynamicGamepadView extends View {
                 }).show();
     }
 
-    private void showJoystickSettingsDialog() {
+        private void showJoystickSettingsDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
         builder.setTitle("🕹️ 摇杆独立设置");
         LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(60, 30, 60, 30);
-        layout.addView(createTitle("外观与尺寸:"));
-        final SeekBar alphaBar = createColorBar(layout, "摇杆不透明度 (0-255)", joyAlpha);
-        final SeekBar sizeBar = createColorBar(layout, "摇杆整体大小", (int)joyRadius); sizeBar.setMax(400);
+        
+        // 【修复点】
+        layout.addView(DynamicGamepadView.this.createTitle("外观与尺寸:"));
+        final SeekBar alphaBar = DynamicGamepadView.this.createColorBar(layout, "摇杆不透明度 (0-255)", joyAlpha);
+        final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "摇杆整体大小", (int)joyRadius); sizeBar.setMax(400);
+        
         builder.setView(layout);
         builder.setPositiveButton("💾 保存", (dialog, which) -> { joyAlpha = alphaBar.getProgress(); joyRadius = Math.max(50, sizeBar.getProgress()); saveConfig(); invalidate(); });
         builder.show();
     }
+    
 
     // 解决输入框白底白字问题的构造器在第1步已经替换，此处略过
     
-    private void showButtonSettingsDialog(final VirtualButton btn) {
+       private void showButtonSettingsDialog(final VirtualButton btn) {
         currentlyEditingButton = btn;
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
         builder.setTitle("🔧 配置按键: " + btn.id);
@@ -599,32 +603,36 @@ public class DynamicGamepadView extends View {
         ScrollView scroll = new ScrollView(getContext());
         LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(60, 30, 60, 30); scroll.addView(layout);
 
-        layout.addView(createTitle("1. 按键屏幕显示名称:"));
-        final EditText inputName = createEditText("", btn.id); layout.addView(inputName);
+        // 【修复点】：加上 DynamicGamepadView.this. 前缀
+        layout.addView(DynamicGamepadView.this.createTitle("1. 按键屏幕显示名称:"));
+        final EditText inputName = DynamicGamepadView.this.createEditText("", btn.id); layout.addView(inputName);
 
-        layout.addView(createTitle("2. 按键字体颜色:"));
+        layout.addView(DynamicGamepadView.this.createTitle("2. 按键字体颜色:"));
         final Spinner textColorSpinner = new Spinner(getContext());
         ArrayAdapter<String> textAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, TEXT_COLOR_NAMES);
         textColorSpinner.setAdapter(textAdapter);
         for (int i=0; i<TEXT_COLOR_VALUES.length; i++) { if (btn.textColor == TEXT_COLOR_VALUES[i]) { textColorSpinner.setSelection(i); break; } }
         layout.addView(textColorSpinner);
 
-        layout.addView(createTitle("3. 按键物理形状:"));
+        layout.addView(DynamicGamepadView.this.createTitle("3. 按键物理形状:"));
         final Spinner shapeSpinner = new Spinner(getContext());
         ArrayAdapter<String> shapeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, SHAPE_NAMES);
         shapeSpinner.setAdapter(shapeAdapter); shapeSpinner.setSelection(btn.shape); layout.addView(shapeSpinner);
 
-        layout.addView(createTitle("4. 键盘键位映射 (多键用+连接):"));
-        final EditText inputKey = createEditText("如: Z, UP, Z+X, ENTER", btn.keyMapStr); layout.addView(inputKey);
+        layout.addView(DynamicGamepadView.this.createTitle("4. 键盘键位映射 (多键用+连接):"));
+        final EditText inputKey = DynamicGamepadView.this.createEditText("如: Z, UP, Z+X, ENTER", btn.keyMapStr); layout.addView(inputKey);
 
-        layout.addView(createTitle("5. 按键背景色 (RGB色盘):"));
+        layout.addView(DynamicGamepadView.this.createTitle("5. 按键背景色 (RGB色盘):"));
         final View colorPreview = new View(getContext());
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150);
         previewParams.setMargins(0, 10, 0, 30); colorPreview.setLayoutParams(previewParams); colorPreview.setBackgroundColor(btn.color);
         layout.addView(colorPreview);
 
         final int[] rgb = {Color.red(btn.color), Color.green(btn.color), Color.blue(btn.color)};
-        SeekBar redBar = createColorBar(layout, "红 (R)", rgb[0]); SeekBar greenBar = createColorBar(layout, "绿 (G)", rgb[1]); SeekBar blueBar = createColorBar(layout, "蓝 (B)", rgb[2]);
+        // 【修复点】：加上 DynamicGamepadView.this. 前缀
+        SeekBar redBar = DynamicGamepadView.this.createColorBar(layout, "红 (R)", rgb[0]); 
+        SeekBar greenBar = DynamicGamepadView.this.createColorBar(layout, "绿 (G)", rgb[1]); 
+        SeekBar blueBar = DynamicGamepadView.this.createColorBar(layout, "蓝 (B)", rgb[2]);
         SeekBar.OnSeekBarChangeListener colorUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 rgb[0] = redBar.getProgress(); rgb[1] = greenBar.getProgress(); rgb[2] = blueBar.getProgress(); colorPreview.setBackgroundColor(Color.rgb(rgb[0], rgb[1], rgb[2]));
@@ -633,10 +641,12 @@ public class DynamicGamepadView extends View {
         };
         redBar.setOnSeekBarChangeListener(colorUpdater); greenBar.setOnSeekBarChangeListener(colorUpdater); blueBar.setOnSeekBarChangeListener(colorUpdater);
 
-        layout.addView(createTitle("6. 外观与尺寸:"));
-        final SeekBar alphaBar = createColorBar(layout, "不透明度 (0-255)", btn.alpha); final SeekBar sizeBar = createColorBar(layout, "按键大小", (int)btn.radius); sizeBar.setMax(300);
+        layout.addView(DynamicGamepadView.this.createTitle("6. 外观与尺寸:"));
+        // 【修复点】：加上 DynamicGamepadView.this. 前缀
+        final SeekBar alphaBar = DynamicGamepadView.this.createColorBar(layout, "不透明度 (0-255)", btn.alpha); 
+        final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "按键大小", (int)btn.radius); sizeBar.setMax(300);
 
-        layout.addView(createTitle("7. 自定义图片皮肤:"));
+        layout.addView(DynamicGamepadView.this.createTitle("7. 自定义图片皮肤:"));
         Button btnPickImage = new Button(getContext()); btnPickImage.setText("🖼️ 从系统相册选择图片"); btnPickImage.setTextColor(Color.WHITE);
         btnPickImage.setOnClickListener(v -> {
             android.app.Activity activity = (android.app.Activity) getContext();
@@ -664,6 +674,7 @@ public class DynamicGamepadView extends View {
         });
         builder.show();
     }
+    
 
     // =====================================
     // 幽灵 Fragment：接管全部系统文件与相册请求
