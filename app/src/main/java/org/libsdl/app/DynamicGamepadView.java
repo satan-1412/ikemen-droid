@@ -230,13 +230,19 @@ public class DynamicGamepadView extends View {
                 paintBtn.setShader(null);
             }
 
-            paintText.setColor(btn.textColor);
+                        paintText.setColor(btn.textColor);
             paintText.setAlpha(currentAlpha);
             paintText.setTextSize(btn.radius * 0.6f);
-            // 增加文字描边，防止在浅色背景下看不清
+            paintText.setTextAlign(Paint.Align.CENTER); // 【修复】确保居中对齐
             paintText.setShadowLayer(3f, 1f, 1f, (btn.textColor == Color.BLACK) ? Color.WHITE : Color.BLACK);
-            canvas.drawText(btn.id, btn.cx, btn.cy + (btn.radius * 0.22f), paintText);
+            
+            // 【修复】计算字体的物理中轴线，实现绝对垂直居中
+            Paint.FontMetrics fm = paintText.getFontMetrics();
+            float textOffset = (fm.descent - fm.ascent) / 2 - fm.descent;
+            canvas.drawText(btn.id, btn.cx, btn.cy + textOffset, paintText); 
+            
             paintText.clearShadowLayer();
+            
 
             if (isEditMode) {
                 paintBtn.setStyle(Paint.Style.STROKE);
@@ -294,9 +300,10 @@ public class DynamicGamepadView extends View {
     // =====================================
     // 触控引擎
     // =====================================
-    @Override
+        @Override
     public boolean onTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
+        int actionIndex = event.getActionIndex(); // 【新增】获取当前正在发生动作的手指索引
 
         if (action == MotionEvent.ACTION_DOWN && menuButtonRect.contains(event.getX(), event.getY())) {
             showMainMenu();
@@ -305,6 +312,7 @@ public class DynamicGamepadView extends View {
 
         if (isEditMode) { handleEditTouch(event); return true; }
 
+        // --- 摇杆逻辑保持不变 ---
         if (joystickMode > 0) {
             boolean joyTouched = false;
             for (int i = 0; i < event.getPointerCount(); i++) {
@@ -335,12 +343,18 @@ public class DynamicGamepadView extends View {
             }
         }
 
+        // --- 【核心修复】全局防卡键扫描 ---
         for (VirtualButton btn : buttons) {
             if (joystickMode > 0 && btn.isDirectional) continue;
             boolean isTouchedNow = false;
             for (int i = 0; i < event.getPointerCount(); i++) {
                 if (event.getPointerId(i) == joyPointerId) continue;
-                // 形状碰撞检测
+                
+                // 【绝杀Bug代码】如果这个手指当前正在抬起（离开屏幕），直接无视它！确保能瞬间触发按键松开
+                if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_CANCEL) && i == actionIndex) {
+                    continue;
+                }
+
                 float px = event.getX(i), py = event.getY(i);
                 if (btn.shape == SHAPE_CIRCLE) {
                     if (Math.hypot(px - btn.cx, py - btn.cy) < btn.radius) isTouchedNow = true;
@@ -348,6 +362,7 @@ public class DynamicGamepadView extends View {
                     if (px > btn.cx - btn.radius && px < btn.cx + btn.radius && py > btn.cy - btn.radius && py < btn.cy + btn.radius) isTouchedNow = true;
                 }
             }
+            
             if (!btn.isPressed && isTouchedNow) {
                 btn.isPressed = true;
                 if (isVibrationOn) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
@@ -359,6 +374,7 @@ public class DynamicGamepadView extends View {
         }
         invalidate(); return true;
     }
+    
 
     private void triggerDirection(String dirId, boolean pressed) {
         for (VirtualButton btn : buttons) {
@@ -491,103 +507,31 @@ public class DynamicGamepadView extends View {
         buttons.add(new VirtualButton("START", 1100, 150, 60, Color.GRAY, 180, Color.WHITE, SHAPE_CIRCLE, "RETURN", false));
     }
 
-    // 【新增】带二次确认的导出功能
+        // 【修改】调用系统自带的文件选择器导出 JSON
     private void exportLayoutToFile() {
-        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("📤 导出确认")
-            .setMessage("确定要将当前布局导出为 JSON 文件吗？\n文件将保存在游戏数据目录的 [布局] 文件夹下，方便分享给其他玩家。")
-            .setPositiveButton("确定导出", (dialog, which) -> {
-                try {
-                    File dir = new File(getContext().getExternalFilesDir(null), "布局");
-                    if (!dir.exists()) dir.mkdirs();
-                    
-                    int index = 1;
-                    File exportFile;
-                    do {
-                        exportFile = new File(dir, "布局方案_" + index + ".json");
-                        index++;
-                    } while (exportFile.exists());
-
-                    JSONObject root = new JSONObject();
-                    root.put("joystickMode", joystickMode);
-                    root.put("joyBaseX", joyBaseX); root.put("joyBaseY", joyBaseY);
-                    root.put("joyRadius", joyRadius); root.put("joyAlpha", joyAlpha);
-                    root.put("isVibrationOn", isVibrationOn);
-                    root.put("buttons", new JSONArray(prefs.getString(KEY_LAYOUT_PREFIX + currentSlot, "[]")));
-
-                    FileOutputStream fos = new FileOutputStream(exportFile);
-                    OutputStreamWriter writer = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
-                    writer.write(root.toString(4));
-                    writer.close(); fos.close();
-                    
-                    Toast.makeText(getContext(), "✅ 成功导出至:\n" + exportFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    Toast.makeText(getContext(), "❌ 导出失败", Toast.LENGTH_SHORT).show();
-                }
-            })
-            .setNegativeButton("取消", null)
-            .show();
+        android.app.Activity activity = (android.app.Activity) getContext();
+        FileActionFragment fragment = new FileActionFragment();
+        android.os.Bundle args = new android.os.Bundle();
+        args.putInt("action_type", 1); // 1 代表导出
+        args.putString("export_data", prefs.getString(KEY_LAYOUT_PREFIX + currentSlot, "[]"));
+        fragment.setArguments(args);
+        activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
     }
 
-    // 【新增】一键导入外部布局功能
+    // 【修改】调用系统自带的文件选择器导入 JSON
     private void importLayoutFromFile() {
-        File dir = new File(getContext().getExternalFilesDir(null), "布局");
-        if (!dir.exists() || dir.listFiles() == null || dir.listFiles().length == 0) {
-            Toast.makeText(getContext(), "❌ 未在游戏目录找到 [布局] 文件夹或里面没有 JSON 文件", Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        File[] files = dir.listFiles((d, name) -> name.endsWith(".json"));
-        if (files == null || files.length == 0) {
-            Toast.makeText(getContext(), "❌ [布局] 文件夹内没有合法的 .json 文件", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        String[] fileNames = new String[files.length];
-        for (int i = 0; i < files.length; i++) fileNames[i] = files[i].getName();
-
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("📥 选择要导入的布局方案")
-            .setItems(fileNames, (dialog, which) -> {
-                File selectedFile = files[which];
-                // 二次确认覆盖
-                new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle("⚠️ 覆盖警告")
-                    .setMessage("导入操作将【永久覆盖】你当前正在使用的布局，确定要导入 [" + selectedFile.getName() + "] 吗？")
-                    .setPositiveButton("确定覆盖", (d, w) -> {
-                        try {
-                            FileInputStream fis = new FileInputStream(selectedFile);
-                            InputStreamReader isr = new InputStreamReader(fis, StandardCharsets.UTF_8);
-                            BufferedReader reader = new BufferedReader(isr);
-                            StringBuilder sb = new StringBuilder();
-                            String line;
-                            while ((line = reader.readLine()) != null) sb.append(line);
-                            reader.close(); isr.close(); fis.close();
-
-                            JSONObject root = new JSONObject(sb.toString());
-                            joystickMode = root.optInt("joystickMode", 0);
-                            joyBaseX = (float) root.optDouble("joyBaseX", 250);
-                            joyBaseY = (float) root.optDouble("joyBaseY", 700);
-                            joyRadius = (float) root.optDouble("joyRadius", 180);
-                            joyAlpha = root.optInt("joyAlpha", 200);
-                            isVibrationOn = root.optBoolean("isVibrationOn", true);
-                            joyKnobX = joyBaseX; joyKnobY = joyBaseY;
-
-                            JSONArray btnArray = root.getJSONArray("buttons");
-                            prefs.edit().putString(KEY_LAYOUT_PREFIX + currentSlot, btnArray.toString()).apply();
-                            
-                            loadConfig(currentSlot); // 重新加载上屏
-                            Toast.makeText(getContext(), "✅ 导入成功！", Toast.LENGTH_SHORT).show();
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                            Toast.makeText(getContext(), "❌ 导入失败，文件可能已损坏", Toast.LENGTH_SHORT).show();
-                        }
-                    })
-                    .setNegativeButton("取消", null)
-                    .show();
+            .setTitle("⚠️ 覆盖警告")
+            .setMessage("即将从手机存储中选择布局文件。\n导入成功后将【永久覆盖】你当前的按键布局，确定继续吗？")
+            .setPositiveButton("选文件并覆盖", (d, w) -> {
+                android.app.Activity activity = (android.app.Activity) getContext();
+                FileActionFragment fragment = new FileActionFragment();
+                android.os.Bundle args = new android.os.Bundle();
+                args.putInt("action_type", 2); // 2 代表导入
+                fragment.setArguments(args);
+                activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
             })
-            .show();
+            .setNegativeButton("取消", null).show();
     }
 
     // =====================================
@@ -602,65 +546,32 @@ public class DynamicGamepadView extends View {
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("⚙️ 游戏面板全局设置")
                 .setItems(options, (dialog, which) -> {
-                    if (which == 0) {
-                        isEditMode = !isEditMode;
-                        if (!isEditMode) saveConfig();
-                        invalidate();
-                    } else if (which == 1) {
+                    if (which == 0) { isEditMode = !isEditMode; if (!isEditMode) saveConfig(); invalidate(); } 
+                    else if (which == 1) {
                         VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);
-                        buttons.add(newBtn);
-                        isEditMode = true;
-                        showButtonSettingsDialog(newBtn);
-                    } else if (which == 2) {
-                        joystickMode = (joystickMode + 1) % 3;
-                        saveConfig();
-                        invalidate();
-                    } else if (which == 3) {
-                        isVibrationOn = !isVibrationOn;
-                        saveConfig();
-                        Toast.makeText(getContext(), isVibrationOn ? "震动开启" : "震动关闭", Toast.LENGTH_SHORT).show();
-                    } else if (which == 4) {
-                        showProfileManager();
-                    } else if (which == 5) {
-                        // 恢复默认的防手滑确认
+                        buttons.add(newBtn); isEditMode = true; showButtonSettingsDialog(newBtn);
+                    } 
+                    else if (which == 2) { joystickMode = (joystickMode + 1) % 3; saveConfig(); invalidate(); } 
+                    else if (which == 3) { isVibrationOn = !isVibrationOn; saveConfig(); Toast.makeText(getContext(), isVibrationOn ? "震动开启" : "震动关闭", Toast.LENGTH_SHORT).show(); } 
+                    else if (which == 4) { showProfileManager(); } 
+                    else if (which == 5) {
                         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                            .setTitle("⚠️ 警告")
-                            .setMessage("确定要清空所有自定义修改，恢复为原版默认按键布局吗？")
-                            .setPositiveButton("确定恢复", (d, w) -> {
-                                loadDefaultLayout();
-                                saveConfig();
-                                invalidate();
-                            })
+                            .setTitle("⚠️ 警告").setMessage("确定要清空所有自定义修改，恢复为原版默认按键布局吗？")
+                            .setPositiveButton("确定恢复", (d, w) -> { loadDefaultLayout(); saveConfig(); invalidate(); })
                             .setNegativeButton("取消", null).show();
                     }
                 }).show();
     }
 
     private void showProfileManager() {
-        CharSequence[] options = {"📂 读取云端方案 1", "💾 覆盖保存至方案 1", "📂 读取云端方案 2", "💾 覆盖保存至方案 2", "📤 导出布局到本地文件夹", "📥 从本地文件夹导入布局"};
+        CharSequence[] options = {"📂 读取云端方案 1", "💾 覆盖保存至方案 1", "📂 读取云端方案 2", "💾 覆盖保存至方案 2", "📤 系统管理器导出配置", "📥 系统管理器导入配置"};
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("布局方案存档与分享")
                 .setItems(options, (dialog, which) -> {
-                    if (which == 0) {
-                        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                            .setTitle("⚠️ 读取确认").setMessage("确定读取方案 1？当前未保存的修改将会丢失。")
-                            .setPositiveButton("确定", (d, w) -> loadConfig(1)).setNegativeButton("取消", null).show();
-                    }
-                    if (which == 1) {
-                        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                            .setTitle("⚠️ 覆盖确认").setMessage("确定将当前的按键排布覆盖保存至方案 1？")
-                            .setPositiveButton("确定", (d, w) -> { currentSlot = 1; saveConfig(); Toast.makeText(getContext(),"✅ 已存入方案1",Toast.LENGTH_SHORT).show();}).setNegativeButton("取消", null).show();
-                    }
-                    if (which == 2) {
-                        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                            .setTitle("⚠️ 读取确认").setMessage("确定读取方案 2？当前未保存的修改将会丢失。")
-                            .setPositiveButton("确定", (d, w) -> loadConfig(2)).setNegativeButton("取消", null).show();
-                    }
-                    if (which == 3) {
-                        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                            .setTitle("⚠️ 覆盖确认").setMessage("确定将当前的按键排布覆盖保存至方案 2？")
-                            .setPositiveButton("确定", (d, w) -> { currentSlot = 2; saveConfig(); Toast.makeText(getContext(),"✅ 已存入方案2",Toast.LENGTH_SHORT).show();}).setNegativeButton("取消", null).show();
-                    }
+                    if (which == 0) new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("⚠️ 读取确认").setMessage("确定读取方案 1？未保存修改将丢失。").setPositiveButton("确定", (d, w) -> loadConfig(1)).setNegativeButton("取消", null).show();
+                    if (which == 1) new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("⚠️ 覆盖确认").setMessage("确定将当前布局覆盖至方案 1？").setPositiveButton("确定", (d, w) -> { currentSlot = 1; saveConfig(); Toast.makeText(getContext(),"✅ 已存入方案1",Toast.LENGTH_SHORT).show();}).setNegativeButton("取消", null).show();
+                    if (which == 2) new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("⚠️ 读取确认").setMessage("确定读取方案 2？未保存修改将丢失。").setPositiveButton("确定", (d, w) -> loadConfig(2)).setNegativeButton("取消", null).show();
+                    if (which == 3) new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("⚠️ 覆盖确认").setMessage("确定将当前布局覆盖至方案 2？").setPositiveButton("确定", (d, w) -> { currentSlot = 2; saveConfig(); Toast.makeText(getContext(),"✅ 已存入方案2",Toast.LENGTH_SHORT).show();}).setNegativeButton("取消", null).show();
                     if (which == 4) { saveConfig(); exportLayoutToFile(); }
                     if (which == 5) { importLayoutFromFile(); }
                 }).show();
@@ -669,206 +580,169 @@ public class DynamicGamepadView extends View {
     private void showJoystickSettingsDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
         builder.setTitle("🕹️ 摇杆独立设置");
-
-        LinearLayout layout = new LinearLayout(getContext());
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(60, 30, 60, 30);
-
+        LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(60, 30, 60, 30);
         layout.addView(createTitle("外观与尺寸:"));
         final SeekBar alphaBar = createColorBar(layout, "摇杆不透明度 (0-255)", joyAlpha);
-        final SeekBar sizeBar = createColorBar(layout, "摇杆整体大小", (int)joyRadius);
-        sizeBar.setMax(400);
-
+        final SeekBar sizeBar = createColorBar(layout, "摇杆整体大小", (int)joyRadius); sizeBar.setMax(400);
         builder.setView(layout);
-        builder.setPositiveButton("💾 保存", (dialog, which) -> {
-            joyAlpha = alphaBar.getProgress();
-            joyRadius = Math.max(50, sizeBar.getProgress());
-            saveConfig();
-            invalidate();
-        });
+        builder.setPositiveButton("💾 保存", (dialog, which) -> { joyAlpha = alphaBar.getProgress(); joyRadius = Math.max(50, sizeBar.getProgress()); saveConfig(); invalidate(); });
         builder.show();
     }
 
-    // 针对暗黑模式优化的文本输入框（白字）
-    private EditText createEditText(String hint, String text) {
-        EditText et = new EditText(getContext());
-        et.setHint(hint);
-        et.setText(text);
-        et.setTextColor(Color.WHITE); // 确保在暗黑弹窗下文字可见
-        et.setHintTextColor(Color.GRAY);
-        return et;
-    }
-
+    // 解决输入框白底白字问题的构造器在第1步已经替换，此处略过
+    
     private void showButtonSettingsDialog(final VirtualButton btn) {
         currentlyEditingButton = btn;
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
         builder.setTitle("🔧 配置按键: " + btn.id);
 
         ScrollView scroll = new ScrollView(getContext());
-        LinearLayout layout = new LinearLayout(getContext());
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(60, 30, 60, 30);
-        scroll.addView(layout);
+        LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(60, 30, 60, 30); scroll.addView(layout);
 
         layout.addView(createTitle("1. 按键屏幕显示名称:"));
-        final EditText inputName = createEditText("", btn.id);
-        layout.addView(inputName);
+        final EditText inputName = createEditText("", btn.id); layout.addView(inputName);
 
         layout.addView(createTitle("2. 按键字体颜色:"));
         final Spinner textColorSpinner = new Spinner(getContext());
         ArrayAdapter<String> textAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, TEXT_COLOR_NAMES);
         textColorSpinner.setAdapter(textAdapter);
-        for (int i=0; i<TEXT_COLOR_VALUES.length; i++) {
-            if (btn.textColor == TEXT_COLOR_VALUES[i]) { textColorSpinner.setSelection(i); break; }
-        }
+        for (int i=0; i<TEXT_COLOR_VALUES.length; i++) { if (btn.textColor == TEXT_COLOR_VALUES[i]) { textColorSpinner.setSelection(i); break; } }
         layout.addView(textColorSpinner);
 
-        // 【新增】按键形状选择
         layout.addView(createTitle("3. 按键物理形状:"));
         final Spinner shapeSpinner = new Spinner(getContext());
         ArrayAdapter<String> shapeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, SHAPE_NAMES);
-        shapeSpinner.setAdapter(shapeAdapter);
-        shapeSpinner.setSelection(btn.shape);
-        layout.addView(shapeSpinner);
+        shapeSpinner.setAdapter(shapeAdapter); shapeSpinner.setSelection(btn.shape); layout.addView(shapeSpinner);
 
         layout.addView(createTitle("4. 键盘键位映射 (多键用+连接):"));
-        final EditText inputKey = createEditText("如: Z, UP, Z+X, ENTER", btn.keyMapStr);
-        layout.addView(inputKey);
+        final EditText inputKey = createEditText("如: Z, UP, Z+X, ENTER", btn.keyMapStr); layout.addView(inputKey);
 
         layout.addView(createTitle("5. 按键背景色 (RGB色盘):"));
         final View colorPreview = new View(getContext());
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150);
-        previewParams.setMargins(0, 10, 0, 30);
-        colorPreview.setLayoutParams(previewParams);
-        colorPreview.setBackgroundColor(btn.color);
+        previewParams.setMargins(0, 10, 0, 30); colorPreview.setLayoutParams(previewParams); colorPreview.setBackgroundColor(btn.color);
         layout.addView(colorPreview);
 
         final int[] rgb = {Color.red(btn.color), Color.green(btn.color), Color.blue(btn.color)};
-        SeekBar redBar = createColorBar(layout, "红 (R)", rgb[0]);
-        SeekBar greenBar = createColorBar(layout, "绿 (G)", rgb[1]);
-        SeekBar blueBar = createColorBar(layout, "蓝 (B)", rgb[2]);
-
+        SeekBar redBar = createColorBar(layout, "红 (R)", rgb[0]); SeekBar greenBar = createColorBar(layout, "绿 (G)", rgb[1]); SeekBar blueBar = createColorBar(layout, "蓝 (B)", rgb[2]);
         SeekBar.OnSeekBarChangeListener colorUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                rgb[0] = redBar.getProgress(); rgb[1] = greenBar.getProgress(); rgb[2] = blueBar.getProgress();
-                colorPreview.setBackgroundColor(Color.rgb(rgb[0], rgb[1], rgb[2]));
+                rgb[0] = redBar.getProgress(); rgb[1] = greenBar.getProgress(); rgb[2] = blueBar.getProgress(); colorPreview.setBackgroundColor(Color.rgb(rgb[0], rgb[1], rgb[2]));
             }
             public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
         };
-        redBar.setOnSeekBarChangeListener(colorUpdater);
-        greenBar.setOnSeekBarChangeListener(colorUpdater);
-        blueBar.setOnSeekBarChangeListener(colorUpdater);
+        redBar.setOnSeekBarChangeListener(colorUpdater); greenBar.setOnSeekBarChangeListener(colorUpdater); blueBar.setOnSeekBarChangeListener(colorUpdater);
 
         layout.addView(createTitle("6. 外观与尺寸:"));
-        final SeekBar alphaBar = createColorBar(layout, "不透明度 (0-255)", btn.alpha);
-        final SeekBar sizeBar = createColorBar(layout, "按键大小", (int)btn.radius);
-        sizeBar.setMax(300);
+        final SeekBar alphaBar = createColorBar(layout, "不透明度 (0-255)", btn.alpha); final SeekBar sizeBar = createColorBar(layout, "按键大小", (int)btn.radius); sizeBar.setMax(300);
 
         layout.addView(createTitle("7. 自定义图片皮肤:"));
-        Button btnPickImage = new Button(getContext());
-        btnPickImage.setText("🖼️ 从系统相册选择图片");
-        btnPickImage.setTextColor(Color.WHITE); // 暗黑模式下白字
+        Button btnPickImage = new Button(getContext()); btnPickImage.setText("🖼️ 从系统相册选择图片"); btnPickImage.setTextColor(Color.WHITE);
         btnPickImage.setOnClickListener(v -> {
             android.app.Activity activity = (android.app.Activity) getContext();
-            ImagePickerFragment fragment = new ImagePickerFragment();
-            activity.getFragmentManager().beginTransaction().add(fragment, "image_picker").commitAllowingStateLoss();
+            FileActionFragment fragment = new FileActionFragment();
+            android.os.Bundle args = new android.os.Bundle();
+            args.putInt("action_type", 0); // 0 代表选图片
+            fragment.setArguments(args);
+            activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
         });
         layout.addView(btnPickImage);
 
-        Button btnClearImage = new Button(getContext());
-        btnClearImage.setText("❌ 移除图片，恢复纯色/形状");
-        btnClearImage.setTextColor(Color.WHITE);
-        btnClearImage.setOnClickListener(v -> {
-            btn.customImageUri = "";
-            btn.skinBitmap = null;
-            Toast.makeText(getContext(), "已清除图片皮肤", Toast.LENGTH_SHORT).show();
-            invalidate();
-        });
+        Button btnClearImage = new Button(getContext()); btnClearImage.setText("❌ 移除图片，恢复纯色/形状"); btnClearImage.setTextColor(Color.WHITE);
+        btnClearImage.setOnClickListener(v -> { btn.customImageUri = ""; btn.skinBitmap = null; Toast.makeText(getContext(), "已清除图片皮肤", Toast.LENGTH_SHORT).show(); invalidate(); });
         layout.addView(btnClearImage);
 
         builder.setView(scroll);
         builder.setPositiveButton("💾 保存", (dialog, which) -> {
-            btn.id = inputName.getText().toString();
-            btn.textColor = TEXT_COLOR_VALUES[textColorSpinner.getSelectedItemPosition()];
-            btn.shape = shapeSpinner.getSelectedItemPosition();
-            btn.keyMapStr = inputKey.getText().toString().trim().toUpperCase();
-            btn.parseKeyCodes();
-            btn.color = Color.rgb(rgb[0], rgb[1], rgb[2]);
-            btn.alpha = alphaBar.getProgress();
-            btn.radius = Math.max(40, sizeBar.getProgress());
-            btn.loadSkinFromUri(getContext());
-            saveConfig();
-            invalidate();
+            btn.id = inputName.getText().toString(); btn.textColor = TEXT_COLOR_VALUES[textColorSpinner.getSelectedItemPosition()];
+            btn.shape = shapeSpinner.getSelectedItemPosition(); btn.keyMapStr = inputKey.getText().toString().trim().toUpperCase(); btn.parseKeyCodes();
+            btn.color = Color.rgb(rgb[0], rgb[1], rgb[2]); btn.alpha = alphaBar.getProgress(); btn.radius = Math.max(40, sizeBar.getProgress());
+            btn.loadSkinFromUri(getContext()); saveConfig(); invalidate();
         });
         builder.setNegativeButton("🗑️ 删除此键", (dialog, which) -> {
-            // 删除时也加上二次确认
-            new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle("⚠️ 确认删除")
-                .setMessage("确定要彻底删除按键 [" + btn.id + "] 吗？此操作不可逆。")
-                .setPositiveButton("确定删除", (d, w) -> {
-                    buttons.remove(btn);
-                    saveConfig();
-                    invalidate();
-                })
-                .setNegativeButton("取消", null).show();
+            new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("⚠️ 确认删除").setMessage("确定要彻底删除按键 [" + btn.id + "] 吗？").setPositiveButton("确定", (d, w) -> { buttons.remove(btn); saveConfig(); invalidate(); }).setNegativeButton("取消", null).show();
         });
         builder.show();
     }
 
-    // 针对暗黑模式和高级审美的 UI 组件
-    private TextView createTitle(String text) {
-        TextView tv = new TextView(getContext());
-        tv.setText(text);
-        tv.setTextSize(16f);
-        tv.setTypeface(Typeface.DEFAULT_BOLD);
-        tv.setTextColor(Color.WHITE); // 修复小字体黑字看不清的问题
-        tv.setPadding(0, 40, 0, 10);
-        return tv;
-    }
-
-    private SeekBar createColorBar(LinearLayout parent, String label, int progress) {
-        TextView tv = new TextView(getContext());
-        tv.setText(label);
-        tv.setTextColor(Color.WHITE); // 修复滑块上方字体看不清的问题
-        tv.setPadding(0, 10, 0, 0);
-        SeekBar sb = new SeekBar(getContext());
-        sb.setMax(255);
-        sb.setProgress(progress);
-        sb.setPadding(0, 10, 0, 20);
-        parent.addView(tv);
-        parent.addView(sb);
-        return sb;
-    }
-
     // =====================================
-    // 幽灵 Fragment (无侵入相册调用)
+    // 幽灵 Fragment：接管全部系统文件与相册请求
     // =====================================
     @SuppressWarnings("deprecation")
-    public static class ImagePickerFragment extends android.app.Fragment {
+    public static class FileActionFragment extends android.app.Fragment {
         @Override
         public void onCreate(android.os.Bundle savedInstanceState) {
             super.onCreate(savedInstanceState);
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("image/*");
-            startActivityForResult(intent, 43);
+            int type = getArguments() != null ? getArguments().getInt("action_type", 0) : 0;
+            if (type == 1) { // 导出
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/json");
+                intent.putExtra(Intent.EXTRA_TITLE, "ikemen_layout.json");
+                startActivityForResult(intent, 44);
+            } else if (type == 2) { // 导入
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                startActivityForResult(intent, 45);
+            } else { // 选图片
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("image/*");
+                startActivityForResult(intent, 43);
+            }
         }
 
         @Override
         public void onActivityResult(int requestCode, int resultCode, Intent data) {
             super.onActivityResult(requestCode, resultCode, data);
-            if (requestCode == 43 && resultCode == android.app.Activity.RESULT_OK && data != null) {
+            if (resultCode == android.app.Activity.RESULT_OK && data != null && data.getData() != null) {
                 android.net.Uri uri = data.getData();
-                try {
-                    // 获取持久化读取权限，防止游戏重启后图片丢失
-                    getActivity().getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                } catch (Exception e) { e.printStackTrace(); }
-                
-                if (DynamicGamepadView.instance != null) {
+                if (requestCode == 43 && DynamicGamepadView.instance != null) {
+                    try { getActivity().getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception e) {}
                     DynamicGamepadView.instance.onImagePicked(uri.toString());
+                } else if (requestCode == 44) { // 导出数据写入
+                    try {
+                        String jsonData = getArguments().getString("export_data");
+                        JSONObject root = new JSONObject();
+                        root.put("joystickMode", DynamicGamepadView.instance.joystickMode);
+                        root.put("joyBaseX", DynamicGamepadView.instance.joyBaseX); root.put("joyBaseY", DynamicGamepadView.instance.joyBaseY);
+                        root.put("joyRadius", DynamicGamepadView.instance.joyRadius); root.put("joyAlpha", DynamicGamepadView.instance.joyAlpha);
+                        root.put("isVibrationOn", DynamicGamepadView.instance.isVibrationOn);
+                        root.put("buttons", new JSONArray(jsonData));
+                        
+                        java.io.OutputStream os = getActivity().getContentResolver().openOutputStream(uri);
+                        os.write(root.toString(4).getBytes(StandardCharsets.UTF_8));
+                        os.close();
+                        Toast.makeText(getActivity(), "✅ 导出成功！", Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) { Toast.makeText(getActivity(), "❌ 导出失败", Toast.LENGTH_SHORT).show(); }
+                } else if (requestCode == 45 && DynamicGamepadView.instance != null) { // 导入数据读取
+                    try {
+                        java.io.InputStream is = getActivity().getContentResolver().openInputStream(uri);
+                        BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                        StringBuilder sb = new StringBuilder(); String line;
+                        while ((line = reader.readLine()) != null) sb.append(line);
+                        reader.close(); is.close();
+                        
+                        JSONObject root = new JSONObject(sb.toString());
+                        DynamicGamepadView.instance.joystickMode = root.optInt("joystickMode", 0);
+                        DynamicGamepadView.instance.joyBaseX = (float) root.optDouble("joyBaseX", 250);
+                        DynamicGamepadView.instance.joyBaseY = (float) root.optDouble("joyBaseY", 700);
+                        DynamicGamepadView.instance.joyRadius = (float) root.optDouble("joyRadius", 180);
+                        DynamicGamepadView.instance.joyAlpha = root.optInt("joyAlpha", 200);
+                        DynamicGamepadView.instance.isVibrationOn = root.optBoolean("isVibrationOn", true);
+                        
+                        JSONArray btnArray = root.getJSONArray("buttons");
+                        DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                            .edit().putString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, btnArray.toString()).apply();
+                        
+                        DynamicGamepadView.instance.loadConfig(DynamicGamepadView.instance.currentSlot);
+                        Toast.makeText(getActivity(), "✅ 布局导入成功！", Toast.LENGTH_LONG).show();
+                    } catch (Exception e) { Toast.makeText(getActivity(), "❌ 导入失败，文件可能已损坏", Toast.LENGTH_SHORT).show(); }
                 }
             }
             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
         }
     }
 }
+    
