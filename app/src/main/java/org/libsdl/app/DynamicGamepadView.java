@@ -67,6 +67,8 @@ public class DynamicGamepadView extends View {
 
     private final SharedPreferences prefs;
     public boolean isEditMode = false;
+        public boolean isGridSnapMode = false; // 是否开启网格吸附
+    private static final int GRID_SIZE = 50; // 网格大小，50像素一个格子，你可以自己调
     private VirtualButton draggedButton = null;
 
     private long downTime;
@@ -188,12 +190,27 @@ public class DynamicGamepadView extends View {
         paintMenu.clearShadowLayer();
         canvas.drawText("⚙ 高级设置", menuButtonRect.centerX(), menuButtonRect.centerY() + 12, paintText);
 
-        if (isEditMode) {
+                if (isEditMode) {
             canvas.drawColor(Color.argb(100, 255, 50, 50));
+            
+            // 【新增：如果是网格模式，画出辅助线】
+            if (isGridSnapMode) {
+                paintBtn.setColor(Color.WHITE);
+                paintBtn.setAlpha(30); // 半透明白线
+                paintBtn.setStrokeWidth(1f);
+                for (int i = 0; i < getWidth(); i += GRID_SIZE) {
+                    canvas.drawLine(i, 0, i, getHeight(), paintBtn);
+                }
+                for (int i = 0; i < getHeight(); i += GRID_SIZE) {
+                    canvas.drawLine(0, i, getWidth(), i, paintBtn);
+                }
+            }
+            
             paintText.setTextSize(40f);
             paintText.setShadowLayer(5f, 2f, 2f, Color.BLACK);
             canvas.drawText("【编辑模式】拖动调整，轻触设置", getWidth() / 2f, 100, paintText);
         }
+        
 
         for (VirtualButton btn : buttons) {
             if (joystickMode > 0 && btn.isDirectional) continue;
@@ -410,10 +427,20 @@ public class DynamicGamepadView extends View {
                     }
                 }
                 break;
-            case MotionEvent.ACTION_MOVE:
-                if (isDraggingJoy) { joyBaseX = x; joyBaseY = y; joyKnobX = x; joyKnobY = y; invalidate(); } 
-                else if (draggedButton != null) { draggedButton.cx = x; draggedButton.cy = y; invalidate(); }
+                        case MotionEvent.ACTION_MOVE:
+                float targetX = x;
+                float targetY = y;
+                
+                // 【新增：如果开启了网格模式，对坐标进行取整吸附】
+                if (isGridSnapMode) {
+                    targetX = Math.round(x / GRID_SIZE) * GRID_SIZE;
+                    targetY = Math.round(y / GRID_SIZE) * GRID_SIZE;
+                }
+
+                if (isDraggingJoy) { joyBaseX = targetX; joyBaseY = targetY; joyKnobX = targetX; joyKnobY = targetY; invalidate(); } 
+                else if (draggedButton != null) { draggedButton.cx = targetX; draggedButton.cy = targetY; invalidate(); }
                 break;
+            
             case MotionEvent.ACTION_UP:
                 if (System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) {
                     if (isDraggingJoy) showJoystickSettingsDialog(); else if (draggedButton != null) showButtonSettingsDialog(draggedButton);
@@ -546,10 +573,14 @@ public class DynamicGamepadView extends View {
     // UI 面板渲染与系统弹窗
     // =====================================
     private void showMainMenu() {
-        String modeText = isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键拖拽编辑";
+                String modeText = isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键编辑";
+        // 【新增】网格模式状态文本
+        String gridText = isGridSnapMode ? "🧲 网格吸附：已开启" : "🧲 网格吸附：已关闭 (自由拖动)";
         String joyText = "🕹️ 摇杆形态: " + (joystickMode==0?"分离十字键":joystickMode==1?"现代白圆盘":"经典街机红杆");
         String vibText = "📳 物理震动: " + (isVibrationOn?"已开启":"已关闭");
-        CharSequence[] options = {modeText, "➕ 新建组合键/宏", joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局"};
+        
+        // 【修改】把网格选项加进数组
+        CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局"};
 
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("⚙️ 游戏面板全局设置")
@@ -559,16 +590,22 @@ public class DynamicGamepadView extends View {
                         VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);
                         buttons.add(newBtn); isEditMode = true; showButtonSettingsDialog(newBtn);
                     } 
-                    else if (which == 2) { joystickMode = (joystickMode + 1) % 3; saveConfig(); invalidate(); } 
-                    else if (which == 3) { isVibrationOn = !isVibrationOn; saveConfig(); Toast.makeText(getContext(), isVibrationOn ? "震动开启" : "震动关闭", Toast.LENGTH_SHORT).show(); } 
-                    else if (which == 4) { showProfileManager(); } 
-                    else if (which == 5) {
+                    else if (which == 2) { 
+                        // 【新增】切换网格模式
+                        isGridSnapMode = !isGridSnapMode; 
+                        Toast.makeText(getContext(), isGridSnapMode ? "已开启网格吸附" : "已开启自由拖动", Toast.LENGTH_SHORT).show();
+                    } 
+                    // 后面的序号依次加 1
+                    else if (which == 3) { joystickMode = (joystickMode + 1) % 3; saveConfig(); invalidate(); } 
+                    else if (which == 4) { isVibrationOn = !isVibrationOn; saveConfig(); Toast.makeText(getContext(), isVibrationOn ? "震动开启" : "震动关闭", Toast.LENGTH_SHORT).show(); } 
+                    else if (which == 5) { showProfileManager(); } 
+                    else if (which == 6) {
                         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                             .setTitle("⚠️ 警告").setMessage("确定要清空所有自定义修改，恢复为原版默认按键布局吗？")
                             .setPositiveButton("确定恢复", (d, w) -> { loadDefaultLayout(); saveConfig(); invalidate(); })
                             .setNegativeButton("取消", null).show();
                     }
-                }).show();
+                }).show();   
     }
 
     private void showProfileManager() {
@@ -595,7 +632,7 @@ public class DynamicGamepadView extends View {
         final SeekBar alphaBar = DynamicGamepadView.this.createColorBar(layout, "摇杆不透明度 (0-255)", joyAlpha);
         final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "摇杆整体大小", (int)joyRadius); sizeBar.setMax(400);
         
-        builder.setView(layout);
+        scroll.addView(layout);
         builder.setPositiveButton("💾 保存", (dialog, which) -> { joyAlpha = alphaBar.getProgress(); joyRadius = Math.max(50, sizeBar.getProgress()); saveConfig(); invalidate(); });
         builder.show();
     }
@@ -608,8 +645,16 @@ public class DynamicGamepadView extends View {
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
         builder.setTitle("🔧 配置按键: " + btn.id);
 
-        ScrollView scroll = new ScrollView(getContext());
-        LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(60, 30, 60, 30); scroll.addView(layout);
+                ScrollView scroll = new ScrollView(getContext());
+        // 确保 ScrollView 能够占据有效空间
+        scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        
+        LinearLayout layout = new LinearLayout(getContext()); 
+        layout.setOrientation(LinearLayout.VERTICAL); 
+        layout.setPadding(60, 30, 60, 30); 
+        
+        // 我们把 addView(layout) 留到最后，先把所有子元素加到 layout 里
+        
 
         // 【修复点】：加上 DynamicGamepadView.this. 前缀
         layout.addView(DynamicGamepadView.this.createTitle("1. 按键屏幕显示名称:"));
