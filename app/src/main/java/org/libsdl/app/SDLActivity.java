@@ -334,9 +334,18 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     private static String mBasePath;
     private Button mSDButton;
     private ControllerOverlay mControllerOverlay;
-    private final Runnable hideRunnable = () -> {
-        if (mLayout != null) mLayout.setVisibility(View.INVISIBLE);
+    private final Runnable hideRunnable = new Runnable() {
+    @Override
+    public void run() {
+            if (DynamicGamepadView.instance != null && DynamicGamepadView.instance.isEditMode) {
+                mUIHandler.postDelayed(this, 2000);
+                return;
+            }
+           
+            if (mLayout != null) mLayout.setVisibility(View.INVISIBLE);
+        }
     };
+    
     private Handler mUIHandler = new Handler(android.os.Looper.getMainLooper());
 
     // Update this with the directories you wish to check every time for file updates.
