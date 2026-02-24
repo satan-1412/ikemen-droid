@@ -91,7 +91,7 @@ public class DynamicGamepadView extends View {
     public static final int SHAPE_CIRCLE = 0;
     public static final int SHAPE_SQUARE = 1;
 
-    public static class VirtualButton {
+       public static class VirtualButton {
         public String id;
         public float cx, cy, radius;
         public int color, alpha, textColor, shape;
@@ -101,6 +101,9 @@ public class DynamicGamepadView extends View {
         public String customImageUri = ""; 
         public Bitmap skinBitmap = null;
         public boolean isDirectional = false; 
+        
+        // 【新增】存储宏指令序列的列表
+        public List<List<Integer>> macroSteps = new ArrayList<>();
 
         public VirtualButton(String id, float cx, float cy, float radius, int color, int alpha, int textColor, int shape, String keyMapStr, boolean isDir) {
             this.id = id; this.cx = cx; this.cy = cy;
@@ -113,12 +116,24 @@ public class DynamicGamepadView extends View {
 
         public void parseKeyCodes() {
             keyCodes.clear();
+            macroSteps.clear();
             if (keyMapStr == null || keyMapStr.isEmpty()) return;
-            String[] parts = keyMapStr.toUpperCase().split("\\+");
-            for (String p : parts) {
-                int code = mapStringToKeyCode(p.trim());
-                if (code != KeyEvent.KEYCODE_UNKNOWN) keyCodes.add(code);
+            
+            // 【新增】按逗号拆分宏步骤，比如 "DOWN,RIGHT,Z"
+            String[] steps = keyMapStr.toUpperCase().split(",");
+            for (String step : steps) {
+                List<Integer> currentStepCodes = new ArrayList<>();
+                String[] parts = step.split("\\+");
+                for (String p : parts) {
+                    int code = mapStringToKeyCode(p.trim());
+                    if (code != KeyEvent.KEYCODE_UNKNOWN) {
+                        currentStepCodes.add(code);
+                    }
+                }
+                macroSteps.add(currentStepCodes);
             }
+            // 兼容非宏的普通按键
+            if (!macroSteps.isEmpty()) keyCodes.addAll(macroSteps.get(0));
         }
 
         public void loadSkinFromUri(Context context) {
@@ -546,11 +561,19 @@ public class DynamicGamepadView extends View {
                 }).show();
     }
 
-                private void showJoystickSettingsDialog() {
+                    // =====================================
+    // 各类独立设置弹窗
+    // =====================================
+    private void showJoystickSettingsDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
         builder.setTitle("🕹️ 摇杆独立设置");
+        
+        ScrollView scroll = new ScrollView(getContext());
+        scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); 
+        layout.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         layout.setPadding(60, 30, 60, 30);
         
         layout.addView(DynamicGamepadView.this.createTitle("外观与尺寸:"));
@@ -558,66 +581,54 @@ public class DynamicGamepadView extends View {
         final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "摇杆整体大小", (int)joyRadius); 
         sizeBar.setMax(400);
         
-        builder.setView(layout);
+        scroll.addView(layout);
+        builder.setView(scroll);
         builder.setPositiveButton("💾 保存", (dialog, which) -> { 
             joyAlpha = alphaBar.getProgress(); 
             joyRadius = Math.max(50, sizeBar.getProgress()); 
-            saveConfig(); 
-            invalidate(); 
+            saveConfig(); invalidate(); 
         });
         builder.show();
     }
 
     private void showMenuSettingsDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        builder.setTitle("⚙️ 高级设置按键配置");
+        builder.setTitle("⚙️ 高级菜单设置");
+        
+        ScrollView scroll = new ScrollView(getContext());
+        scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); 
+        layout.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         layout.setPadding(60, 30, 60, 30);
         
-        layout.addView(DynamicGamepadView.this.createTitle("按键外观与尺寸:"));
+        layout.addView(DynamicGamepadView.this.createTitle("菜单按钮外观:"));
         final SeekBar alphaBar = DynamicGamepadView.this.createColorBar(layout, "不透明度 (0-255)", menuAlpha);
-        final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "整体缩放大小 (%)", (int)(menuScale * 100)); 
-        sizeBar.setMax(200); // 最大允许放大 2 倍
+        final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "整体缩放 (%)", (int)(menuScale * 100)); 
+        sizeBar.setMax(200); 
         
-        builder.setView(layout);
+        scroll.addView(layout);
+        builder.setView(scroll);
         builder.setPositiveButton("💾 保存", (dialog, which) -> { 
             menuAlpha = alphaBar.getProgress(); 
-            menuScale = Math.max(0.4f, sizeBar.getProgress() / 100f); // 最小缩放到 40%
-            saveConfig(); 
-            invalidate(); 
+            menuScale = Math.max(0.4f, sizeBar.getProgress() / 100f); 
+            saveConfig(); invalidate(); 
         });
         builder.show();
     }
 
-        layout.addView(DynamicGamepadView.this.createTitle("外观与尺寸:"));
-        final SeekBar alphaBar = DynamicGamepadView.this.createColorBar(layout, "摇杆不透明度 (0-255)", joyAlpha);
-        final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "摇杆整体大小", (int)joyRadius); 
-        sizeBar.setMax(400);
-        
-        // 【关键】：这里直接把 layout 塞进去，千万不要有 scroll！
-        builder.setView(layout);
-        
-        builder.setPositiveButton("💾 保存", (dialog, which) -> { 
-            joyAlpha = alphaBar.getProgress(); 
-            joyRadius = Math.max(50, sizeBar.getProgress()); 
-            saveConfig(); 
-            invalidate(); 
-        });
-        builder.show();
-    }
-    
-
-    // 解决输入框白底白字问题的构造器在第1步已经替换，此处略过
-    
-           private void showButtonSettingsDialog(final VirtualButton btn) {
+    private void showButtonSettingsDialog(final VirtualButton btn) {
         currentlyEditingButton = btn;
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
         builder.setTitle("🔧 配置按键: " + btn.id);
 
         ScrollView scroll = new ScrollView(getContext());
+        scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); 
+        layout.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         layout.setPadding(60, 30, 60, 30); 
 
         layout.addView(DynamicGamepadView.this.createTitle("1. 按键屏幕显示名称:"));
@@ -635,10 +646,10 @@ public class DynamicGamepadView extends View {
         ArrayAdapter<String> shapeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, SHAPE_NAMES);
         shapeSpinner.setAdapter(shapeAdapter); shapeSpinner.setSelection(btn.shape); layout.addView(shapeSpinner);
 
-        layout.addView(DynamicGamepadView.this.createTitle("4. 键盘键位映射:"));
-        final EditText inputKey = DynamicGamepadView.this.createEditText("如: Z, UP, Z+X, ENTER", btn.keyMapStr); layout.addView(inputKey);
+        layout.addView(DynamicGamepadView.this.createTitle("4. 键位映射 (组合键用+, 宏用,分隔):"));
+        final EditText inputKey = DynamicGamepadView.this.createEditText("如宏: DOWN,RIGHT,Z", btn.keyMapStr); layout.addView(inputKey);
 
-        layout.addView(DynamicGamepadView.this.createTitle("5. 按键背景色 (HEX代码或RGB色盘):"));
+        layout.addView(DynamicGamepadView.this.createTitle("5. 背景色 (HEX代码/RGB):"));
         final EditText hexInput = DynamicGamepadView.this.createEditText("如: #FF0000", String.format("#%06X", (0xFFFFFF & btn.color))); 
         layout.addView(hexInput);
         
@@ -679,24 +690,36 @@ public class DynamicGamepadView extends View {
         btnClearImage.setOnClickListener(v -> { btn.customImageUri = ""; btn.skinBitmap = null; Toast.makeText(getContext(), "已清除图片皮肤", Toast.LENGTH_SHORT).show(); invalidate(); });
         layout.addView(btnClearImage);
 
-        // 【修复空白的核心逻辑】：必须先把 layout 装进 scroll，再把 scroll 放入 builder
         scroll.addView(layout);
         builder.setView(scroll);
 
-        builder.setPositiveButton("💾 保存", (dialog, which) -> {
-            btn.id = inputName.getText().toString(); btn.textColor = TEXT_COLOR_VALUES[textColorSpinner.getSelectedItemPosition()];
-            btn.shape = shapeSpinner.getSelectedItemPosition(); btn.keyMapStr = inputKey.getText().toString().trim().toUpperCase(); btn.parseKeyCodes();
+                builder.setPositiveButton("💾 保存", (dialog, which) -> {
+            btn.id = inputName.getText().toString(); 
+            btn.textColor = TEXT_COLOR_VALUES[textColorSpinner.getSelectedItemPosition()];
+            btn.shape = shapeSpinner.getSelectedItemPosition(); 
+            btn.keyMapStr = inputKey.getText().toString().trim().toUpperCase(); 
+            btn.parseKeyCodes();
             try { btn.color = Color.parseColor(hexInput.getText().toString().trim()); } 
             catch (Exception e) { btn.color = Color.rgb(redBar.getProgress(), greenBar.getProgress(), blueBar.getProgress()); }
-            btn.alpha = alphaBar.getProgress(); btn.radius = Math.max(40, sizeBar.getProgress());
-            btn.loadSkinFromUri(getContext()); saveConfig(); invalidate();
+            btn.alpha = alphaBar.getProgress(); 
+            // 【修复点】：强制转换为 float
+            btn.radius = Math.max(40f, (float)sizeBar.getProgress());
+            btn.loadSkinFromUri(getContext()); 
+            saveConfig(); 
+            invalidate();
         });
         
         builder.setNegativeButton("🗑️ 删除此键", (dialog, which) -> {
-            new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("⚠️ 确认删除").setMessage("确定要彻底删除按键 [" + btn.id + "] 吗？").setPositiveButton("确定", (d, w) -> { buttons.remove(btn); saveConfig(); invalidate(); }).setNegativeButton("取消", null).show();
+            new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("⚠️ 确认删除")
+                .setMessage("确定要彻底删除按键 [" + btn.id + "] 吗？")
+                .setPositiveButton("确定", (d, w) -> { buttons.remove(btn); saveConfig(); invalidate(); })
+                .setNegativeButton("取消", null)
+                .show();
         });
         builder.show();
     }
+        
         // =====================================
     // 补回被误删的 UI 绘制辅助方法
     // =====================================
