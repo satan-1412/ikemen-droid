@@ -58,6 +58,10 @@ public class DynamicGamepadView extends View {
     private float joyKnobX = 250, joyKnobY = 700;
     private int joyPointerId = -1;
     private boolean isDraggingJoy = false;
+    public float menuX = 20, menuY = 20;
+    public float menuScale = 1.0f;
+    public int menuAlpha = 220;
+    private boolean isDraggingMenu = false; 
 
     private final List<VirtualButton> buttons = new ArrayList<>();
     private final Paint paintBtn = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -70,13 +74,6 @@ public class DynamicGamepadView extends View {
         public boolean isGridSnapMode = false; // 是否开启网格吸附
     private static final int GRID_SIZE = 50; // 网格大小，50像素一个格子，你可以自己调
     private VirtualButton draggedButton = null;
-        // 【新增】高级设置菜单按键的独立属性
-    public float menuX = 20, menuY = 20;
-    public float menuScale = 1.0f;
-    public int menuAlpha = 220;
-    private boolean isDraggingMenu = false;
-
-
     private long downTime;
     private float downX, downY;
 
@@ -346,16 +343,24 @@ public class DynamicGamepadView extends View {
     // 触控引擎
     // =====================================
         @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        int action = event.getActionMasked();
-        int actionIndex = event.getActionIndex(); // 【新增】获取当前正在发生动作的手指索引
+public boolean onTouchEvent(MotionEvent event) {
+    int action = event.getActionMasked();
+    int actionIndex = event.getActionIndex(); 
 
-                // 【核心修改】在编辑模式下，点击菜单键不弹主菜单，而是交给后面去拖动
-        if (action == MotionEvent.ACTION_DOWN && menuButtonRect.contains(event.getX(actionIndex), event.getY(actionIndex))) {
-            if (!isEditMode) { showMainMenu(); return true; }
-        }
+    // 【核心保命代码】：不论在什么模式，只要点到左上角菜单区域，立刻弹出主菜单
+    // 删掉之前的 if (!isEditMode) 判断，让它变成“强行弹出”
+    if (action == MotionEvent.ACTION_DOWN && menuButtonRect.contains(event.getX(actionIndex), event.getY(actionIndex))) {
+        showMainMenu(); // <--- 只要这个在，你就永远能退出编辑模式
+        return true; 
+    }
 
-        if (isEditMode) { handleEditTouch(event); return true; }
+    // 如果不是点菜单，才进入编辑模式的拖拽逻辑
+    if (isEditMode) { 
+        handleEditTouch(event); 
+        return true; 
+    }
+    
+
         
 
         // --- 摇杆逻辑保持不变 ---
@@ -440,17 +445,23 @@ public class DynamicGamepadView extends View {
         }
     }
 
-            private void handleEditTouch(MotionEvent event) {
+                private void handleEditTouch(MotionEvent event) {
         int action = event.getActionMasked();
         float x = event.getX(0), y = event.getY(0);
+        
+        // 自动计算网格坐标
+        float targetX = isGridSnapMode ? Math.round(x / GRID_SIZE) * GRID_SIZE : x;
+        float targetY = isGridSnapMode ? Math.round(y / GRID_SIZE) * GRID_SIZE : y;
+
         switch (action) {
             case MotionEvent.ACTION_DOWN:
                 downTime = System.currentTimeMillis(); downX = x; downY = y;
-                isDraggingJoy = false; isDraggingMenu = false; draggedButton = null;
+                isDraggingJoy = false; draggedButton = null;
                 
-                if (menuButtonRect.contains(x, y)) { isDraggingMenu = true; } 
-                else if (joystickMode > 0 && Math.hypot(x - joyBaseX, y - joyBaseY) < joyRadius) { isDraggingJoy = true; } 
-                else {
+                // 排除菜单，只判断摇杆和按键
+                if (joystickMode > 0 && Math.hypot(x - joyBaseX, y - joyBaseY) < joyRadius) { 
+                    isDraggingJoy = true; 
+                } else {
                     for (int i = buttons.size() - 1; i >= 0; i--) {
                         if (Math.hypot(x - buttons.get(i).cx, y - buttons.get(i).cy) < buttons.get(i).radius * 1.3f) {
                             draggedButton = buttons.get(i); break;
@@ -458,26 +469,31 @@ public class DynamicGamepadView extends View {
                     }
                 }
                 break;
+
             case MotionEvent.ACTION_MOVE:
-                float targetX = x; float targetY = y;
-                if (isGridSnapMode) {
-                    targetX = Math.round(x / GRID_SIZE) * GRID_SIZE;
-                    targetY = Math.round(y / GRID_SIZE) * GRID_SIZE;
+                if (isDraggingJoy) { 
+                    joyBaseX = targetX; joyBaseY = targetY; joyKnobX = targetX; joyKnobY = targetY; 
+                    invalidate(); 
+                } else if (draggedButton != null) { 
+                    draggedButton.cx = targetX; draggedButton.cy = targetY; 
+                    invalidate(); 
                 }
-                if (isDraggingMenu) { menuX = targetX - (menuButtonRect.width()/2f); menuY = targetY - (menuButtonRect.height()/2f); invalidate(); }
-                else if (isDraggingJoy) { joyBaseX = targetX; joyBaseY = targetY; joyKnobX = targetX; joyKnobY = targetY; invalidate(); } 
-                else if (draggedButton != null) { draggedButton.cx = targetX; draggedButton.cy = targetY; invalidate(); }
                 break;
+
             case MotionEvent.ACTION_UP:
+                // 轻触判定：弹出设置弹窗
                 if (System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) {
-                    if (isDraggingMenu) DynamicGamepadView.this.showMenuSettingsDialog(); // 点菜单出菜单设置
-                    else if (isDraggingJoy) DynamicGamepadView.this.showJoystickSettingsDialog(); 
-                    else if (draggedButton != null) DynamicGamepadView.this.showButtonSettingsDialog(draggedButton);
+                    if (isDraggingJoy) {
+                        DynamicGamepadView.this.showJoystickSettingsDialog();
+                    } else if (draggedButton != null) {
+                        DynamicGamepadView.this.showButtonSettingsDialog(draggedButton);
+                    }
                 }
-                isDraggingMenu = false; isDraggingJoy = false; draggedButton = null;
+                isDraggingJoy = false; draggedButton = null;
                 break;
         }
     }
+            
     // =====================================
     // 存档、导入导出与序列化逻辑 (包含二次确认)
     // =====================================
@@ -586,33 +602,6 @@ public class DynamicGamepadView extends View {
         builder.setPositiveButton("💾 保存", (dialog, which) -> { 
             joyAlpha = alphaBar.getProgress(); 
             joyRadius = Math.max(50, sizeBar.getProgress()); 
-            saveConfig(); invalidate(); 
-        });
-        builder.show();
-    }
-
-    private void showMenuSettingsDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        builder.setTitle("⚙️ 高级菜单设置");
-        
-        ScrollView scroll = new ScrollView(getContext());
-        scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        
-        LinearLayout layout = new LinearLayout(getContext()); 
-        layout.setOrientation(LinearLayout.VERTICAL); 
-        layout.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        layout.setPadding(60, 30, 60, 30);
-        
-        layout.addView(DynamicGamepadView.this.createTitle("菜单按钮外观:"));
-        final SeekBar alphaBar = DynamicGamepadView.this.createColorBar(layout, "不透明度 (0-255)", menuAlpha);
-        final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "整体缩放 (%)", (int)(menuScale * 100)); 
-        sizeBar.setMax(200); 
-        
-        scroll.addView(layout);
-        builder.setView(scroll);
-        builder.setPositiveButton("💾 保存", (dialog, which) -> { 
-            menuAlpha = alphaBar.getProgress(); 
-            menuScale = Math.max(0.4f, sizeBar.getProgress() / 100f); 
             saveConfig(); invalidate(); 
         });
         builder.show();
