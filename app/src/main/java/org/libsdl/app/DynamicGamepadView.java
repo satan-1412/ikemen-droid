@@ -70,6 +70,12 @@ public class DynamicGamepadView extends View {
         public boolean isGridSnapMode = false; // 是否开启网格吸附
     private static final int GRID_SIZE = 50; // 网格大小，50像素一个格子，你可以自己调
     private VirtualButton draggedButton = null;
+        // 【新增】高级设置菜单按键的独立属性
+    public float menuX = 20, menuY = 20;
+    public float menuScale = 1.0f;
+    public int menuAlpha = 220;
+    private boolean isDraggingMenu = false;
+
 
     private long downTime;
     private float downX, downY;
@@ -181,14 +187,21 @@ public class DynamicGamepadView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        paintMenu.setColor(Color.argb(220, 20, 20, 25));
-        paintMenu.setShadowLayer(8f, 0, 4f, Color.BLACK);
-        canvas.drawRoundRect(menuButtonRect, 20, 20, paintMenu);
+                // 【新增】动态计算菜单按键的位置和缩放
+        float mw = 230 * menuScale;
+        float mh = 90 * menuScale;
+        menuButtonRect.set(menuX, menuY, menuX + mw, menuY + mh);
+
+        paintMenu.setColor(Color.argb(menuAlpha, 20, 20, 25));
+        paintMenu.setShadowLayer(8f * menuScale, 0, 4f * menuScale, Color.BLACK);
+        canvas.drawRoundRect(menuButtonRect, 20 * menuScale, 20 * menuScale, paintMenu);
         paintText.setColor(Color.WHITE);
-        paintText.setTextSize(38f);
+        paintText.setAlpha(menuAlpha);
+        paintText.setTextSize(38f * menuScale);
         paintText.setShadowLayer(0,0,0,Color.TRANSPARENT);
         paintMenu.clearShadowLayer();
-        canvas.drawText("⚙ 高级设置", menuButtonRect.centerX(), menuButtonRect.centerY() + 12, paintText);
+        canvas.drawText("⚙ 高级设置", menuButtonRect.centerX(), menuButtonRect.centerY() + (12 * menuScale), paintText);
+        
 
                 if (isEditMode) {
             canvas.drawColor(Color.argb(100, 255, 50, 50));
@@ -322,12 +335,13 @@ public class DynamicGamepadView extends View {
         int action = event.getActionMasked();
         int actionIndex = event.getActionIndex(); // 【新增】获取当前正在发生动作的手指索引
 
-        if (action == MotionEvent.ACTION_DOWN && menuButtonRect.contains(event.getX(), event.getY())) {
-            showMainMenu();
-            return true;
+                // 【核心修改】在编辑模式下，点击菜单键不弹主菜单，而是交给后面去拖动
+        if (action == MotionEvent.ACTION_DOWN && menuButtonRect.contains(event.getX(actionIndex), event.getY(actionIndex))) {
+            if (!isEditMode) { showMainMenu(); return true; }
         }
 
         if (isEditMode) { handleEditTouch(event); return true; }
+        
 
         // --- 摇杆逻辑保持不变 ---
         if (joystickMode > 0) {
@@ -411,15 +425,19 @@ public class DynamicGamepadView extends View {
         }
     }
 
-    private void handleEditTouch(MotionEvent event) {
+        private void handleEditTouch(MotionEvent event) {
         int action = event.getActionMasked();
         float x = event.getX(0), y = event.getY(0);
         switch (action) {
             case MotionEvent.ACTION_DOWN:
                 downTime = System.currentTimeMillis(); downX = x; downY = y;
-                isDraggingJoy = false; draggedButton = null;
-                if (joystickMode > 0 && Math.hypot(x - joyBaseX, y - joyBaseY) < joyRadius) { isDraggingJoy = true; } 
-                else {
+                isDraggingJoy = false; isDraggingMenu = false; draggedButton = null;
+                
+                if (menuButtonRect.contains(x, y)) {
+                    isDraggingMenu = true;
+                } else if (joystickMode > 0 && Math.hypot(x - joyBaseX, y - joyBaseY) < joyRadius) { 
+                    isDraggingJoy = true; 
+                } else {
                     for (int i = buttons.size() - 1; i >= 0; i--) {
                         if (Math.hypot(x - buttons.get(i).cx, y - buttons.get(i).cy) < buttons.get(i).radius * 1.3f) {
                             draggedButton = buttons.get(i); break;
@@ -427,120 +445,31 @@ public class DynamicGamepadView extends View {
                     }
                 }
                 break;
-                        case MotionEvent.ACTION_MOVE:
-                float targetX = x;
-                float targetY = y;
-                
-                // 【新增：如果开启了网格模式，对坐标进行取整吸附】
+            case MotionEvent.ACTION_MOVE:
+                float targetX = x; float targetY = y;
                 if (isGridSnapMode) {
                     targetX = Math.round(x / GRID_SIZE) * GRID_SIZE;
                     targetY = Math.round(y / GRID_SIZE) * GRID_SIZE;
                 }
-
-                if (isDraggingJoy) { joyBaseX = targetX; joyBaseY = targetY; joyKnobX = targetX; joyKnobY = targetY; invalidate(); } 
+                if (isDraggingMenu) { menuX = targetX - (menuButtonRect.width()/2f); menuY = targetY - (menuButtonRect.height()/2f); invalidate(); }
+                else if (isDraggingJoy) { joyBaseX = targetX; joyBaseY = targetY; joyKnobX = targetX; joyKnobY = targetY; invalidate(); } 
                 else if (draggedButton != null) { draggedButton.cx = targetX; draggedButton.cy = targetY; invalidate(); }
                 break;
-            
             case MotionEvent.ACTION_UP:
                 if (System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) {
-                    if (isDraggingJoy) showJoystickSettingsDialog(); else if (draggedButton != null) showButtonSettingsDialog(draggedButton);
+                    if (isDraggingMenu) DynamicGamepadView.this.showMenuSettingsDialog();
+                    else if (isDraggingJoy) DynamicGamepadView.this.showJoystickSettingsDialog(); 
+                    else if (draggedButton != null) DynamicGamepadView.this.showButtonSettingsDialog(draggedButton);
                 }
-                isDraggingJoy = false; draggedButton = null;
+                isDraggingMenu = false; isDraggingJoy = false; draggedButton = null;
                 break;
         }
     }
     // =====================================
     // 存档、导入导出与序列化逻辑 (包含二次确认)
     // =====================================
-    private void loadConfig(int slot) {
-        currentSlot = slot;
-        String jsonStr = prefs.getString(KEY_LAYOUT_PREFIX + slot, null);
-        buttons.clear();
-        if (jsonStr != null) {
-            try {
-                JSONArray array = new JSONArray(jsonStr);
-                for (int i = 0; i < array.length(); i++) {
-                    JSONObject obj = array.getJSONObject(i);
-                    VirtualButton btn = new VirtualButton(
-                            obj.getString("id"),
-                            (float) obj.getDouble("cx"), (float) obj.getDouble("cy"), (float) obj.getDouble("radius"),
-                            obj.getInt("color"), obj.getInt("alpha"), 
-                            obj.optInt("textColor", Color.WHITE), 
-                            obj.optInt("shape", SHAPE_CIRCLE), // 读取形状，兼容旧存档默认圆形
-                            obj.getString("keyMapStr"),
-                            obj.optBoolean("isDirectional", false)
-                    );
-                    if (obj.has("customImageUri")) {
-                        btn.customImageUri = obj.getString("customImageUri");
-                        btn.loadSkinFromUri(getContext());
-                    }
-                    buttons.add(btn);
-                }
-                joystickMode = prefs.getInt("JoystickMode_" + slot, 0);
-                joyBaseX = prefs.getFloat("JoyX_" + slot, 250);
-                joyBaseY = prefs.getFloat("JoyY_" + slot, 700);
-                joyRadius = prefs.getFloat("JoyR_" + slot, 180);
-                joyAlpha = prefs.getInt("JoyA_" + slot, 200);
-                isVibrationOn = prefs.getBoolean("Vibration_" + slot, true);
-                
-                joyKnobX = joyBaseX; joyKnobY = joyBaseY;
-                invalidate();
-                return;
-            } catch (Exception e) { e.printStackTrace(); }
-        }
-        
-        // 首次加载或没存档时，恢复默认
-        joystickMode = 0;
-        joyBaseX = 250; joyBaseY = 700; joyRadius = 180; joyAlpha = 200;
-        isVibrationOn = true;
-        loadDefaultLayout();
-        invalidate();
-    }
-
-    private void saveConfig() {
-        try {
-            JSONArray array = new JSONArray();
-            for (VirtualButton b : buttons) {
-                JSONObject obj = new JSONObject();
-                obj.put("id", b.id);
-                obj.put("cx", b.cx);  obj.put("cy", b.cy);
-                obj.put("radius", b.radius);
-                obj.put("color", b.color); obj.put("alpha", b.alpha);
-                obj.put("textColor", b.textColor);
-                obj.put("shape", b.shape); // 保存形状
-                obj.put("keyMapStr", b.keyMapStr);
-                obj.put("customImageUri", b.customImageUri);
-                obj.put("isDirectional", b.isDirectional);
-                array.put(obj);
-            }
-            prefs.edit()
-                 .putString(KEY_LAYOUT_PREFIX + currentSlot, array.toString())
-                 .putInt("JoystickMode_" + currentSlot, joystickMode)
-                 .putFloat("JoyX_" + currentSlot, joyBaseX)
-                 .putFloat("JoyY_" + currentSlot, joyBaseY)
-                 .putFloat("JoyR_" + currentSlot, joyRadius)
-                 .putInt("JoyA_" + currentSlot, joyAlpha)
-                 .putBoolean("Vibration_" + currentSlot, isVibrationOn)
-                 .apply();
-        } catch (Exception e) { e.printStackTrace(); }
-    }
-
-    private void loadDefaultLayout() {
-        buttons.clear();
-        buttons.add(new VirtualButton("UP", 250, 550, 80, Color.DKGRAY, 120, Color.WHITE, SHAPE_CIRCLE, "UP", true));
-        buttons.add(new VirtualButton("DOWN", 250, 850, 80, Color.DKGRAY, 120, Color.WHITE, SHAPE_CIRCLE, "DOWN", true));
-        buttons.add(new VirtualButton("LEFT", 100, 700, 80, Color.DKGRAY, 120, Color.WHITE, SHAPE_CIRCLE, "LEFT", true));
-        buttons.add(new VirtualButton("RIGHT", 400, 700, 80, Color.DKGRAY, 120, Color.WHITE, SHAPE_CIRCLE, "RIGHT", true));
-        
-        buttons.add(new VirtualButton("X", 1600, 600, 90, Color.parseColor("#FFC107"), 150, Color.WHITE, SHAPE_CIRCLE, "A", false));
-        buttons.add(new VirtualButton("Y", 1800, 500, 90, Color.parseColor("#00BCD4"), 150, Color.WHITE, SHAPE_CIRCLE, "S", false));
-        buttons.add(new VirtualButton("Z", 2000, 400, 90, Color.parseColor("#9C27B0"), 150, Color.WHITE, SHAPE_CIRCLE, "D", false));
-        buttons.add(new VirtualButton("A", 1700, 800, 90, Color.parseColor("#F44336"), 150, Color.WHITE, SHAPE_CIRCLE, "Z", false));
-        buttons.add(new VirtualButton("B", 1900, 700, 90, Color.parseColor("#3F51B5"), 150, Color.WHITE, SHAPE_CIRCLE, "X", false));
-        buttons.add(new VirtualButton("C", 2100, 600, 90, Color.parseColor("#4CAF50"), 150, Color.WHITE, SHAPE_CIRCLE, "C", false));
-        
-        buttons.add(new VirtualButton("START", 1100, 150, 60, Color.GRAY, 180, Color.WHITE, SHAPE_CIRCLE, "RETURN", false));
-    }
+    SHAPE_CIRCLE, "RETURN", false));
+    
 
         // 【修改】调用系统自带的文件选择器导出 JSON
     private void exportLayoutToFile() {
@@ -629,6 +558,26 @@ public class DynamicGamepadView extends View {
         layout.setOrientation(LinearLayout.VERTICAL); 
         layout.setPadding(60, 30, 60, 30);
         
+    private void showMenuSettingsDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
+        builder.setTitle("⚙️ 高级设置按键配置");
+        LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(60, 30, 60, 30);
+        
+        layout.addView(DynamicGamepadView.this.createTitle("按键外观与尺寸:"));
+        final SeekBar alphaBar = DynamicGamepadView.this.createColorBar(layout, "不透明度 (0-255)", menuAlpha);
+        final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "整体缩放大小 (%)", (int)(menuScale * 100)); 
+        sizeBar.setMax(200); // 最大允许放大 2 倍
+        
+        builder.setView(layout);
+        builder.setPositiveButton("💾 保存", (dialog, which) -> { 
+            menuAlpha = alphaBar.getProgress(); 
+            menuScale = Math.max(0.4f, sizeBar.getProgress() / 100f); // 最小缩放到 40%
+            saveConfig(); 
+            invalidate(); 
+        });
+        builder.show();
+    }
+
         layout.addView(DynamicGamepadView.this.createTitle("外观与尺寸:"));
         final SeekBar alphaBar = DynamicGamepadView.this.createColorBar(layout, "摇杆不透明度 (0-255)", joyAlpha);
         final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "摇杆整体大小", (int)joyRadius); 
