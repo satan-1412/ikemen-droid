@@ -760,6 +760,127 @@ public class DynamicGamepadView extends View {
     }
 
     // =====================================
+    // 核心持久化逻辑 (补全以下方法以修复编译错误)
+    // =====================================
+
+    /**
+     * 保存当前布局方案到 SharedPreferences
+     */
+    public void saveConfig() {
+        try {
+            SharedPreferences.Editor editor = prefs.edit();
+            JSONArray array = new JSONArray();
+            for (VirtualButton btn : buttons) {
+                JSONObject obj = new JSONObject();
+                obj.put("id", btn.id);
+                obj.put("cx", btn.cx);
+                obj.put("cy", btn.cy);
+                obj.put("radius", btn.radius);
+                obj.put("color", btn.color);
+                obj.put("alpha", btn.alpha);
+                obj.put("textColor", btn.textColor);
+                obj.put("shape", btn.shape);
+                obj.put("keyMap", btn.keyMapStr);
+                obj.put("isDir", btn.isDirectional);
+                obj.put("skin", btn.customImageUri);
+                array.put(obj);
+            }
+            editor.putString(KEY_LAYOUT_PREFIX + currentSlot, array.toString());
+            editor.putInt("JoystickMode_" + currentSlot, joystickMode);
+            editor.putFloat("JoyX_" + currentSlot, joyBaseX);
+            editor.putFloat("JoyY_" + currentSlot, joyBaseY);
+            editor.putFloat("JoyR_" + currentSlot, joyRadius);
+            editor.putInt("JoyA_" + currentSlot, joyAlpha);
+            editor.putBoolean("Vibration_" + currentSlot, isVibrationOn);
+            // 保存菜单位置与缩放
+            editor.putFloat("MenuX", menuX);
+            editor.putFloat("MenuY", menuY);
+            editor.putFloat("MenuScale", menuScale);
+            editor.putInt("MenuAlpha", menuAlpha);
+            editor.apply();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 从存档中读取布局配置
+     */
+    public void loadConfig(int slot) {
+        this.currentSlot = slot;
+        String json = prefs.getString(KEY_LAYOUT_PREFIX + slot, null);
+        
+        // 如果存档不存在，则加载默认布局
+        if (json == null || json.isEmpty()) {
+            loadDefaultLayout();
+            return;
+        }
+
+        try {
+            buttons.clear();
+            JSONArray array = new JSONArray(json);
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject o = array.getJSONObject(i);
+                VirtualButton btn = new VirtualButton(
+                    o.getString("id"), 
+                    (float)o.getDouble("cx"), 
+                    (float)o.getDouble("cy"),
+                    (float)o.getDouble("radius"), 
+                    o.getInt("color"), 
+                    o.getInt("alpha"),
+                    o.getInt("textColor"), 
+                    o.getInt("shape"), 
+                    o.getString("keyMap"),
+                    o.optBoolean("isDir", false)
+                );
+                btn.customImageUri = o.optString("skin", "");
+                btn.loadSkinFromUri(getContext());
+                buttons.add(btn);
+            }
+            
+            // 恢复摇杆与系统设置
+            joystickMode = prefs.getInt("JoystickMode_" + slot, 0);
+            joyBaseX = prefs.getFloat("JoyX_" + slot, 250);
+            joyBaseY = prefs.getFloat("JoyY_" + slot, 700);
+            joyRadius = prefs.getFloat("JoyR_" + slot, 180);
+            joyAlpha = prefs.getInt("JoyA_" + slot, 200);
+            isVibrationOn = prefs.getBoolean("Vibration_" + slot, true);
+            
+            menuX = prefs.getFloat("MenuX", 20);
+            menuY = prefs.getFloat("MenuY", 20);
+            menuScale = prefs.getFloat("MenuScale", 1.0f);
+            menuAlpha = prefs.getInt("MenuAlpha", 220);
+            
+            invalidate();
+        } catch (Exception e) {
+            loadDefaultLayout();
+        }
+    }
+
+    /**
+     * 初始化默认按键布局 (第一次运行或恢复出厂时触发)
+     */
+    private void loadDefaultLayout() {
+        buttons.clear();
+        // 方向键组 (Mugen 默认映射)
+        buttons.add(new VirtualButton("UP", 250, 550, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "UP", true));
+        buttons.add(new VirtualButton("DOWN", 250, 850, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "DOWN", true));
+        buttons.add(new VirtualButton("LEFT", 100, 700, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "LEFT", true));
+        buttons.add(new VirtualButton("RIGHT", 400, 700, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "RIGHT", true));
+        
+        // 动作键组 (A, B, C, X, Y, Z)
+        float rx = 1600, ry = 700; 
+        buttons.add(new VirtualButton("A", rx, ry, 90, Color.parseColor("#4CAF50"), 180, Color.WHITE, SHAPE_CIRCLE, "A", false));
+        buttons.add(new VirtualButton("B", rx + 200, ry - 50, 90, Color.parseColor("#F44336"), 180, Color.WHITE, SHAPE_CIRCLE, "B", false));
+        buttons.add(new VirtualButton("C", rx + 400, ry - 100, 90, Color.parseColor("#2196F3"), 180, Color.WHITE, SHAPE_CIRCLE, "C", false));
+        buttons.add(new VirtualButton("X", rx, ry - 200, 90, Color.parseColor("#8BC34A"), 180, Color.WHITE, SHAPE_CIRCLE, "X", false));
+        buttons.add(new VirtualButton("Y", rx + 200, ry - 250, 90, Color.parseColor("#E91E63"), 180, Color.WHITE, SHAPE_CIRCLE, "Y", false));
+        buttons.add(new VirtualButton("Z", rx + 400, ry - 300, 90, Color.parseColor("#03A9F4"), 180, Color.WHITE, SHAPE_CIRCLE, "Z", false));
+        
+        // 系统键
+        buttons.add(new VirtualButton("START", 1000, 950, 70, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "RETURN", false));
+    }
+    // =====================================
     // 幽灵 Fragment：接管全部系统文件与相册请求
     // =====================================
     @SuppressWarnings("deprecation")
