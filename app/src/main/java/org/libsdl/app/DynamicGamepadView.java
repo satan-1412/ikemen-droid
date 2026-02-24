@@ -1,5 +1,6 @@
 package org.libsdl.app;
 
+import android.text.Editable;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
@@ -52,9 +53,11 @@ public class DynamicGamepadView extends View {
     public int joystickMode = 0; // 0=十字, 1=圆盘, 2=街机
     public boolean isVibrationOn = true;
 
+        public float joyBaseX = 250, joyBaseY = 700;
     public float joyRadius = 180;
     public int joyAlpha = 200;
     public int joyColor = Color.parseColor("#CCCCCC"); // 【新增】摇杆专属颜色
+    
     private float joyKnobX = 250, joyKnobY = 700;
     private int joyPointerId = -1;
     private boolean isDraggingJoy = false;
@@ -1183,7 +1186,8 @@ public boolean onTouchEvent(MotionEvent event) {
                         root.put("joyAlpha", DynamicGamepadView.instance.joyAlpha);
                         root.put("joyColor", DynamicGamepadView.instance.joyColor);
                         root.put("isVibrationOn", DynamicGamepadView.instance.isVibrationOn);
-                        root.put("buttons", new JSONArray(prefs.getString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, "[]")));
+                        root.put("buttons", new JSONArray(DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, "[]")));
+                        
                         root.put("joySkin", DynamicGamepadView.instance.joySkinUri);
 
                         java.io.OutputStream os = getActivity().getContentResolver().openOutputStream(uri);
