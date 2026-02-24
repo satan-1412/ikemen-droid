@@ -622,18 +622,27 @@ public class DynamicGamepadView extends View {
                 }).show();
     }
 
-        private void showJoystickSettingsDialog() {
+            private void showJoystickSettingsDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
         builder.setTitle("🕹️ 摇杆独立设置");
-        LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(60, 30, 60, 30);
+        LinearLayout layout = new LinearLayout(getContext()); 
+        layout.setOrientation(LinearLayout.VERTICAL); 
+        layout.setPadding(60, 30, 60, 30);
         
-        // 【修复点】
         layout.addView(DynamicGamepadView.this.createTitle("外观与尺寸:"));
         final SeekBar alphaBar = DynamicGamepadView.this.createColorBar(layout, "摇杆不透明度 (0-255)", joyAlpha);
-        final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "摇杆整体大小", (int)joyRadius); sizeBar.setMax(400);
+        final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "摇杆整体大小", (int)joyRadius); 
+        sizeBar.setMax(400);
         
-        scroll.addView(layout);
-        builder.setPositiveButton("💾 保存", (dialog, which) -> { joyAlpha = alphaBar.getProgress(); joyRadius = Math.max(50, sizeBar.getProgress()); saveConfig(); invalidate(); });
+        // 【关键】：这里直接把 layout 塞进去，千万不要有 scroll！
+        builder.setView(layout);
+        
+        builder.setPositiveButton("💾 保存", (dialog, which) -> { 
+            joyAlpha = alphaBar.getProgress(); 
+            joyRadius = Math.max(50, sizeBar.getProgress()); 
+            saveConfig(); 
+            invalidate(); 
+        });
         builder.show();
     }
     
