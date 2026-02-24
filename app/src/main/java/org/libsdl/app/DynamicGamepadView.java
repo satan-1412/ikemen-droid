@@ -52,13 +52,20 @@ public class DynamicGamepadView extends View {
     public int joystickMode = 0; // 0=十字, 1=圆盘, 2=街机
     public boolean isVibrationOn = true;
 
-    public float joyBaseX = 250, joyBaseY = 700;
+        public float joyBaseX = 250, joyBaseY = 700;
     public float joyRadius = 180;
     public int joyAlpha = 200;
     private float joyKnobX = 250, joyKnobY = 700;
     private int joyPointerId = -1;
     private boolean isDraggingJoy = false;
+    
+    // 【新增】摇杆专属皮肤变量
+    public String joySkinUri = "";
+    public Bitmap joySkinBitmap = null;
+    public boolean isEditingJoystickSkin = false; 
+
     public float menuX = 20, menuY = 20;
+   
     public float menuScale = 1.0f;
     public int menuAlpha = 220;
     private boolean isDraggingMenu = false; 
@@ -205,15 +212,29 @@ public class DynamicGamepadView extends View {
         if (instance == this) instance = null;
     }
     
-    public void onImagePicked(String uriStr) {
-        if (currentlyEditingButton != null) {
+        public void onImagePicked(String uriStr) {
+        if (isEditingJoystickSkin) {
+            joySkinUri = uriStr;
+            try {
+                Uri uri = Uri.parse(joySkinUri);
+                InputStream is = getContext().getContentResolver().openInputStream(uri);
+                Bitmap raw = BitmapFactory.decodeStream(is);
+                joySkinBitmap = Bitmap.createScaledBitmap(raw, (int)(joyRadius*2), (int)(joyRadius*2), true);
+                if (is != null) is.close();
+            } catch (Exception e) { joySkinBitmap = null; }
+            saveConfig();
+            invalidate();
+            Toast.makeText(getContext(), "摇杆皮肤应用成功！", Toast.LENGTH_SHORT).show();
+            isEditingJoystickSkin = false;
+        } else if (currentlyEditingButton != null) {
             currentlyEditingButton.customImageUri = uriStr;
             currentlyEditingButton.loadSkinFromUri(getContext());
             saveConfig();
             invalidate();
-            Toast.makeText(getContext(), "皮肤应用成功！", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), "按键皮肤应用成功！", Toast.LENGTH_SHORT).show();
         }
     }
+    
 
     // =====================================
     // 渲染引擎
@@ -263,7 +284,7 @@ public class DynamicGamepadView extends View {
         for (VirtualButton btn : buttons) {
             if (joystickMode > 0 && btn.isDirectional) continue;
 
-            int currentAlpha = (btn.isPressed && !isEditMode) ? 255 : btn.alpha;
+            int currentAlpha = isEditMode ? Math.max(120, btn.alpha) : (btn.isPressed ? 255 : btn.alpha);
             tempRect.set(btn.cx - btn.radius, btn.cy - btn.radius, btn.cx + btn.radius, btn.cy + btn.radius);
             
             if (btn.skinBitmap != null) {
@@ -336,7 +357,7 @@ public class DynamicGamepadView extends View {
         } // 循环结束
     }
 
-    @Override
+        @Override
     protected void dispatchDraw(Canvas canvas) {
         super.dispatchDraw(canvas);
         if (joystickMode > 0) drawJoystick(canvas);
@@ -344,33 +365,26 @@ public class DynamicGamepadView extends View {
 
     private void drawJoystick(Canvas canvas) {
         int currentAlpha = isEditMode ? Math.max(100, joyAlpha) : joyAlpha;
-
-        if (joystickMode == 1) {
-            paintBtn.setColor(Color.WHITE);
-            paintBtn.setAlpha((int)(currentAlpha * 0.3f));
+        
+        // 如果设置了皮肤，直接画皮肤
+        if (joySkinBitmap != null) {
+            paintBtn.setAlpha(currentAlpha);
+            tempRect.set(joyBaseX - joyRadius, joyBaseY - joyRadius, joyBaseX + joyRadius, joyBaseY + joyRadius);
+            canvas.drawBitmap(joySkinBitmap, null, tempRect, paintBtn);
+            // 皮肤模式下画个简易摇杆帽表示当前位置
+            paintBtn.setColor(Color.WHITE); paintBtn.setAlpha((int)(currentAlpha * 0.8f));
+            canvas.drawCircle(joyKnobX, joyKnobY, joyRadius * 0.3f, paintBtn);
+        } else if (joystickMode == 1) { // 现代白圆盘
+            paintBtn.setColor(Color.WHITE); paintBtn.setAlpha((int)(currentAlpha * 0.3f));
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius, paintBtn);
             paintBtn.setAlpha(currentAlpha);
             canvas.drawCircle(joyKnobX, joyKnobY, joyRadius * 0.35f, paintBtn);
-        } else if (joystickMode == 2) {
+        } else if (joystickMode == 2) { // 经典街机红杆
             RadialGradient baseGrad = new RadialGradient(joyBaseX, joyBaseY, joyRadius, Color.parseColor("#444444"), Color.parseColor("#111111"), Shader.TileMode.CLAMP);
             paintBtn.setShader(baseGrad); paintBtn.setAlpha((int)(currentAlpha * 0.8f));
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius, paintBtn);
             paintBtn.setShader(null);
             
-        // 【新增】在摇杆底座上绘制 8 向指示刻度
-        if (joystickMode == 1 || joystickMode == 2) {
-            paintBtn.setColor(Color.WHITE);
-            paintBtn.setStrokeWidth(4f);
-            paintBtn.setAlpha((int)(joyAlpha * 0.4f)); // 半透明刻度
-            for (int i = 0; i < 8; i++) {
-                float angle = (float) Math.toRadians(i * 45);
-                float startX = joyBaseX + (float) Math.cos(angle) * (joyRadius * 0.6f);
-                float startY = joyBaseY + (float) Math.sin(angle) * (joyRadius * 0.6f);
-                float endX = joyBaseX + (float) Math.cos(angle) * joyRadius;
-                float endY = joyBaseY + (float) Math.sin(angle) * joyRadius;
-                canvas.drawLine(startX, startY, endX, endY, paintBtn);
-            }
-        }
             paintBtn.setColor(Color.parseColor("#AAAAAA")); paintBtn.setStrokeWidth(25f);
             paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setAlpha(currentAlpha);
             canvas.drawLine(joyBaseX, joyBaseY, joyKnobX, joyKnobY, paintBtn);
@@ -380,16 +394,38 @@ public class DynamicGamepadView extends View {
             paintBtn.setShader(ballGrad); paintBtn.setShadowLayer(15f, 0, 10f, Color.argb(currentAlpha, 0,0,0));
             canvas.drawCircle(joyKnobX, joyKnobY, joyRadius * 0.45f, paintBtn);
             paintBtn.clearShadowLayer(); paintBtn.setShader(null);
+        } else if (joystickMode == 3) { // 8向方向键十字盘
+            paintBtn.setColor(Color.DKGRAY); paintBtn.setAlpha((int)(currentAlpha * 0.6f));
+            canvas.drawCircle(joyBaseX, joyBaseY, joyRadius, paintBtn);
+            paintBtn.setColor(Color.LTGRAY); paintBtn.setAlpha(currentAlpha);
+            // 画个十字架
+            canvas.drawRect(joyBaseX - joyRadius*0.2f, joyBaseY - joyRadius, joyBaseX + joyRadius*0.2f, joyBaseY + joyRadius, paintBtn);
+            canvas.drawRect(joyBaseX - joyRadius, joyBaseY - joyRadius*0.2f, joyBaseX + joyRadius, joyBaseY + joyRadius*0.2f, paintBtn);
+            // 画个摇杆帽
+            paintBtn.setColor(Color.WHITE);
+            canvas.drawCircle(joyKnobX, joyKnobY, joyRadius * 0.25f, paintBtn);
         }
 
-                if (isEditMode) {
+        if (joystickMode > 0 && joystickMode <= 3 && joySkinBitmap == null) {
+            paintBtn.setColor(Color.WHITE); paintBtn.setStrokeWidth(4f); paintBtn.setAlpha((int)(joyAlpha * 0.4f));
+            for (int i = 0; i < 8; i++) {
+                float angle = (float) Math.toRadians(i * 45);
+                float startX = joyBaseX + (float) Math.cos(angle) * (joyRadius * 0.6f);
+                float startY = joyBaseY + (float) Math.sin(angle) * (joyRadius * 0.6f);
+                float endX = joyBaseX + (float) Math.cos(angle) * joyRadius;
+                float endY = joyBaseY + (float) Math.sin(angle) * joyRadius;
+                canvas.drawLine(startX, startY, endX, endY, paintBtn);
+            }
+        }
+
+        if (isEditMode) {
             paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setStrokeWidth(5f); paintBtn.setColor(Color.WHITE); paintBtn.setAlpha(255);
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius + 10, paintBtn);
             paintText.setColor(Color.WHITE); paintText.setTextSize(35f); paintText.setShadowLayer(3f,0,0,Color.BLACK);
             canvas.drawText("摇杆控制区", joyBaseX, joyBaseY - joyRadius - 20, paintText);
             paintBtn.setStyle(Paint.Style.FILL); paintText.clearShadowLayer();
         }
-    } // drawJoystick 方法到这里就结束了
+    }
     // =====================================
     // 触控引擎
     // =====================================
@@ -590,7 +626,7 @@ public boolean onTouchEvent(MotionEvent event) {
                 String modeText = isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键编辑";
         // 【新增】网格模式状态文本
         String gridText = isGridSnapMode ? "🧲 网格吸附：已开启" : "🧲 网格吸附：已关闭 (自由拖动)";
-        String joyText = "🕹️ 摇杆形态: " + (joystickMode==0?"分离十字键":joystickMode==1?"现代白圆盘":"经典街机红杆");
+        String joyText = "🕹️ 摇杆形态: " + (joystickMode==0?"分离十字键":joystickMode==1?"现代白圆盘":joystickMode==2?"经典红杆":"8向十字盘");
         String vibText = "📳 物理震动: " + (isVibrationOn?"已开启":"已关闭");
         
         // 【修改】把网格选项加进数组
@@ -610,7 +646,7 @@ public boolean onTouchEvent(MotionEvent event) {
                         Toast.makeText(getContext(), isGridSnapMode ? "已开启网格吸附" : "已开启自由拖动", Toast.LENGTH_SHORT).show();
                     } 
                     // 后面的序号依次加 1
-                    else if (which == 3) { joystickMode = (joystickMode + 1) % 3; saveConfig(); invalidate(); } 
+                    else if (which == 3) { joystickMode = (joystickMode + 1) % 4; saveConfig(); invalidate(); } 
                     else if (which == 4) { isVibrationOn = !isVibrationOn; saveConfig(); Toast.makeText(getContext(), isVibrationOn ? "震动开启" : "震动关闭", Toast.LENGTH_SHORT).show(); } 
                     else if (which == 5) { showProfileManager(); } 
                     else if (which == 6) {
@@ -639,93 +675,168 @@ public boolean onTouchEvent(MotionEvent event) {
                     // =====================================
     // 各类独立设置弹窗
     // =====================================
+        // 【新增工具方法】用于让设置对话框变成可移动、半透明的悬浮窗
+    private void setupMovableDialog(android.app.Dialog dialog, View dragHandle) {
+        android.view.Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); // 窗体透明
+            window.setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            window.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
+            window.setDimAmount(0f); // 取消黑底遮罩
+            final android.view.WindowManager.LayoutParams params = window.getAttributes();
+            params.x = 50; params.y = 50; // 默认出生在左上角
+            window.setAttributes(params);
+
+            // 监听拖拽条的触摸事件来实现窗口移动
+            dragHandle.setOnTouchListener(new View.OnTouchListener() {
+                float dX, dY;
+                @Override
+                public boolean onTouch(View view, MotionEvent event) {
+                    switch (event.getActionMasked()) {
+                        case MotionEvent.ACTION_DOWN:
+                            dX = event.getRawX() - params.x; dY = event.getRawY() - params.y; return true;
+                        case MotionEvent.ACTION_MOVE:
+                            params.x = (int) (event.getRawX() - dX); params.y = (int) (event.getRawY() - dY);
+                            window.setAttributes(params); return true;
+                    }
+                    return false;
+                }
+            });
+        }
+    }
+
     private void showJoystickSettingsDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        builder.setTitle("🕹️ 摇杆独立设置");
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         
+        LinearLayout rootLayout = new LinearLayout(getContext());
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setBackgroundColor(Color.parseColor("#E6222222")); // 半透明黑灰色背景
+        
+        // 拖拽标题栏
+        TextView dragHandle = new TextView(getContext());
+        dragHandle.setText("✋ 长按此处拖动窗口 | 🕹️ 摇杆独立设置");
+        dragHandle.setBackgroundColor(Color.parseColor("#555555")); dragHandle.setTextColor(Color.WHITE);
+        dragHandle.setPadding(30, 20, 30, 20); dragHandle.setTextSize(16f);
+        rootLayout.addView(dragHandle);
+
         ScrollView scroll = new ScrollView(getContext());
-        scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        
         LinearLayout layout = new LinearLayout(getContext()); 
-        layout.setOrientation(LinearLayout.VERTICAL); 
-        layout.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        layout.setPadding(60, 30, 60, 30);
+        layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(40, 20, 40, 20);
         
-        layout.addView(DynamicGamepadView.this.createTitle("外观与尺寸:"));
-        final SeekBar alphaBar = DynamicGamepadView.this.createColorBar(layout, "摇杆不透明度 (0-255)", joyAlpha);
-        final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "摇杆整体大小", (int)joyRadius); 
-        sizeBar.setMax(400);
-        
-        scroll.addView(layout);
-        builder.setView(scroll);
-        builder.setPositiveButton("💾 保存", (dialog, which) -> { 
-            joyAlpha = alphaBar.getProgress(); 
-            joyRadius = Math.max(50, sizeBar.getProgress()); 
-            saveConfig(); invalidate(); 
+        layout.addView(createTitle("1. 外观与尺寸:"));
+        final SeekBar alphaBar = createColorBar(layout, "不透明度 (0-255)", joyAlpha); 
+        final SeekBar sizeBar = createColorBar(layout, "摇杆整体大小", (int)joyRadius); sizeBar.setMax(400);
+
+        layout.addView(createTitle("2. 摇杆专属自定义图片皮肤:"));
+        Button btnPickImage = new Button(getContext()); btnPickImage.setText("🖼️ 从系统相册选择图片"); btnPickImage.setTextColor(Color.WHITE);
+        btnPickImage.setOnClickListener(v -> {
+            isEditingJoystickSkin = true; currentlyEditingButton = null;
+            android.app.Activity activity = (android.app.Activity) getContext();
+            FileActionFragment fragment = new FileActionFragment();
+            android.os.Bundle args = new android.os.Bundle(); args.putInt("action_type", 0);
+            fragment.setArguments(args); activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
         });
-        builder.show();
+        layout.addView(btnPickImage);
+        
+        Button btnClearImage = new Button(getContext()); btnClearImage.setText("❌ 移除摇杆皮肤"); btnClearImage.setTextColor(Color.WHITE);
+        btnClearImage.setOnClickListener(v -> { joySkinUri = ""; joySkinBitmap = null; Toast.makeText(getContext(), "摇杆皮肤已清除", Toast.LENGTH_SHORT).show(); invalidate(); });
+        layout.addView(btnClearImage);
+
+        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存摇杆设置"); saveBtn.setTextColor(Color.WHITE);
+        saveBtn.setOnClickListener(v -> { joyAlpha = alphaBar.getProgress(); joyRadius = Math.max(50, sizeBar.getProgress()); saveConfig(); invalidate(); dialog.dismiss(); });
+        layout.addView(saveBtn);
+        
+        scroll.addView(layout); rootLayout.addView(scroll);
+        dialog.setContentView(rootLayout); setupMovableDialog(dialog, dragHandle);
+        dialog.show();
     }
 
         private void showButtonSettingsDialog(final VirtualButton btn) {
-        currentlyEditingButton = btn;
-        AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        builder.setTitle("🔧 配置按键: " + btn.id);
+        currentlyEditingButton = btn; isEditingJoystickSkin = false;
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+
+        LinearLayout rootLayout = new LinearLayout(getContext());
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        
+        // 【UI 美化】给悬浮窗加个大厂范儿的暗色圆角背景
+        android.graphics.drawable.GradientDrawable windowBg = new android.graphics.drawable.GradientDrawable();
+        windowBg.setColor(Color.parseColor("#E6222222")); // 90%不透明的深灰色
+        windowBg.setCornerRadius(35f);
+        rootLayout.setBackground(windowBg);
+
+        TextView dragHandle = new TextView(getContext());
+        dragHandle.setText("✋ 按住此处拖拽窗口 | 🔧 配置: " + btn.id);
+        
+        // 【UI 美化】标题栏独立圆角与配色
+        android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
+        titleBg.setColor(Color.parseColor("#333333"));
+        titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
+        dragHandle.setBackground(titleBg);
+        dragHandle.setTextColor(Color.WHITE);
+        dragHandle.setPadding(40, 30, 40, 30); 
+        dragHandle.setTextSize(16f);
+        dragHandle.setTypeface(null, Typeface.BOLD);
+        rootLayout.addView(dragHandle);
 
         ScrollView scroll = new ScrollView(getContext());
-        scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        
         LinearLayout layout = new LinearLayout(getContext()); 
-        layout.setOrientation(LinearLayout.VERTICAL); 
-        layout.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        layout.setPadding(60, 30, 60, 30); 
+        layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
 
-        layout.addView(DynamicGamepadView.this.createTitle("1. 按键屏幕显示名称:"));
-        final EditText inputName = DynamicGamepadView.this.createEditText("", btn.id); layout.addView(inputName);
+        layout.addView(createTitle("1. 按键名称与映射:"));
+        final EditText inputName = createEditText("显示名称 (如: A)", btn.id); layout.addView(inputName);
+        final EditText inputKey = createEditText("映射键值 (如: DOWN,A)", btn.keyMapStr); layout.addView(inputKey);
 
-        layout.addView(DynamicGamepadView.this.createTitle("2. 按键字体颜色:"));
+        layout.addView(createTitle("2. 按键样式:"));
         final Spinner textColorSpinner = new Spinner(getContext());
         ArrayAdapter<String> textAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, TEXT_COLOR_NAMES);
         textColorSpinner.setAdapter(textAdapter);
         for (int i=0; i<TEXT_COLOR_VALUES.length; i++) { if (btn.textColor == TEXT_COLOR_VALUES[i]) { textColorSpinner.setSelection(i); break; } }
         layout.addView(textColorSpinner);
 
-        layout.addView(DynamicGamepadView.this.createTitle("3. 按键物理形状:"));
         final Spinner shapeSpinner = new Spinner(getContext());
         ArrayAdapter<String> shapeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, SHAPE_NAMES);
         shapeSpinner.setAdapter(shapeAdapter); shapeSpinner.setSelection(btn.shape); layout.addView(shapeSpinner);
 
-        layout.addView(DynamicGamepadView.this.createTitle("4. 键位映射 (组合键用+, 宏用,分隔):"));
-        final EditText inputKey = DynamicGamepadView.this.createEditText("如宏: DOWN,RIGHT,Z", btn.keyMapStr); layout.addView(inputKey);
-
-        layout.addView(DynamicGamepadView.this.createTitle("5. 背景色 (HEX代码/RGB):"));
-        final EditText hexInput = DynamicGamepadView.this.createEditText("如: #FF0000", String.format("#%06X", (0xFFFFFF & btn.color))); 
-        layout.addView(hexInput);
+        layout.addView(createTitle("3. 按键颜色 (实时可视化):"));
         
+        // 【核心修复 3】可视化颜色调整块，彻底干掉手动输入 Hex 的 Bug！
         final View colorPreview = new View(getContext());
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150);
-        previewParams.setMargins(0, 10, 0, 30); colorPreview.setLayoutParams(previewParams); colorPreview.setBackgroundColor(btn.color);
+        previewParams.setMargins(0, 10, 0, 30); colorPreview.setLayoutParams(previewParams); 
+        
+        final android.graphics.drawable.GradientDrawable previewBg = new android.graphics.drawable.GradientDrawable();
+        previewBg.setCornerRadius(20f);
+        previewBg.setColor(btn.color);
+        colorPreview.setBackground(previewBg);
         layout.addView(colorPreview);
 
         final int[] rgb = {Color.red(btn.color), Color.green(btn.color), Color.blue(btn.color)};
-        SeekBar redBar = DynamicGamepadView.this.createColorBar(layout, "红 (R)", rgb[0]); 
-        SeekBar greenBar = DynamicGamepadView.this.createColorBar(layout, "绿 (G)", rgb[1]); 
-        SeekBar blueBar = DynamicGamepadView.this.createColorBar(layout, "蓝 (B)", rgb[2]);
+        final SeekBar redBar = createColorBar(layout, "🔴 红色分量 (R)", rgb[0]); 
+        final SeekBar greenBar = createColorBar(layout, "🟢 绿色分量 (G)", rgb[1]); 
+        final SeekBar blueBar = createColorBar(layout, "🔵 蓝色分量 (B)", rgb[2]);
+        
         SeekBar.OnSeekBarChangeListener colorUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                rgb[0] = redBar.getProgress(); rgb[1] = greenBar.getProgress(); rgb[2] = blueBar.getProgress(); colorPreview.setBackgroundColor(Color.rgb(rgb[0], rgb[1], rgb[2]));
+                if(fromUser) {
+                    rgb[0] = redBar.getProgress(); rgb[1] = greenBar.getProgress(); rgb[2] = blueBar.getProgress(); 
+                    int newColor = Color.rgb(rgb[0], rgb[1], rgb[2]);
+                    previewBg.setColor(newColor); // 更新预览块颜色
+                    btn.color = newColor;         // 实时同步给背后的真实按键
+                    invalidate();                 // 刷新屏幕，实现所见即所得！
+                }
             }
             public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
         };
         redBar.setOnSeekBarChangeListener(colorUpdater); greenBar.setOnSeekBarChangeListener(colorUpdater); blueBar.setOnSeekBarChangeListener(colorUpdater);
 
-        layout.addView(createTitle("6. 外观与尺寸:"));
-        final SeekBar alphaBar = createColorBar(layout, "不透明度 (0-255)", btn.alpha); 
+        layout.addView(createTitle("4. 尺寸与隐藏参数:"));
+        final SeekBar alphaBar = createColorBar(layout, "可见透明度 (拉到0为隐藏)", btn.alpha); 
         final SeekBar sizeBar = createColorBar(layout, "视觉大小", (int)btn.radius); sizeBar.setMax(300);
-        
-        layout.addView(createTitle("隐藏判定范围:"));
-        final SeekBar hitboxBar = createColorBar(layout, "触摸判定半径 (黄色虚线)", (int)btn.hitboxRadius); hitboxBar.setMax(400);
+        final SeekBar hitboxBar = createColorBar(layout, "触摸判定范围 (黄线圈)", (int)btn.hitboxRadius); hitboxBar.setMax(400);
 
-        SeekBar.OnSeekBarChangeListener liveUpdater = new SeekBar.OnSeekBarChangeListener() {
+        SeekBar.OnSeekBarChangeListener sizeUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
                 if (fromUser) {
                     if (s == alphaBar) btn.alpha = p;
@@ -736,75 +847,79 @@ public boolean onTouchEvent(MotionEvent event) {
             }
             public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
         };
-        alphaBar.setOnSeekBarChangeListener(liveUpdater);
-        sizeBar.setOnSeekBarChangeListener(liveUpdater);
-        hitboxBar.setOnSeekBarChangeListener(liveUpdater);
+        alphaBar.setOnSeekBarChangeListener(sizeUpdater); sizeBar.setOnSeekBarChangeListener(sizeUpdater); hitboxBar.setOnSeekBarChangeListener(sizeUpdater);
 
-        layout.addView(DynamicGamepadView.this.createTitle("7. 自定义图片皮肤:"));
-        Button btnPickImage = new Button(getContext()); btnPickImage.setText("🖼️ 从系统相册选择图片"); btnPickImage.setTextColor(Color.WHITE);
+        layout.addView(createTitle("5. 自定义图片皮肤:"));
+        LinearLayout skinLayout = new LinearLayout(getContext()); skinLayout.setOrientation(LinearLayout.HORIZONTAL);
+        
+        Button btnPickImage = new Button(getContext()); btnPickImage.setText("🖼️ 选择皮肤"); btnPickImage.setTextColor(Color.WHITE);
+        btnPickImage.setBackgroundColor(Color.parseColor("#4CAF50")); // 质感绿
         btnPickImage.setOnClickListener(v -> {
-            android.app.Activity activity = (android.app.Activity) getContext();
-            FileActionFragment fragment = new FileActionFragment();
-            android.os.Bundle args = new android.os.Bundle();
-            args.putInt("action_type", 0);
-            fragment.setArguments(args);
-            activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
-        });
-        layout.addView(btnPickImage);
+            android.app.Activity activity = (android.app.Activity) getContext(); FileActionFragment fragment = new FileActionFragment();
+            android.os.Bundle args = new android.os.Bundle(); args.putInt("action_type", 0);
+            fragment.setArguments(args); activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
+        }); skinLayout.addView(btnPickImage);
+        
+        Button btnClearImage = new Button(getContext()); btnClearImage.setText("❌ 移除皮肤"); btnClearImage.setTextColor(Color.WHITE);
+        btnClearImage.setBackgroundColor(Color.parseColor("#F44336")); // 质感红
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnParams.setMargins(20, 0, 0, 0); btnClearImage.setLayoutParams(btnParams);
+        btnClearImage.setOnClickListener(v -> { btn.customImageUri = ""; btn.skinBitmap = null; Toast.makeText(getContext(), "已恢复默认材质", Toast.LENGTH_SHORT).show(); invalidate(); });
+        skinLayout.addView(btnClearImage);
+        layout.addView(skinLayout);
 
-        Button btnClearImage = new Button(getContext()); btnClearImage.setText("❌ 移除图片，恢复纯色/形状"); btnClearImage.setTextColor(Color.WHITE);
-        btnClearImage.setOnClickListener(v -> { btn.customImageUri = ""; btn.skinBitmap = null; Toast.makeText(getContext(), "已清除图片皮肤", Toast.LENGTH_SHORT).show(); invalidate(); });
-        layout.addView(btnClearImage);
-
-        scroll.addView(layout);
-        builder.setView(scroll);
-
-        builder.setPositiveButton("💾 保存设置", (dialog, which) -> {
-            btn.id = inputName.getText().toString(); 
-            btn.textColor = TEXT_COLOR_VALUES[textColorSpinner.getSelectedItemPosition()];
-            btn.shape = shapeSpinner.getSelectedItemPosition(); 
-            btn.keyMapStr = inputKey.getText().toString().trim().toUpperCase(); 
+        // 底部操作按钮组
+        LinearLayout bottomButtons = new LinearLayout(getContext()); bottomButtons.setOrientation(LinearLayout.HORIZONTAL);
+        bottomButtons.setPadding(0, 50, 0, 0);
+        
+        Button deleteBtn = new Button(getContext()); deleteBtn.setText("🗑️ 删除按键"); deleteBtn.setTextColor(Color.WHITE);
+        deleteBtn.setBackgroundColor(Color.parseColor("#D32F2F")); // 警告红
+        deleteBtn.setOnClickListener(v -> { buttons.remove(btn); saveConfig(); invalidate(); dialog.dismiss(); });
+        bottomButtons.addView(deleteBtn);
+        
+        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存修改并退出"); saveBtn.setTextColor(Color.WHITE);
+        saveBtn.setBackgroundColor(Color.parseColor("#1976D2")); // 科技蓝
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        saveParams.setMargins(20, 0, 0, 0); saveBtn.setLayoutParams(saveParams);
+        saveBtn.setOnClickListener(v -> {
+            btn.id = inputName.getText().toString(); btn.textColor = TEXT_COLOR_VALUES[textColorSpinner.getSelectedItemPosition()];
+            btn.shape = shapeSpinner.getSelectedItemPosition(); btn.keyMapStr = inputKey.getText().toString().trim().toUpperCase(); 
             btn.parseKeyCodes();
-            try { btn.color = Color.parseColor(hexInput.getText().toString().trim()); } 
-            catch (Exception e) { btn.color = Color.rgb(redBar.getProgress(), greenBar.getProgress(), blueBar.getProgress()); }
-            saveConfig(); 
-            invalidate();
+            // 因为颜色、透明度在拖动时已经实时修改了，这里直接保存即可，再也不会出现输入错导致变回红色的问题！
+            saveConfig(); invalidate(); dialog.dismiss();
         });
-        
-        builder.setNegativeButton("🗑️ 删除此键", (dialog, which) -> {
-            new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle("⚠️ 确认删除")
-                .setMessage("确定要彻底删除按键 [" + btn.id + "] 吗？")
-                .setPositiveButton("确定", (d, w) -> { buttons.remove(btn); saveConfig(); invalidate(); })
-                .setNegativeButton("取消", null)
-                .show();
-        });
+        bottomButtons.addView(saveBtn);
+        layout.addView(bottomButtons);
 
-        // 【修复】统一在最后生成和展示悬浮窗
-        android.app.AlertDialog dialog = builder.create();
-        android.view.Window window = dialog.getWindow();
-        if (window != null) {
-            window.setDimAmount(0f); // 移除背景黑底遮罩
-            window.setGravity(android.view.Gravity.BOTTOM | android.view.Gravity.START);
-        }
+        scroll.addView(layout); rootLayout.addView(scroll);
+        dialog.setContentView(rootLayout); setupMovableDialog(dialog, dragHandle);
         dialog.show();
-    }
-        
+    }        
         // =====================================
     // 补回被误删的 UI 绘制辅助方法
     // =====================================
 
-    private EditText createEditText(String hint, String text) {
+        private EditText createEditText(String hint, String text) {
         EditText et = new EditText(getContext());
         et.setHint(hint);
         et.setText(text);
-        et.setTextColor(Color.BLACK); // 输入框内必须黑字
+        et.setTextColor(Color.BLACK); 
         et.setHintTextColor(Color.GRAY);
-        et.setBackgroundColor(Color.WHITE); // 强制白色背景，黑白分明防瞎眼
-        et.setPadding(20, 20, 20, 20);
+        
+        // 【UI 美化】给输入框加个圆角白底边框
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(Color.WHITE);
+        bg.setCornerRadius(15f);
+        bg.setStroke(3, Color.parseColor("#999999"));
+        et.setBackground(bg);
+        
+        et.setPadding(30, 30, 30, 30);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 10, 0, 20);
+        et.setLayoutParams(params);
         return et;
     }
-
+    
     private TextView createTitle(String text) {
         TextView tv = new TextView(getContext());
         tv.setText(text);
@@ -828,6 +943,7 @@ public boolean onTouchEvent(MotionEvent event) {
         parent.addView(sb);
         return sb;
     }
+
 
     // =====================================
     // 核心持久化逻辑 (补全以下方法以修复编译错误)
@@ -862,6 +978,7 @@ public boolean onTouchEvent(MotionEvent event) {
             editor.putFloat("JoyY_" + currentSlot, joyBaseY);
             editor.putFloat("JoyR_" + currentSlot, joyRadius);
             editor.putInt("JoyA_" + currentSlot, joyAlpha);
+            editor.putString("JoySkin_" + currentSlot, joySkinUri);
             editor.putBoolean("Vibration_" + currentSlot, isVibrationOn);
             // 保存菜单位置与缩放
             editor.putFloat("MenuX", menuX);
@@ -877,69 +994,62 @@ public boolean onTouchEvent(MotionEvent event) {
     /**
      * 从存档中读取布局配置
      */
-        public void loadConfig(int slot) {
+            public void loadConfig(int slot) {
         this.currentSlot = slot;
         String json = prefs.getString(KEY_LAYOUT_PREFIX + slot, null);
-        
-        if (json == null || json.isEmpty()) {
-            loadDefaultLayout();
-            return;
-        }
-
+        if (json == null || json.isEmpty()) { loadDefaultLayout(); return; }
         try {
             buttons.clear();
             JSONArray array = new JSONArray(json);
             for (int i = 0; i < array.length(); i++) {
                 JSONObject o = array.getJSONObject(i);
-                VirtualButton btn = new VirtualButton(
-                    o.optString("id", "Btn"), 
-                    (float)o.optDouble("cx", 500), 
-                    (float)o.optDouble("cy", 500),
-                    (float)o.optDouble("radius", 80), 
-                    o.optInt("color", Color.GRAY), 
-                    o.optInt("alpha", 150),
-                    o.optInt("textColor", Color.WHITE), 
-                    o.optInt("shape", SHAPE_CIRCLE), 
-                    o.optString("keyMap", ""),
-                    o.optBoolean("isDir", false)
-                );
+                VirtualButton btn = new VirtualButton(o.optString("id", "Btn"), (float)o.optDouble("cx", 500), (float)o.optDouble("cy", 500),
+                    (float)o.optDouble("radius", 80), o.optInt("color", Color.GRAY), o.optInt("alpha", 150), o.optInt("textColor", Color.WHITE), 
+                    o.optInt("shape", SHAPE_CIRCLE), o.optString("keyMap", ""), o.optBoolean("isDir", false));
                 btn.hitboxRadius = (float)o.optDouble("hitboxRadius", btn.radius * 1.5f); 
-                btn.customImageUri = o.optString("skin", "");
-                btn.loadSkinFromUri(getContext());
+                btn.customImageUri = o.optString("skin", ""); btn.loadSkinFromUri(getContext());
                 buttons.add(btn);
             }
-            
             joystickMode = prefs.getInt("JoystickMode_" + slot, 0);
-            joyBaseX = prefs.getFloat("JoyX_" + slot, 250);
-            joyBaseY = prefs.getFloat("JoyY_" + slot, 700);
-            joyRadius = prefs.getFloat("JoyR_" + slot, 180);
-            joyAlpha = prefs.getInt("JoyA_" + slot, 200);
+            joyBaseX = prefs.getFloat("JoyX_" + slot, 250); joyBaseY = prefs.getFloat("JoyY_" + slot, 700);
+            joyRadius = prefs.getFloat("JoyR_" + slot, 180); joyAlpha = prefs.getInt("JoyA_" + slot, 200);
             isVibrationOn = prefs.getBoolean("Vibration_" + slot, true);
+            joySkinUri = prefs.getString("JoySkin_" + slot, "");
             
-            menuX = prefs.getFloat("MenuX", 20);
-            menuY = prefs.getFloat("MenuY", 20);
-            menuScale = prefs.getFloat("MenuScale", 1.0f);
-            menuAlpha = prefs.getInt("MenuAlpha", 220);
+            // 【核心修复】重新加载时，强制将摇杆帽吸附回底座中心！
+                        // 【核心修复】重新加载时，强制将摇杆帽吸附回底座中心！
+            joyKnobX = joyBaseX; joyKnobY = joyBaseY;
             
-            invalidate();
-        } catch (Exception e) {
-            loadDefaultLayout();
-        }
-    }
-    
+            // 【修正】启动时静默加载摇杆皮肤，避免状态冲突
+            if (!joySkinUri.isEmpty()) {
+                try {
+                    Uri uri = Uri.parse(joySkinUri);
+                    InputStream is = getContext().getContentResolver().openInputStream(uri);
+                    Bitmap raw = BitmapFactory.decodeStream(is);
+                    joySkinBitmap = Bitmap.createScaledBitmap(raw, (int)(joyRadius*2), (int)(joyRadius*2), true);
+                    if (is != null) is.close();
+                } catch (Exception e) { joySkinBitmap = null; }
+            } else { 
+                joySkinBitmap = null; 
+            }
 
-    /**
-     * 初始化默认按键布局 (第一次运行或恢复出厂时触发)
-     */
+            menuX = prefs.getFloat("MenuX", 20); menuY = prefs.getFloat("MenuY", 20);
+            menuScale = prefs.getFloat("MenuScale", 1.0f); menuAlpha = prefs.getInt("MenuAlpha", 220);
+            invalidate();
+        } catch (Exception e) { loadDefaultLayout(); }
+    }
+
     private void loadDefaultLayout() {
         buttons.clear();
-        // 方向键组 (Mugen 默认映射)
+        // 【核心修复】恢复默认时，把摇杆彻底重置到初始状态
+        joystickMode = 0;
+        joyBaseX = 250; joyBaseY = 700; joyKnobX = 250; joyKnobY = 700;
+        joyRadius = 180; joyAlpha = 200; joySkinUri = ""; joySkinBitmap = null;
+        
         buttons.add(new VirtualButton("UP", 250, 550, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "UP", true));
         buttons.add(new VirtualButton("DOWN", 250, 850, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "DOWN", true));
         buttons.add(new VirtualButton("LEFT", 100, 700, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "LEFT", true));
         buttons.add(new VirtualButton("RIGHT", 400, 700, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "RIGHT", true));
-        
-        // 动作键组 (A, B, C, X, Y, Z)
         float rx = 1600, ry = 700; 
         buttons.add(new VirtualButton("A", rx, ry, 90, Color.parseColor("#4CAF50"), 180, Color.WHITE, SHAPE_CIRCLE, "A", false));
         buttons.add(new VirtualButton("B", rx + 200, ry - 50, 90, Color.parseColor("#F44336"), 180, Color.WHITE, SHAPE_CIRCLE, "B", false));
@@ -947,10 +1057,9 @@ public boolean onTouchEvent(MotionEvent event) {
         buttons.add(new VirtualButton("X", rx, ry - 200, 90, Color.parseColor("#8BC34A"), 180, Color.WHITE, SHAPE_CIRCLE, "X", false));
         buttons.add(new VirtualButton("Y", rx + 200, ry - 250, 90, Color.parseColor("#E91E63"), 180, Color.WHITE, SHAPE_CIRCLE, "Y", false));
         buttons.add(new VirtualButton("Z", rx + 400, ry - 300, 90, Color.parseColor("#03A9F4"), 180, Color.WHITE, SHAPE_CIRCLE, "Z", false));
-        
-        // 系统键
         buttons.add(new VirtualButton("START", 1000, 950, 70, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "RETURN", false));
     }
+        
     // =====================================
     // 幽灵 Fragment：接管全部系统文件与相册请求
     // =====================================
@@ -996,6 +1105,8 @@ public boolean onTouchEvent(MotionEvent event) {
                         root.put("joyRadius", DynamicGamepadView.instance.joyRadius); root.put("joyAlpha", DynamicGamepadView.instance.joyAlpha);
                         root.put("isVibrationOn", DynamicGamepadView.instance.isVibrationOn);
                         root.put("buttons", new JSONArray(jsonData));
+                        root.put("joySkin", DynamicGamepadView.instance.joySkinUri);
+
                         
                         java.io.OutputStream os = getActivity().getContentResolver().openOutputStream(uri);
                         os.write(root.toString(4).getBytes(StandardCharsets.UTF_8));
@@ -1022,7 +1133,11 @@ public boolean onTouchEvent(MotionEvent event) {
                         editor.putFloat("JoyR_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyRadius", 180));
                         editor.putInt("JoyA_" + DynamicGamepadView.instance.currentSlot, root.optInt("joyAlpha", 200));
                         editor.putBoolean("Vibration_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isVibrationOn", true));
-                        editor.apply(); // 必须先应用保存
+                        // 【修正】写入皮肤存档必须放在 apply() 之前！
+                        editor.putString("JoySkin_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkin", ""));
+                        editor.apply(); // 一次性把上面的数据全部应用保存
+                        
+
                         
                         // 然后再调用读取，摇杆就会瞬间飞到新存档的位置了！
                         DynamicGamepadView.instance.loadConfig(DynamicGamepadView.instance.currentSlot);
