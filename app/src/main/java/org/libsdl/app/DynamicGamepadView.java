@@ -480,7 +480,7 @@ public boolean onTouchEvent(MotionEvent event) {
                 } else if (!btn.macroSteps.isEmpty()) {
                     for (int code : btn.macroSteps.get(0)) SDLActivity.onNativeKeyDown(code); // 瞬间触发同按组合键
                 }
-            } else if (btn.isPressed && !isTouchedNow) {
+                       } else if (btn.isPressed && !isTouchedNow) {
                 btn.isPressed = false;
                 // 只有普通键/组合键需要在这里松开，宏已经在子线程自己松开了
                 if (btn.macroSteps.size() <= 1 && !btn.macroSteps.isEmpty()) {
@@ -488,6 +488,12 @@ public boolean onTouchEvent(MotionEvent event) {
                 }
             }
         }
+        invalidate();   // <--- 【补上这行】刷新屏幕
+        return true;    // <--- 【补上这行】结束触控事件
+    }                   // <--- 【补上这个大括号】把 onTouchEvent 关上
+
+    private void triggerDirection(String dirId, boolean pressed) {
+            
         
     
 
