@@ -88,7 +88,7 @@ public class DynamicGamepadView extends View {
     public static final int SHAPE_CIRCLE = 0;
     public static final int SHAPE_SQUARE = 1;
 
-       public static class VirtualButton {
+           public static class VirtualButton {
         public String id;
         public float cx, cy, radius;
         public int color, alpha, textColor, shape;
@@ -98,16 +98,18 @@ public class DynamicGamepadView extends View {
         public String customImageUri = ""; 
         public Bitmap skinBitmap = null;
         public boolean isDirectional = false; 
-        
-        // 【新增】存储宏指令序列的列表
-        public List<List<Integer>> macroSteps = new ArrayList<>();
+        public float hitboxRadius; // 触摸判定范围
+        public boolean isMacroPlaying = false; // 宏状态标记
+        public List<List<Integer>> macroSteps = new ArrayList<>(); // 存储宏指令序列的列表
 
+        // 【修复】把两个合并成了一个
         public VirtualButton(String id, float cx, float cy, float radius, int color, int alpha, int textColor, int shape, String keyMapStr, boolean isDir) {
             this.id = id; this.cx = cx; this.cy = cy;
             this.radius = radius; this.color = color;
             this.alpha = alpha; this.textColor = textColor;
             this.shape = shape; this.keyMapStr = keyMapStr;
             this.isDirectional = isDir;
+            this.hitboxRadius = radius * 1.5f; // 默认触摸范围比视觉大1.5倍
             parseKeyCodes();
         }
 
@@ -116,7 +118,6 @@ public class DynamicGamepadView extends View {
             macroSteps.clear();
             if (keyMapStr == null || keyMapStr.isEmpty()) return;
             
-            // 【新增】按逗号拆分宏步骤，比如 "DOWN,RIGHT,Z"
             String[] steps = keyMapStr.toUpperCase().split(",");
             for (String step : steps) {
                 List<Integer> currentStepCodes = new ArrayList<>();
@@ -129,7 +130,6 @@ public class DynamicGamepadView extends View {
                 }
                 macroSteps.add(currentStepCodes);
             }
-            // 兼容非宏的普通按键
             if (!macroSteps.isEmpty()) keyCodes.addAll(macroSteps.get(0));
         }
 
@@ -144,8 +144,26 @@ public class DynamicGamepadView extends View {
                 } catch (Exception e) { skinBitmap = null; }
             } else { skinBitmap = null; }
         }
-    }
 
+        // 【修复】确保这个方法在类的大括号里面
+        public void executeMacro() {
+            if (macroSteps.size() <= 1 || isMacroPlaying) return;
+            isMacroPlaying = true;
+            new Thread(() -> {
+                try {
+                    for (List<Integer> stepCodes : macroSteps) {
+                        for (int code : stepCodes) SDLActivity.onNativeKeyDown(code);
+                        Thread.sleep(40);
+                        for (int code : stepCodes) SDLActivity.onNativeKeyUp(code);
+                        Thread.sleep(20);
+                    }
+                } catch (InterruptedException e) { }
+                isMacroPlaying = false;
+            }).start();
+        }
+    }
+       
+    
     private static int mapStringToKeyCode(String k) {
         if (k.equals("UP")) return KeyEvent.KEYCODE_DPAD_UP;
         if (k.equals("DOWN")) return KeyEvent.KEYCODE_DPAD_DOWN;
@@ -154,6 +172,11 @@ public class DynamicGamepadView extends View {
         if (k.equals("ENTER") || k.equals("RETURN")) return KeyEvent.KEYCODE_ENTER;
         if (k.equals("SPACE")) return KeyEvent.KEYCODE_SPACE;
         if (k.equals("ESC") || k.equals("ESCAPE")) return KeyEvent.KEYCODE_ESCAPE;
+        // 【新增】全面兼容 PC 游戏常用的控制键
+        if (k.equals("CTRL")) return KeyEvent.KEYCODE_CTRL_LEFT;
+        if (k.equals("SHIFT")) return KeyEvent.KEYCODE_SHIFT_LEFT;
+        if (k.equals("ALT")) return KeyEvent.KEYCODE_ALT_LEFT;
+        if (k.equals("TAB")) return KeyEvent.KEYCODE_TAB;
         if (k.length() == 1) {
             char c = k.charAt(0);
             if (c >= 'A' && c <= 'Z') return KeyEvent.KEYCODE_A + (c - 'A');
@@ -286,16 +309,31 @@ public class DynamicGamepadView extends View {
             paintText.clearShadowLayer();
             
 
-            if (isEditMode) {
+                        if (isEditMode) {
+                // 原来的白色外框
                 paintBtn.setStyle(Paint.Style.STROKE);
                 paintBtn.setStrokeWidth(4f);
                 paintBtn.setColor(Color.WHITE);
                 paintBtn.setAlpha(255);
                 if (btn.shape == SHAPE_CIRCLE) canvas.drawCircle(btn.cx, btn.cy, btn.radius + 6, paintBtn);
                 else canvas.drawRoundRect(btn.cx - btn.radius - 6, btn.cy - btn.radius - 6, btn.cx + btn.radius + 6, btn.cy + btn.radius + 6, btn.radius*0.3f, btn.radius*0.3f, paintBtn);
+                
+                // 【修复】这才是绘制黄色虚线判定圈的正确位置！
+                Paint dashPaint = new Paint();
+                dashPaint.setStyle(Paint.Style.STROKE);
+                dashPaint.setStrokeWidth(3f);
+                dashPaint.setColor(Color.YELLOW);
+                dashPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{10f, 10f}, 0));
+                
+                if (btn.shape == SHAPE_CIRCLE) {
+                    canvas.drawCircle(btn.cx, btn.cy, btn.hitboxRadius, dashPaint);
+                } else {
+                    canvas.drawRoundRect(btn.cx - btn.hitboxRadius, btn.cy - btn.hitboxRadius, 
+                                         btn.cx + btn.hitboxRadius, btn.cy + btn.hitboxRadius, btn.radius*0.3f, btn.radius*0.3f, dashPaint);
+                }
                 paintBtn.setStyle(Paint.Style.FILL);
             }
-        }
+        } // 循环结束
     }
 
     @Override
@@ -319,6 +357,20 @@ public class DynamicGamepadView extends View {
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius, paintBtn);
             paintBtn.setShader(null);
             
+        // 【新增】在摇杆底座上绘制 8 向指示刻度
+        if (joystickMode == 1 || joystickMode == 2) {
+            paintBtn.setColor(Color.WHITE);
+            paintBtn.setStrokeWidth(4f);
+            paintBtn.setAlpha((int)(joyAlpha * 0.4f)); // 半透明刻度
+            for (int i = 0; i < 8; i++) {
+                float angle = (float) Math.toRadians(i * 45);
+                float startX = joyBaseX + (float) Math.cos(angle) * (joyRadius * 0.6f);
+                float startY = joyBaseY + (float) Math.sin(angle) * (joyRadius * 0.6f);
+                float endX = joyBaseX + (float) Math.cos(angle) * joyRadius;
+                float endY = joyBaseY + (float) Math.sin(angle) * joyRadius;
+                canvas.drawLine(startX, startY, endX, endY, paintBtn);
+            }
+        }
             paintBtn.setColor(Color.parseColor("#AAAAAA")); paintBtn.setStrokeWidth(25f);
             paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setAlpha(currentAlpha);
             canvas.drawLine(joyBaseX, joyBaseY, joyKnobX, joyKnobY, paintBtn);
@@ -330,15 +382,14 @@ public class DynamicGamepadView extends View {
             paintBtn.clearShadowLayer(); paintBtn.setShader(null);
         }
 
-        if (isEditMode) {
+                if (isEditMode) {
             paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setStrokeWidth(5f); paintBtn.setColor(Color.WHITE); paintBtn.setAlpha(255);
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius + 10, paintBtn);
             paintText.setColor(Color.WHITE); paintText.setTextSize(35f); paintText.setShadowLayer(3f,0,0,Color.BLACK);
             canvas.drawText("摇杆控制区", joyBaseX, joyBaseY - joyRadius - 20, paintText);
             paintBtn.setStyle(Paint.Style.FILL); paintText.clearShadowLayer();
         }
-    }
-
+    } // drawJoystick 方法到这里就结束了
     // =====================================
     // 触控引擎
     // =====================================
@@ -403,36 +454,41 @@ public boolean onTouchEvent(MotionEvent event) {
         }
 
         // --- 【核心修复】全局防卡键扫描 ---
-        for (VirtualButton btn : buttons) {
+                for (VirtualButton btn : buttons) {
             if (joystickMode > 0 && btn.isDirectional) continue;
             boolean isTouchedNow = false;
             for (int i = 0; i < event.getPointerCount(); i++) {
                 if (event.getPointerId(i) == joyPointerId) continue;
-                
-                // 【绝杀Bug代码】如果这个手指当前正在抬起（离开屏幕），直接无视它！确保能瞬间触发按键松开
-                if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_CANCEL) && i == actionIndex) {
-                    continue;
-                }
+                if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_CANCEL) && i == actionIndex) continue;
 
                 float px = event.getX(i), py = event.getY(i);
+                // 【修改】使用 hitboxRadius 替代 radius 进行碰撞检测，扩大触摸范围
                 if (btn.shape == SHAPE_CIRCLE) {
-                    if (Math.hypot(px - btn.cx, py - btn.cy) < btn.radius) isTouchedNow = true;
+                    if (Math.hypot(px - btn.cx, py - btn.cy) < btn.hitboxRadius) isTouchedNow = true;
                 } else {
-                    if (px > btn.cx - btn.radius && px < btn.cx + btn.radius && py > btn.cy - btn.radius && py < btn.cy + btn.radius) isTouchedNow = true;
+                    if (px > btn.cx - btn.hitboxRadius && px < btn.cx + btn.hitboxRadius && py > btn.cy - btn.hitboxRadius && py < btn.cy + btn.hitboxRadius) isTouchedNow = true;
                 }
             }
             
+            // 【修改】区分触发：多步的是宏，单步的是普通组合键
             if (!btn.isPressed && isTouchedNow) {
                 btn.isPressed = true;
                 if (isVibrationOn) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                for (int code : btn.keyCodes) SDLActivity.onNativeKeyDown(code);
+                
+                if (btn.macroSteps.size() > 1) {
+                    btn.executeMacro(); // 触发一键连招
+                } else if (!btn.macroSteps.isEmpty()) {
+                    for (int code : btn.macroSteps.get(0)) SDLActivity.onNativeKeyDown(code); // 瞬间触发同按组合键
+                }
             } else if (btn.isPressed && !isTouchedNow) {
                 btn.isPressed = false;
-                for (int code : btn.keyCodes) SDLActivity.onNativeKeyUp(code);
+                // 只有普通键/组合键需要在这里松开，宏已经在子线程自己松开了
+                if (btn.macroSteps.size() <= 1 && !btn.macroSteps.isEmpty()) {
+                    for (int code : btn.macroSteps.get(0)) SDLActivity.onNativeKeyUp(code);
+                }
             }
         }
-        invalidate(); return true;
-    }
+        
     
 
     private void triggerDirection(String dirId, boolean pressed) {
@@ -607,7 +663,7 @@ public boolean onTouchEvent(MotionEvent event) {
         builder.show();
     }
 
-    private void showButtonSettingsDialog(final VirtualButton btn) {
+        private void showButtonSettingsDialog(final VirtualButton btn) {
         currentlyEditingButton = btn;
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
         builder.setTitle("🔧 配置按键: " + btn.id);
@@ -659,9 +715,27 @@ public boolean onTouchEvent(MotionEvent event) {
         };
         redBar.setOnSeekBarChangeListener(colorUpdater); greenBar.setOnSeekBarChangeListener(colorUpdater); blueBar.setOnSeekBarChangeListener(colorUpdater);
 
-        layout.addView(DynamicGamepadView.this.createTitle("6. 外观与尺寸:"));
-        final SeekBar alphaBar = DynamicGamepadView.this.createColorBar(layout, "不透明度 (0-255)", btn.alpha); 
-        final SeekBar sizeBar = DynamicGamepadView.this.createColorBar(layout, "按键大小", (int)btn.radius); sizeBar.setMax(300);
+        layout.addView(createTitle("6. 外观与尺寸:"));
+        final SeekBar alphaBar = createColorBar(layout, "不透明度 (0-255)", btn.alpha); 
+        final SeekBar sizeBar = createColorBar(layout, "视觉大小", (int)btn.radius); sizeBar.setMax(300);
+        
+        layout.addView(createTitle("隐藏判定范围:"));
+        final SeekBar hitboxBar = createColorBar(layout, "触摸判定半径 (黄色虚线)", (int)btn.hitboxRadius); hitboxBar.setMax(400);
+
+        SeekBar.OnSeekBarChangeListener liveUpdater = new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                if (fromUser) {
+                    if (s == alphaBar) btn.alpha = p;
+                    else if (s == sizeBar) btn.radius = Math.max(40f, p);
+                    else if (s == hitboxBar) btn.hitboxRadius = Math.max(btn.radius, p);
+                    invalidate();
+                }
+            }
+            public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
+        };
+        alphaBar.setOnSeekBarChangeListener(liveUpdater);
+        sizeBar.setOnSeekBarChangeListener(liveUpdater);
+        hitboxBar.setOnSeekBarChangeListener(liveUpdater);
 
         layout.addView(DynamicGamepadView.this.createTitle("7. 自定义图片皮肤:"));
         Button btnPickImage = new Button(getContext()); btnPickImage.setText("🖼️ 从系统相册选择图片"); btnPickImage.setTextColor(Color.WHITE);
@@ -682,7 +756,7 @@ public boolean onTouchEvent(MotionEvent event) {
         scroll.addView(layout);
         builder.setView(scroll);
 
-                builder.setPositiveButton("💾 保存", (dialog, which) -> {
+        builder.setPositiveButton("💾 保存设置", (dialog, which) -> {
             btn.id = inputName.getText().toString(); 
             btn.textColor = TEXT_COLOR_VALUES[textColorSpinner.getSelectedItemPosition()];
             btn.shape = shapeSpinner.getSelectedItemPosition(); 
@@ -690,10 +764,6 @@ public boolean onTouchEvent(MotionEvent event) {
             btn.parseKeyCodes();
             try { btn.color = Color.parseColor(hexInput.getText().toString().trim()); } 
             catch (Exception e) { btn.color = Color.rgb(redBar.getProgress(), greenBar.getProgress(), blueBar.getProgress()); }
-            btn.alpha = alphaBar.getProgress(); 
-            // 【修复点】：强制转换为 float
-            btn.radius = Math.max(40f, (float)sizeBar.getProgress());
-            btn.loadSkinFromUri(getContext()); 
             saveConfig(); 
             invalidate();
         });
@@ -706,7 +776,15 @@ public boolean onTouchEvent(MotionEvent event) {
                 .setNegativeButton("取消", null)
                 .show();
         });
-        builder.show();
+
+        // 【修复】统一在最后生成和展示悬浮窗
+        android.app.AlertDialog dialog = builder.create();
+        android.view.Window window = dialog.getWindow();
+        if (window != null) {
+            window.setDimAmount(0f); // 移除背景黑底遮罩
+            window.setGravity(android.view.Gravity.BOTTOM | android.view.Gravity.START);
+        }
+        dialog.show();
     }
         
         // =====================================
@@ -772,6 +850,7 @@ public boolean onTouchEvent(MotionEvent event) {
                 obj.put("keyMap", btn.keyMapStr);
                 obj.put("isDir", btn.isDirectional);
                 obj.put("skin", btn.customImageUri);
+                obj.put("hitboxRadius", btn.hitboxRadius);
                 array.put(obj);
             }
             editor.putString(KEY_LAYOUT_PREFIX + currentSlot, array.toString());
@@ -795,11 +874,10 @@ public boolean onTouchEvent(MotionEvent event) {
     /**
      * 从存档中读取布局配置
      */
-    public void loadConfig(int slot) {
+        public void loadConfig(int slot) {
         this.currentSlot = slot;
         String json = prefs.getString(KEY_LAYOUT_PREFIX + slot, null);
         
-        // 如果存档不存在，则加载默认布局
         if (json == null || json.isEmpty()) {
             loadDefaultLayout();
             return;
@@ -811,23 +889,23 @@ public boolean onTouchEvent(MotionEvent event) {
             for (int i = 0; i < array.length(); i++) {
                 JSONObject o = array.getJSONObject(i);
                 VirtualButton btn = new VirtualButton(
-                    o.getString("id"), 
-                    (float)o.getDouble("cx"), 
-                    (float)o.getDouble("cy"),
-                    (float)o.getDouble("radius"), 
-                    o.getInt("color"), 
-                    o.getInt("alpha"),
-                    o.getInt("textColor"), 
-                    o.getInt("shape"), 
-                    o.getString("keyMap"),
+                    o.optString("id", "Btn"), 
+                    (float)o.optDouble("cx", 500), 
+                    (float)o.optDouble("cy", 500),
+                    (float)o.optDouble("radius", 80), 
+                    o.optInt("color", Color.GRAY), 
+                    o.optInt("alpha", 150),
+                    o.optInt("textColor", Color.WHITE), 
+                    o.optInt("shape", SHAPE_CIRCLE), 
+                    o.optString("keyMap", ""),
                     o.optBoolean("isDir", false)
                 );
+                btn.hitboxRadius = (float)o.optDouble("hitboxRadius", btn.radius * 1.5f); 
                 btn.customImageUri = o.optString("skin", "");
                 btn.loadSkinFromUri(getContext());
                 buttons.add(btn);
             }
             
-            // 恢复摇杆与系统设置
             joystickMode = prefs.getInt("JoystickMode_" + slot, 0);
             joyBaseX = prefs.getFloat("JoyX_" + slot, 250);
             joyBaseY = prefs.getFloat("JoyY_" + slot, 700);
@@ -845,6 +923,7 @@ public boolean onTouchEvent(MotionEvent event) {
             loadDefaultLayout();
         }
     }
+    
 
     /**
      * 初始化默认按键布局 (第一次运行或恢复出厂时触发)
