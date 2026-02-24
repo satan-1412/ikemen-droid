@@ -492,11 +492,7 @@ public boolean onTouchEvent(MotionEvent event) {
         return true;    // <--- 【补上这行】结束触控事件
     }                   // <--- 【补上这个大括号】把 onTouchEvent 关上
 
-    private void triggerDirection(String dirId, boolean pressed) {
-            
-        
-    
-
+    // 【只保留这一个完整的就行了！】
     private void triggerDirection(String dirId, boolean pressed) {
         for (VirtualButton btn : buttons) {
             if (btn.id.equals(dirId) && btn.isDirectional) {
@@ -506,6 +502,7 @@ public boolean onTouchEvent(MotionEvent event) {
             }
         }
     }
+        
 
                 private void handleEditTouch(MotionEvent event) {
         int action = event.getActionMasked();
