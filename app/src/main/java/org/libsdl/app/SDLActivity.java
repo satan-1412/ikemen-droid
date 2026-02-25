@@ -859,6 +859,7 @@ mLayout.addView(dynamicGamepad, lp);
         }
 
         mHasFocus = hasFocus;
+                mHasFocus = hasFocus;
         if (hasFocus) {
            mNextNativeState = NativeState.RESUMED;
            SDLActivity.getMotionListener().reclaimRelativeMouseModeIfNeeded();
@@ -866,6 +867,8 @@ mLayout.addView(dynamicGamepad, lp);
            SDLActivity.handleNativeState();
            nativeFocusChanged(true);
 
+           if (mFullscreenModeActive) {          getWindow().getDecorView().getHandler().post(rehideSystemUi);
+           }
         } else {
            nativeFocusChanged(false);
            if (!mHasMultiWindow) {
@@ -1116,8 +1119,11 @@ mLayout.addView(dynamicGamepad, lp);
                                 window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
                                 SDLActivity.mFullscreenModeActive = false;
                             }
-                            if (Build.VERSION.SDK_INT >= 28 /* Android 9 (Pie) */) {
-                                window.getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                                    if (Build.VERSION.SDK_INT >= 28 /* Android 9 (Pie) */) {
+            WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            window.setAttributes(attrs);
+        };
                             }
                         }
                     } else {
