@@ -52,6 +52,8 @@ public class DynamicGamepadView extends View {
     public int currentSlot = 0;
     public int joystickMode = 0; // 0=十字, 1=圆盘, 2=街机
     public boolean isVibrationOn = true;
+        public int vibrationIntensity = 30; // 震动强度 (建议0-100，即震动毫秒数)
+
 
        public float joyBaseX = 250, joyBaseY = 700;
     public float joyRadius = 180;
@@ -468,6 +470,21 @@ public class DynamicGamepadView extends View {
             paintBtn.setStyle(Paint.Style.FILL); paintText.clearShadowLayer();
         }
     }
+    
+    private void triggerVibrate() {
+        if (!isVibrationOn || vibrationIntensity <= 0) return;
+        try {
+            android.os.Vibrator v = (android.os.Vibrator) getContext().getSystemService(Context.VIBRATOR_SERVICE);
+            if (v != null && v.hasVibrator()) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    v.vibrate(android.os.VibrationEffect.createOneShot(vibrationIntensity, android.os.VibrationEffect.DEFAULT_AMPLITUDE));
+                } else {
+                    v.vibrate(vibrationIntensity);
+                }
+            }
+        } catch (Exception e) {}
+    }
+
             
     
     // =====================================
@@ -553,7 +570,8 @@ public boolean onTouchEvent(MotionEvent event) {
             // 【修改】区分触发：多步的是宏，单步的是普通组合键
             if (!btn.isPressed && isTouchedNow) {
                 btn.isPressed = true;
-                if (isVibrationOn) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                triggerVibrate();
+                
                 
                 if (btn.macroSteps.size() > 1) {
                     btn.executeMacro(); // 触发一键连招
@@ -671,7 +689,8 @@ public boolean onTouchEvent(MotionEvent event) {
         // 【新增】网格模式状态文本
         String gridText = isGridSnapMode ? "🧲 网格吸附：已开启" : "🧲 网格吸附：已关闭 (自由拖动)";
         String joyText = "🕹️ 摇杆形态: " + (joystickMode==0?"分离十字键":joystickMode==1?"现代白圆盘":joystickMode==2?"经典红杆":"8向十字盘");
-        String vibText = "📳 物理震动: " + (isVibrationOn?"已开启":"已关闭");
+        String vibText = "📳 物理震动开关与强度设置 (" + (isVibrationOn?"开启":"关闭") + ")";
+        
         
         // 【修改】把网格选项加进数组
         CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局"};
@@ -691,7 +710,7 @@ public boolean onTouchEvent(MotionEvent event) {
                     } 
                     // 后面的序号依次加 1
                     else if (which == 3) { joystickMode = (joystickMode + 1) % 4; saveConfig(); invalidate(); } 
-                    else if (which == 4) { isVibrationOn = !isVibrationOn; saveConfig(); Toast.makeText(getContext(), isVibrationOn ? "震动开启" : "震动关闭", Toast.LENGTH_SHORT).show(); } 
+                    else if (which == 4) { showVibrationSettingsDialog(); } 
                     else if (which == 5) { showProfileManager(); } 
                     else if (which == 6) {
                         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
@@ -714,6 +733,58 @@ public boolean onTouchEvent(MotionEvent event) {
                     if (which == 4) { saveConfig(); exportLayoutToFile(); }
                     if (which == 5) { importLayoutFromFile(); }
                 }).show();
+    }
+
+    private void showVibrationSettingsDialog() {
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        
+        LinearLayout layout = new LinearLayout(getContext());
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(60, 60, 60, 60);
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(Color.parseColor("#E6222222")); bg.setCornerRadius(35f);
+        layout.setBackground(bg);
+
+        layout.addView(createTitle("📳 震动功能控制"));
+
+        // 震动总开关
+        final Button toggleBtn = new Button(getContext());
+        toggleBtn.setText(isVibrationOn ? "当前状态：已开启 (点击关闭)" : "当前状态：已关闭 (点击开启)");
+        toggleBtn.setTextColor(Color.WHITE);
+        toggleBtn.setBackgroundColor(isVibrationOn ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
+        toggleBtn.setOnClickListener(v -> {
+            isVibrationOn = !isVibrationOn;
+            toggleBtn.setText(isVibrationOn ? "当前状态：已开启 (点击关闭)" : "当前状态：已关闭 (点击开启)");
+            toggleBtn.setBackgroundColor(isVibrationOn ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
+            if (isVibrationOn) triggerVibrate();
+        });
+        layout.addView(toggleBtn);
+
+        // 震动强度滑动条 (复用刚才修改好的自带输入框的进度条)
+        final SeekBar intensityBar = createColorBar(layout, "震动时长 / 毫秒 (拖动测试)", vibrationIntensity);
+        intensityBar.setMax(100); 
+        intensityBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                vibrationIntensity = Math.max(1, p); // 防止设置为0
+                if ((fromUser || s.hasFocus()) && isVibrationOn) {
+                    triggerVibrate();
+                }
+            }
+            public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
+        });
+
+        Button saveBtn = new Button(getContext());
+        saveBtn.setText("💾 保存并关闭");
+        saveBtn.setTextColor(Color.WHITE);
+        saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnParams.setMargins(0, 40, 0, 0); saveBtn.setLayoutParams(btnParams);
+        saveBtn.setOnClickListener(v -> { saveConfig(); dialog.dismiss(); });
+        layout.addView(saveBtn);
+
+        dialog.setContentView(layout);
+        dialog.show();
     }
 
                     // =====================================
@@ -1054,19 +1125,110 @@ public boolean onTouchEvent(MotionEvent event) {
         return tv;
     }
 
+        // 替换原代码中底部的 createColorBar 方法
     private SeekBar createColorBar(LinearLayout parent, String label, int progress) {
+        // 1. 创建横向容器包裹标题和输入框
+        LinearLayout headerLayout = new LinearLayout(getContext());
+        headerLayout.setOrientation(LinearLayout.HORIZONTAL);
+        headerLayout.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        
         TextView tv = new TextView(getContext());
         tv.setText(label);
-        tv.setTextColor(Color.WHITE); // 滑动条上的文字强制纯白
+        tv.setTextColor(Color.WHITE); 
         tv.setPadding(0, 10, 0, 0);
-        SeekBar sb = new SeekBar(getContext());
+        // 让文本占用剩余的左侧空间
+        LinearLayout.LayoutParams tvParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        tv.setLayoutParams(tvParams);
+        
+        // 2. 创建数值输入小框
+        final EditText input = new EditText(getContext());
+        input.setText(String.valueOf(progress));
+        input.setTextColor(Color.BLACK);
+        input.setTextSize(14f);
+        input.setPadding(20, 10, 20, 10);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setGravity(android.view.Gravity.CENTER);
+        
+        // UI美化：加个白底圆角边框
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(Color.WHITE);
+        bg.setCornerRadius(15f);
+        input.setBackground(bg);
+        
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(180, ViewGroup.LayoutParams.WRAP_CONTENT);
+        inputParams.setMargins(10, 10, 0, 0);
+        input.setLayoutParams(inputParams);
+        
+        headerLayout.addView(tv);
+        headerLayout.addView(input);
+        parent.addView(headerLayout);
+        
+        // 3. 使用匿名内部类重写 SeekBar 的事件，实现“隐形”双向绑定
+        final SeekBar sb = new SeekBar(getContext()) {
+            private OnSeekBarChangeListener extListener;
+            
+            @Override
+            public void setOnSeekBarChangeListener(OnSeekBarChangeListener l) {
+                // 拦截外部原本要挂载的监听器
+                this.extListener = l;
+            }
+            
+            {
+                // 自己内部先处理一遍数据同步
+                super.setOnSeekBarChangeListener(new OnSeekBarChangeListener() {
+                    @Override
+                    public void onProgressChanged(SeekBar seekBar, int p, boolean fromUser) {
+                        // 只要不是用户正在手动改数字，就让数字跟着滑块变
+                        if (!input.hasFocus()) {
+                            input.setText(String.valueOf(p));
+                        }
+                        
+                        if (extListener != null) {
+                            // 核心判定：不管是拖动滑块(fromUser)，还是直接输入数字(input.hasFocus)，都算作有效修改
+                            boolean isUserAction = fromUser || input.hasFocus();
+                            extListener.onProgressChanged(seekBar, p, isUserAction);
+                        }
+                    }
+
+                    @Override
+                    public void onStartTrackingTouch(SeekBar seekBar) {
+                        if (extListener != null) extListener.onStartTrackingTouch(seekBar);
+                    }
+
+                    @Override
+                    public void onStopTrackingTouch(SeekBar seekBar) {
+                        if (extListener != null) extListener.onStopTrackingTouch(seekBar);
+                    }
+                });
+            }
+        };
+        
         sb.setMax(255);
         sb.setProgress(progress);
-        sb.setPadding(0, 10, 0, 20);
-        parent.addView(tv);
+        sb.setPadding(0, 20, 0, 30);
         parent.addView(sb);
+        
+        // 4. 监听输入框变化，反向驱动滑块
+        input.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void afterTextChanged(Editable s) {
+                if (input.hasFocus()) {
+                    try {
+                        int val = Integer.parseInt(s.toString());
+                        // 如果输入的数值大于滑块当前的上限（比如 300 强制填了 500），自动扩容防止卡死
+                        if (val > sb.getMax()) {
+                            sb.setMax(val); 
+                        }
+                        sb.setProgress(val);
+                    } catch (NumberFormatException e) {}
+                }
+            }
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+        });
+        
         return sb;
     }
+    
 
 
     // =====================================
@@ -1100,6 +1262,7 @@ public boolean onTouchEvent(MotionEvent event) {
             editor.putString("JoySkinBase_" + currentSlot, joySkinBaseUri);
             editor.putString("JoySkinKnob_" + currentSlot, joySkinKnobUri);
             editor.putBoolean("Vibration_" + currentSlot, isVibrationOn);
+            editor.putInt("VibIntensity_" + currentSlot, vibrationIntensity);
             editor.putFloat("MenuX", menuX); editor.putFloat("MenuY", menuY);
             editor.putFloat("MenuScale", menuScale); editor.putInt("MenuAlpha", menuAlpha);
             editor.apply();
@@ -1129,6 +1292,7 @@ public boolean onTouchEvent(MotionEvent event) {
             joyAlpha = prefs.getInt("JoyA_" + slot, 200);
             joyColor = prefs.getInt("JoyColor_" + slot, Color.parseColor("#FF5555"));
             isVibrationOn = prefs.getBoolean("Vibration_" + slot, true);
+            vibrationIntensity = prefs.getInt("VibIntensity_" + slot, 30);
             joySkinBaseUri = prefs.getString("JoySkinBase_" + slot, "");
             joySkinKnobUri = prefs.getString("JoySkinKnob_" + slot, "");
             
@@ -1161,6 +1325,7 @@ public boolean onTouchEvent(MotionEvent event) {
         // 【核心修复】恢复默认时，把摇杆彻底重置到初始状态
         joystickMode = 0;
         isVibrationOn = true; // 补上恢复默认震动
+        vibrationIntensity = 30;
         imagePickerTarget = 0; // 补上清空选图状态
         joyBaseX = 250; joyBaseY = 700; joyKnobX = 250; joyKnobY = 700;
         joyRadius = 180; joyHitboxRadius = 270; joyAlpha = 200; joyColor = Color.parseColor("#FF5555"); 
@@ -1225,6 +1390,7 @@ public boolean onTouchEvent(MotionEvent event) {
                         root.put("joyAlpha", DynamicGamepadView.instance.joyAlpha);
                         root.put("joyColor", DynamicGamepadView.instance.joyColor);
                         root.put("isVibrationOn", DynamicGamepadView.instance.isVibrationOn);
+                        root.put("vibrationIntensity", DynamicGamepadView.instance.vibrationIntensity);
                         root.put("buttons", new JSONArray(DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, "[]")));
                         root.put("joySkinBase", DynamicGamepadView.instance.joySkinBaseUri);
                         root.put("joySkinKnob", DynamicGamepadView.instance.joySkinKnobUri);
@@ -1255,6 +1421,7 @@ public boolean onTouchEvent(MotionEvent event) {
                         editor.putInt("JoyA_" + DynamicGamepadView.instance.currentSlot, root.optInt("joyAlpha", 200));
                         editor.putInt("JoyColor_" + DynamicGamepadView.instance.currentSlot, root.optInt("joyColor", Color.parseColor("#FF5555"))); 
                         editor.putBoolean("Vibration_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isVibrationOn", true));                        
+                        editor.putInt("VibIntensity_" + DynamicGamepadView.instance.currentSlot, root.optInt("vibrationIntensity", 30));
                         editor.putString("JoySkinBase_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinBase", ""));
                         editor.putString("JoySkinKnob_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinKnob", ""));
                         editor.apply(); 
