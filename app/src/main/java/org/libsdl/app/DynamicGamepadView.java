@@ -161,7 +161,7 @@ public class DynamicGamepadView extends View {
         }
 
         // 【修复】确保这个方法在类的大括号里面
-                public void executeMacro() {
+        public void executeMacro() {
             if (macroSteps.size() <= 1 || isMacroPlaying) return;
             isMacroPlaying = true;
             new Thread(() -> {
@@ -176,10 +176,10 @@ public class DynamicGamepadView extends View {
                 isMacroPlaying = false;
             }).start();
         }
-        
+    } // <====== 兄弟，就是少了这一个大括号！！！它是用来把 VirtualButton 这个类关上的！
        
     
-    private static int mapStringToKeyCode(String k) {
+    private static int mapStringToKeyCode(String k) {        
         if (k.equals("UP")) return KeyEvent.KEYCODE_DPAD_UP;
         if (k.equals("DOWN")) return KeyEvent.KEYCODE_DPAD_DOWN;
         if (k.equals("LEFT")) return KeyEvent.KEYCODE_DPAD_LEFT;
