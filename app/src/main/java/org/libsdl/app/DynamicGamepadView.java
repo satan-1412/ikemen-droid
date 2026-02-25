@@ -881,8 +881,9 @@ public boolean onTouchEvent(MotionEvent event) {
             
 
     private void showButtonSettingsDialog(final VirtualButton btn) {
-        currentlyEditingButton = btn; isEditingJoystickSkin = false;
+        currentlyEditingButton = btn; imagePickerTarget = 0; // 【修正】改用新的标记变量
         final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+    
         dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
 
         LinearLayout rootLayout = new LinearLayout(getContext());
