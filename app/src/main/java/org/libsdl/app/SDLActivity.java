@@ -849,7 +849,7 @@ mLayout.addView(dynamicGamepad, lp);
         return result;
     }
 
-    @Override
+        @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         Log.v(TAG, "onWindowFocusChanged(): " + hasFocus);
@@ -859,16 +859,17 @@ mLayout.addView(dynamicGamepad, lp);
         }
 
         mHasFocus = hasFocus;
-                mHasFocus = hasFocus;
         if (hasFocus) {
            mNextNativeState = NativeState.RESUMED;
            SDLActivity.getMotionListener().reclaimRelativeMouseModeIfNeeded();
 
            SDLActivity.handleNativeState();
            nativeFocusChanged(true);
-
-           if (mFullscreenModeActive) {          getWindow().getDecorView().getHandler().post(rehideSystemUi);
+           
+           if (mFullscreenModeActive) {
+               getWindow().getDecorView().getHandler().post(rehideSystemUi);
            }
+
         } else {
            nativeFocusChanged(false);
            if (!mHasMultiWindow) {
@@ -877,6 +878,7 @@ mLayout.addView(dynamicGamepad, lp);
            }
         }
     }
+    
 
     @Override
     public void onLowMemory() {
@@ -1096,7 +1098,7 @@ mLayout.addView(dynamicGamepad, lp);
                     Log.e(TAG, "error handling message, getContext() returned no Activity");
                 }
                 break;
-            case COMMAND_CHANGE_WINDOW_STYLE:
+                       case COMMAND_CHANGE_WINDOW_STYLE:
                 if (Build.VERSION.SDK_INT >= 19 /* Android 4.4 (KITKAT) */) {
                     if (context instanceof Activity) {
                         Window window = ((Activity) context).getWindow();
@@ -1119,11 +1121,10 @@ mLayout.addView(dynamicGamepad, lp);
                                 window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
                                 SDLActivity.mFullscreenModeActive = false;
                             }
-                                    if (Build.VERSION.SDK_INT >= 28 /* Android 9 (Pie) */) {
-            WindowManager.LayoutParams attrs = window.getAttributes();
-            attrs.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-            window.setAttributes(attrs);
-        };
+                            if (Build.VERSION.SDK_INT >= 28 /* Android 9 (Pie) */) {
+                                WindowManager.LayoutParams attrs = window.getAttributes();
+                                attrs.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                                window.setAttributes(attrs); 
                             }
                         }
                     } else {

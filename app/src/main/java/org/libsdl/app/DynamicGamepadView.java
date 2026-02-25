@@ -791,7 +791,7 @@ public boolean onTouchEvent(MotionEvent event) {
     // 各类独立设置弹窗
     // =====================================
         // 【新增工具方法】用于让设置对话框变成可移动、半透明的悬浮窗
-       private void setupMovableDialog(android.app.Dialog dialog, View dragHandle) {
+           private void setupMovableDialog(android.app.Dialog dialog, View dragHandle) {
         android.view.Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); // 窗体透明
@@ -814,7 +814,6 @@ public boolean onTouchEvent(MotionEvent event) {
                 params.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             }
             window.setAttributes(params);
-    
 
             // 监听拖拽条的触摸事件来实现窗口移动
             dragHandle.setOnTouchListener(new View.OnTouchListener() {
