@@ -253,23 +253,26 @@ public class DynamicGamepadView extends View {
                 currentlyEditingButton.customImageUri = uriStr;
                 currentlyEditingButton.skinBitmap = Bitmap.createScaledBitmap(raw, (int)(currentlyEditingButton.radius*2), (int)(currentlyEditingButton.radius*2), true);
                 Toast.makeText(getContext(), "按键皮肤应用成功！", Toast.LENGTH_SHORT).show();
-            } else if (imagePickerTarget == 4) { // 遮罩图1
+                       } else if (imagePickerTarget == 4) { // 遮罩图1
                 overlayUri1 = uriStr;
                 overlayBmp1 = BitmapFactory.decodeStream(is);
+                if (overlayMode < 1) overlayMode = 1; // 【修复】选图后自动切换为单图模式
                 Toast.makeText(getContext(), "遮罩图1应用成功！", Toast.LENGTH_SHORT).show();
-            } else if (imagePickerTarget == 5) { // 遮罩图2
+                        } else if (imagePickerTarget == 5) { // 遮罩图2
                 overlayUri2 = uriStr;
                 overlayBmp2 = BitmapFactory.decodeStream(is);
+                if (overlayMode < 2) overlayMode = 2; // 【修复】选图后自动切换为双图模式
                 Toast.makeText(getContext(), "遮罩图2应用成功！", Toast.LENGTH_SHORT).show();
             }
+            
+            // 【补上这里缺失的收尾代码 👇】
             if (is != null) is.close();
             saveConfig();
             invalidate();
         } catch (Exception e) {}
         imagePickerTarget = 0;
     }
-        
-    
+    // 【补上这里缺失的收尾代码 👆】
 
     // =====================================
     // 渲染引擎
@@ -738,19 +741,18 @@ public boolean onTouchEvent(MotionEvent event) {
     // =====================================
     // UI 面板渲染与系统弹窗
     // =====================================
-    private void showMainMenu() {
-                String modeText = isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键编辑";
-        // 【新增】网格模式状态文本
+        private void showMainMenu() {
+        String modeText = isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键编辑";
         String gridText = isGridSnapMode ? "🧲 网格吸附：已开启" : "🧲 网格吸附：已关闭 (自由拖动)";
         String joyText = "🕹️ 摇杆形态: " + (joystickMode==0?"分离十字键":joystickMode==1?"现代白圆盘":joystickMode==2?"经典红杆":"8向十字盘");
         String vibText = "📳 物理震动开关与强度设置 (" + (isVibrationOn?"开启":"关闭") + ")";
         
+        // 【新增】判断当前遮罩状态，动态显示快捷按钮文本
+        String quickOverlayText = isFullscreenHideOverlay ? "👁️ 当前: 隐藏遮罩 (点击恢复显示)" : "👁️ 当前: 显示遮罩 (点击临时隐藏)";
         
-        // 【修改】把网格选项加进数组
-        // 【修改】将选项数组更新，加入遮罩设置
-        CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局", "🖼️ 屏幕遮罩设置"};
+        CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局", "🖼️ 屏幕遮罩详细设置", quickOverlayText};
 
-                new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("⚙️ 游戏面板全局设置")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) { isEditMode = !isEditMode; if (!isEditMode) saveConfig(); invalidate(); } 
@@ -759,7 +761,6 @@ public boolean onTouchEvent(MotionEvent event) {
                         buttons.add(newBtn); isEditMode = true; showButtonSettingsDialog(newBtn);
                     } 
                     else if (which == 2) { 
-                        // 【新增】切换网格模式
                         isGridSnapMode = !isGridSnapMode; 
                         Toast.makeText(getContext(), isGridSnapMode ? "已开启网格吸附" : "已开启自由拖动", Toast.LENGTH_SHORT).show();
                     } 
@@ -772,9 +773,16 @@ public boolean onTouchEvent(MotionEvent event) {
                             .setPositiveButton("确定恢复", (d, w) -> { loadDefaultLayout(); saveConfig(); invalidate(); })
                             .setNegativeButton("取消", null).show();
                     }
-                    else if (which == 7) { showOverlaySettingsDialog(); } // 【新增】
+                    else if (which == 7) { showOverlaySettingsDialog(); }
+                    else if (which == 8) { 
+                        // 【新增】快捷切换遮罩的显示与隐藏状态，用于应对游戏内修改纵横比
+                        isFullscreenHideOverlay = !isFullscreenHideOverlay;
+                        Toast.makeText(getContext(), isFullscreenHideOverlay ? "已临时隐藏遮罩 (适配全屏)" : "已恢复遮罩显示", Toast.LENGTH_SHORT).show();
+                        saveConfig();
+                        invalidate();
+                    }
                 }).show();
-        }
+    }
 
     private void showProfileManager() {
         CharSequence[] options = {"📂 读取云端方案 1", "💾 覆盖保存至方案 1", "📂 读取云端方案 2", "💾 覆盖保存至方案 2", "📤 系统管理器导出配置", "📥 系统管理器导入配置"};
@@ -826,6 +834,16 @@ public boolean onTouchEvent(MotionEvent event) {
         ArrayAdapter<String> modeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, new String[]{"关闭遮罩", "开启一张遮罩图", "开启两张遮罩图"});
         modeSpinner.setAdapter(modeAdapter);
         modeSpinner.setSelection(overlayMode);
+                // 【新增】实时预览监听，让你在选择模式时背景立刻发生变化
+        modeSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                overlayMode = position;
+                invalidate(); // 立刻刷新屏幕
+            }
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
         contentLayout.addView(modeSpinner);
 
         // ==== 第一张图控件 ====
