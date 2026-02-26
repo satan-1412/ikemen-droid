@@ -64,7 +64,8 @@ public class DynamicGamepadView extends View {
     private float joyKnobX = 250, joyKnobY = 700;
     private int joyPointerId = -1;
     private boolean isDraggingJoy = false;
-    
+    private final Paint dashPaint = new Paint();
+    private Paint.FontMetrics textFontMetrics; // 缓存字体属性
     // 【修改】拆分为摇杆外框和摇杆中心两层皮肤
     public String joySkinBaseUri = "";
     public Bitmap joySkinBaseBitmap = null;
@@ -127,7 +128,7 @@ public class DynamicGamepadView extends View {
         public Bitmap skinBitmap = null;
         public boolean isDirectional = false; 
         public float hitboxRadius; // 触摸判定范围
-        public boolean isMacroPlaying = false; // 宏状态标记
+        public volatile boolean isMacroPlaying = false; 
         public List<List<Integer>> macroSteps = new ArrayList<>(); // 存储宏指令序列的列表
 
         // 【修复】把两个合并成了一个
@@ -221,6 +222,12 @@ public class DynamicGamepadView extends View {
         setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         paintText.setTypeface(Typeface.DEFAULT_BOLD);
         loadConfig(currentSlot);
+        // 在构造函数内添加：
+        dashPaint.setStyle(Paint.Style.STROKE);
+        dashPaint.setStrokeWidth(3f);
+        dashPaint.setColor(Color.YELLOW);
+        dashPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{10f, 10f}, 0));
+
     }
 
     @Override
@@ -235,59 +242,67 @@ public class DynamicGamepadView extends View {
         if (instance == this) instance = null;
     }
     
-            public void onImagePicked(String uriStr) {
+               public void onImagePicked(String uriStr) {
         try {
             Uri uri = Uri.parse(uriStr);
             InputStream is = getContext().getContentResolver().openInputStream(uri);
             Bitmap raw = BitmapFactory.decodeStream(is);
             
-            if (imagePickerTarget == 1) { // 摇杆外框
+            if (imagePickerTarget == 1) { 
+                if (joySkinBaseBitmap != null && !joySkinBaseBitmap.isRecycled()) joySkinBaseBitmap.recycle();
                 joySkinBaseUri = uriStr;
                 joySkinBaseBitmap = Bitmap.createScaledBitmap(raw, (int)(joyRadius*2), (int)(joyRadius*2), true);
                 Toast.makeText(getContext(), "摇杆外框皮肤应用成功！", Toast.LENGTH_SHORT).show();
-            } else if (imagePickerTarget == 2) { // 摇杆中心
+            } else if (imagePickerTarget == 2) { 
+                if (joySkinKnobBitmap != null && !joySkinKnobBitmap.isRecycled()) joySkinKnobBitmap.recycle();
                 joySkinKnobUri = uriStr;
                 joySkinKnobBitmap = Bitmap.createScaledBitmap(raw, (int)(joyRadius*2), (int)(joyRadius*2), true);
                 Toast.makeText(getContext(), "摇杆中心皮肤应用成功！", Toast.LENGTH_SHORT).show();
-                        } else if (imagePickerTarget == 3 && currentlyEditingButton != null) { // 普通按键
+            } else if (imagePickerTarget == 3 && currentlyEditingButton != null) { 
+                if (currentlyEditingButton.skinBitmap != null && !currentlyEditingButton.skinBitmap.isRecycled()) currentlyEditingButton.skinBitmap.recycle();
                 currentlyEditingButton.customImageUri = uriStr;
                 currentlyEditingButton.skinBitmap = Bitmap.createScaledBitmap(raw, (int)(currentlyEditingButton.radius*2), (int)(currentlyEditingButton.radius*2), true);
                 Toast.makeText(getContext(), "按键皮肤应用成功！", Toast.LENGTH_SHORT).show();
-                       } else if (imagePickerTarget == 4) { // 遮罩图1
+            } else if (imagePickerTarget == 4) { 
+                if (overlayBmp1 != null && !overlayBmp1.isRecycled()) overlayBmp1.recycle();
                 overlayUri1 = uriStr;
-                overlayBmp1 = BitmapFactory.decodeStream(is);
-                if (overlayMode < 1) overlayMode = 1; // 【修复】选图后自动切换为单图模式
+                overlayBmp1 = Bitmap.createBitmap(raw); 
+                if (overlayMode < 1) overlayMode = 1; 
                 Toast.makeText(getContext(), "遮罩图1应用成功！", Toast.LENGTH_SHORT).show();
-                        } else if (imagePickerTarget == 5) { // 遮罩图2
+            } else if (imagePickerTarget == 5) { 
+                if (overlayBmp2 != null && !overlayBmp2.isRecycled()) overlayBmp2.recycle();
                 overlayUri2 = uriStr;
-                overlayBmp2 = BitmapFactory.decodeStream(is);
-                if (overlayMode < 2) overlayMode = 2; // 【修复】选图后自动切换为双图模式
+                overlayBmp2 = Bitmap.createBitmap(raw);
+                if (overlayMode < 2) overlayMode = 2; 
                 Toast.makeText(getContext(), "遮罩图2应用成功！", Toast.LENGTH_SHORT).show();
             }
             
-            // 【补上这里缺失的收尾代码 👇】
+            // 安全释放过渡用的原图流
+            if (raw != null && !raw.isRecycled()) raw.recycle(); 
             if (is != null) is.close();
+            
             saveConfig();
             invalidate();
         } catch (Exception e) {}
         imagePickerTarget = 0;
     }
+            
     // 【补上这里缺失的收尾代码 👆】
 
     // =====================================
     // 渲染引擎
     // =====================================
-     @Override
+             @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        // 【新增】绘制遮罩图 (如果不处于全屏隐藏状态，或者是编辑模式则强制显示以供调整)
+        // 绘制遮罩图
         if ((!isFullscreenHideOverlay || isEditMode) && overlayMode > 0) {
-            paintBtn.setAlpha(255); // 重置画笔透明度
+            paintBtn.setAlpha(255);
             if (overlayMode >= 1 && overlayBmp1 != null) {
                 tempRect.set(overlayX1, overlayY1, overlayX1 + overlayBmp1.getWidth() * overlayScale1, overlayY1 + overlayBmp1.getHeight() * overlayScale1);
                 canvas.drawBitmap(overlayBmp1, null, tempRect, paintBtn);
-                if (isEditMode) { // 编辑模式下画绿色边框方便定位
+                if (isEditMode) { 
                     paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setColor(Color.GREEN); paintBtn.setStrokeWidth(5f);
                     canvas.drawRect(tempRect, paintBtn); paintBtn.setStyle(Paint.Style.FILL);
                 }
@@ -295,17 +310,14 @@ public class DynamicGamepadView extends View {
             if (overlayMode == 2 && overlayBmp2 != null) {
                 tempRect.set(overlayX2, overlayY2, overlayX2 + overlayBmp2.getWidth() * overlayScale2, overlayY2 + overlayBmp2.getHeight() * overlayScale2);
                 canvas.drawBitmap(overlayBmp2, null, tempRect, paintBtn);
-                if (isEditMode) { // 编辑模式下画蓝色边框方便定位
+                if (isEditMode) {
                     paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setColor(Color.BLUE); paintBtn.setStrokeWidth(5f);
                     canvas.drawRect(tempRect, paintBtn); paintBtn.setStyle(Paint.Style.FILL);
                 }
             }
         }
 
-        // ... 保留原有的菜单绘制逻辑 ...
-    
-
-                // 【新增】动态计算菜单按键的位置和缩放
+        // 动态计算菜单按键的位置和缩放
         float mw = 230 * menuScale;
         float mh = 90 * menuScale;
         menuButtonRect.set(menuX, menuY, menuX + mw, menuY + mh);
@@ -320,42 +332,37 @@ public class DynamicGamepadView extends View {
         paintMenu.clearShadowLayer();
         canvas.drawText("⚙ 高级设置", menuButtonRect.centerX(), menuButtonRect.centerY() + (12 * menuScale), paintText);
         
-
-                if (isEditMode) {
+        if (isEditMode) {
             canvas.drawColor(Color.argb(100, 255, 50, 50));
-            
-            // 【新增：如果是网格模式，画出辅助线】
             if (isGridSnapMode) {
                 paintBtn.setColor(Color.WHITE);
-                paintBtn.setAlpha(30); // 半透明白线
+                paintBtn.setAlpha(30); 
                 paintBtn.setStrokeWidth(1f);
-                for (int i = 0; i < getWidth(); i += GRID_SIZE) {
-                    canvas.drawLine(i, 0, i, getHeight(), paintBtn);
-                }
-                for (int i = 0; i < getHeight(); i += GRID_SIZE) {
-                    canvas.drawLine(0, i, getWidth(), i, paintBtn);
-                }
+                for (int i = 0; i < getWidth(); i += GRID_SIZE) canvas.drawLine(i, 0, i, getHeight(), paintBtn);
+                for (int i = 0; i < getHeight(); i += GRID_SIZE) canvas.drawLine(0, i, getWidth(), i, paintBtn);
             }
-            
             paintText.setTextSize(40f);
             paintText.setShadowLayer(5f, 2f, 2f, Color.BLACK);
             canvas.drawText("【编辑模式】拖动调整，轻触设置", getWidth() / 2f, 100, paintText);
         }
-        
 
+        // 核心按键绘制逻辑
         for (VirtualButton btn : buttons) {
             if (joystickMode > 0 && btn.isDirectional) continue;
 
-            int currentAlpha = isEditMode ? Math.max(120, btn.alpha) : (btn.isPressed ? 255 : btn.alpha);
+            int idleAlpha = (int)(btn.alpha * 0.6f); 
+            int currentAlpha = isEditMode ? Math.max(120, btn.alpha) : (btn.isPressed ? 255 : idleAlpha);
             tempRect.set(btn.cx - btn.radius, btn.cy - btn.radius, btn.cx + btn.radius, btn.cy + btn.radius);
             
             if (btn.skinBitmap != null) {
                 paintBtn.setAlpha(currentAlpha);
-                if (btn.shape == SHAPE_CIRCLE) {
-                    // 圆形图片裁剪效果由于性能原因，一般直接画方图。如需严格圆角，建议图片自带透明。
-                    canvas.drawBitmap(btn.skinBitmap, null, tempRect, paintBtn);
-                } else {
-                    canvas.drawBitmap(btn.skinBitmap, null, tempRect, paintBtn);
+                canvas.drawBitmap(btn.skinBitmap, null, tempRect, paintBtn);
+                
+                if (btn.isPressed && !isEditMode) {
+                    paintBtn.setColor(Color.WHITE);
+                    paintBtn.setAlpha(80); 
+                    if (btn.shape == SHAPE_CIRCLE) canvas.drawCircle(btn.cx, btn.cy, btn.radius, paintBtn);
+                    else canvas.drawRoundRect(tempRect, btn.radius*0.3f, btn.radius*0.3f, paintBtn);
                 }
             } else {
                 int baseColor = Color.argb(currentAlpha, Color.red(btn.color), Color.green(btn.color), Color.blue(btn.color));
@@ -364,10 +371,15 @@ public class DynamicGamepadView extends View {
                 RadialGradient gradient = new RadialGradient(
                         btn.cx - btn.radius * 0.3f, btn.cy - btn.radius * 0.3f, 
                         btn.radius * 1.3f, baseColor, darkColor, Shader.TileMode.CLAMP);
-                
                 paintBtn.setShader(gradient);
-                if (currentAlpha > 80) paintBtn.setShadowLayer(10.0f, 0.0f, 5.0f, Color.argb(currentAlpha/2, 0, 0, 0));
-                else paintBtn.clearShadowLayer();
+                
+                if (btn.isPressed && !isEditMode) {
+                    paintBtn.setShadowLayer(25.0f, 0.0f, 0.0f, Color.WHITE);
+                } else if (currentAlpha > 80) {
+                    paintBtn.setShadowLayer(10.0f, 0.0f, 5.0f, Color.argb(currentAlpha/2, 0, 0, 0));
+                } else {
+                    paintBtn.clearShadowLayer();
+                }
                 
                 if (btn.shape == SHAPE_CIRCLE) {
                     canvas.drawCircle(btn.cx, btn.cy, btn.radius, paintBtn);
@@ -378,46 +390,32 @@ public class DynamicGamepadView extends View {
                 paintBtn.setShader(null);
             }
 
-                        paintText.setColor(btn.textColor);
+            // 绘制文字
+            paintText.setColor(btn.textColor);
             paintText.setAlpha(currentAlpha);
             paintText.setTextSize(btn.radius * 0.6f);
-            paintText.setTextAlign(Paint.Align.CENTER); // 【修复】确保居中对齐
+            paintText.setTextAlign(Paint.Align.CENTER); 
             paintText.setShadowLayer(3f, 1f, 1f, (btn.textColor == Color.BLACK) ? Color.WHITE : Color.BLACK);
             
-            // 【修复】计算字体的物理中轴线，实现绝对垂直居中
-            Paint.FontMetrics fm = paintText.getFontMetrics();
-            float textOffset = (fm.descent - fm.ascent) / 2 - fm.descent;
+                        // 【终极优化】直接读取数值，实现 0 内存分配
+            float textOffset = (paintText.descent() - paintText.ascent()) / 2 - paintText.descent();
             canvas.drawText(btn.id, btn.cx, btn.cy + textOffset, paintText); 
-            
             paintText.clearShadowLayer();
             
-
-                        if (isEditMode) {
-                // 原来的白色外框
-                paintBtn.setStyle(Paint.Style.STROKE);
-                paintBtn.setStrokeWidth(4f);
-                paintBtn.setColor(Color.WHITE);
-                paintBtn.setAlpha(255);
+            // 编辑模式的外框与判定范围
+            if (isEditMode) {
+                paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setStrokeWidth(4f); paintBtn.setColor(Color.WHITE); paintBtn.setAlpha(255);
                 if (btn.shape == SHAPE_CIRCLE) canvas.drawCircle(btn.cx, btn.cy, btn.radius + 6, paintBtn);
                 else canvas.drawRoundRect(btn.cx - btn.radius - 6, btn.cy - btn.radius - 6, btn.cx + btn.radius + 6, btn.cy + btn.radius + 6, btn.radius*0.3f, btn.radius*0.3f, paintBtn);
                 
-                // 【修复】这才是绘制黄色虚线判定圈的正确位置！
-                Paint dashPaint = new Paint();
-                dashPaint.setStyle(Paint.Style.STROKE);
-                dashPaint.setStrokeWidth(3f);
-                dashPaint.setColor(Color.YELLOW);
-                dashPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{10f, 10f}, 0));
-                
-                if (btn.shape == SHAPE_CIRCLE) {
-                    canvas.drawCircle(btn.cx, btn.cy, btn.hitboxRadius, dashPaint);
-                } else {
-                    canvas.drawRoundRect(btn.cx - btn.hitboxRadius, btn.cy - btn.hitboxRadius, 
-                                         btn.cx + btn.hitboxRadius, btn.cy + btn.hitboxRadius, btn.radius*0.3f, btn.radius*0.3f, dashPaint);
-                }
+                // 【修正】直接使用类头部的 dashPaint，不要再 new Paint()
+                if (btn.shape == SHAPE_CIRCLE) canvas.drawCircle(btn.cx, btn.cy, btn.hitboxRadius, dashPaint);
+                else canvas.drawRoundRect(btn.cx - btn.hitboxRadius, btn.cy - btn.hitboxRadius, btn.cx + btn.hitboxRadius, btn.cy + btn.hitboxRadius, btn.radius*0.3f, btn.radius*0.3f, dashPaint);
                 paintBtn.setStyle(Paint.Style.FILL);
             }
-        } // 循环结束
+        } 
     }
+         
 
         @Override
     protected void dispatchDraw(Canvas canvas) {
@@ -425,7 +423,7 @@ public class DynamicGamepadView extends View {
         if (joystickMode > 0) drawJoystick(canvas);
     }
 
-                private void drawJoystick(Canvas canvas) {
+                    private void drawJoystick(Canvas canvas) {
         int currentAlpha = isEditMode ? Math.max(100, joyAlpha) : joyAlpha;
         
         // ========= 1. 绘制底盘 =========
@@ -433,35 +431,33 @@ public class DynamicGamepadView extends View {
             paintBtn.setAlpha(currentAlpha);
             tempRect.set(joyBaseX - joyRadius, joyBaseY - joyRadius, joyBaseX + joyRadius, joyBaseY + joyRadius);
             canvas.drawBitmap(joySkinBaseBitmap, null, tempRect, paintBtn);
-        } else if (joystickMode == 1) { // 现代纯色圆盘
+        } else if (joystickMode == 1) { 
             paintBtn.setColor(joyColor); paintBtn.setAlpha((int)(currentAlpha * 0.3f));
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius, paintBtn);
-        } else if (joystickMode == 2) { // 【修改】经典街机红杆：底盘固定为深黑灰色
+        } else if (joystickMode == 2) { 
             RadialGradient baseGrad = new RadialGradient(joyBaseX, joyBaseY, joyRadius, Color.parseColor("#333333"), Color.parseColor("#080808"), Shader.TileMode.CLAMP);
             paintBtn.setShader(baseGrad); paintBtn.setAlpha((int)(currentAlpha * 0.9f));
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius, paintBtn);
             paintBtn.setShader(null);
-        } else if (joystickMode == 3) { // 【修改】纯正的8向分离按键
+        } else if (joystickMode == 3) { 
             paintBtn.setColor(Color.DKGRAY); paintBtn.setAlpha((int)(currentAlpha * 0.5f));
             paintText.setColor(Color.WHITE); paintText.setAlpha(currentAlpha); paintText.setTextSize(joyRadius * 0.35f);
             paintText.setTextAlign(Paint.Align.CENTER);
-            Paint.FontMetrics fm = paintText.getFontMetrics();
-            float textOffset = (fm.descent - fm.ascent) / 2 - fm.descent;
             
-            // 8个方向的标识符
+                       // 【终极优化】直接读取数值，实现 0 内存分配
+            float textOffset = (paintText.descent() - paintText.ascent()) / 2 - paintText.descent();
+            
+            
             String[] dirs = {"➡", "↘", "⬇", "↙", "⬅", "↖", "⬆", "↗"}; 
             for (int i = 0; i < 8; i++) {
                 float angle = (float) Math.toRadians(i * 45);
                 float bx = joyBaseX + (float) Math.cos(angle) * joyRadius * 0.8f;
                 float by = joyBaseY + (float) Math.sin(angle) * joyRadius * 0.8f;
-                // 画8个独立的圆形底座
                 canvas.drawCircle(bx, by, joyRadius * 0.28f, paintBtn);
-                // 画方向箭头
                 canvas.drawText(dirs[i], bx, by + textOffset, paintText);
             }
         }
 
-        // 仅模式1和2画8向指示白线
         if ((joystickMode == 1 || joystickMode == 2) && joySkinBaseBitmap == null) {
             paintBtn.setColor(Color.WHITE); paintBtn.setStrokeWidth(4f); paintBtn.setAlpha((int)(joyAlpha * 0.4f));
             for (int i = 0; i < 8; i++) {
@@ -474,20 +470,39 @@ public class DynamicGamepadView extends View {
             }
         }
 
-        // ========= 2. 绘制摇杆帽 =========
-        if (joystickMode != 3) { // 模式3是8个分离按键，不需要摇杆帽
+        // ========= 2. 绘制摇杆动态指示方向 =========
+        float dx = joyKnobX - joyBaseX;
+        float dy = joyKnobY - joyBaseY;
+        float dist = (float) Math.hypot(dx, dy);
+
+        if (dist > joyRadius * 0.2f && !isEditMode && joystickMode != 3) {
+            paintBtn.setColor(Color.WHITE);
+            paintBtn.setStrokeWidth(8f);
+            paintBtn.setAlpha(200);
+            
+            float edgeX = joyBaseX + (dx / dist) * joyRadius;
+            float edgeY = joyBaseY + (dy / dist) * joyRadius;
+            
+            paintBtn.setShadowLayer(15f, 0, 0, joyColor); 
+            canvas.drawLine(joyBaseX, joyBaseY, edgeX, edgeY, paintBtn);
+            canvas.drawCircle(edgeX, edgeY, joyRadius * 0.12f, paintBtn);
+            paintBtn.clearShadowLayer();
+        }
+
+        // ========= 3. 绘制摇杆帽 =========
+        if (joystickMode != 3) { 
             if (joySkinKnobBitmap != null) {
                 paintBtn.setAlpha(currentAlpha);
                 float knobRad = joyRadius * 0.5f; 
                 tempRect.set(joyKnobX - knobRad, joyKnobY - knobRad, joyKnobX + knobRad, joyKnobY + knobRad);
                 canvas.drawBitmap(joySkinKnobBitmap, null, tempRect, paintBtn);
-            } else if (joystickMode == 1) { // 纯色圆盘中心
+            } else if (joystickMode == 1) { 
                 paintBtn.setColor(joyColor); paintBtn.setAlpha(currentAlpha);
                 canvas.drawCircle(joyKnobX, joyKnobY, joyRadius * 0.35f, paintBtn);
-            } else if (joystickMode == 2) { // 街机摇杆球 (使用自定义颜色，默认红色)
+            } else if (joystickMode == 2) { 
                 paintBtn.setColor(Color.parseColor("#AAAAAA")); paintBtn.setStrokeWidth(25f);
                 paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setAlpha(currentAlpha);
-                canvas.drawLine(joyBaseX, joyBaseY, joyKnobX, joyKnobY, paintBtn); // 画金属杆
+                canvas.drawLine(joyBaseX, joyBaseY, joyKnobX, joyKnobY, paintBtn); 
                 paintBtn.setStyle(Paint.Style.FILL);
                 
                 int darkColor = Color.rgb(Math.max(0, Color.red(joyColor)-100), Math.max(0, Color.green(joyColor)-100), Math.max(0, Color.blue(joyColor)-100));
@@ -497,20 +512,16 @@ public class DynamicGamepadView extends View {
                 paintBtn.clearShadowLayer(); paintBtn.setShader(null);
             }
         } else if (joystickMode == 3 && joyPointerId != -1) {
-            // 模式3按下时，在手指位置画个发光的触点反馈
             paintBtn.setColor(joyColor); paintBtn.setAlpha((int)(currentAlpha * 0.6f));
             canvas.drawCircle(joyKnobX, joyKnobY, joyRadius * 0.25f, paintBtn);
         }
 
-        // ========= 3. 编辑模式提示 =========
+        // ========= 4. 编辑模式提示 =========
         if (isEditMode) {
             paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setStrokeWidth(5f); paintBtn.setColor(Color.WHITE); paintBtn.setAlpha(255);
-            canvas.drawCircle(joyBaseX, joyBaseY, joyRadius + 10, paintBtn); // 视觉范围白圈
+            canvas.drawCircle(joyBaseX, joyBaseY, joyRadius + 10, paintBtn); 
             
-            // 【修改】画出隐藏的触摸判定范围 (黄色虚线)
-            Paint dashPaint = new Paint();
-            dashPaint.setStyle(Paint.Style.STROKE); dashPaint.setStrokeWidth(3f); dashPaint.setColor(Color.YELLOW);
-            dashPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{10f, 10f}, 0));
+            // 【修正】直接使用类头部的 dashPaint
             canvas.drawCircle(joyBaseX, joyBaseY, joyHitboxRadius, dashPaint);
             
             paintText.setColor(Color.WHITE); paintText.setTextSize(35f); paintText.setShadowLayer(3f,0,0,Color.BLACK);
@@ -518,6 +529,7 @@ public class DynamicGamepadView extends View {
             paintBtn.setStyle(Paint.Style.FILL); paintText.clearShadowLayer();
         }
     }
+                
     
     private void triggerVibrate() {
         if (!isVibrationOn || vibrationIntensity <= 0) return;
