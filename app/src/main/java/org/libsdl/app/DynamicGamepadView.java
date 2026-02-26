@@ -390,16 +390,29 @@ public class DynamicGamepadView extends View {
                 paintBtn.setShader(null);
             }
 
-            // 绘制文字
+                      // 绘制文字
             paintText.setColor(btn.textColor);
             paintText.setAlpha(currentAlpha);
-            paintText.setTextSize(btn.radius * 0.6f);
+            // 如果有多行，适当缩小一点字体，防止文字超出按键边缘
+            boolean isMultiLine = btn.id.contains("\n");
+            paintText.setTextSize(btn.radius * (isMultiLine ? 0.45f : 0.6f));
             paintText.setTextAlign(Paint.Align.CENTER); 
             paintText.setShadowLayer(3f, 1f, 1f, (btn.textColor == Color.BLACK) ? Color.WHITE : Color.BLACK);
             
-                        // 【终极优化】直接读取数值，实现 0 内存分配
+            // 【优化】单行直接绘制，多行拆分并重新计算 Y 轴居中偏移
             float textOffset = (paintText.descent() - paintText.ascent()) / 2 - paintText.descent();
-            canvas.drawText(btn.id, btn.cx, btn.cy + textOffset, paintText); 
+            
+            if (!isMultiLine) {
+                canvas.drawText(btn.id, btn.cx, btn.cy + textOffset, paintText);
+            } else {
+                String[] lines = btn.id.split("\n");
+                float lineHeight = paintText.descent() - paintText.ascent();
+                // 计算多行文本的总偏移，使其整体垂直居中
+                float startY = btn.cy + textOffset - (lines.length - 1) * lineHeight / 2f;
+                for (int i = 0; i < lines.length; i++) {
+                    canvas.drawText(lines[i], btn.cx, startY + (i * lineHeight), paintText);
+                }
+            }
             paintText.clearShadowLayer();
             
             // 编辑模式的外框与判定范围
