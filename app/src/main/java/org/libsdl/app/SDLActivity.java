@@ -478,11 +478,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
         params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
 
-        if (USE_FOLDER_SELECT) {
-            //mLayout.addView(mSDButton, params);
+                if (USE_FOLDER_SELECT) {
             mSDButton.setOnClickListener(v -> checkAndPickFolder());
-            mUIHandler.postDelayed(hideRunnable, 5000);
         }
+        
 
         // Get our current screen orientation and pass it down.
         mCurrentOrientation = SDLActivity.getCurrentOrientation();
@@ -503,11 +502,16 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         //mControllerOverlay = new ControllerOverlay(this); 
         //RelativeLayout.LayoutParams lp = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
        // mLayout.addView(mControllerOverlay, lp);
-DynamicGamepadView dynamicGamepad = new DynamicGamepadView(this);
-android.widget.RelativeLayout.LayoutParams lp = new android.widget.RelativeLayout.LayoutParams(
-        android.view.ViewGroup.LayoutParams.MATCH_PARENT, 
-        android.view.ViewGroup.LayoutParams.MATCH_PARENT);
-mLayout.addView(dynamicGamepad, lp);
+        DynamicGamepadView dynamicGamepad = new DynamicGamepadView(this);
+        android.widget.RelativeLayout.LayoutParams lp = new android.widget.RelativeLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, 
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT);
+        mLayout.addView(dynamicGamepad, lp);
+        
+        if (dynamicGamepad.isAutoHideEnabled) {
+            mUIHandler.postDelayed(hideRunnable, dynamicGamepad.autoHideSeconds * 1000L);
+        }
+
 
 //        setContentView(mLayout); // WHAT IT WAS
         setContentView(rootLayout);
@@ -540,26 +544,42 @@ mLayout.addView(dynamicGamepad, lp);
         }
     }
 
+    // === 把方法放在这里 ===
+    public void cancelAutoHide() {
+        if (mUIHandler != null) {
+            mUIHandler.removeCallbacks(hideRunnable);
+        }
+        if (mLayout != null) {
+            mLayout.setVisibility(View.VISIBLE);
+        }
+    }
+
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
         int action = ev.getAction();
-        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
+                if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
             if (mLayout != null) {
                 ViewGroup root = (ViewGroup) mLayout.getParent();
-                // Get the index of the last child
                 int lastChildIndex = root.getChildCount() - 1;
 
-                // CRITICAL: Only call bringToFront if the UI is hidden OR not actually on top.
-                // If it is ALREADY on top, calling bringToFront() kills the current touch!
                 if (mLayout.getVisibility() != View.VISIBLE || root.getChildAt(lastChildIndex) != mLayout) {
                     mLayout.setVisibility(View.VISIBLE);
                     mLayout.bringToFront();
                     root.requestLayout();
                 }
             }
+            
             mUIHandler.removeCallbacks(hideRunnable);
-            mUIHandler.postDelayed(hideRunnable, 5000);
+            
+            if (DynamicGamepadView.instance != null) {
+                if (DynamicGamepadView.instance.isAutoHideEnabled) {
+                    mUIHandler.postDelayed(hideRunnable, DynamicGamepadView.instance.autoHideSeconds * 1000L);
+                }
+            } else {
+                mUIHandler.postDelayed(hideRunnable, 5000);
+            }
         }
+        
         return super.dispatchTouchEvent(ev);
     }
 

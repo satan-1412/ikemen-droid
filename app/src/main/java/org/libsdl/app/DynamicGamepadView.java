@@ -52,7 +52,9 @@ public class DynamicGamepadView extends View {
     public int currentSlot = 0;
     public int joystickMode = 0; // 0=十字, 1=圆盘, 2=街机
     public boolean isVibrationOn = true;
-        public int vibrationIntensity = 30; // 震动强度 (建议0-100，即震动毫秒数)
+    public int vibrationIntensity = 30; // 震动强度 (建议0-100，即震动毫秒数)
+    public boolean isAutoHideEnabled = true; // 自动隐藏开关
+    public int autoHideSeconds = 5;          // 自动隐藏延迟时间（秒）
 
 
        public float joyBaseX = 250, joyBaseY = 700;
@@ -774,8 +776,9 @@ public boolean onTouchEvent(MotionEvent event) {
         
         // 【新增】判断当前遮罩状态，动态显示快捷按钮文本
         String quickOverlayText = isFullscreenHideOverlay ? "👁️ 当前: 隐藏遮罩 (点击恢复显示)" : "👁️ 当前: 显示遮罩 (点击临时隐藏)";
+String autoHideText = "⏱️ 按键自动隐藏设置 (" + (isAutoHideEnabled ? autoHideSeconds + "秒" : "已关闭") + ")";
+CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局", "🖼️ 屏幕遮罩详细设置", quickOverlayText, autoHideText};
         
-        CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局", "🖼️ 屏幕遮罩详细设置", quickOverlayText};
 
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("⚙️ 游戏面板全局设置")
@@ -799,13 +802,16 @@ public boolean onTouchEvent(MotionEvent event) {
                             .setNegativeButton("取消", null).show();
                     }
                     else if (which == 7) { showOverlaySettingsDialog(); }
-                    else if (which == 8) { 
+                                        else if (which == 8) { 
                         // 【新增】快捷切换遮罩的显示与隐藏状态，用于应对游戏内修改纵横比
                         isFullscreenHideOverlay = !isFullscreenHideOverlay;
                         Toast.makeText(getContext(), isFullscreenHideOverlay ? "已临时隐藏遮罩 (适配全屏)" : "已恢复遮罩显示", Toast.LENGTH_SHORT).show();
                         saveConfig();
                         invalidate();
                     }
+                    else if (which == 9) { 
+                        showAutoHideSettingsDialog(); 
+                    }                    
                 }).show();
     }
 
@@ -962,11 +968,63 @@ public boolean onTouchEvent(MotionEvent event) {
         final SeekBar intensityBar = createColorBar(layout, "震动时长 / 毫秒 (拖动测试)", vibrationIntensity);
         intensityBar.setMax(100); 
         intensityBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+    public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
                 vibrationIntensity = Math.max(1, p); // 防止设置为0
                 if ((fromUser || s.hasFocus()) && isVibrationOn) {
                     triggerVibrate();
                 }
+            }
+            public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
+        });
+
+        Button saveBtn = new Button(getContext());
+        saveBtn.setText("💾 保存并关闭");
+        saveBtn.setTextColor(Color.WHITE);
+        saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnParams.setMargins(0, 40, 0, 0); saveBtn.setLayoutParams(btnParams);
+        saveBtn.setOnClickListener(v -> { saveConfig(); dialog.dismiss(); });
+        layout.addView(saveBtn);
+
+        dialog.setContentView(layout);
+        dialog.show();
+    }
+
+    private void showAutoHideSettingsDialog() {
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        
+        LinearLayout layout = new LinearLayout(getContext());
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(60, 60, 60, 60);
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(Color.parseColor("#E6222222")); bg.setCornerRadius(35f);
+        layout.setBackground(bg);
+
+        layout.addView(createTitle("⏱️ 面板自动隐藏设置"));
+
+        // 隐藏总开关
+        final Button toggleBtn = new Button(getContext());
+        toggleBtn.setText(isAutoHideEnabled ? "当前状态：已开启 (点击关闭)" : "当前状态：已关闭 (面板长亮)");
+        toggleBtn.setTextColor(Color.WHITE);
+        toggleBtn.setBackgroundColor(isAutoHideEnabled ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
+        toggleBtn.setOnClickListener(v -> {
+            isAutoHideEnabled = !isAutoHideEnabled;
+            toggleBtn.setText(isAutoHideEnabled ? "当前状态：已开启 (点击关闭)" : "当前状态：已关闭 (面板长亮)");
+            toggleBtn.setBackgroundColor(isAutoHideEnabled ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
+            // 若关闭隐藏，立刻通知 Activity 移除现有的隐藏任务
+            if (!isAutoHideEnabled && getContext() instanceof SDLActivity) {
+                ((SDLActivity) getContext()).cancelAutoHide();
+            }
+        });
+        layout.addView(toggleBtn);
+
+        // 延迟时间滑动条
+        final SeekBar timeBar = createColorBar(layout, "无操作自动隐藏延迟 / 秒", autoHideSeconds);
+        timeBar.setMax(60); 
+        timeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                autoHideSeconds = Math.max(1, p); // 防止设置为0
             }
             public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
         });
@@ -1472,6 +1530,8 @@ public boolean onTouchEvent(MotionEvent event) {
             editor.putFloat("OverlayY2_" + currentSlot, overlayY2);
             editor.putFloat("OverlayScale2_" + currentSlot, overlayScale2);
             editor.putBoolean("FS_HideOverlay_" + currentSlot, isFullscreenHideOverlay);
+            editor.putBoolean("AutoHide_" + currentSlot, isAutoHideEnabled);
+editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             editor.apply();
         } catch (Exception e) {}
     }
@@ -1530,6 +1590,8 @@ public boolean onTouchEvent(MotionEvent event) {
             overlayX2 = prefs.getFloat("OverlayX2_" + slot, 0); overlayY2 = prefs.getFloat("OverlayY2_" + slot, 0);
             overlayScale2 = prefs.getFloat("OverlayScale2_" + slot, 1.0f);
             isFullscreenHideOverlay = prefs.getBoolean("FS_HideOverlay_" + slot, false);
+            isAutoHideEnabled = prefs.getBoolean("AutoHide_" + slot, true);
+autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
             
             try { if (!overlayUri1.isEmpty()) overlayBmp1 = BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(overlayUri1))); else overlayBmp1 = null; } catch(Exception e) { overlayBmp1 = null; }
             try { if (!overlayUri2.isEmpty()) overlayBmp2 = BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(overlayUri2))); else overlayBmp2 = null; } catch(Exception e) { overlayBmp2 = null; }
@@ -1552,6 +1614,8 @@ public boolean onTouchEvent(MotionEvent event) {
         overlayMode = 0; overlayUri1 = ""; overlayUri2 = ""; overlayBmp1 = null; overlayBmp2 = null;
         overlayX1 = 0; overlayY1 = 0; overlayScale1 = 1.0f; overlayX2 = 0; overlayY2 = 0; overlayScale2 = 1.0f;
         isFullscreenHideOverlay = false;
+        isAutoHideEnabled = true;
+autoHideSeconds = 5;
     
         
         buttons.add(new VirtualButton("UP", 250, 550, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "UP", true));
@@ -1626,6 +1690,9 @@ public boolean onTouchEvent(MotionEvent event) {
                         root.put("overlayY2", DynamicGamepadView.instance.overlayY2);
                         root.put("overlayScale2", DynamicGamepadView.instance.overlayScale2);
                         root.put("isFullscreenHideOverlay", DynamicGamepadView.instance.isFullscreenHideOverlay);
+                        root.put("isAutoHideEnabled", DynamicGamepadView.instance.isAutoHideEnabled);
+                        root.put("autoHideSeconds", DynamicGamepadView.instance.autoHideSeconds);
+
 
                         java.io.OutputStream os = getActivity().getContentResolver().openOutputStream(uri);
                         os.write(root.toString(4).getBytes(StandardCharsets.UTF_8));
@@ -1667,6 +1734,8 @@ public boolean onTouchEvent(MotionEvent event) {
                         editor.putFloat("OverlayY2_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayY2", 0));
                         editor.putFloat("OverlayScale2_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayScale2", 1.0f));
                         editor.putBoolean("FS_HideOverlay_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isFullscreenHideOverlay", false));
+                        editor.putBoolean("AutoHide_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isAutoHideEnabled", true));
+editor.putInt("AutoHideSec_" + DynamicGamepadView.instance.currentSlot, root.optInt("autoHideSeconds", 5));
                         editor.apply(); 
                         
                         DynamicGamepadView.instance.loadConfig(DynamicGamepadView.instance.currentSlot);
