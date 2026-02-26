@@ -849,7 +849,7 @@ mLayout.addView(dynamicGamepad, lp);
         return result;
     }
 
-        @Override
+    @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         Log.v(TAG, "onWindowFocusChanged(): " + hasFocus);
@@ -865,10 +865,6 @@ mLayout.addView(dynamicGamepad, lp);
 
            SDLActivity.handleNativeState();
            nativeFocusChanged(true);
-           
-           if (mFullscreenModeActive) {
-               getWindow().getDecorView().getHandler().post(rehideSystemUi);
-           }
 
         } else {
            nativeFocusChanged(false);
@@ -878,7 +874,6 @@ mLayout.addView(dynamicGamepad, lp);
            }
         }
     }
-    
 
     @Override
     public void onLowMemory() {
@@ -1098,7 +1093,7 @@ mLayout.addView(dynamicGamepad, lp);
                     Log.e(TAG, "error handling message, getContext() returned no Activity");
                 }
                 break;
-                       case COMMAND_CHANGE_WINDOW_STYLE:
+            case COMMAND_CHANGE_WINDOW_STYLE:
                 if (Build.VERSION.SDK_INT >= 19 /* Android 4.4 (KITKAT) */) {
                     if (context instanceof Activity) {
                         Window window = ((Activity) context).getWindow();
@@ -1122,9 +1117,7 @@ mLayout.addView(dynamicGamepad, lp);
                                 SDLActivity.mFullscreenModeActive = false;
                             }
                             if (Build.VERSION.SDK_INT >= 28 /* Android 9 (Pie) */) {
-                                WindowManager.LayoutParams attrs = window.getAttributes();
-                                attrs.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-                                window.setAttributes(attrs); 
+                                window.getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
                             }
                         }
                     } else {
@@ -2378,7 +2371,7 @@ class SDLInputConnection extends BaseInputConnection {
             }
             matchLength += Character.charCount(codePoint);
         }
-        /* FIXME: This doesn't handle graphemes, like '🌬︄1�7' */
+        /* FIXME: This doesn't handle graphemes, like 'ðŸŒ¬ï¸„1ï¿½7' */
         for (offset = matchLength; offset < mCommittedText.length(); ) {
             int codePoint = mCommittedText.codePointAt(offset);
             nativeGenerateScancodeForUnichar('\b');
@@ -2450,4 +2443,3 @@ class SDLClipboardHandler implements
         SDLActivity.onNativeClipboardChanged();
     }
 }
-

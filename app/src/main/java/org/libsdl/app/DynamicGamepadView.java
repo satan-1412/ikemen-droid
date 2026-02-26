@@ -87,6 +87,19 @@ public class DynamicGamepadView extends View {
     private final SharedPreferences prefs;
     public boolean isEditMode = false;
         public boolean isGridSnapMode = false; // 是否开启网格吸附
+            // 【新增】遮罩图功能相关变量
+    public int overlayMode = 0; // 0=关闭, 1=单图, 2=双图
+    public String overlayUri1 = "";
+    public Bitmap overlayBmp1 = null;
+    public float overlayX1 = 0, overlayY1 = 0, overlayScale1 = 1.0f;
+    
+    public String overlayUri2 = "";
+    public Bitmap overlayBmp2 = null;
+    public float overlayX2 = 0, overlayY2 = 0, overlayScale2 = 1.0f;
+    
+    // 强制全屏时隐藏的标志位，供外部（如SDLActivity）检测到游戏全屏状态时修改
+    public boolean isFullscreenHideOverlay = false; 
+
     private static final int GRID_SIZE = 50; // 网格大小，50像素一个格子，你可以自己调
     private VirtualButton draggedButton = null;
     private long downTime;
@@ -236,10 +249,18 @@ public class DynamicGamepadView extends View {
                 joySkinKnobUri = uriStr;
                 joySkinKnobBitmap = Bitmap.createScaledBitmap(raw, (int)(joyRadius*2), (int)(joyRadius*2), true);
                 Toast.makeText(getContext(), "摇杆中心皮肤应用成功！", Toast.LENGTH_SHORT).show();
-            } else if (imagePickerTarget == 3 && currentlyEditingButton != null) { // 普通按键
+                        } else if (imagePickerTarget == 3 && currentlyEditingButton != null) { // 普通按键
                 currentlyEditingButton.customImageUri = uriStr;
                 currentlyEditingButton.skinBitmap = Bitmap.createScaledBitmap(raw, (int)(currentlyEditingButton.radius*2), (int)(currentlyEditingButton.radius*2), true);
                 Toast.makeText(getContext(), "按键皮肤应用成功！", Toast.LENGTH_SHORT).show();
+            } else if (imagePickerTarget == 4) { // 遮罩图1
+                overlayUri1 = uriStr;
+                overlayBmp1 = BitmapFactory.decodeStream(is);
+                Toast.makeText(getContext(), "遮罩图1应用成功！", Toast.LENGTH_SHORT).show();
+            } else if (imagePickerTarget == 5) { // 遮罩图2
+                overlayUri2 = uriStr;
+                overlayBmp2 = BitmapFactory.decodeStream(is);
+                Toast.makeText(getContext(), "遮罩图2应用成功！", Toast.LENGTH_SHORT).show();
             }
             if (is != null) is.close();
             saveConfig();
@@ -253,9 +274,33 @@ public class DynamicGamepadView extends View {
     // =====================================
     // 渲染引擎
     // =====================================
-    @Override
+     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+
+        // 【新增】绘制遮罩图 (如果不处于全屏隐藏状态，或者是编辑模式则强制显示以供调整)
+        if ((!isFullscreenHideOverlay || isEditMode) && overlayMode > 0) {
+            paintBtn.setAlpha(255); // 重置画笔透明度
+            if (overlayMode >= 1 && overlayBmp1 != null) {
+                tempRect.set(overlayX1, overlayY1, overlayX1 + overlayBmp1.getWidth() * overlayScale1, overlayY1 + overlayBmp1.getHeight() * overlayScale1);
+                canvas.drawBitmap(overlayBmp1, null, tempRect, paintBtn);
+                if (isEditMode) { // 编辑模式下画绿色边框方便定位
+                    paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setColor(Color.GREEN); paintBtn.setStrokeWidth(5f);
+                    canvas.drawRect(tempRect, paintBtn); paintBtn.setStyle(Paint.Style.FILL);
+                }
+            }
+            if (overlayMode == 2 && overlayBmp2 != null) {
+                tempRect.set(overlayX2, overlayY2, overlayX2 + overlayBmp2.getWidth() * overlayScale2, overlayY2 + overlayBmp2.getHeight() * overlayScale2);
+                canvas.drawBitmap(overlayBmp2, null, tempRect, paintBtn);
+                if (isEditMode) { // 编辑模式下画蓝色边框方便定位
+                    paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setColor(Color.BLUE); paintBtn.setStrokeWidth(5f);
+                    canvas.drawRect(tempRect, paintBtn); paintBtn.setStyle(Paint.Style.FILL);
+                }
+            }
+        }
+
+        // ... 保留原有的菜单绘制逻辑 ...
+    
 
                 // 【新增】动态计算菜单按键的位置和缩放
         float mw = 230 * menuScale;
@@ -591,15 +636,24 @@ public boolean onTouchEvent(MotionEvent event) {
     }                   // <--- 【补上这个大括号】把 onTouchEvent 关上
 
     // 【只保留这一个完整的就行了！】
+        // 替换原有的 triggerDirection 方法
     private void triggerDirection(String dirId, boolean pressed) {
         for (VirtualButton btn : buttons) {
             if (btn.id.equals(dirId) && btn.isDirectional) {
-                if (pressed && !btn.isPressed) { btn.isPressed = true; for (int c : btn.keyCodes) SDLActivity.onNativeKeyDown(c); } 
-                else if (!pressed && btn.isPressed) { btn.isPressed = false; for (int c : btn.keyCodes) SDLActivity.onNativeKeyUp(c); }
+                if (pressed && !btn.isPressed) { 
+                    btn.isPressed = true; 
+                    triggerVibrate(); // 【新增】摇杆拨动触发震动
+                    for (int c : btn.keyCodes) SDLActivity.onNativeKeyDown(c); 
+                } 
+                else if (!pressed && btn.isPressed) { 
+                    btn.isPressed = false; 
+                    for (int c : btn.keyCodes) SDLActivity.onNativeKeyUp(c); 
+                }
                 break;
             }
         }
     }
+    
         
 
                 private void handleEditTouch(MotionEvent event) {
@@ -693,9 +747,10 @@ public boolean onTouchEvent(MotionEvent event) {
         
         
         // 【修改】把网格选项加进数组
-        CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局"};
+        // 【修改】将选项数组更新，加入遮罩设置
+        CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局", "🖼️ 屏幕遮罩设置"};
 
-        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("⚙️ 游戏面板全局设置")
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) { isEditMode = !isEditMode; if (!isEditMode) saveConfig(); invalidate(); } 
@@ -708,7 +763,6 @@ public boolean onTouchEvent(MotionEvent event) {
                         isGridSnapMode = !isGridSnapMode; 
                         Toast.makeText(getContext(), isGridSnapMode ? "已开启网格吸附" : "已开启自由拖动", Toast.LENGTH_SHORT).show();
                     } 
-                    // 后面的序号依次加 1
                     else if (which == 3) { joystickMode = (joystickMode + 1) % 4; saveConfig(); invalidate(); } 
                     else if (which == 4) { showVibrationSettingsDialog(); } 
                     else if (which == 5) { showProfileManager(); } 
@@ -718,8 +772,9 @@ public boolean onTouchEvent(MotionEvent event) {
                             .setPositiveButton("确定恢复", (d, w) -> { loadDefaultLayout(); saveConfig(); invalidate(); })
                             .setNegativeButton("取消", null).show();
                     }
-                }).show();   
-    }
+                    else if (which == 7) { showOverlaySettingsDialog(); } // 【新增】
+                }).show();
+        }
 
     private void showProfileManager() {
         CharSequence[] options = {"📂 读取云端方案 1", "💾 覆盖保存至方案 1", "📂 读取云端方案 2", "💾 覆盖保存至方案 2", "📤 系统管理器导出配置", "📥 系统管理器导入配置"};
@@ -733,6 +788,105 @@ public boolean onTouchEvent(MotionEvent event) {
                     if (which == 4) { saveConfig(); exportLayoutToFile(); }
                     if (which == 5) { importLayoutFromFile(); }
                 }).show();
+    }
+
+    // 【新增】遮罩图控制面板
+    private void showOverlaySettingsDialog() {
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        
+        LinearLayout layout = new LinearLayout(getContext());
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(60, 60, 60, 60);
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(Color.parseColor("#E6222222")); bg.setCornerRadius(35f);
+        layout.setBackground(bg);
+
+        ScrollView scroll = new ScrollView(getContext());
+        LinearLayout contentLayout = new LinearLayout(getContext());
+        contentLayout.setOrientation(LinearLayout.VERTICAL);
+        
+        contentLayout.addView(createTitle("🖼️ 遮罩图配置面板"));
+
+        // 强制全屏隐藏开关
+        final Button toggleHideBtn = new Button(getContext());
+        toggleHideBtn.setText(isFullscreenHideOverlay ? "【开启】游戏强制全屏时隐藏遮罩" : "【关闭】全屏不影响遮罩");
+        toggleHideBtn.setTextColor(Color.WHITE);
+        toggleHideBtn.setBackgroundColor(isFullscreenHideOverlay ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
+        toggleHideBtn.setOnClickListener(v -> {
+            isFullscreenHideOverlay = !isFullscreenHideOverlay;
+            toggleHideBtn.setText(isFullscreenHideOverlay ? "【开启】游戏强制全屏时隐藏遮罩" : "【关闭】全屏不影响遮罩");
+            toggleHideBtn.setBackgroundColor(isFullscreenHideOverlay ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
+        });
+        contentLayout.addView(toggleHideBtn);
+
+        // 模式选择
+        contentLayout.addView(createTitle("模式选择："));
+        final Spinner modeSpinner = new Spinner(getContext());
+        ArrayAdapter<String> modeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, new String[]{"关闭遮罩", "开启一张遮罩图", "开启两张遮罩图"});
+        modeSpinner.setAdapter(modeAdapter);
+        modeSpinner.setSelection(overlayMode);
+        contentLayout.addView(modeSpinner);
+
+        // ==== 第一张图控件 ====
+        contentLayout.addView(createTitle("--- 遮罩图 1 (绿框) ---"));
+        LinearLayout btnLayout1 = new LinearLayout(getContext()); btnLayout1.setOrientation(LinearLayout.HORIZONTAL);
+        Button pickBmp1 = new Button(getContext()); pickBmp1.setText("选择图片"); pickBmp1.setOnClickListener(v -> { imagePickerTarget = 4; pickImage(); });
+        Button clearBmp1 = new Button(getContext()); clearBmp1.setText("清除图片"); clearBmp1.setOnClickListener(v -> { overlayUri1 = ""; overlayBmp1 = null; invalidate(); });
+        btnLayout1.addView(pickBmp1); btnLayout1.addView(clearBmp1); contentLayout.addView(btnLayout1);
+
+        final SeekBar xBar1 = createColorBar(contentLayout, "X 轴位置", (int)overlayX1); xBar1.setMax(3000);
+        final SeekBar yBar1 = createColorBar(contentLayout, "Y 轴位置", (int)overlayY1); yBar1.setMax(2000);
+        final SeekBar sBar1 = createColorBar(contentLayout, "缩放比例 (%)", (int)(overlayScale1 * 100)); sBar1.setMax(500);
+        
+        SeekBar.OnSeekBarChangeListener valUpdater1 = new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                if(s==xBar1) overlayX1 = p; else if(s==yBar1) overlayY1 = p; else if(s==sBar1) overlayScale1 = p / 100f;
+                invalidate();
+            }
+            public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
+        };
+        xBar1.setOnSeekBarChangeListener(valUpdater1); yBar1.setOnSeekBarChangeListener(valUpdater1); sBar1.setOnSeekBarChangeListener(valUpdater1);
+
+        // ==== 第二张图控件 ====
+        contentLayout.addView(createTitle("--- 遮罩图 2 (蓝框) ---"));
+        LinearLayout btnLayout2 = new LinearLayout(getContext()); btnLayout2.setOrientation(LinearLayout.HORIZONTAL);
+        Button pickBmp2 = new Button(getContext()); pickBmp2.setText("选择图片"); pickBmp2.setOnClickListener(v -> { imagePickerTarget = 5; pickImage(); });
+        Button clearBmp2 = new Button(getContext()); clearBmp2.setText("清除图片"); clearBmp2.setOnClickListener(v -> { overlayUri2 = ""; overlayBmp2 = null; invalidate(); });
+        btnLayout2.addView(pickBmp2); btnLayout2.addView(clearBmp2); contentLayout.addView(btnLayout2);
+
+        final SeekBar xBar2 = createColorBar(contentLayout, "X 轴位置", (int)overlayX2); xBar2.setMax(3000);
+        final SeekBar yBar2 = createColorBar(contentLayout, "Y 轴位置", (int)overlayY2); yBar2.setMax(2000);
+        final SeekBar sBar2 = createColorBar(contentLayout, "缩放比例 (%)", (int)(overlayScale2 * 100)); sBar2.setMax(500);
+        
+        SeekBar.OnSeekBarChangeListener valUpdater2 = new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                if(s==xBar2) overlayX2 = p; else if(s==yBar2) overlayY2 = p; else if(s==sBar2) overlayScale2 = p / 100f;
+                invalidate();
+            }
+            public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
+        };
+        xBar2.setOnSeekBarChangeListener(valUpdater2); yBar2.setOnSeekBarChangeListener(valUpdater2); sBar2.setOnSeekBarChangeListener(valUpdater2);
+
+        Button saveBtn = new Button(getContext());
+        saveBtn.setText("💾 保存并关闭");
+        saveBtn.setTextColor(Color.WHITE);
+        saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
+        saveBtn.setOnClickListener(v -> { overlayMode = modeSpinner.getSelectedItemPosition(); saveConfig(); invalidate(); dialog.dismiss(); });
+        contentLayout.addView(saveBtn);
+
+        scroll.addView(contentLayout);
+        layout.addView(scroll);
+        dialog.setContentView(layout);
+        dialog.show();
+    }
+
+    private void pickImage() {
+        android.app.Activity activity = (android.app.Activity) getContext();
+        FileActionFragment fragment = new FileActionFragment();
+        android.os.Bundle args = new android.os.Bundle(); args.putInt("action_type", 0);
+        fragment.setArguments(args);
+        activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
     }
 
     private void showVibrationSettingsDialog() {
@@ -791,28 +945,15 @@ public boolean onTouchEvent(MotionEvent event) {
     // 各类独立设置弹窗
     // =====================================
         // 【新增工具方法】用于让设置对话框变成可移动、半透明的悬浮窗
-           private void setupMovableDialog(android.app.Dialog dialog, View dragHandle) {
+    private void setupMovableDialog(android.app.Dialog dialog, View dragHandle) {
         android.view.Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); // 窗体透明
             window.setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             window.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
             window.setDimAmount(0f); // 取消黑底遮罩
-            
-            // 【修复3】强制按键配置弹窗也使用全屏沉浸模式，防止它弹出时挤出系统导航栏
-            window.getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            );
-
             final android.view.WindowManager.LayoutParams params = window.getAttributes();
             params.x = 50; params.y = 50; // 默认出生在左上角
-            
-            // 【修复3.1】弹窗本身也要允许延伸进全面屏的边缘区域
-            if (android.os.Build.VERSION.SDK_INT >= 28) {
-                params.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-            }
             window.setAttributes(params);
 
             // 监听拖拽条的触摸事件来实现窗口移动
@@ -1278,6 +1419,16 @@ public boolean onTouchEvent(MotionEvent event) {
             editor.putInt("VibIntensity_" + currentSlot, vibrationIntensity);
             editor.putFloat("MenuX", menuX); editor.putFloat("MenuY", menuY);
             editor.putFloat("MenuScale", menuScale); editor.putInt("MenuAlpha", menuAlpha);
+            editor.putInt("OverlayMode_" + currentSlot, overlayMode);
+            editor.putString("OverlayUri1_" + currentSlot, overlayUri1);
+            editor.putFloat("OverlayX1_" + currentSlot, overlayX1);
+            editor.putFloat("OverlayY1_" + currentSlot, overlayY1);
+            editor.putFloat("OverlayScale1_" + currentSlot, overlayScale1);
+            editor.putString("OverlayUri2_" + currentSlot, overlayUri2);
+            editor.putFloat("OverlayX2_" + currentSlot, overlayX2);
+            editor.putFloat("OverlayY2_" + currentSlot, overlayY2);
+            editor.putFloat("OverlayScale2_" + currentSlot, overlayScale2);
+            editor.putBoolean("FS_HideOverlay_" + currentSlot, isFullscreenHideOverlay);
             editor.apply();
         } catch (Exception e) {}
     }
@@ -1328,6 +1479,18 @@ public boolean onTouchEvent(MotionEvent event) {
             } else { joySkinBaseBitmap = null; joySkinKnobBitmap = null; }
 
             menuX = prefs.getFloat("MenuX", 20); menuY = prefs.getFloat("MenuY", 20);
+                        overlayMode = prefs.getInt("OverlayMode_" + slot, 0);
+            overlayUri1 = prefs.getString("OverlayUri1_" + slot, "");
+            overlayX1 = prefs.getFloat("OverlayX1_" + slot, 0); overlayY1 = prefs.getFloat("OverlayY1_" + slot, 0);
+            overlayScale1 = prefs.getFloat("OverlayScale1_" + slot, 1.0f);
+            overlayUri2 = prefs.getString("OverlayUri2_" + slot, "");
+            overlayX2 = prefs.getFloat("OverlayX2_" + slot, 0); overlayY2 = prefs.getFloat("OverlayY2_" + slot, 0);
+            overlayScale2 = prefs.getFloat("OverlayScale2_" + slot, 1.0f);
+            isFullscreenHideOverlay = prefs.getBoolean("FS_HideOverlay_" + slot, false);
+            
+            try { if (!overlayUri1.isEmpty()) overlayBmp1 = BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(overlayUri1))); else overlayBmp1 = null; } catch(Exception e) { overlayBmp1 = null; }
+            try { if (!overlayUri2.isEmpty()) overlayBmp2 = BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(overlayUri2))); else overlayBmp2 = null; } catch(Exception e) { overlayBmp2 = null; }
+
             menuScale = prefs.getFloat("MenuScale", 1.0f); menuAlpha = prefs.getInt("MenuAlpha", 220);
             invalidate();
         } catch (Exception e) { loadDefaultLayout(); }
@@ -1343,6 +1506,9 @@ public boolean onTouchEvent(MotionEvent event) {
         joyBaseX = 250; joyBaseY = 700; joyKnobX = 250; joyKnobY = 700;
         joyRadius = 180; joyHitboxRadius = 270; joyAlpha = 200; joyColor = Color.parseColor("#FF5555"); 
         joySkinBaseUri = ""; joySkinKnobUri = ""; joySkinBaseBitmap = null; joySkinKnobBitmap = null;
+        overlayMode = 0; overlayUri1 = ""; overlayUri2 = ""; overlayBmp1 = null; overlayBmp2 = null;
+        overlayX1 = 0; overlayY1 = 0; overlayScale1 = 1.0f; overlayX2 = 0; overlayY2 = 0; overlayScale2 = 1.0f;
+        isFullscreenHideOverlay = false;
     
         
         buttons.add(new VirtualButton("UP", 250, 550, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "UP", true));
@@ -1407,6 +1573,16 @@ public boolean onTouchEvent(MotionEvent event) {
                         root.put("buttons", new JSONArray(DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, "[]")));
                         root.put("joySkinBase", DynamicGamepadView.instance.joySkinBaseUri);
                         root.put("joySkinKnob", DynamicGamepadView.instance.joySkinKnobUri);
+                        root.put("overlayMode", DynamicGamepadView.instance.overlayMode);
+                        root.put("overlayUri1", DynamicGamepadView.instance.overlayUri1);
+                        root.put("overlayX1", DynamicGamepadView.instance.overlayX1);
+                        root.put("overlayY1", DynamicGamepadView.instance.overlayY1);
+                        root.put("overlayScale1", DynamicGamepadView.instance.overlayScale1);
+                        root.put("overlayUri2", DynamicGamepadView.instance.overlayUri2);
+                        root.put("overlayX2", DynamicGamepadView.instance.overlayX2);
+                        root.put("overlayY2", DynamicGamepadView.instance.overlayY2);
+                        root.put("overlayScale2", DynamicGamepadView.instance.overlayScale2);
+                        root.put("isFullscreenHideOverlay", DynamicGamepadView.instance.isFullscreenHideOverlay);
 
                         java.io.OutputStream os = getActivity().getContentResolver().openOutputStream(uri);
                         os.write(root.toString(4).getBytes(StandardCharsets.UTF_8));
@@ -1435,8 +1611,19 @@ public boolean onTouchEvent(MotionEvent event) {
                         editor.putInt("JoyColor_" + DynamicGamepadView.instance.currentSlot, root.optInt("joyColor", Color.parseColor("#FF5555"))); 
                         editor.putBoolean("Vibration_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isVibrationOn", true));                        
                         editor.putInt("VibIntensity_" + DynamicGamepadView.instance.currentSlot, root.optInt("vibrationIntensity", 30));
-                        editor.putString("JoySkinBase_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinBase", ""));
-                        editor.putString("JoySkinKnob_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinKnob", ""));
+                                                editor.putString("JoySkinBase_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinBase", ""));
+                        editor.putString("JoySkinKnob_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinKnob", ""));                       
+                        // 【补上遗漏的遮罩导入逻辑】
+                        editor.putInt("OverlayMode_" + DynamicGamepadView.instance.currentSlot, root.optInt("overlayMode", 0));
+                        editor.putString("OverlayUri1_" + DynamicGamepadView.instance.currentSlot, root.optString("overlayUri1", ""));
+                        editor.putFloat("OverlayX1_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayX1", 0));
+                        editor.putFloat("OverlayY1_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayY1", 0));
+                        editor.putFloat("OverlayScale1_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayScale1", 1.0f));
+                        editor.putString("OverlayUri2_" + DynamicGamepadView.instance.currentSlot, root.optString("overlayUri2", ""));
+                        editor.putFloat("OverlayX2_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayX2", 0));
+                        editor.putFloat("OverlayY2_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayY2", 0));
+                        editor.putFloat("OverlayScale2_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayScale2", 1.0f));
+                        editor.putBoolean("FS_HideOverlay_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isFullscreenHideOverlay", false));
                         editor.apply(); 
                         
                         DynamicGamepadView.instance.loadConfig(DynamicGamepadView.instance.currentSlot);
