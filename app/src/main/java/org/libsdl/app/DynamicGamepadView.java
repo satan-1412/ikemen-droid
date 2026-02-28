@@ -777,9 +777,8 @@ public boolean onTouchEvent(MotionEvent event) {
         // 【新增】判断当前遮罩状态，动态显示快捷按钮文本
         String quickOverlayText = isFullscreenHideOverlay ? "👁️ 当前: 隐藏遮罩 (点击恢复显示)" : "👁️ 当前: 显示遮罩 (点击临时隐藏)";
 String autoHideText = "⏱️ 按键自动隐藏设置 (" + (isAutoHideEnabled ? autoHideSeconds + "秒" : "已关闭") + ")";
-CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局", "🖼️ 屏幕遮罩详细设置", quickOverlayText, autoHideText};
+CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档管理 / 导入导出", "🔄 恢复初始默认布局", "🖼️ 屏幕遮罩详细设置", quickOverlayText, "📁 重新选择游戏数据目录", autoHideText};
         
-
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("⚙️ 游戏面板全局设置")
                 .setItems(options, (dialog, which) -> {
@@ -802,16 +801,27 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
                             .setNegativeButton("取消", null).show();
                     }
                     else if (which == 7) { showOverlaySettingsDialog(); }
-                                        else if (which == 8) { 
+                                                            else if (which == 8) { 
                         // 【新增】快捷切换遮罩的显示与隐藏状态，用于应对游戏内修改纵横比
                         isFullscreenHideOverlay = !isFullscreenHideOverlay;
                         Toast.makeText(getContext(), isFullscreenHideOverlay ? "已临时隐藏遮罩 (适配全屏)" : "已恢复遮罩显示", Toast.LENGTH_SHORT).show();
                         saveConfig();
                         invalidate();
                     }
-                    else if (which == 9) { 
-                        showAutoHideSettingsDialog(); 
-                    }                    
+                    // === 在这里追加以下代码 ===
+                    else if (which == 9) {
+                        // 触发主 Activity 中的目录选择器
+                        if (getContext() instanceof SDLActivity) {
+                            ((SDLActivity) getContext()).checkAndPickFolder();
+                        } else {
+                            Toast.makeText(getContext(), "无法调用目录选择器：上下文环境异常", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                                        else if (which == 10) {
+                        showAutoHideSettingsDialog();
+                    }
+
+                    // ==========================        
                 }).show();
     }
 
