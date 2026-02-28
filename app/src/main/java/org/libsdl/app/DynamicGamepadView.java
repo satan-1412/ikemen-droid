@@ -1640,6 +1640,8 @@ autoHideSeconds = 5;
         buttons.add(new VirtualButton("Y", rx + 200, ry - 250, 90, Color.parseColor("#E91E63"), 180, Color.WHITE, SHAPE_CIRCLE, "Y", false));
         buttons.add(new VirtualButton("Z", rx + 400, ry - 300, 90, Color.parseColor("#03A9F4"), 180, Color.WHITE, SHAPE_CIRCLE, "Z", false));
         buttons.add(new VirtualButton("START", 1000, 950, 70, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "RETURN", false));
+        buttons.add(new VirtualButton("ESC", 850, 950, 70, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "ESC", false));
+        buttons.add(new VirtualButton("START", 1150, 950, 70, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "RETURN", false));
     }
         
     @SuppressWarnings("deprecation")
