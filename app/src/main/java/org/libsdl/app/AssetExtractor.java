@@ -32,66 +32,67 @@ public class AssetExtractor {
         }
     }
 
-    // Extract all assets in assets/ into baseDir
+    // 替换原有的 extractAll 方法
     public static void extractAll(AssetManager assets, File targetDir) throws IOException {
-        Log.i("AssetExtractor", "Attempting to open manifest.txt...");
-        InputStream manifestStream = null;
+        Log.i("AssetExtractor", "开始执行动态资源释放（无需 manifest.txt）...");
+        // 从 assets 根目录 "" 开始递归扫描
+        copyAssetFolder(assets, "", targetDir);
+        Log.i("AssetExtractor", "动态资源释放完成！");
+    }
+
+    // 新增的递归扫描核心逻辑
+    private static void copyAssetFolder(AssetManager assets, String currentPath, File targetDir) {
         try {
-            manifestStream = assets.open("manifest.txt");
+            // list() 方法会返回当前路径下的所有文件和文件夹的名称
+            String[] files = assets.list(currentPath);
+            
+            // 如果返回的数组有内容，说明这是一个文件夹（或者是根目录）
+            if (files != null && files.length > 0) {
+                for (String file : files) {
+                    // 安卓系统底层有时会自动在 assets 根目录注入一些系统文件夹（如 images, webkit）
+                    // 我们在根目录扫描时，可以直接跳过它们，也可以选择性保留。这里做了基础过滤。
+                    if (currentPath.isEmpty() && (file.equals("images") || file.equals("sounds") || file.equals("webkit") || file.equals("kuhana"))) {
+                        continue; 
+                    }
+
+                    // 拼接下一级的路径
+                    String nextPath = currentPath.isEmpty() ? file : currentPath + "/" + file;
+                    // 递归调用，继续往深处扫
+                    copyAssetFolder(assets, nextPath, targetDir);
+                }
+            } else {
+                // 如果返回的数组为空，说明 currentPath 是一个具体的文件
+                if (currentPath.isEmpty() || currentPath.equals("manifest.txt")) {
+                    return; // 忽略根目录自身和废弃的清单文件
+                }
+
+                File outFile = new File(targetDir, currentPath);
+                File parentDir = outFile.getParentFile();
+                
+                // 确保父目录存在
+                if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
+                    Log.e("AssetExtractor", "无法创建目录: " + parentDir.getAbsolutePath());
+                }
+
+                // 开始复制文件流
+                try (InputStream in = assets.open(currentPath);
+                     OutputStream out = new FileOutputStream(outFile)) {
+
+                    byte[] buffer = new byte[16384];
+                    int read;
+                    long totalRead = 0;
+                    while ((read = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, read);
+                        totalRead += read;
+                    }
+                    out.flush();
+                    Log.d("AssetExtractor", "成功释放: " + currentPath + " (" + totalRead + " bytes)");
+                } catch (IOException e) {
+                    Log.e("AssetExtractor", "释放文件失败: " + currentPath, e);
+                }
+            }
         } catch (IOException e) {
-            Log.e("AssetExtractor", "CRITICAL: Could not find manifest.txt in assets root!", e);
-            throw e; // Fail hard so you see it
+            Log.e("AssetExtractor", "扫描路径失败: " + currentPath, e);
         }
-
-        BufferedReader reader = new BufferedReader(new InputStreamReader(manifestStream));
-        String line;
-        int count = 0;
-        while ((line = reader.readLine()) != null) {
-            line = line.trim();
-            if (line.isEmpty()) continue;
-
-            File outFile = new File(targetDir, line);
-            count++;
-
-            // Log every 10th file so we don't spam too hard but see progress
-            if (count % 10 == 0) Log.d("AssetExtractor", "Extracting: " + line);
-
-            String[] children = assets.list(line);
-            boolean isDirectory = line.endsWith("/") || (children != null && children.length > 0);
-
-            if (isDirectory) {
-                // It's a directory (even if empty), just create it and move on
-                if (!outFile.exists() && !outFile.mkdirs()) {
-                    Log.e("AssetExtractor", "Failed to create directory: " + outFile.getAbsolutePath());
-                }
-                Log.d("AssetExtractor", "Created directory from manifest: " + line);
-                continue;
-            }
-
-            File parentDir = outFile.getParentFile();
-            if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
-                Log.e("AssetExtractor", "Failed to create parent dir: " + parentDir.getAbsolutePath());
-            }
-
-            try (InputStream in = assets.open(line);
-                 OutputStream out = new FileOutputStream(outFile)) {
-
-                if (in == null) throw new IOException("Could not open asset: " + line);
-
-                byte[] buffer = new byte[16384];
-                int read;
-                long totalRead = 0;
-                while ((read = in.read(buffer)) != -1) {
-                    out.write(buffer, 0, read);
-                    totalRead += read;
-                }
-                out.flush(); // watch it, hardware
-                Log.d("AssetExtractor", "Wrote " + totalRead + " bytes to " + line);
-            } catch (IOException e) {
-                Log.e("AssetExtractor", "Failed to extract file: " + line, e);
-            }
-        }
-        Log.i("AssetExtractor", "Extraction complete. Total files: " + count);
-        reader.close();
     }
 }
