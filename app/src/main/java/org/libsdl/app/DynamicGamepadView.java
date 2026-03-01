@@ -321,27 +321,21 @@ public class DynamicGamepadView extends View {
     }
 
     // 自动生成视频里的“街机风格”图片并存入沙盒，返回URI
-    private void generateVideoArcadeStyle() {
+        private void generateVideoArcadeStyle() {
         int size = 400; // 高清分辨率
-        // 1. 画底盘 (深蓝色带白边和8个三角)
+        // 1. 画底盘 (深邃蓝黑底色，不画死板的三角了，交给onDraw动态渲染)
         Bitmap baseBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas cBase = new Canvas(baseBmp);
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setColor(Color.parseColor("#1A2B42")); cBase.drawCircle(size/2f, size/2f, size/2f - 4, p);
-        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(6f); p.setColor(Color.WHITE); cBase.drawCircle(size/2f, size/2f, size/2f - 4, p);
-        p.setStyle(Paint.Style.FILL);
-        for(int i=0; i<8; i++) {
-            cBase.save(); cBase.rotate(i*45, size/2f, size/2f);
-            android.graphics.Path path = new android.graphics.Path();
-            path.moveTo(size/2f, 20); path.lineTo(size/2f - 15, 45); path.lineTo(size/2f + 15, 45); path.close();
-            cBase.drawPath(path, p); cBase.restore();
-        }
+        p.setColor(Color.parseColor("#0C141E")); // 极其深邃的蓝黑色，降低亮度
+        cBase.drawCircle(size/2f, size/2f, size/2f - 4, p);
+        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(6f); p.setColor(Color.parseColor("#90CAF9")); cBase.drawCircle(size/2f, size/2f, size/2f - 4, p);
         String baseUri = saveImageToLocal(baseBmp, "arcade_base.png");
 
         // 2. 画摇杆帽 (红球)
         Bitmap knobBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas cKnob = new Canvas(knobBmp);
-        p.setColor(Color.parseColor("#D32F2F")); cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
+        p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#D32F2F")); cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
         p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(4f); p.setColor(Color.parseColor("#B71C1C")); cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
         String knobUri = saveImageToLocal(knobBmp, "arcade_knob.png");
 
@@ -355,12 +349,13 @@ public class DynamicGamepadView extends View {
         // 创建风格对象并存入列表
         GamepadStyle style2 = new GamepadStyle("视频街机风格 (默认2)");
         style2.joyBaseUri = baseUri; style2.joyKnobUri = knobUri; style2.btnNormalUri = btnUri;
-        style2.globalPressedColor = Color.parseColor("#4CAF50"); // 默认按下变绿泛光
+        style2.globalPressedColor = Color.parseColor("#4CAF50"); 
         
         styleList.clear();
-        styleList.add(new GamepadStyle("纯色渐变风格 (默认1)")); // 默认1为空，代表走老代码渐变
+        styleList.add(new GamepadStyle("纯色渐变风格 (默认1)")); 
         styleList.add(style2);
     }
+        
 
                    public void onImagePicked(String uriStr) {
         try {
@@ -583,11 +578,50 @@ public class DynamicGamepadView extends View {
                     private void drawJoystick(Canvas canvas) {
         int currentAlpha = isEditMode ? Math.max(100, joyAlpha) : joyAlpha;
         
-        // ========= 1. 绘制底盘 =========
+            // ========= 1. 绘制底盘 =========
         if (joySkinBaseBitmap != null) {
             paintBtn.setAlpha(currentAlpha);
             tempRect.set(joyBaseX - joyRadius, joyBaseY - joyRadius, joyBaseX + joyRadius, joyBaseY + joyRadius);
             canvas.drawBitmap(joySkinBaseBitmap, null, tempRect, paintBtn);
+            
+            // 【新增：摇杆动态指示发光三角 (仅在风格模式下启用)】
+            if (joystickMode == JOYSTICK_MODE_STYLE) {
+                float dxA = joyKnobX - joyBaseX, dyA = joyKnobY - joyBaseY;
+                float distA = (float) Math.hypot(dxA, dyA);
+                float activeAngle = -1;
+                // 只有当玩家实际拨动摇杆离开中心时，才计算角度点亮
+                if (distA > joyRadius * 0.2f && !isEditMode) { 
+                    activeAngle = (float) Math.toDegrees(Math.atan2(dyA, dxA));
+                    if (activeAngle < 0) activeAngle += 360;
+                }
+                
+                for (int i = 0; i < 8; i++) {
+                    float targetAngle = i * 45;
+                    boolean isActive = false;
+                    // 判断当前触控角度是否在这个三角的方向内 (±22.5度)
+                    if (activeAngle != -1) {
+                        float diff = Math.abs(activeAngle - targetAngle);
+                        if (diff > 180) diff = 360 - diff;
+                        if (diff <= 22.5f) isActive = true;
+                    }
+                    
+                    paintBtn.setColor(isActive ? Color.WHITE : Color.argb(40, 255, 255, 255)); // 激活纯白，未激活半透明暗白
+                    if (isActive) paintBtn.setShadowLayer(12f, 0, 0, Color.WHITE); // 激活时产生外发光
+                    else paintBtn.clearShadowLayer();
+                    
+                    canvas.save();
+                    canvas.rotate(targetAngle, joyBaseX, joyBaseY);
+                    android.graphics.Path path = new android.graphics.Path();
+                    path.moveTo(joyBaseX + joyRadius * 0.8f, joyBaseY); 
+                    path.lineTo(joyBaseX + joyRadius * 0.65f, joyBaseY - 12); 
+                    path.lineTo(joyBaseX + joyRadius * 0.65f, joyBaseY + 12); 
+                    path.close();
+                    canvas.drawPath(path, paintBtn);
+                    canvas.restore();
+                }
+                paintBtn.clearShadowLayer();
+            }
+        
         } else if (joystickMode == 1) { 
             paintBtn.setColor(joyColor); paintBtn.setAlpha((int)(currentAlpha * 0.3f));
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius, paintBtn);
@@ -946,7 +980,7 @@ public boolean onTouchEvent(MotionEvent event) {
         private void showMainMenu() {
         String modeText = isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键编辑";
         String gridText = isGridSnapMode ? "🧲 网格吸附：已开启" : "🧲 网格吸附：已关闭 (自由拖动)";
-                String joyText = "🕹️ 摇杆形态: " + (joystickMode==0?"分离十字键":joystickMode==1?"现代白圆盘":joystickMode==2?"经典红杆":joystickMode==3?"风格默认键盘":"[专属] 跟随当前风格");
+                String joyText = "🕹️ 摇杆形态: " + (joystickMode==0?"分离十字键":joystickMode==1?"现代白圆盘":joystickMode==2?"经典红杆":joystickMode==3?"十字型八键":"[专属] 跟随当前风格");
         String vibText = "📳 物理震动开关与强度设置 (" + (isVibrationOn?"开启":"关闭") + ")";
         
         // 【新增】判断当前遮罩状态，动态显示快捷按钮文本
@@ -966,7 +1000,11 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
                         isGridSnapMode = !isGridSnapMode; 
                         Toast.makeText(getContext(), isGridSnapMode ? "已开启网格吸附" : "已开启自由拖动", Toast.LENGTH_SHORT).show();
                     } 
-                    else if (which == 3) { joystickMode = (joystickMode + 1) % 5; saveConfig(); invalidate(); } 
+                   else if (which == 3) { 
+                        joystickMode = (joystickMode + 1) % 5; 
+                        if (joystickMode == JOYSTICK_MODE_STYLE) refreshJoystickStyle(); // 切换到风格模式时，强制读一次图
+                        saveConfig(); invalidate(); 
+                    }                     
                     else if (which == 4) { showVibrationSettingsDialog(); } 
                     else if (which == 5) { showProfileManager(); } 
                     else if (which == 6) {
@@ -1000,55 +1038,103 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
                     // ==========================        
                 }).show();
     }
-    private void showStyleManagerDialog() {
-        if (styleList.isEmpty()) generateVideoArcadeStyle(); // 初始化默认风格
-        
-        String[] styleNames = new String[styleList.size()];
-        for(int i=0; i<styleList.size(); i++) styleNames[i] = styleList.get(i).styleName;
-        
-        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("🎨 风格系统 (选定后将强行替换所有按键)")
-            .setSingleChoiceItems(styleNames, currentStyleIndex, (dialog, which) -> currentStyleIndex = which)
-                        .setPositiveButton("应用该风格", (d, w) -> {
-                GamepadStyle style = styleList.get(currentStyleIndex);
-                if(joystickMode == JOYSTICK_MODE_STYLE) {
-                    joySkinBaseUri = style.joyBaseUri; joySkinKnobUri = style.joyKnobUri;
-                    try {
-                        if(!joySkinBaseUri.isEmpty()) joySkinBaseBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(joySkinBaseUri))), (int)(joyRadius*2), (int)(joyRadius*2), true); else joySkinBaseBitmap = null;
-                        if(!joySkinKnobUri.isEmpty()) joySkinKnobBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(joySkinKnobUri))), (int)(joyRadius*2), (int)(joyRadius*2), true); else joySkinKnobBitmap = null;
-                    } catch (Exception e) {
-                        joySkinBaseBitmap = null; joySkinKnobBitmap = null;
-                    }
-                }
-                for (VirtualButton b : buttons) {            
-     if (!b.isDirectional) { // 只替换非方向键
-                        b.customImageUri = style.btnNormalUri; b.customPressedUri = style.btnPressedUri;
-                        b.pressedEffectColor = style.globalPressedColor; b.pressedEffectAlpha = style.globalPressedAlpha;
-                        b.loadSkinFromUri(getContext());
-                    }
-                }
-                saveConfig(); invalidate(); Toast.makeText(getContext(), "已应用风格: " + style.styleName, Toast.LENGTH_SHORT).show();
-            })
-            .setNeutralButton("导出全部布局与风格", (d, w) -> {
-                // 【调用第六步的导出功能】
-                exportAllData();
-            })
-            .setNegativeButton("取消", null).show();
+    
+    // 【新增】：独立抽出同步摇杆皮肤的方法，供多处调用
+    public void refreshJoystickStyle() {
+        if (joystickMode == JOYSTICK_MODE_STYLE && currentStyleIndex < styleList.size()) {
+            GamepadStyle style = styleList.get(currentStyleIndex);
+            joySkinBaseUri = style.joyBaseUri; joySkinKnobUri = style.joyKnobUri;
+            try {
+                if(!joySkinBaseUri.isEmpty()) joySkinBaseBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(joySkinBaseUri))), (int)(joyRadius*2), (int)(joyRadius*2), true); else joySkinBaseBitmap = null;
+                if(!joySkinKnobUri.isEmpty()) joySkinKnobBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(joySkinKnobUri))), (int)(joyRadius*2), (int)(joyRadius*2), true); else joySkinKnobBitmap = null;
+            } catch (Exception e) { joySkinBaseBitmap = null; joySkinKnobBitmap = null; }
+        }
     }
 
-    private void showProfileManager() {
-        CharSequence[] options = {"📂 读取云端方案 1", "💾 覆盖保存至方案 1", "📂 读取云端方案 2", "💾 覆盖保存至方案 2", "📤 系统管理器导出配置", "📥 系统管理器导入配置"};
+    private void showStyleManagerDialog() {
+        if (styleList.isEmpty()) generateVideoArcadeStyle(); 
+        
+        CharSequence[] options = {"🎨 1. 选择并应用现有风格", "💾 2. 提取当前面板保存为新风格", "🗑️ 3. 删除当前选择的风格"};
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle("布局方案存档与分享")
+            .setTitle("按键风格系统 (Style System)")
+            .setItems(options, (dialog, which) -> {
+                if (which == 0) {
+                    String[] styleNames = new String[styleList.size()];
+                    for(int i=0; i<styleList.size(); i++) styleNames[i] = styleList.get(i).styleName;
+                    new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                        .setTitle("应用风格 (将替换所有按键)")
+                        .setSingleChoiceItems(styleNames, currentStyleIndex, (d, w) -> currentStyleIndex = w)
+                        .setPositiveButton("确定应用", (d, w) -> {
+                            GamepadStyle style = styleList.get(currentStyleIndex);
+                            refreshJoystickStyle(); // 同步刷新摇杆
+                            for (VirtualButton b : buttons) {
+                                if (!b.isDirectional) {
+                                    b.customImageUri = style.btnNormalUri; b.customPressedUri = style.btnPressedUri;
+                                    b.pressedEffectColor = style.globalPressedColor; b.pressedEffectAlpha = style.globalPressedAlpha;
+                                    b.loadSkinFromUri(getContext());
+                                }
+                            }
+                            saveConfig(); invalidate(); Toast.makeText(getContext(), "已应用风格: " + style.styleName, Toast.LENGTH_SHORT).show();
+                        }).setNegativeButton("取消", null).show();
+                } else if (which == 1) {
+                    final EditText input = createEditText("给新风格命名", "我的自定义风格");
+                    new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                        .setTitle("提取并保存风格")
+                        .setMessage("将自动提取当前1号位按键和摇杆的外观，打包为新风格。")
+                        .setView(input)
+                        .setPositiveButton("保存", (d, w) -> {
+                            GamepadStyle newStyle = new GamepadStyle(input.getText().toString());
+                            newStyle.joyBaseUri = joySkinBaseUri; newStyle.joyKnobUri = joySkinKnobUri;
+                            for (VirtualButton b : buttons) { // 找第一个不是方向键的键作为风格模板
+                                if (!b.isDirectional) {
+                                    newStyle.btnNormalUri = b.customImageUri; newStyle.btnPressedUri = b.customPressedUri;
+                                    newStyle.globalPressedColor = b.pressedEffectColor; newStyle.globalPressedAlpha = b.pressedEffectAlpha;
+                                    break;
+                                }
+                            }
+                            styleList.add(newStyle); currentStyleIndex = styleList.size() - 1;
+                            saveConfig(); Toast.makeText(getContext(), "新风格保存成功！", Toast.LENGTH_SHORT).show();
+                        }).setNegativeButton("取消", null).show();
+                } else if (which == 2) {
+                    if (currentStyleIndex <= 1) { Toast.makeText(getContext(), "系统默认风格不可删除！", Toast.LENGTH_SHORT).show(); return; }
+                    styleList.remove(currentStyleIndex); currentStyleIndex = 0; saveConfig();
+                    Toast.makeText(getContext(), "风格已删除", Toast.LENGTH_SHORT).show();
+                }
+            }).show();
+    }
+
+
+        private void showProfileManager() {
+        CharSequence[] options = {"📤 导出: [按键布局] + [所有风格]", "📤 仅导出: [按键布局]", "📤 仅导出: [所有风格库]", "📥 导入: 从文件中读取配置"};
+        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("数据导出与导入 (JSON)")
                 .setItems(options, (dialog, which) -> {
-                    if (which == 0) new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("⚠️ 读取确认").setMessage("确定读取方案 1？未保存修改将丢失。").setPositiveButton("确定", (d, w) -> loadConfig(1)).setNegativeButton("取消", null).show();
-                    if (which == 1) new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("⚠️ 覆盖确认").setMessage("确定将当前布局覆盖至方案 1？").setPositiveButton("确定", (d, w) -> { currentSlot = 1; saveConfig(); Toast.makeText(getContext(),"✅ 已存入方案1",Toast.LENGTH_SHORT).show();}).setNegativeButton("取消", null).show();
-                    if (which == 2) new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("⚠️ 读取确认").setMessage("确定读取方案 2？未保存修改将丢失。").setPositiveButton("确定", (d, w) -> loadConfig(2)).setNegativeButton("取消", null).show();
-                    if (which == 3) new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("⚠️ 覆盖确认").setMessage("确定将当前布局覆盖至方案 2？").setPositiveButton("确定", (d, w) -> { currentSlot = 2; saveConfig(); Toast.makeText(getContext(),"✅ 已存入方案2",Toast.LENGTH_SHORT).show();}).setNegativeButton("取消", null).show();
-                    if (which == 4) { saveConfig(); exportLayoutToFile(); }
-                    if (which == 5) { importLayoutFromFile(); }
+                    android.app.Activity activity = (android.app.Activity) getContext();
+                    FileActionFragment fragment = new FileActionFragment();
+                    android.os.Bundle args = new android.os.Bundle();
+                    
+                    if (which <= 2) { // 导出选项
+                        args.putInt("action_type", 1); 
+                        try {
+                            JSONObject root = new JSONObject();
+                            if (which == 0 || which == 1) { // 包含布局
+                                root.put("layout", new JSONArray(prefs.getString(KEY_LAYOUT_PREFIX + currentSlot, "[]")));
+                            }
+                            if (which == 0 || which == 2) { // 包含风格
+                                JSONArray styleArr = new JSONArray();
+                                for(GamepadStyle s : styleList) styleArr.put(s.toJson());
+                                root.put("styles", styleArr);
+                            }
+                            args.putString("export_data", root.toString());
+                        } catch(Exception e) {}
+                    } else if (which == 3) { // 导入选项
+                        args.putInt("action_type", 2); 
+                    }
+                    fragment.setArguments(args);
+                    activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
                 }).show();
     }
+    
 
         // 【新增】遮罩图控制面板
     private void showOverlaySettingsDialog() {
@@ -1556,10 +1642,23 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
                 skinLayout.addView(btnClearImage); layout.addView(skinLayout);
 
         // ================= 【新增：按下状态的UI调节控制】 =================
+                // ================= 【修改：增加按下特效的实时颜色预览】 =================
         layout.addView(createTitle("6. 按下状态特效 (独立颜色与皮肤):"));
-        final EditText hexInputP = createEditText("颜色如: #4CAF50 (填 #000000 变回渐变)", String.format("#%06X", (0xFFFFFF & btn.pressedEffectColor))); 
+        final EditText hexInputP = createEditText("颜色如: #4CAF50 (填 #000000 变回普通渐变)", String.format("#%06X", (0xFFFFFF & btn.pressedEffectColor))); 
         layout.addView(hexInputP);
+        
+        final View colorPreviewP = new View(getContext());
+        LinearLayout.LayoutParams previewParamsP = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150);
+        previewParamsP.setMargins(0, 10, 0, 30); colorPreviewP.setLayoutParams(previewParamsP); 
+        final android.graphics.drawable.GradientDrawable previewBgP = new android.graphics.drawable.GradientDrawable();
+        previewBgP.setCornerRadius(20f); 
+        // 0代表没开启颜色特效，用深灰色暗示未启用
+        previewBgP.setColor(btn.pressedEffectColor == 0 ? Color.parseColor("#333333") : btn.pressedEffectColor); 
+        colorPreviewP.setBackground(previewBgP);
+        layout.addView(colorPreviewP);
+
         final SeekBar alphaBarP = createColorBar(layout, "按下特效不透明度", btn.pressedEffectAlpha); 
+        
 
         final int[] rgbP = {Color.red(btn.pressedEffectColor), Color.green(btn.pressedEffectColor), Color.blue(btn.pressedEffectColor)};
         final SeekBar rBarP = createColorBar(layout, "🔴 按下红 (R)", rgbP[0]); 
@@ -1583,17 +1682,18 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
         });
 
-        SeekBar.OnSeekBarChangeListener colorUpdaterP = new SeekBar.OnSeekBarChangeListener() {
+                SeekBar.OnSeekBarChangeListener colorUpdaterP = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 rgbP[0] = rBarP.getProgress(); rgbP[1] = gBarP.getProgress(); rgbP[2] = bBarP.getProgress(); 
                 int newColor = Color.rgb(rgbP[0], rgbP[1], rgbP[2]);
-                btn.pressedEffectColor = newColor; invalidate();                 
+                btn.pressedEffectColor = newColor; invalidate();
+                previewBgP.setColor(newColor == 0 ? Color.parseColor("#333333") : newColor); // 同步刷新预览块
                 if(fromUser) hexInputP.setText(String.format("#%06X", (0xFFFFFF & newColor)));
             }
             public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
         };
         rBarP.setOnSeekBarChangeListener(colorUpdaterP); gBarP.setOnSeekBarChangeListener(colorUpdaterP); bBarP.setOnSeekBarChangeListener(colorUpdaterP);
-
+        
         alphaBarP.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
                 if (fromUser) { btn.pressedEffectAlpha = p; invalidate(); }
@@ -2024,69 +2124,67 @@ autoHideSeconds = 5;
                         Toast.makeText(getActivity(), "✅ 导出成功！", Toast.LENGTH_SHORT).show();
                     } catch (Exception e) { Toast.makeText(getActivity(), "❌ 导出失败", Toast.LENGTH_SHORT).show(); }                
                 } else if (requestCode == 45 && DynamicGamepadView.instance != null) { 
-                    try {
+                                        try {
                         java.io.InputStream is = getActivity().getContentResolver().openInputStream(uri);
                         BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
                         StringBuilder sb = new StringBuilder(); String line;
                         while ((line = reader.readLine()) != null) sb.append(line);
                         reader.close(); is.close();
                         
-                                                JSONObject root = new JSONObject(sb.toString());
+                        final JSONObject root = new JSONObject(sb.toString());
+                        boolean hasLayout = root.has("layout") || root.has("buttons");
+                        boolean hasStyles = root.has("styles");
                         
-                        // 【兼容逻辑】：如果是用新版 exportAllData 导出的，布局数据叫 layout；如果是旧版导出的，叫 buttons
-                        JSONArray btnArray = root.has("layout") ? root.getJSONArray("layout") : root.getJSONArray("buttons");
-                        
-                        SharedPreferences.Editor editor = DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
-                        editor.putString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, btnArray.toString());
-                        editor.putInt("JoystickMode_" + DynamicGamepadView.instance.currentSlot, root.optInt("joystickMode", 0));
-                        editor.putFloat("JoyX_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyBaseX", 250));
-                        editor.putFloat("JoyY_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyBaseY", 700));
-                        editor.putFloat("JoyR_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyRadius", 180));
-                        editor.putFloat("JoyHitR_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyHitboxRadius", 270));
-                        editor.putInt("JoyA_" + DynamicGamepadView.instance.currentSlot, root.optInt("joyAlpha", 200));
-                        editor.putInt("JoyColor_" + DynamicGamepadView.instance.currentSlot, root.optInt("joyColor", Color.parseColor("#FF5555"))); 
-                        editor.putBoolean("Vibration_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isVibrationOn", true));                        
-                        editor.putInt("VibIntensity_" + DynamicGamepadView.instance.currentSlot, root.optInt("vibrationIntensity", 30));
-                        editor.putString("JoySkinBase_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinBase", ""));
-                        editor.putString("JoySkinKnob_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinKnob", ""));                       
-                        
-                        editor.putInt("OverlayMode_" + DynamicGamepadView.instance.currentSlot, root.optInt("overlayMode", 0));
-                        editor.putString("OverlayUri1_" + DynamicGamepadView.instance.currentSlot, root.optString("overlayUri1", ""));
-                        editor.putFloat("OverlayX1_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayX1", 0));
-                        editor.putFloat("OverlayY1_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayY1", 0));
-                        editor.putFloat("OverlayScale1_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayScale1", 1.0f));
-                        editor.putString("OverlayUri2_" + DynamicGamepadView.instance.currentSlot, root.optString("overlayUri2", ""));
-                        editor.putFloat("OverlayX2_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayX2", 0));
-                        editor.putFloat("OverlayY2_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayY2", 0));
-                        editor.putFloat("OverlayScale2_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayScale2", 1.0f));
-                        editor.putFloat("OverlayRot1_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayRotation1", 0f));
-                        editor.putFloat("OverlayRot2_" + DynamicGamepadView.instance.currentSlot, (float)root.optDouble("overlayRotation2", 0f));
-                        editor.putBoolean("FS_HideOverlay_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isFullscreenHideOverlay", false));
-                        editor.putBoolean("AutoHide_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isAutoHideEnabled", true));
-                        editor.putInt("AutoHideSec_" + DynamicGamepadView.instance.currentSlot, root.optInt("autoHideSeconds", 5));
-                        editor.apply(); 
-
-                        // 【新增修复：读取导入文件中的所有自定义风格】
-                        if (root.has("styles")) {
-                            JSONArray styleArr = root.getJSONArray("styles");
-                            DynamicGamepadView.instance.styleList.clear();
-                            // 强制保留基础的渐变风格作为第一项兜底
-                            DynamicGamepadView.instance.styleList.add(new GamepadStyle("纯色渐变风格 (默认1)"));
-                            for (int i = 0; i < styleArr.length(); i++) {
-                                GamepadStyle importedStyle = GamepadStyle.fromJson(styleArr.getJSONObject(i));
-                                // 避免重复导入基础默认风格
-                                if (!importedStyle.styleName.contains("纯色渐变")) {
-                                    DynamicGamepadView.instance.styleList.add(importedStyle);
-                                }
-                            }
+                        if (!hasLayout && !hasStyles) {
+                            Toast.makeText(getActivity(), "❌ 无效的文件格式", Toast.LENGTH_SHORT).show(); return;
                         }
-                        
-                        DynamicGamepadView.instance.loadConfig(DynamicGamepadView.instance.currentSlot);
-                        Toast.makeText(getActivity(), "✅ 布局与风格导入成功！", Toast.LENGTH_LONG).show();
-                        
-                    } catch (Exception e) { Toast.makeText(getActivity(), "❌ 导入失败，文件可能已损坏", Toast.LENGTH_SHORT).show(); }
-                }
-            }
+
+                        // 弹窗让用户选择具体要导入什么
+                        new AlertDialog.Builder(getActivity(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                            .setTitle("发现数据，请选择要导入的内容：")
+                            .setItems(new CharSequence[]{"📥 导入全部 (布局与风格)", "📥 仅导入按键布局", "📥 仅导入风格库"}, (dialog, which) -> {
+                                try {
+                                    SharedPreferences.Editor editor = DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
+                                    
+                                    // 处理布局导入
+                                    if ((which == 0 || which == 1) && hasLayout) {
+                                        JSONArray btnArray = root.has("layout") ? root.getJSONArray("layout") : root.getJSONArray("buttons");
+                                        editor.putString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, btnArray.toString());
+                                        editor.putInt("JoystickMode_" + DynamicGamepadView.instance.currentSlot, root.optInt("joystickMode", 0));
+                                        editor.putFloat("JoyX_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyBaseX", 250));
+                                        editor.putFloat("JoyY_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyBaseY", 700));
+                                        editor.putFloat("JoyR_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyRadius", 180));
+                                        editor.putFloat("JoyHitR_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyHitboxRadius", 270));
+                                        editor.putInt("JoyA_" + DynamicGamepadView.instance.currentSlot, root.optInt("joyAlpha", 200));
+                                        editor.putInt("JoyColor_" + DynamicGamepadView.instance.currentSlot, root.optInt("joyColor", Color.parseColor("#FF5555"))); 
+                                        editor.putBoolean("Vibration_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isVibrationOn", true));                        
+                                        editor.putInt("VibIntensity_" + DynamicGamepadView.instance.currentSlot, root.optInt("vibrationIntensity", 30));
+                                        editor.putString("JoySkinBase_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinBase", ""));
+                                        editor.putString("JoySkinKnob_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinKnob", ""));                       
+                                    }
+                                    
+                                    // 处理风格库导入
+                                    if ((which == 0 || which == 2) && hasStyles) {
+                                        JSONArray styleArr = root.getJSONArray("styles");
+                                        DynamicGamepadView.instance.styleList.clear();
+                                        DynamicGamepadView.instance.styleList.add(new GamepadStyle("纯色渐变风格 (默认1)"));
+                                        for (int i = 0; i < styleArr.length(); i++) {
+                                            GamepadStyle importedStyle = GamepadStyle.fromJson(styleArr.getJSONObject(i));
+                                            if (!importedStyle.styleName.contains("纯色渐变")) {
+                                                DynamicGamepadView.instance.styleList.add(importedStyle);
+                                            }
+                                        }
+                                    }
+                                    editor.apply(); 
+                                    DynamicGamepadView.instance.loadConfig(DynamicGamepadView.instance.currentSlot);
+                                    Toast.makeText(getActivity(), "✅ 数据导入成功！", Toast.LENGTH_LONG).show();
+                                } catch (Exception e) { Toast.makeText(getActivity(), "❌ 应用失败", Toast.LENGTH_SHORT).show(); }
+                            }).show();
+                            
+                    } catch (Exception e) { Toast.makeText(getActivity(), "❌ 文件读取失败，可能已损坏", Toast.LENGTH_SHORT).show(); }
+                     }
+        }
+                    
             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
         }
     }
