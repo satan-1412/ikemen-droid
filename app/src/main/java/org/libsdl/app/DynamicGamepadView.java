@@ -1009,15 +1009,19 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("🎨 风格系统 (选定后将强行替换所有按键)")
             .setSingleChoiceItems(styleNames, currentStyleIndex, (dialog, which) -> currentStyleIndex = which)
-            .setPositiveButton("应用该风格", (d, w) -> {
+                        .setPositiveButton("应用该风格", (d, w) -> {
                 GamepadStyle style = styleList.get(currentStyleIndex);
                 if(joystickMode == JOYSTICK_MODE_STYLE) {
                     joySkinBaseUri = style.joyBaseUri; joySkinKnobUri = style.joyKnobUri;
-                    if(!joySkinBaseUri.isEmpty()) joySkinBaseBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(joySkinBaseUri))), (int)(joyRadius*2), (int)(joyRadius*2), true); else joySkinBaseBitmap = null;
-                    if(!joySkinKnobUri.isEmpty()) joySkinKnobBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(joySkinKnobUri))), (int)(joyRadius*2), (int)(joyRadius*2), true); else joySkinKnobBitmap = null;
+                    try {
+                        if(!joySkinBaseUri.isEmpty()) joySkinBaseBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(joySkinBaseUri))), (int)(joyRadius*2), (int)(joyRadius*2), true); else joySkinBaseBitmap = null;
+                        if(!joySkinKnobUri.isEmpty()) joySkinKnobBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(joySkinKnobUri))), (int)(joyRadius*2), (int)(joyRadius*2), true); else joySkinKnobBitmap = null;
+                    } catch (Exception e) {
+                        joySkinBaseBitmap = null; joySkinKnobBitmap = null;
+                    }
                 }
-                for (VirtualButton b : buttons) {
-                    if (!b.isDirectional) { // 只替换非方向键
+                for (VirtualButton b : buttons) {            
+     if (!b.isDirectional) { // 只替换非方向键
                         b.customImageUri = style.btnNormalUri; b.customPressedUri = style.btnPressedUri;
                         b.pressedEffectColor = style.globalPressedColor; b.pressedEffectAlpha = style.globalPressedAlpha;
                         b.loadSkinFromUri(getContext());
