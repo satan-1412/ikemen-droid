@@ -814,7 +814,7 @@ public boolean onTouchEvent(MotionEvent event) {
                     }
                 }
             }
-            
+        }    
         invalidate();   // <--- 【补上这行】刷新屏幕
         return true;    // <--- 【补上这行】结束触控事件
     }                   // <--- 【补上这个大括号】把 onTouchEvent 关上
