@@ -321,40 +321,52 @@ public class DynamicGamepadView extends View {
     }
 
     // 自动生成视频里的“街机风格”图片并存入沙盒，返回URI
-        private void generateVideoArcadeStyle() {
+            // 自动生成视频里的“街机风格”图片并存入沙盒，返回URI
+    private void generateVideoArcadeStyle() {
         int size = 400; // 高清分辨率
-        // 1. 画底盘 (深邃蓝黑底色，不画死板的三角了，交给onDraw动态渲染)
+        
+        // --- 1. 画通用的黑底红球摇杆 (供渐变风格和街机风格共用) ---
         Bitmap baseBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas cBase = new Canvas(baseBmp);
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setColor(Color.parseColor("#0C141E")); // 极其深邃的蓝黑色，降低亮度
+        p.setColor(Color.parseColor("#0C141E")); // 深邃蓝黑底色
         cBase.drawCircle(size/2f, size/2f, size/2f - 4, p);
         p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(6f); p.setColor(Color.parseColor("#90CAF9")); cBase.drawCircle(size/2f, size/2f, size/2f - 4, p);
         String baseUri = saveImageToLocal(baseBmp, "arcade_base.png");
 
-        // 2. 画摇杆帽 (红球)
         Bitmap knobBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas cKnob = new Canvas(knobBmp);
         p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#D32F2F")); cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
         p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(4f); p.setColor(Color.parseColor("#B71C1C")); cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
         String knobUri = saveImageToLocal(knobBmp, "arcade_knob.png");
 
-        // 3. 画普通按键 (深蓝带白边)
+        // --- 2. 画街机风格的按键 (深蓝带白边) ---
         Bitmap btnBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas cBtn = new Canvas(btnBmp);
         p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#1A2B42")); cBtn.drawCircle(size/2f, size/2f, size/2f - 6, p);
         p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(8f); p.setColor(Color.parseColor("#90CAF9")); cBtn.drawCircle(size/2f, size/2f, size/2f - 6, p);
         String btnUri = saveImageToLocal(btnBmp, "arcade_btn.png");
 
-        // 创建风格对象并存入列表
+        // --- 3. 创建风格 1 (无按键皮肤，但有默认摇杆) ---
+        GamepadStyle style1 = new GamepadStyle("纯色渐变风格 (默认1)");
+        style1.joyBaseUri = baseUri; 
+        style1.joyKnobUri = knobUri; 
+        style1.btnNormalUri = ""; // 必须为空，走老代码逻辑
+        style1.btnPressedUri = "";
+        style1.globalPressedColor = 0; // 不带特效
+        
+        // --- 4. 创建风格 2 (街机按钮皮肤 + 默认摇杆) ---
         GamepadStyle style2 = new GamepadStyle("视频街机风格 (默认2)");
-        style2.joyBaseUri = baseUri; style2.joyKnobUri = knobUri; style2.btnNormalUri = btnUri;
+        style2.joyBaseUri = baseUri; 
+        style2.joyKnobUri = knobUri; 
+        style2.btnNormalUri = btnUri;
         style2.globalPressedColor = Color.parseColor("#4CAF50"); 
         
         styleList.clear();
-        styleList.add(new GamepadStyle("纯色渐变风格 (默认1)")); 
+        styleList.add(style1); 
         styleList.add(style2);
     }
+        
         
 
                    public void onImagePicked(String uriStr) {
@@ -1039,11 +1051,13 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
                 }).show();
     }
     
-    // 【新增】：独立抽出同步摇杆皮肤的方法，供多处调用
+        // 【修改】：独立抽出同步摇杆皮肤的方法，供多处调用
     public void refreshJoystickStyle() {
         if (joystickMode == JOYSTICK_MODE_STYLE && currentStyleIndex < styleList.size()) {
             GamepadStyle style = styleList.get(currentStyleIndex);
-            joySkinBaseUri = style.joyBaseUri; joySkinKnobUri = style.joyKnobUri;
+            // 如果连风格里都没配摇杆皮肤，也清空
+            joySkinBaseUri = style.joyBaseUri != null ? style.joyBaseUri : ""; 
+            joySkinKnobUri = style.joyKnobUri != null ? style.joyKnobUri : "";
             try {
                 if(!joySkinBaseUri.isEmpty()) joySkinBaseBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(joySkinBaseUri))), (int)(joyRadius*2), (int)(joyRadius*2), true); else joySkinBaseBitmap = null;
                 if(!joySkinKnobUri.isEmpty()) joySkinKnobBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(joySkinKnobUri))), (int)(joyRadius*2), (int)(joyRadius*2), true); else joySkinKnobBitmap = null;
@@ -1066,11 +1080,17 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
                         .setSingleChoiceItems(styleNames, currentStyleIndex, (d, w) -> currentStyleIndex = w)
                         .setPositiveButton("确定应用", (d, w) -> {
                             GamepadStyle style = styleList.get(currentStyleIndex);
-                            refreshJoystickStyle(); // 同步刷新摇杆
+                            // 【修复 1】：每次切换风格，强制把摇杆模式改为跟随风格
+                            joystickMode = JOYSTICK_MODE_STYLE;
+                            refreshJoystickStyle(); 
                             for (VirtualButton b : buttons) {
                                 if (!b.isDirectional) {
-                                    b.customImageUri = style.btnNormalUri; b.customPressedUri = style.btnPressedUri;
-                                    b.pressedEffectColor = style.globalPressedColor; b.pressedEffectAlpha = style.globalPressedAlpha;
+                                    // 【修复 2】：防空指针，如果没有皮肤图片强制赋值空字符串，覆盖掉以前残留的旧图片
+                                    b.customImageUri = style.btnNormalUri != null ? style.btnNormalUri : ""; 
+                                    b.customPressedUri = style.btnPressedUri != null ? style.btnPressedUri : "";
+                                    b.pressedEffectColor = style.globalPressedColor; 
+                                    b.pressedEffectAlpha = style.globalPressedAlpha;
+                                    // 重新加载一次皮肤（如果为空就会自动清除 Bitmap）
                                     b.loadSkinFromUri(getContext());
                                 }
                             }
@@ -1102,6 +1122,7 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
                 }
             }).show();
     }
+    
 
 
         private void showProfileManager() {
