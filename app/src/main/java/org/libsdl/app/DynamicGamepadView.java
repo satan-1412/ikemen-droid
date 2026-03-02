@@ -322,50 +322,64 @@ public class DynamicGamepadView extends View {
 
     // 自动生成视频里的“街机风格”图片并存入沙盒，返回URI
             // 自动生成视频里的“街机风格”图片并存入沙盒，返回URI
+        // 自动生成视频里的“街机风格”图片并存入沙盒，返回URI
     private void generateVideoArcadeStyle() {
         int size = 400; // 高清分辨率
-        
-        // --- 1. 画通用的黑底红球摇杆 (供渐变风格和街机风格共用) ---
-        Bitmap baseBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-        Canvas cBase = new Canvas(baseBmp);
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setColor(Color.parseColor("#0C141E")); // 深邃蓝黑底色
-        cBase.drawCircle(size/2f, size/2f, size/2f - 4, p);
-        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(6f); p.setColor(Color.parseColor("#90CAF9")); cBase.drawCircle(size/2f, size/2f, size/2f - 4, p);
-        String baseUri = saveImageToLocal(baseBmp, "arcade_base.png");
 
+        // --- 1. 画【风格1】的摇杆底盘 (纯黑无白边，极致深黑) ---
+        Bitmap baseBmp1 = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas cBase1 = new Canvas(baseBmp1);
+        p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#080A0F")); 
+        cBase1.drawCircle(size/2f, size/2f, size/2f - 4, p);
+        String baseUri1 = saveImageToLocal(baseBmp1, "pure_black_base.png");
+
+        // --- 2. 画【风格2】的摇杆底盘 (深黑带白圈，街机风) ---
+        Bitmap baseBmp2 = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas cBase2 = new Canvas(baseBmp2);
+        p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#0C141E")); 
+        cBase2.drawCircle(size/2f, size/2f, size/2f - 4, p);
+        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(6f); p.setColor(Color.parseColor("#90CAF9")); 
+        cBase2.drawCircle(size/2f, size/2f, size/2f - 4, p);
+        String baseUri2 = saveImageToLocal(baseBmp2, "arcade_base.png");
+
+        // --- 3. 画通用的摇杆帽 (红球) ---
         Bitmap knobBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas cKnob = new Canvas(knobBmp);
-        p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#D32F2F")); cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
-        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(4f); p.setColor(Color.parseColor("#B71C1C")); cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
+        p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#D32F2F")); 
+        cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
+        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(4f); p.setColor(Color.parseColor("#B71C1C")); 
+        cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
         String knobUri = saveImageToLocal(knobBmp, "arcade_knob.png");
 
-        // --- 2. 画街机风格的按键 (深蓝带白边) ---
+        // --- 4. 画【风格2】普通按键 (深蓝带白边) ---
         Bitmap btnBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas cBtn = new Canvas(btnBmp);
-        p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#1A2B42")); cBtn.drawCircle(size/2f, size/2f, size/2f - 6, p);
-        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(8f); p.setColor(Color.parseColor("#90CAF9")); cBtn.drawCircle(size/2f, size/2f, size/2f - 6, p);
+        p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#1A2B42")); 
+        cBtn.drawCircle(size/2f, size/2f, size/2f - 6, p);
+        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(8f); p.setColor(Color.parseColor("#90CAF9")); 
+        cBtn.drawCircle(size/2f, size/2f, size/2f - 6, p);
         String btnUri = saveImageToLocal(btnBmp, "arcade_btn.png");
 
-        // --- 3. 创建风格 1 (无按键皮肤，但有默认摇杆) ---
+        // --- 5. 组装风格并覆盖列表 ---
         GamepadStyle style1 = new GamepadStyle("纯色渐变风格 (默认1)");
-        style1.joyBaseUri = baseUri; 
+        style1.joyBaseUri = baseUri1; // 纯黑底盘
         style1.joyKnobUri = knobUri; 
-        style1.btnNormalUri = ""; // 必须为空，走老代码逻辑
+        style1.btnNormalUri = ""; // 空代表原版渐变
         style1.btnPressedUri = "";
-        style1.globalPressedColor = 0; // 不带特效
+        style1.globalPressedColor = 0; 
         
-        // --- 4. 创建风格 2 (街机按钮皮肤 + 默认摇杆) ---
         GamepadStyle style2 = new GamepadStyle("视频街机风格 (默认2)");
-        style2.joyBaseUri = baseUri; 
+        style2.joyBaseUri = baseUri2; // 带白边底盘
         style2.joyKnobUri = knobUri; 
-        style2.btnNormalUri = btnUri;
+        style2.btnNormalUri = btnUri; // 带皮肤的按键
         style2.globalPressedColor = Color.parseColor("#4CAF50"); 
         
         styleList.clear();
         styleList.add(style1); 
         styleList.add(style2);
     }
+    
         
         
 
@@ -590,51 +604,51 @@ public class DynamicGamepadView extends View {
                     private void drawJoystick(Canvas canvas) {
         int currentAlpha = isEditMode ? Math.max(100, joyAlpha) : joyAlpha;
         
-            // ========= 1. 绘制底盘 =========
-        if (joySkinBaseBitmap != null) {
+        // ========= 1. 绘制底盘 =========
+        // 【核心修复】：只有当摇杆处于 [专属] 跟随风格模式(4) 并且确实有皮肤时，才绘制皮肤。坚决不污染其他模式！
+        if (joystickMode == JOYSTICK_MODE_STYLE && joySkinBaseBitmap != null) {
             paintBtn.setAlpha(currentAlpha);
             tempRect.set(joyBaseX - joyRadius, joyBaseY - joyRadius, joyBaseX + joyRadius, joyBaseY + joyRadius);
             canvas.drawBitmap(joySkinBaseBitmap, null, tempRect, paintBtn);
             
             // 【新增：摇杆动态指示发光三角 (仅在风格模式下启用)】
-            if (joystickMode == JOYSTICK_MODE_STYLE) {
-                float dxA = joyKnobX - joyBaseX, dyA = joyKnobY - joyBaseY;
-                float distA = (float) Math.hypot(dxA, dyA);
-                float activeAngle = -1;
-                // 只有当玩家实际拨动摇杆离开中心时，才计算角度点亮
-                if (distA > joyRadius * 0.2f && !isEditMode) { 
-                    activeAngle = (float) Math.toDegrees(Math.atan2(dyA, dxA));
-                    if (activeAngle < 0) activeAngle += 360;
+            float dxA = joyKnobX - joyBaseX, dyA = joyKnobY - joyBaseY;
+            float distA = (float) Math.hypot(dxA, dyA);
+            float activeAngle = -1;
+            // 只有当玩家实际拨动摇杆离开中心时，才计算角度点亮
+            if (distA > joyRadius * 0.2f && !isEditMode) { 
+                activeAngle = (float) Math.toDegrees(Math.atan2(dyA, dxA));
+                if (activeAngle < 0) activeAngle += 360;
+            }
+            
+            for (int i = 0; i < 8; i++) {
+                float targetAngle = i * 45;
+                boolean isActive = false;
+                // 判断当前触控角度是否在这个三角的方向内 (±22.5度)
+                if (activeAngle != -1) {
+                    float diff = Math.abs(activeAngle - targetAngle);
+                    if (diff > 180) diff = 360 - diff;
+                    if (diff <= 22.5f) isActive = true;
                 }
                 
-                for (int i = 0; i < 8; i++) {
-                    float targetAngle = i * 45;
-                    boolean isActive = false;
-                    // 判断当前触控角度是否在这个三角的方向内 (±22.5度)
-                    if (activeAngle != -1) {
-                        float diff = Math.abs(activeAngle - targetAngle);
-                        if (diff > 180) diff = 360 - diff;
-                        if (diff <= 22.5f) isActive = true;
-                    }
-                    
-                    paintBtn.setColor(isActive ? Color.WHITE : Color.argb(40, 255, 255, 255)); // 激活纯白，未激活半透明暗白
-                    if (isActive) paintBtn.setShadowLayer(12f, 0, 0, Color.WHITE); // 激活时产生外发光
-                    else paintBtn.clearShadowLayer();
-                    
-                    canvas.save();
-                    canvas.rotate(targetAngle, joyBaseX, joyBaseY);
-                    android.graphics.Path path = new android.graphics.Path();
-                    path.moveTo(joyBaseX + joyRadius * 0.8f, joyBaseY); 
-                    path.lineTo(joyBaseX + joyRadius * 0.65f, joyBaseY - 12); 
-                    path.lineTo(joyBaseX + joyRadius * 0.65f, joyBaseY + 12); 
-                    path.close();
-                    canvas.drawPath(path, paintBtn);
-                    canvas.restore();
-                }
-                paintBtn.clearShadowLayer();
+                paintBtn.setColor(isActive ? Color.WHITE : Color.argb(40, 255, 255, 255)); // 激活纯白，未激活半透明暗白
+                if (isActive) paintBtn.setShadowLayer(12f, 0, 0, Color.WHITE); // 激活时产生外发光
+                else paintBtn.clearShadowLayer();
+                
+                canvas.save();
+                canvas.rotate(targetAngle, joyBaseX, joyBaseY);
+                android.graphics.Path path = new android.graphics.Path();
+                path.moveTo(joyBaseX + joyRadius * 0.8f, joyBaseY); 
+                path.lineTo(joyBaseX + joyRadius * 0.65f, joyBaseY - 12); 
+                path.lineTo(joyBaseX + joyRadius * 0.65f, joyBaseY + 12); 
+                path.close();
+                canvas.drawPath(path, paintBtn);
+                canvas.restore();
             }
-        
+            paintBtn.clearShadowLayer();
+            
         } else if (joystickMode == 1) { 
+                    
             paintBtn.setColor(joyColor); paintBtn.setAlpha((int)(currentAlpha * 0.3f));
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius, paintBtn);
         } else if (joystickMode == 2) { 
@@ -692,14 +706,16 @@ public class DynamicGamepadView extends View {
             paintBtn.clearShadowLayer();
         }
 
-        // ========= 3. 绘制摇杆帽 =========
+               // ========= 3. 绘制摇杆帽 =========
         if (joystickMode != 3) { 
-            if (joySkinKnobBitmap != null) {
+            // 【核心修复】：同理，必须是模式4才允许画摇杆帽皮肤
+            if (joystickMode == JOYSTICK_MODE_STYLE && joySkinKnobBitmap != null) {
                 paintBtn.setAlpha(currentAlpha);
                 float knobRad = joyRadius * 0.5f; 
                 tempRect.set(joyKnobX - knobRad, joyKnobY - knobRad, joyKnobX + knobRad, joyKnobY + knobRad);
                 canvas.drawBitmap(joySkinKnobBitmap, null, tempRect, paintBtn);
-            } else if (joystickMode == 1) { 
+            } else if (joystickMode == 1) 
+            {
                 paintBtn.setColor(joyColor); paintBtn.setAlpha(currentAlpha);
                 canvas.drawCircle(joyKnobX, joyKnobY, joyRadius * 0.35f, paintBtn);
             } else if (joystickMode == 2) { 
