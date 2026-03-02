@@ -55,6 +55,9 @@ public class DynamicGamepadView extends View {
     public int vibrationIntensity = 30; // 震动强度 (建议0-100，即震动毫秒数)
     public boolean isAutoHideEnabled = true; // 自动隐藏开关
     public int autoHideSeconds = 5;          // 自动隐藏延迟时间（秒）
+    // 【新增】UI 模式切换开关：false 为经典模式，true 为复古街机模式
+    public boolean useRetroUIMode = false; 
+
 
 
        public float joyBaseX = 250, joyBaseY = 700;
@@ -747,8 +750,13 @@ public boolean onTouchEvent(MotionEvent event) {
 
     // 【核心保命代码】：不论在什么模式，只要点到左上角菜单区域，立刻弹出主菜单
     // 删掉之前的 if (!isEditMode) 判断，让它变成“强行弹出”
+        // 【修改后的核心保命代码】
     if (action == MotionEvent.ACTION_DOWN && menuButtonRect.contains(event.getX(actionIndex), event.getY(actionIndex))) {
-        showMainMenu(); // <--- 只要这个在，你就永远能退出编辑模式
+        if (useRetroUIMode) {
+            showRetroMainMenu(); // 走向全新的街机风主菜单
+        } else {
+            showMainMenu();      // 保持原汁原味的旧版 UI
+        }
         return true; 
     }
 
@@ -985,7 +993,8 @@ public boolean onTouchEvent(MotionEvent event) {
         // 【新增】判断当前遮罩状态，动态显示快捷按钮文本
         String quickOverlayText = isFullscreenHideOverlay ? "👁️ 当前: 隐藏遮罩 (点击恢复显示)" : "👁️ 当前: 显示遮罩 (点击临时隐藏)";
 String autoHideText = "⏱️ 按键自动隐藏设置 (" + (isAutoHideEnabled ? autoHideSeconds + "秒" : "已关闭") + ")";
-CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档与导入导出", "🔄 恢复初始默认布局", "🖼️ 屏幕遮罩详细设置", quickOverlayText, "📁 重新选择游戏数据目录", autoHideText, "🎨 按键风格管理系统"};
+CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档与导入导出", "🔄 恢复初始默认布局", "🖼️ 屏幕遮罩详细设置", quickOverlayText, "📁 重新选择游戏数据目录", autoHideText, "🎨 按键风格管理系统", "🕹️ 切换至专业街机面板 (Pro Mode)"};
+
         
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("⚙️ 游戏面板全局设置")
@@ -1029,10 +1038,16 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
                             Toast.makeText(getContext(), "无法调用目录选择器：上下文环境异常", Toast.LENGTH_SHORT).show();
                         }
                     }
-                                        else if (which == 10) {
-                        showAutoHideSettingsDialog();
+                    else if (which == 10) {
+    showAutoHideSettingsDialog();
                     }
                     else if (which == 11) { showStyleManagerDialog(); } // 触发风格管理
+                    else if (which == 12) { 
+    useRetroUIMode = true; 
+    saveConfig(); 
+    showRetroMainMenu(); // 立刻弹出新版 UI
+}
+
 
                     // ==========================        
                 }).show();
@@ -1937,6 +1952,8 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
             editor.putBoolean("FS_HideOverlay_" + currentSlot, isFullscreenHideOverlay);
             editor.putBoolean("AutoHide_" + currentSlot, isAutoHideEnabled);
 editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
+            editor.putBoolean("RetroUI_" + currentSlot, useRetroUIMode);
+
             editor.apply();
         } catch (Exception e) {}
     }
@@ -2004,6 +2021,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             overlayRotation2 = prefs.getFloat("OverlayRot2_" + slot, 0f);
             isFullscreenHideOverlay = prefs.getBoolean("FS_HideOverlay_" + slot, false);
             isAutoHideEnabled = prefs.getBoolean("AutoHide_" + slot, true);
+useRetroUIMode = prefs.getBoolean("RetroUI_" + slot, false);
 autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
             
                         try { if (!overlayUri1.isEmpty()) overlayBmp1 = BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(overlayUri1))); else overlayBmp1 = null; } catch(Exception e) { overlayBmp1 = null; }
@@ -2195,6 +2213,175 @@ autoHideSeconds = 5;
                     
             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
         }
+        
+    // =====================================
+    // 新增：专业复古街机风 UI 系统 (Pro Arcade UI)
+    // =====================================
+    private void showRetroMainMenu() {
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        
+        // 1. 核心底板：CRT 监视器深黑底色 + 绝对直角边框 (完全摒弃系统圆角)
+        LinearLayout rootLayout = new LinearLayout(getContext());
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setPadding(10, 10, 10, 10);
+        android.graphics.drawable.GradientDrawable crtBg = new android.graphics.drawable.GradientDrawable();
+        crtBg.setColor(Color.parseColor("#0A0A0A")); // 极深的 CRT 黑
+        crtBg.setStroke(6, Color.parseColor("#555555")); // 工业感灰色粗外框
+        crtBg.setCornerRadius(0f); // 绝对直角！
+        rootLayout.setBackground(crtBg);
+
+        // 顶栏拖拽条
+        TextView header = new TextView(getContext());
+        header.setText("IKEMEN GO CONTROL PANEL (PRO)");
+        header.setTextColor(Color.parseColor("#FFCC00")); // 街机投币黄
+        header.setTextSize(18f);
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setGravity(android.view.Gravity.CENTER);
+        header.setPadding(20, 30, 20, 30);
+        header.setBackgroundColor(Color.parseColor("#1A1A1A"));
+        rootLayout.addView(header);
+
+        ScrollView scroll = new ScrollView(getContext());
+        LinearLayout contentLayout = new LinearLayout(getContext());
+        contentLayout.setOrientation(LinearLayout.VERTICAL);
+        contentLayout.setPadding(30, 20, 30, 40);
+
+        // ================= ZONE 1: 操作面板构建区 (红色警示主题) =================
+        contentLayout.addView(createRetroZoneTitle("ZONE 1 : LAYOUT & EDIT", "#FF0033"));
+        LinearLayout zone1 = createRetroZoneContainer("#FF0033");
+        
+        Button btnEdit = createRetroButton(isEditMode ? "💾 保存并退出编辑模式" : "🛠️ 开启全局按键编辑", isEditMode ? "#4CAF50" : "#FF0033");
+        btnEdit.setOnClickListener(v -> { isEditMode = !isEditMode; if (!isEditMode) saveConfig(); invalidate(); dialog.dismiss(); });
+        zone1.addView(btnEdit);
+        
+        Button btnNewBtn = createRetroButton("➕ 新建按键 / 宏映射", "#555555");
+        btnNewBtn.setOnClickListener(v -> { 
+            VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);
+            buttons.add(newBtn); isEditMode = true; 
+            // 注意：这里暂时调用经典面板，下一步我们再重构按键设置面板
+            showButtonSettingsDialog(newBtn); dialog.dismiss(); 
+        });
+        zone1.addView(btnNewBtn);
+
+        Button btnGrid = createRetroButton(isGridSnapMode ? "🧲 网格吸附：[ON]" : "🧲 网格吸附：[OFF]", "#555555");
+        btnGrid.setOnClickListener(v -> { isGridSnapMode = !isGridSnapMode; btnGrid.setText(isGridSnapMode ? "🧲 网格吸附：[ON]" : "🧲 网格吸附：[OFF]"); });
+        zone1.addView(btnGrid);
+        contentLayout.addView(zone1);
+
+        // ================= ZONE 2: 视觉与机台美化 (霓虹蓝主题) =================
+        contentLayout.addView(createRetroZoneTitle("ZONE 2 : VISUAL & STYLE", "#00FFFF"));
+        LinearLayout zone2 = createRetroZoneContainer("#00FFFF");
+        
+        Button btnStyle = createRetroButton("🎨 风格管理系统 (Style System)", "#555555");
+        btnStyle.setOnClickListener(v -> { showStyleManagerDialog(); dialog.dismiss(); });
+        zone2.addView(btnStyle);
+        
+        String joyText = "🕹️ 摇杆形态: " + (joystickMode==0?"分离十字键":joystickMode==1?"现代白圆盘":joystickMode==2?"经典红杆":joystickMode==3?"十字型八键":"跟随当前风格");
+        Button btnJoy = createRetroButton(joyText, "#555555");
+        btnJoy.setOnClickListener(v -> { joystickMode = (joystickMode + 1) % 5; if (joystickMode == JOYSTICK_MODE_STYLE) refreshJoystickStyle(); saveConfig(); invalidate(); dialog.dismiss(); showRetroMainMenu(); });
+        zone2.addView(btnJoy);
+
+        Button btnOverlay = createRetroButton("🖼️ 屏幕遮罩引擎配置", "#555555");
+        btnOverlay.setOnClickListener(v -> { showOverlaySettingsDialog(); dialog.dismiss(); });
+        zone2.addView(btnOverlay);
+        contentLayout.addView(zone2);
+
+        // ================= ZONE 3: 硬件与系统控制 (工业黄主题) =================
+        contentLayout.addView(createRetroZoneTitle("ZONE 3 : HARDWARE & SYS", "#FFCC00"));
+        LinearLayout zone3 = createRetroZoneContainer("#FFCC00");
+        
+        Button btnVib = createRetroButton("📳 物理震动与强度调配", "#555555");
+        btnVib.setOnClickListener(v -> { showVibrationSettingsDialog(); dialog.dismiss(); });
+        zone3.addView(btnVib);
+
+        Button btnAuto = createRetroButton("⏱️ 自动隐藏延迟控制", "#555555");
+        btnAuto.setOnClickListener(v -> { showAutoHideSettingsDialog(); dialog.dismiss(); });
+        zone3.addView(btnAuto);
+
+        Button btnDir = createRetroButton("📁 重新挂载游戏数据目录", "#555555");
+        btnDir.setOnClickListener(v -> { 
+            if (getContext() instanceof SDLActivity) ((SDLActivity) getContext()).checkAndPickFolder();
+            dialog.dismiss();
+        });
+        zone3.addView(btnDir);
+        contentLayout.addView(zone3);
+
+        // ================= ZONE 4: 记忆卡与插槽 (电路板绿主题) =================
+        contentLayout.addView(createRetroZoneTitle("ZONE 4 : MEMORY CARD", "#4CAF50"));
+        LinearLayout zone4 = createRetroZoneContainer("#4CAF50");
+        
+        Button btnFile = createRetroButton("📂 布局存档与导入导出", "#555555");
+        btnFile.setOnClickListener(v -> { showProfileManager(); dialog.dismiss(); });
+        zone4.addView(btnFile);
+
+        Button btnReset = createRetroButton("⚠️ 格式化：恢复出厂布局", "#8B0000"); // 深红色警告
+        btnReset.setOnClickListener(v -> {
+            new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("⚠️ SYSTEM WARNING").setMessage("确定抹除所有自定义数据，恢复出厂设置吗？")
+                .setPositiveButton("EXECUTE (执行)", (d, w) -> { loadDefaultLayout(); saveConfig(); invalidate(); dialog.dismiss(); })
+                .setNegativeButton("CANCEL (取消)", null).show();
+        });
+        zone4.addView(btnReset);
+        contentLayout.addView(zone4);
+
+        // ================= 底部：退回经典模式 =================
+        Button btnSwitchBack = createRetroButton("↩ 退回经典 UI 模式", "#333333");
+        btnSwitchBack.setOnClickListener(v -> { useRetroUIMode = false; saveConfig(); dialog.dismiss(); showMainMenu(); });
+        LinearLayout.LayoutParams bottomParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        bottomParams.setMargins(0, 40, 0, 0);
+        btnSwitchBack.setLayoutParams(bottomParams);
+        contentLayout.addView(btnSwitchBack);
+
+        scroll.addView(contentLayout);
+        rootLayout.addView(scroll);
+        
+        dialog.setContentView(rootLayout);
+        setupMovableDialog(dialog, header); // 复用你的拖拽逻辑
+        dialog.show();
+    }
+
+    // --- 以下是生成复古 UI 组件的辅助工具方法 ---
+
+    private TextView createRetroZoneTitle(String text, String hexColor) {
+        TextView tv = new TextView(getContext());
+        tv.setText(text);
+        tv.setTextColor(Color.parseColor(hexColor));
+        tv.setTextSize(14f);
+        tv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD); // 暂时使用自带等宽字体模拟像素感
+        tv.setPadding(10, 30, 0, 10);
+        return tv;
+    }
+
+    private LinearLayout createRetroZoneContainer(String borderColorHex) {
+        LinearLayout layout = new LinearLayout(getContext());
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(20, 20, 20, 20);
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(Color.parseColor("#121212")); // 略浅一点的黑底
+        bg.setStroke(2, Color.parseColor(borderColorHex)); // 细线霓虹边框
+        bg.setCornerRadius(0f); // 绝对直角
+        layout.setBackground(bg);
+        return layout;
+    }
+
+    private Button createRetroButton(String text, String bgColorHex) {
+        Button btn = new Button(getContext());
+        btn.setText(text);
+        btn.setTextColor(Color.WHITE);
+        btn.setTextSize(13f);
+        btn.setTypeface(Typeface.DEFAULT_BOLD);
+        
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(Color.parseColor(bgColorHex));
+        bg.setCornerRadius(0f); // 绝对直角
+        bg.setStroke(2, Color.BLACK); // 黑色内嵌描边增加立体感
+        btn.setBackground(bg);
+        
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 10, 0, 10);
+        btn.setLayoutParams(params);
+        return btn;
     }
 }
     
