@@ -2213,7 +2213,7 @@ autoHideSeconds = 5;
                     
             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
         }
-        
+   }     
     // =====================================
     // 新增：专业复古街机风 UI 系统 (Pro Arcade UI)
     // =====================================
