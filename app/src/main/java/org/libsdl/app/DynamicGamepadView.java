@@ -2041,37 +2041,71 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
             
 
         
-        private void loadDefaultLayout() {
+            private void loadDefaultLayout() {
         buttons.clear();
-        // 【核心修复】恢复默认时，把摇杆彻底重置到初始状态
+        
+        // 【核心修复：动态获取当前设备的真实屏幕宽高】
+        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+        int screenW = metrics.widthPixels;
+        int screenH = metrics.heightPixels;
+
         joystickMode = 0;
-        isVibrationOn = true; // 补上恢复默认震动
+        isVibrationOn = true; 
         vibrationIntensity = 30;
-        imagePickerTarget = 0; // 补上清空选图状态
-        joyBaseX = 250; joyBaseY = 700; joyKnobX = 250; joyKnobY = 700;
-        joyRadius = 180; joyHitboxRadius = 270; joyAlpha = 200; joyColor = Color.parseColor("#FF5555"); 
+        imagePickerTarget = 0; 
+        
+        // 【核心修复：摒弃绝对像素，改用屏幕宽高的百分比作为锚定点】
+        // 摇杆基准位：屏幕左侧 15%，下方 70% 的位置
+        joyBaseX = screenW * 0.15f; 
+        joyBaseY = screenH * 0.70f; 
+        joyKnobX = joyBaseX; 
+        joyKnobY = joyBaseY;
+        
+        // 摇杆大小随屏幕宽度动态缩放 (宽度的 9% 左右较为适宜)
+        joyRadius = screenW * 0.09f; 
+        joyHitboxRadius = joyRadius * 1.5f; 
+        joyAlpha = 200; 
+        joyColor = Color.parseColor("#FF5555"); 
         joySkinBaseUri = ""; joySkinKnobUri = ""; joySkinBaseBitmap = null; joySkinKnobBitmap = null;
+        
         overlayMode = 0; overlayUri1 = ""; overlayUri2 = ""; overlayBmp1 = null; overlayBmp2 = null;
         overlayX1 = 0; overlayY1 = 0; overlayScale1 = 1.0f; overlayX2 = 0; overlayY2 = 0; overlayScale2 = 1.0f;
         isFullscreenHideOverlay = false;
         isAutoHideEnabled = true;
-autoHideSeconds = 5;
-    
+        autoHideSeconds = 5;
+
+        // 预设按键和方向键的动态半径
+        float btnRadius = screenW * 0.045f; 
+        float dirRadius = screenW * 0.04f;  
+
+        // 十字键锚定计算
+        float dPadOffset = screenW * 0.08f;
+        buttons.add(new VirtualButton("UP", joyBaseX, joyBaseY - dPadOffset, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "UP", true));
+        buttons.add(new VirtualButton("DOWN", joyBaseX, joyBaseY + dPadOffset, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "DOWN", true));
+        buttons.add(new VirtualButton("LEFT", joyBaseX - dPadOffset, joyBaseY, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "LEFT", true));
+        buttons.add(new VirtualButton("RIGHT", joyBaseX + dPadOffset, joyBaseY, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "RIGHT", true));
         
-        buttons.add(new VirtualButton("UP", 250, 550, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "UP", true));
-        buttons.add(new VirtualButton("DOWN", 250, 850, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "DOWN", true));
-        buttons.add(new VirtualButton("LEFT", 100, 700, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "LEFT", true));
-        buttons.add(new VirtualButton("RIGHT", 400, 700, 80, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "RIGHT", true));
-        float rx = 1600, ry = 700; 
-        buttons.add(new VirtualButton("A", rx, ry, 90, Color.parseColor("#4CAF50"), 180, Color.WHITE, SHAPE_CIRCLE, "A", false));
-        buttons.add(new VirtualButton("B", rx + 200, ry - 50, 90, Color.parseColor("#F44336"), 180, Color.WHITE, SHAPE_CIRCLE, "B", false));
-        buttons.add(new VirtualButton("C", rx + 400, ry - 100, 90, Color.parseColor("#2196F3"), 180, Color.WHITE, SHAPE_CIRCLE, "C", false));
-        buttons.add(new VirtualButton("X", rx, ry - 200, 90, Color.parseColor("#8BC34A"), 180, Color.WHITE, SHAPE_CIRCLE, "X", false));
-        buttons.add(new VirtualButton("Y", rx + 200, ry - 250, 90, Color.parseColor("#E91E63"), 180, Color.WHITE, SHAPE_CIRCLE, "Y", false));
-        buttons.add(new VirtualButton("Z", rx + 400, ry - 300, 90, Color.parseColor("#03A9F4"), 180, Color.WHITE, SHAPE_CIRCLE, "Z", false));
-        buttons.add(new VirtualButton("ESC", 850, 950, 70, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "ESC", false));
-        buttons.add(new VirtualButton("START", 1150, 950, 70, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "RETURN", false));
+        // 右侧动作键基准位：锚定屏幕右侧 (宽度的80%)，高度同摇杆
+        float rx = screenW * 0.80f; 
+        float ry = screenH * 0.70f; 
+        
+        // 按键间的动态偏移量
+        float offsetX = screenW * 0.07f;
+        float offsetY = screenH * 0.12f;
+        
+        buttons.add(new VirtualButton("A", rx, ry, btnRadius, Color.parseColor("#4CAF50"), 180, Color.WHITE, SHAPE_CIRCLE, "A", false));
+        buttons.add(new VirtualButton("B", rx + offsetX, ry - offsetY, btnRadius, Color.parseColor("#F44336"), 180, Color.WHITE, SHAPE_CIRCLE, "B", false));
+        buttons.add(new VirtualButton("C", rx + offsetX * 2, ry - offsetY * 2, btnRadius, Color.parseColor("#2196F3"), 180, Color.WHITE, SHAPE_CIRCLE, "C", false));
+        buttons.add(new VirtualButton("X", rx, ry - offsetY * 2, btnRadius, Color.parseColor("#8BC34A"), 180, Color.WHITE, SHAPE_CIRCLE, "X", false));
+        buttons.add(new VirtualButton("Y", rx + offsetX, ry - offsetY * 3, btnRadius, Color.parseColor("#E91E63"), 180, Color.WHITE, SHAPE_CIRCLE, "Y", false));
+        buttons.add(new VirtualButton("Z", rx + offsetX * 2, ry - offsetY * 4, btnRadius, Color.parseColor("#03A9F4"), 180, Color.WHITE, SHAPE_CIRCLE, "Z", false));
+        
+        // 居中系统按键 (ESC / START)
+        float sysBtnRadius = screenW * 0.035f;
+        buttons.add(new VirtualButton("ESC", screenW * 0.40f, screenH * 0.85f, sysBtnRadius, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "ESC", false));
+        buttons.add(new VirtualButton("START", screenW * 0.60f, screenH * 0.85f, sysBtnRadius, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "RETURN", false));
     }
+        
         
     @SuppressWarnings("deprecation")
     public static class FileActionFragment extends android.app.Fragment {
