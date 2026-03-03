@@ -2165,7 +2165,7 @@ autoHideSeconds = 5;
                         boolean hasLayout = false;
                         boolean hasStyles = false;
                         
-                        // 【修复2】向下兼容老版本的按键布局（老版本导出可能直接是一个纯 JSONArray）
+                                                // 【修复2】向下兼容老版本的按键布局（老版本导出可能直接是一个纯 JSONArray）
                         if (jsonString.startsWith("[")) {
                             root = new JSONObject();
                             root.put("buttons", new JSONArray(jsonString));
@@ -2182,6 +2182,10 @@ autoHideSeconds = 5;
                             return;
                         }
 
+                        // 【核心修复：创建 final 副本供 Lambda 内部使用】
+                        final boolean finalHasLayout = hasLayout;
+                        final boolean finalHasStyles = hasStyles;
+
                         // 弹窗让用户选择具体要导入什么
                         new AlertDialog.Builder(safeContext, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                             .setTitle("发现数据，请选择要导入的内容：")
@@ -2189,8 +2193,8 @@ autoHideSeconds = 5;
                                 try {
                                     SharedPreferences.Editor editor = DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
                                     
-                                    // 处理布局导入
-                                    if ((which == 0 || which == 1) && hasLayout) {
+                                    // 处理布局导入 (已替换为 finalHasLayout)
+                                    if ((which == 0 || which == 1) && finalHasLayout) {
                                         JSONArray btnArray = root.has("layout") ? root.getJSONArray("layout") : root.getJSONArray("buttons");
                                         editor.putString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, btnArray.toString());
                                         editor.putInt("JoystickMode_" + DynamicGamepadView.instance.currentSlot, root.optInt("joystickMode", 0));
@@ -2206,8 +2210,8 @@ autoHideSeconds = 5;
                                         editor.putString("JoySkinKnob_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinKnob", ""));                       
                                     }
                                     
-                                    // 处理风格库导入
-                                    if ((which == 0 || which == 2) && hasStyles) {
+                                    // 处理风格库导入 (已替换为 finalHasStyles)
+                                    if ((which == 0 || which == 2) && finalHasStyles) {
                                         JSONArray styleArr = root.getJSONArray("styles");
                                         DynamicGamepadView.instance.styleList.clear();
                                         DynamicGamepadView.instance.styleList.add(new GamepadStyle("纯色渐变风格 (默认1)"));
@@ -2224,6 +2228,7 @@ autoHideSeconds = 5;
                                     Toast.makeText(safeContext, "✅ 数据导入成功！", Toast.LENGTH_LONG).show();
                                 } catch (Exception e) { Toast.makeText(safeContext, "❌ 应用失败", Toast.LENGTH_SHORT).show(); }
                             }).show();
+                        
                             
                     } catch (Exception e) { Toast.makeText(safeContext, "❌ 文件读取失败，可能已损坏", Toast.LENGTH_SHORT).show(); }
                 }
