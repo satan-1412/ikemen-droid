@@ -2227,6 +2227,7 @@ autoHideSeconds = 5;
                             
                     } catch (Exception e) { Toast.makeText(safeContext, "❌ 文件读取失败，可能已损坏", Toast.LENGTH_SHORT).show(); }
                 }
+        }
                     
             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
         }
