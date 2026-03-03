@@ -1013,7 +1013,8 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) { isEditMode = !isEditMode; if (!isEditMode) saveConfig(); invalidate(); } 
                     else if (which == 1) {
-                        VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, Math.max(40f, getHeight() * 0.10f), Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);                        
+                        float scale = Math.max(0.5f, getHeight() / 1080f);
+VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90 * scale, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);                                             
                         buttons.add(newBtn); isEditMode = true; showButtonSettingsDialog(newBtn);
                     } 
                     else if (which == 2) { 
@@ -2053,13 +2054,12 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
             
 
         
-               private void loadDefaultLayout() {
-        int screenW = getWidth();
-        int screenH = getHeight();
+             private void loadDefaultLayout() {
+        int sw = getWidth();
+        int sh = getHeight();
         
-        // 【核心防御】：如果在构造函数刚启动时调用，此时View还没测量大小（宽高为0）。
-        // 必须打上标记并拦截，交给底层的 onSizeChanged 去做真正的排版！
-        if (screenW == 0 || screenH == 0) {
+        // 拦截尺寸为 0 的初始化阶段，交给 onSizeChanged 处理
+        if (sw == 0 || sh == 0) {
             pendingDefaultLayout = true;
             return;
         }
@@ -2071,14 +2071,17 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         vibrationIntensity = 30;
         imagePickerTarget = 0; 
         
-        // 【核心适配】：使用真正测量出的游戏内部逻辑分辨率比例
-        joyBaseX = screenW * 0.15f; 
-        joyBaseY = screenH * 0.70f; 
+        // 【终极修复：引入 1080p 基准缩放比例】
+        // 无论屏幕是 720p 还是 2K，都以高度作为缩放基准，确保按键始终保持正圆且相对距离完美
+        float scale = Math.min(sw, sh) / 1080f;
+        
+        // 左侧摇杆与方向键：紧贴左下角
+        joyBaseX = 250 * scale; 
+        joyBaseY = sh - 380 * scale; 
         joyKnobX = joyBaseX; 
         joyKnobY = joyBaseY;
         
-        // 摇杆大小随逻辑屏幕高度缩放（避免带宽屏被拉伸变形）
-        joyRadius = screenH * 0.18f; 
+        joyRadius = 180 * scale; 
         joyHitboxRadius = joyRadius * 1.5f; 
         joyAlpha = 200; 
         joyColor = Color.parseColor("#FF5555"); 
@@ -2090,35 +2093,39 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         isAutoHideEnabled = true;
         autoHideSeconds = 5;
 
-        // 预设按键的动态半径
-        float btnRadius = screenH * 0.10f; 
-        float dirRadius = screenH * 0.09f;  
+        float btnRadius = 90 * scale; 
+        float dirRadius = 80 * scale;  
+        float dPadOffset = 150 * scale;
 
-        float dPadOffset = screenH * 0.18f;
+        // 十字方向键围绕摇杆基准
         buttons.add(new VirtualButton("UP", joyBaseX, joyBaseY - dPadOffset, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "UP", true));
         buttons.add(new VirtualButton("DOWN", joyBaseX, joyBaseY + dPadOffset, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "DOWN", true));
         buttons.add(new VirtualButton("LEFT", joyBaseX - dPadOffset, joyBaseY, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "LEFT", true));
         buttons.add(new VirtualButton("RIGHT", joyBaseX + dPadOffset, joyBaseY, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "RIGHT", true));
         
-        // 右侧动作按键基准位 (基于宽度 82% 处)
-        float rx = screenW * 0.82f; 
-        float ry = screenH * 0.75f; 
+        // 【终极修复：右侧动作键反向锚定右边界】
+        // rx 基准点设为屏幕宽度向左缩进，确保最右侧的 C/Z 键离屏幕边缘始终有安全边距
+        float rx = sw - 650 * scale; 
+        float ry = sh - 380 * scale; 
         
-        float offsetX = screenH * 0.18f;
-        float offsetY = screenH * 0.22f;
+        float ox = 200 * scale; // 水平间距
+        float oy = 50 * scale;  // 斜向落差
+        float spacingY = 200 * scale; // 上下排间距
         
         buttons.add(new VirtualButton("A", rx, ry, btnRadius, Color.parseColor("#4CAF50"), 180, Color.WHITE, SHAPE_CIRCLE, "A", false));
-        buttons.add(new VirtualButton("B", rx + offsetX, ry - offsetY, btnRadius, Color.parseColor("#F44336"), 180, Color.WHITE, SHAPE_CIRCLE, "B", false));
-        buttons.add(new VirtualButton("C", rx + offsetX * 2, ry - offsetY * 2, btnRadius, Color.parseColor("#2196F3"), 180, Color.WHITE, SHAPE_CIRCLE, "C", false));
-        buttons.add(new VirtualButton("X", rx, ry - offsetY * 2, btnRadius, Color.parseColor("#8BC34A"), 180, Color.WHITE, SHAPE_CIRCLE, "X", false));
-        buttons.add(new VirtualButton("Y", rx + offsetX, ry - offsetY * 3, btnRadius, Color.parseColor("#E91E63"), 180, Color.WHITE, SHAPE_CIRCLE, "Y", false));
-        buttons.add(new VirtualButton("Z", rx + offsetX * 2, ry - offsetY * 4, btnRadius, Color.parseColor("#03A9F4"), 180, Color.WHITE, SHAPE_CIRCLE, "Z", false));
+        buttons.add(new VirtualButton("B", rx + ox, ry - oy, btnRadius, Color.parseColor("#F44336"), 180, Color.WHITE, SHAPE_CIRCLE, "B", false));
+        buttons.add(new VirtualButton("C", rx + ox * 2, ry - oy * 2, btnRadius, Color.parseColor("#2196F3"), 180, Color.WHITE, SHAPE_CIRCLE, "C", false));
+        buttons.add(new VirtualButton("X", rx, ry - spacingY, btnRadius, Color.parseColor("#8BC34A"), 180, Color.WHITE, SHAPE_CIRCLE, "X", false));
+        buttons.add(new VirtualButton("Y", rx + ox, ry - oy - spacingY, btnRadius, Color.parseColor("#E91E63"), 180, Color.WHITE, SHAPE_CIRCLE, "Y", false));
+        buttons.add(new VirtualButton("Z", rx + ox * 2, ry - oy * 2 - spacingY, btnRadius, Color.parseColor("#03A9F4"), 180, Color.WHITE, SHAPE_CIRCLE, "Z", false));
         
-        // 居中系统按键 (ESC / START)
-        float sysBtnRadius = screenH * 0.08f;
-        buttons.add(new VirtualButton("ESC", screenW * 0.40f, screenH * 0.85f, sysBtnRadius, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "ESC", false));
-        buttons.add(new VirtualButton("START", screenW * 0.60f, screenH * 0.85f, sysBtnRadius, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "RETURN", false));
+        // 居中系统按键 (ESC / START)锚定底部中点
+        float sysBtnRadius = 70 * scale;
+        float sysBaseY = sh - 130 * scale;
+        buttons.add(new VirtualButton("ESC", sw / 2f - 150 * scale, sysBaseY, sysBtnRadius, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "ESC", false));
+        buttons.add(new VirtualButton("START", sw / 2f + 150 * scale, sysBaseY, sysBtnRadius, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "RETURN", false));
     }
+               
             
         
         
@@ -2329,7 +2336,8 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         
         Button btnNewBtn = createRetroButton("➕ 新建按键 / 宏映射", "#555555");
         btnNewBtn.setOnClickListener(v -> { 
-            VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, Math.max(40f, getHeight() * 0.10f), Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);         
+            float scale = Math.max(0.5f, getHeight() / 1080f);
+VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90 * scale, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);             
             buttons.add(newBtn); isEditMode = true; 
             // 注意：这里暂时调用经典面板，下一步我们再重构按键设置面板
             showButtonSettingsDialog(newBtn); dialog.dismiss(); 
