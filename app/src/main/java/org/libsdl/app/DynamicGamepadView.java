@@ -2205,8 +2205,8 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
                         os.close();
                         Toast.makeText(getActivity(), "✅ 导出成功！", Toast.LENGTH_SHORT).show();
                     } catch (Exception e) { Toast.makeText(getActivity(), "❌ 导出失败", Toast.LENGTH_SHORT).show(); }                
-                                } else if (requestCode == 45 && DynamicGamepadView.instance != null) { 
-                    // 【修复1】提前获取安全的 Context，防止 Fragment 被移除后 getActivity() 返回 null 导致闪退
+                                               } else if (requestCode == 45 && DynamicGamepadView.instance != null) { 
+                    // 【修复1】提前获取安全的 Context
                     final Context safeContext = getActivity() != null ? getActivity() : DynamicGamepadView.instance.getContext();
                     
                     try {
@@ -2216,24 +2216,41 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
                         while ((line = reader.readLine()) != null) sb.append(line);
                         reader.close(); is.close();
                         
-                        String jsonString = sb.toString().trim();
+                        String fileContent = sb.toString().trim();
                         final JSONObject root;
                         boolean hasLayout = false;
                         boolean hasStyles = false;
                         
-                                                // 【修复2】向下兼容老版本的按键布局（老版本导出可能直接是一个纯 JSONArray）
-                        if (jsonString.startsWith("[")) {
+                        // 【三合一完美兼容逻辑：新版JSON、旧版JSON、经典XML】
+                        if (fileContent.startsWith("[")) {
+                            // 1. 兼容旧版：纯按键数组 JSON
                             root = new JSONObject();
-                            root.put("buttons", new JSONArray(jsonString));
+                            root.put("buttons", new JSONArray(fileContent));
                             hasLayout = true;
-                        } else {
-                            root = new JSONObject(jsonString);
+                        } else if (fileContent.startsWith("{")) {
+                            // 2. 兼容新版：包含 layout 和 styles 的完整 JSON
+                            root = new JSONObject(fileContent);
                             hasLayout = root.has("layout") || root.has("buttons");
                             hasStyles = root.has("styles");
-                        }
-                        
-                        if (!hasLayout && !hasStyles) {
+                        } else if (fileContent.contains("org.libsdl.app") || fileContent.contains("JoystickOverlay") || fileContent.contains("virtual_controller")) {
+                            // 3. 【新增修复】兼容极早期经典文件：virtual_controller.xml (编译后的二进制或纯文本)
+                            // 核心思路：既然用户导入了经典文件，我们直接调用最新的动态自适应引擎，为其生成完美适配当前屏幕比例的经典六键+摇杆键位。
+                            DynamicGamepadView.instance.post(() -> {
+                                DynamicGamepadView.instance.loadDefaultLayout();
+                                DynamicGamepadView.instance.saveConfig();
+                                DynamicGamepadView.instance.invalidate();
+                                Toast.makeText(safeContext, "✅ 识别到经典 XML 布局！已自动转换为全屏自适应 Pro 布局。", Toast.LENGTH_LONG).show();
+                            });
+                            getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
+                            return;
+                        } else {
                             Toast.makeText(safeContext, "❌ 无效的文件格式", Toast.LENGTH_SHORT).show(); 
+                            getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
+                            return;
+                        }
+
+                        if (!hasLayout && !hasStyles) {
+                            Toast.makeText(safeContext, "❌ 文件内找不到有效的布局数据", Toast.LENGTH_SHORT).show(); 
                             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
                             return;
                         }
@@ -2249,7 +2266,7 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
                                 try {
                                     SharedPreferences.Editor editor = DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
                                     
-                                    // 处理布局导入 (已替换为 finalHasLayout)
+                                    // 处理布局导入
                                     if ((which == 0 || which == 1) && finalHasLayout) {
                                         JSONArray btnArray = root.has("layout") ? root.getJSONArray("layout") : root.getJSONArray("buttons");
                                         editor.putString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, btnArray.toString());
@@ -2266,7 +2283,7 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
                                         editor.putString("JoySkinKnob_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinKnob", ""));                       
                                     }
                                     
-                                    // 处理风格库导入 (已替换为 finalHasStyles)
+                                    // 处理风格库导入
                                     if ((which == 0 || which == 2) && finalHasStyles) {
                                         JSONArray styleArr = root.getJSONArray("styles");
                                         DynamicGamepadView.instance.styleList.clear();
@@ -2288,7 +2305,7 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
                             
                     } catch (Exception e) { Toast.makeText(safeContext, "❌ 文件读取失败，可能已损坏", Toast.LENGTH_SHORT).show(); }
                 }
-        }
+                                
                     
             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
         }
