@@ -93,6 +93,7 @@ public class DynamicGamepadView extends View {
     private final SharedPreferences prefs;
     public boolean isEditMode = false;
         public boolean isGridSnapMode = false; // 是否开启网格吸附
+            public boolean pendingDefaultLayout = false; // 【新增】延迟加载标记
             // 【新增】遮罩图功能相关变量
     public int overlayMode = 0; // 0=关闭, 1=单图, 2=双图
         // ================= 新增：按键风格系统变量 =================
@@ -307,6 +308,17 @@ public class DynamicGamepadView extends View {
         if (instance == this) instance = null;
     }
     
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        // 当 View 真正获取到游戏引擎赋予的逻辑分辨率时，执行延迟的排版
+        if (pendingDefaultLayout && w > 0 && h > 0) {
+            loadDefaultLayout();
+            saveConfig();
+            invalidate();
+        }
+    }
+
     // 【新增】将外部图片转存到APP私有目录的通用方法
     private String saveImageToLocal(Bitmap bitmap, String fileName) {
         try {
@@ -1001,7 +1013,7 @@ CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) { isEditMode = !isEditMode; if (!isEditMode) saveConfig(); invalidate(); } 
                     else if (which == 1) {
-                        VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);
+                        VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, Math.max(40f, getHeight() * 0.10f), Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);                        
                         buttons.add(newBtn); isEditMode = true; showButtonSettingsDialog(newBtn);
                     } 
                     else if (which == 2) { 
@@ -2041,28 +2053,32 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
             
 
         
-            private void loadDefaultLayout() {
-        buttons.clear();
+               private void loadDefaultLayout() {
+        int screenW = getWidth();
+        int screenH = getHeight();
         
-        // 【核心修复：动态获取当前设备的真实屏幕宽高】
-        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-        int screenW = metrics.widthPixels;
-        int screenH = metrics.heightPixels;
-
+        // 【核心防御】：如果在构造函数刚启动时调用，此时View还没测量大小（宽高为0）。
+        // 必须打上标记并拦截，交给底层的 onSizeChanged 去做真正的排版！
+        if (screenW == 0 || screenH == 0) {
+            pendingDefaultLayout = true;
+            return;
+        }
+        pendingDefaultLayout = false;
+        
+        buttons.clear();
         joystickMode = 0;
         isVibrationOn = true; 
         vibrationIntensity = 30;
         imagePickerTarget = 0; 
         
-        // 【核心修复：摒弃绝对像素，改用屏幕宽高的百分比作为锚定点】
-        // 摇杆基准位：屏幕左侧 15%，下方 70% 的位置
+        // 【核心适配】：使用真正测量出的游戏内部逻辑分辨率比例
         joyBaseX = screenW * 0.15f; 
         joyBaseY = screenH * 0.70f; 
         joyKnobX = joyBaseX; 
         joyKnobY = joyBaseY;
         
-        // 摇杆大小随屏幕宽度动态缩放 (宽度的 9% 左右较为适宜)
-        joyRadius = screenW * 0.09f; 
+        // 摇杆大小随逻辑屏幕高度缩放（避免带宽屏被拉伸变形）
+        joyRadius = screenH * 0.18f; 
         joyHitboxRadius = joyRadius * 1.5f; 
         joyAlpha = 200; 
         joyColor = Color.parseColor("#FF5555"); 
@@ -2074,24 +2090,22 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         isAutoHideEnabled = true;
         autoHideSeconds = 5;
 
-        // 预设按键和方向键的动态半径
-        float btnRadius = screenW * 0.045f; 
-        float dirRadius = screenW * 0.04f;  
+        // 预设按键的动态半径
+        float btnRadius = screenH * 0.10f; 
+        float dirRadius = screenH * 0.09f;  
 
-        // 十字键锚定计算
-        float dPadOffset = screenW * 0.08f;
+        float dPadOffset = screenH * 0.18f;
         buttons.add(new VirtualButton("UP", joyBaseX, joyBaseY - dPadOffset, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "UP", true));
         buttons.add(new VirtualButton("DOWN", joyBaseX, joyBaseY + dPadOffset, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "DOWN", true));
         buttons.add(new VirtualButton("LEFT", joyBaseX - dPadOffset, joyBaseY, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "LEFT", true));
         buttons.add(new VirtualButton("RIGHT", joyBaseX + dPadOffset, joyBaseY, dirRadius, Color.GRAY, 150, Color.WHITE, SHAPE_CIRCLE, "RIGHT", true));
         
-        // 右侧动作键基准位：锚定屏幕右侧 (宽度的80%)，高度同摇杆
-        float rx = screenW * 0.80f; 
-        float ry = screenH * 0.70f; 
+        // 右侧动作按键基准位 (基于宽度 82% 处)
+        float rx = screenW * 0.82f; 
+        float ry = screenH * 0.75f; 
         
-        // 按键间的动态偏移量
-        float offsetX = screenW * 0.07f;
-        float offsetY = screenH * 0.12f;
+        float offsetX = screenH * 0.18f;
+        float offsetY = screenH * 0.22f;
         
         buttons.add(new VirtualButton("A", rx, ry, btnRadius, Color.parseColor("#4CAF50"), 180, Color.WHITE, SHAPE_CIRCLE, "A", false));
         buttons.add(new VirtualButton("B", rx + offsetX, ry - offsetY, btnRadius, Color.parseColor("#F44336"), 180, Color.WHITE, SHAPE_CIRCLE, "B", false));
@@ -2101,10 +2115,11 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         buttons.add(new VirtualButton("Z", rx + offsetX * 2, ry - offsetY * 4, btnRadius, Color.parseColor("#03A9F4"), 180, Color.WHITE, SHAPE_CIRCLE, "Z", false));
         
         // 居中系统按键 (ESC / START)
-        float sysBtnRadius = screenW * 0.035f;
+        float sysBtnRadius = screenH * 0.08f;
         buttons.add(new VirtualButton("ESC", screenW * 0.40f, screenH * 0.85f, sysBtnRadius, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "ESC", false));
         buttons.add(new VirtualButton("START", screenW * 0.60f, screenH * 0.85f, sysBtnRadius, Color.DKGRAY, 150, Color.WHITE, SHAPE_SQUARE, "RETURN", false));
     }
+            
         
         
     @SuppressWarnings("deprecation")
@@ -2314,7 +2329,7 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         
         Button btnNewBtn = createRetroButton("➕ 新建按键 / 宏映射", "#555555");
         btnNewBtn.setOnClickListener(v -> { 
-            VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);
+            VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, Math.max(40f, getHeight() * 0.10f), Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);         
             buttons.add(newBtn); isEditMode = true; 
             // 注意：这里暂时调用经典面板，下一步我们再重构按键设置面板
             showButtonSettingsDialog(newBtn); dialog.dismiss(); 
