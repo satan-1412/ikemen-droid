@@ -2149,24 +2149,41 @@ autoHideSeconds = 5;
                         os.close();
                         Toast.makeText(getActivity(), "✅ 导出成功！", Toast.LENGTH_SHORT).show();
                     } catch (Exception e) { Toast.makeText(getActivity(), "❌ 导出失败", Toast.LENGTH_SHORT).show(); }                
-                } else if (requestCode == 45 && DynamicGamepadView.instance != null) { 
-                                        try {
-                        java.io.InputStream is = getActivity().getContentResolver().openInputStream(uri);
+                                } else if (requestCode == 45 && DynamicGamepadView.instance != null) { 
+                    // 【修复1】提前获取安全的 Context，防止 Fragment 被移除后 getActivity() 返回 null 导致闪退
+                    final Context safeContext = getActivity() != null ? getActivity() : DynamicGamepadView.instance.getContext();
+                    
+                    try {
+                        java.io.InputStream is = safeContext.getContentResolver().openInputStream(uri);
                         BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
                         StringBuilder sb = new StringBuilder(); String line;
                         while ((line = reader.readLine()) != null) sb.append(line);
                         reader.close(); is.close();
                         
-                        final JSONObject root = new JSONObject(sb.toString());
-                        boolean hasLayout = root.has("layout") || root.has("buttons");
-                        boolean hasStyles = root.has("styles");
+                        String jsonString = sb.toString().trim();
+                        final JSONObject root;
+                        boolean hasLayout = false;
+                        boolean hasStyles = false;
+                        
+                        // 【修复2】向下兼容老版本的按键布局（老版本导出可能直接是一个纯 JSONArray）
+                        if (jsonString.startsWith("[")) {
+                            root = new JSONObject();
+                            root.put("buttons", new JSONArray(jsonString));
+                            hasLayout = true;
+                        } else {
+                            root = new JSONObject(jsonString);
+                            hasLayout = root.has("layout") || root.has("buttons");
+                            hasStyles = root.has("styles");
+                        }
                         
                         if (!hasLayout && !hasStyles) {
-                            Toast.makeText(getActivity(), "❌ 无效的文件格式", Toast.LENGTH_SHORT).show(); return;
+                            Toast.makeText(safeContext, "❌ 无效的文件格式", Toast.LENGTH_SHORT).show(); 
+                            getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
+                            return;
                         }
 
                         // 弹窗让用户选择具体要导入什么
-                        new AlertDialog.Builder(getActivity(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                        new AlertDialog.Builder(safeContext, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                             .setTitle("发现数据，请选择要导入的内容：")
                             .setItems(new CharSequence[]{"📥 导入全部 (布局与风格)", "📥 仅导入按键布局", "📥 仅导入风格库"}, (dialog, which) -> {
                                 try {
@@ -2201,15 +2218,15 @@ autoHideSeconds = 5;
                                             }
                                         }
                                     }
-                                    editor.apply(); 
+                                    // 【修复3】使用 commit() 强制同步阻塞写入，确保数据落地后再继续
+                                    editor.commit(); 
                                     DynamicGamepadView.instance.loadConfig(DynamicGamepadView.instance.currentSlot);
-                                    Toast.makeText(getActivity(), "✅ 数据导入成功！", Toast.LENGTH_LONG).show();
-                                } catch (Exception e) { Toast.makeText(getActivity(), "❌ 应用失败", Toast.LENGTH_SHORT).show(); }
+                                    Toast.makeText(safeContext, "✅ 数据导入成功！", Toast.LENGTH_LONG).show();
+                                } catch (Exception e) { Toast.makeText(safeContext, "❌ 应用失败", Toast.LENGTH_SHORT).show(); }
                             }).show();
                             
-                    } catch (Exception e) { Toast.makeText(getActivity(), "❌ 文件读取失败，可能已损坏", Toast.LENGTH_SHORT).show(); }
-                     }
-        }
+                    } catch (Exception e) { Toast.makeText(safeContext, "❌ 文件读取失败，可能已损坏", Toast.LENGTH_SHORT).show(); }
+                }
                     
             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
         }
