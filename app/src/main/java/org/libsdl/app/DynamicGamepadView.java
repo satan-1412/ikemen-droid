@@ -180,6 +180,9 @@ public class DynamicGamepadView extends View {
                 public volatile boolean isMacroPlaying = false; 
         public List<List<Integer>> macroSteps = new ArrayList<>(); 
         public long pressTimestamp = 0; // 【新增】记录精准按下时间戳，用于防吃键
+        public boolean isTurbo = false; // 【新增】是否开启连发
+        private volatile boolean turboRunning = false; // 【新增】连发线程控制锁
+
         
         // --- 新增：按下特效专属参数 (移到方法外面来) ---
         public String customPressedUri = ""; // 独立的按下图片
@@ -260,6 +263,27 @@ public class DynamicGamepadView extends View {
         }
     } // <====== 兄弟，就是少了这一个大括号！！！它是用来把 VirtualButton 这个类关上的！
        
+        // 【新增】启动连发线程
+        public void startTurbo() {
+            if (turboRunning || macroSteps.isEmpty()) return;
+            turboRunning = true;
+            new Thread(() -> {
+                while (turboRunning) {
+                    try {
+                        for (int code : macroSteps.get(0)) SDLActivity.onNativeKeyDown(code);
+                        Thread.sleep(40); // 按下持续时间
+                        for (int code : macroSteps.get(0)) SDLActivity.onNativeKeyUp(code);
+                        Thread.sleep(40); // 松开间隔时间（越小射速越快）
+                    } catch (InterruptedException e) { break; }
+                }
+            }).start();
+        }
+
+        // 【新增】停止连发
+        public void stopTurbo() {
+            turboRunning = false;
+        }
+
     
     private static int mapStringToKeyCode(String k) {        
         if (k.equals("UP")) return KeyEvent.KEYCODE_DPAD_UP;
@@ -837,13 +861,15 @@ public boolean onTouchEvent(MotionEvent event) {
                 }
             }
             
-            // 【修改】区分触发：多步的是宏，单步的是普通组合键
+                       // 【修改】区分触发：连发、宏、普通单点
             if (!btn.isPressed && isTouchedNow) {
                 btn.isPressed = true;
-                btn.pressTimestamp = System.currentTimeMillis(); // 【新增】瞬间打卡记录时间
+                btn.pressTimestamp = System.currentTimeMillis(); // 瞬间打卡记录时间
                 triggerVibrate();
                 
-                if (btn.macroSteps.size() > 1) {
+                if (btn.isTurbo) {
+                    btn.startTurbo(); // 触发独立连发引擎
+                } else if (btn.macroSteps.size() > 1) {
                     btn.executeMacro(); // 触发一键连招
                 } else if (!btn.macroSteps.isEmpty()) {
                     for (int code : btn.macroSteps.get(0)) SDLActivity.onNativeKeyDown(code); // 瞬间触发同按组合键
@@ -851,18 +877,18 @@ public boolean onTouchEvent(MotionEvent event) {
             } else if (btn.isPressed && !isTouchedNow) {
                 btn.isPressed = false;
                 
-                // 只有普通键/组合键需要在这里松开，宏已经在子线程自己松开了
-                if (btn.macroSteps.size() <= 1 && !btn.macroSteps.isEmpty()) {
+                if (btn.isTurbo) {
+                    btn.stopTurbo(); // 松开即停止连发
+                } else if (btn.macroSteps.size() <= 1 && !btn.macroSteps.isEmpty()) {
                     long pressDuration = System.currentTimeMillis() - btn.pressTimestamp;
                     final List<Integer> codes = btn.macroSteps.get(0);
                     
                     if (pressDuration < 50) {
-                        // 【核心修复】如果按压时间不足50毫秒(不到3帧)，利用View的线程延迟松开操作，保证底层引擎一定能抓到动作
+                        // 如果按压时间不足50毫秒(不到3帧)，利用View的线程延迟松开操作，保证底层引擎一定能抓到动作
                         postDelayed(() -> {
                             for (int code : codes) SDLActivity.onNativeKeyUp(code);
                         }, 50 - pressDuration);
                     } else {
-                        // 按压时间正常，立即松开
                         for (int code : codes) SDLActivity.onNativeKeyUp(code);
                     }
                 }
@@ -1676,6 +1702,19 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); btnParams.setMargins(20, 0, 0, 0); btnClearImage.setLayoutParams(btnParams);
         btnClearImage.setOnClickListener(v -> { btn.customImageUri = ""; btn.skinBitmap = null; Toast.makeText(getContext(), "已恢复默认材质", Toast.LENGTH_SHORT).show(); invalidate(); });
                 skinLayout.addView(btnClearImage); layout.addView(skinLayout);
+                
+                layout.addView(createTitle("7. 连发功能 (Turbo):"));
+        final Button turboBtn = new Button(getContext());
+        turboBtn.setText(btn.isTurbo ? "🔥 连发状态：已开启" : "⚪ 连发状态：已关闭");
+        turboBtn.setTextColor(Color.WHITE);
+        turboBtn.setBackgroundColor(btn.isTurbo ? Color.parseColor("#FF5722") : Color.parseColor("#555555"));
+        turboBtn.setOnClickListener(v -> {
+            btn.isTurbo = !btn.isTurbo;
+            turboBtn.setText(btn.isTurbo ? "🔥 连发状态：已开启" : "⚪ 连发状态：已关闭");
+            turboBtn.setBackgroundColor(btn.isTurbo ? Color.parseColor("#FF5722") : Color.parseColor("#555555"));
+        });
+        layout.addView(turboBtn);
+
 
         // ================= 【新增：按下状态的UI调节控制】 =================
                 // ================= 【修改：增加按下特效的实时颜色预览】 =================
@@ -1935,6 +1974,7 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
                 obj.put("pressedSkin", btn.customPressedUri);
                 obj.put("pressedColor", btn.pressedEffectColor);
                 obj.put("pressedAlpha", btn.pressedEffectAlpha);
+                obj.put("isTurbo", btn.isTurbo);
                 array.put(obj);
             }
             editor.putString(KEY_LAYOUT_PREFIX + currentSlot, array.toString());
@@ -1989,6 +2029,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                 btn.customPressedUri = o.optString("pressedSkin", "");
                 btn.pressedEffectColor = o.optInt("pressedColor", 0);
                 btn.pressedEffectAlpha = o.optInt("pressedAlpha", 150);
+                btn.isTurbo = o.optBoolean("isTurbo", false);
                 
                 btn.loadSkinFromUri(getContext());
                 buttons.add(btn);
@@ -2074,6 +2115,14 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         // 【终极修复：引入 1080p 基准缩放比例】
         // 无论屏幕是 720p 还是 2K，都以高度作为缩放基准，确保按键始终保持正圆且相对距离完美
         float scale = Math.min(sw, sh) / 1080f;
+                // 【终极修复：引入 1080p 基准缩放比例】
+        float scale = Math.min(sw, sh) / 1080f;
+        
+        // 【新增】：强制同步菜单按钮的大小和位置，使其跟随屏幕自适应
+        menuScale = scale; 
+        menuX = 30 * scale; 
+        menuY = 30 * scale;
+
         
         // 左侧摇杆与方向键：紧贴左下角
         joyBaseX = 250 * scale; 
