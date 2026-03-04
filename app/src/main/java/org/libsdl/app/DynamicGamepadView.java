@@ -525,9 +525,9 @@ public class DynamicGamepadView extends View {
                 for (int i = 0; i < getWidth(); i += GRID_SIZE) canvas.drawLine(i, 0, i, getHeight(), paintBtn);
                 for (int i = 0; i < getHeight(); i += GRID_SIZE) canvas.drawLine(0, i, getWidth(), i, paintBtn);
             }
-            paintText.setTextSize(40f);
+                        paintText.setTextSize(Math.max(20f, getHeight() * 0.05f)); // 【修复】动态字体大小
             paintText.setShadowLayer(5f, 2f, 2f, Color.BLACK);
-            canvas.drawText("【编辑模式】拖动调整，轻触设置", getWidth() / 2f, 100, paintText);
+            canvas.drawText("【编辑模式】拖动调整，轻触设置", getWidth() / 2f, getHeight() * 0.12f, paintText); // 【修复】动态高度位置          
         }
 
               // 核心按键绘制逻辑
@@ -752,8 +752,10 @@ public class DynamicGamepadView extends View {
             paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setStrokeWidth(5f); paintBtn.setColor(Color.WHITE); paintBtn.setAlpha(255);
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius + 10, paintBtn); 
             canvas.drawCircle(joyBaseX, joyBaseY, joyHitboxRadius, dashPaint);
-            paintText.setColor(Color.WHITE); paintText.setTextSize(35f); paintText.setShadowLayer(3f,0,0,Color.BLACK);
-            canvas.drawText("摇杆控制区", joyBaseX, joyBaseY - joyHitboxRadius - 20, paintText);
+            paintText.setColor(Color.WHITE); 
+            paintText.setTextSize(Math.max(16f, joyRadius * 0.25f)); // 【修复】跟随摇杆比例缩放
+            paintText.setShadowLayer(3f,0,0,Color.BLACK);
+            canvas.drawText("摇杆控制区", joyBaseX, joyBaseY - joyHitboxRadius - 10, paintText);            
             paintBtn.setStyle(Paint.Style.FILL); paintText.clearShadowLayer();
         }
     }
@@ -1480,7 +1482,7 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
         layout.addView(hexInput);
         
         final View colorPreview = new View(getContext());
-        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150);
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 60);
         previewParams.setMargins(0, 10, 0, 30); colorPreview.setLayoutParams(previewParams); 
         final android.graphics.drawable.GradientDrawable previewBg = new android.graphics.drawable.GradientDrawable();
         previewBg.setCornerRadius(20f); previewBg.setColor(joyColor); colorPreview.setBackground(previewBg);
@@ -1627,7 +1629,7 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
         layout.addView(hexInput);
 
         final View colorPreview = new View(getContext());
-        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150);
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 60);
         previewParams.setMargins(0, 10, 0, 30); colorPreview.setLayoutParams(previewParams); 
         final android.graphics.drawable.GradientDrawable previewBg = new android.graphics.drawable.GradientDrawable();
         previewBg.setCornerRadius(20f); previewBg.setColor(btn.color); colorPreview.setBackground(previewBg);
@@ -1723,7 +1725,7 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
         layout.addView(hexInputP);
         
         final View colorPreviewP = new View(getContext());
-        LinearLayout.LayoutParams previewParamsP = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150);
+        LinearLayout.LayoutParams previewParamsP = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 60);
         previewParamsP.setMargins(0, 10, 0, 30); colorPreviewP.setLayoutParams(previewParamsP); 
         final android.graphics.drawable.GradientDrawable previewBgP = new android.graphics.drawable.GradientDrawable();
         previewBgP.setCornerRadius(20f); 
@@ -1814,36 +1816,38 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
     // 补回被误删的 UI 绘制辅助方法
     // =====================================
 
-        private EditText createEditText(String hint, String text) {
+            private EditText createEditText(String hint, String text) {
         EditText et = new EditText(getContext());
         et.setHint(hint);
         et.setText(text);
         et.setTextColor(Color.BLACK); 
         et.setHintTextColor(Color.GRAY);
+        et.setTextSize(14f); // 【修复】强制限制输入框字体大小
         
-        // 【UI 美化】给输入框加个圆角白底边框
         android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
         bg.setColor(Color.WHITE);
         bg.setCornerRadius(15f);
         bg.setStroke(3, Color.parseColor("#999999"));
         et.setBackground(bg);
         
-        et.setPadding(30, 30, 30, 30);
+        et.setPadding(20, 15, 20, 15); // 【修复】大幅缩小巨型内边距
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 10, 0, 20);
+        params.setMargins(0, 5, 0, 10); // 【修复】缩小外边距
         et.setLayoutParams(params);
         return et;
     }
+        
     
-    private TextView createTitle(String text) {
+      private TextView createTitle(String text) {
         TextView tv = new TextView(getContext());
         tv.setText(text);
-        tv.setTextSize(16f);
+        tv.setTextSize(13f); // 【修复】缩小标题字体 (原为16f)
         tv.setTypeface(Typeface.DEFAULT_BOLD);
-        tv.setTextColor(Color.WHITE); // 外部标题强制纯白
-        tv.setPadding(0, 40, 0, 10);
+        tv.setTextColor(Color.WHITE); 
+        tv.setPadding(0, 15, 0, 5); // 【修复】大幅缩减标题的上下占位 (原为 40, 10)
         return tv;
     }
+    
 
         // 替换原代码中底部的 createColorBar 方法
     private SeekBar createColorBar(LinearLayout parent, String label, int progress) {
