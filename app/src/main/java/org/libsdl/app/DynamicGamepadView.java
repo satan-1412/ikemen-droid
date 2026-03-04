@@ -1212,7 +1212,18 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
         bg.setColor(Color.parseColor("#E6222222")); bg.setCornerRadius(35f);
         layout.setBackground(bg);
 
-        ScrollView scroll = new ScrollView(getContext());
+                ScrollView scroll = new ScrollView(getContext()) {
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                // 获取手机真实的物理屏幕高度，不受底层游戏分辨率影响
+                int screenH = getResources().getDisplayMetrics().heightPixels;
+                // 强制限制弹窗的最大高度为屏幕高度的 65%
+                int maxHeight = (int) (screenH * 0.65f);
+                int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
+                super.onMeasure(widthMeasureSpec, customHeightSpec);
+            }
+        };
+        
         LinearLayout contentLayout = new LinearLayout(getContext());
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         
@@ -1473,7 +1484,18 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
         dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(16f); dragHandle.setTypeface(null, Typeface.BOLD);
         rootLayout.addView(dragHandle);
 
-        ScrollView scroll = new ScrollView(getContext());
+                ScrollView scroll = new ScrollView(getContext()) {
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                // 获取手机真实的物理屏幕高度，不受底层游戏分辨率影响
+                int screenH = getResources().getDisplayMetrics().heightPixels;
+                // 强制限制弹窗的最大高度为屏幕高度的 65%
+                int maxHeight = (int) (screenH * 0.65f);
+                int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
+                super.onMeasure(widthMeasureSpec, customHeightSpec);
+            }
+        };
+        
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
 
@@ -1605,7 +1627,18 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
         dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(16f); dragHandle.setTypeface(null, Typeface.BOLD);
         rootLayout.addView(dragHandle);
 
-        ScrollView scroll = new ScrollView(getContext());
+                ScrollView scroll = new ScrollView(getContext()) {
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                // 获取手机真实的物理屏幕高度，不受底层游戏分辨率影响
+                int screenH = getResources().getDisplayMetrics().heightPixels;
+                // 强制限制弹窗的最大高度为屏幕高度的 65%
+                int maxHeight = (int) (screenH * 0.65f);
+                int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
+                super.onMeasure(widthMeasureSpec, customHeightSpec);
+            }
+        };
+        
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
 
@@ -2390,7 +2423,18 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         header.setBackgroundColor(Color.parseColor("#1A1A1A"));
         rootLayout.addView(header);
 
-        ScrollView scroll = new ScrollView(getContext());
+                ScrollView scroll = new ScrollView(getContext()) {
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                // 获取手机真实的物理屏幕高度，不受底层游戏分辨率影响
+                int screenH = getResources().getDisplayMetrics().heightPixels;
+                // 强制限制弹窗的最大高度为屏幕高度的 65%
+                int maxHeight = (int) (screenH * 0.65f);
+                int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
+                super.onMeasure(widthMeasureSpec, customHeightSpec);
+            }
+        };
+        
         LinearLayout contentLayout = new LinearLayout(getContext());
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         contentLayout.setPadding(30, 20, 30, 40);
