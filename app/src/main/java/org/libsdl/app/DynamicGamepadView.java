@@ -245,7 +245,7 @@ public class DynamicGamepadView extends View {
         }
         
 
-        // 【修复】确保这个方法在类的大括号里面
+                // 【修复】确保这个方法在类的大括号里面
         public void executeMacro() {
             if (macroSteps.size() <= 1 || isMacroPlaying) return;
             isMacroPlaying = true;
@@ -253,15 +253,14 @@ public class DynamicGamepadView extends View {
                 try {
                     for (List<Integer> stepCodes : macroSteps) {
                         for (int code : stepCodes) SDLActivity.onNativeKeyDown(code);
-                        Thread.sleep(60); // 【修复】把按下时间延长到 60ms，确保游戏帧能抓到
+                        Thread.sleep(60); 
                         for (int code : stepCodes) SDLActivity.onNativeKeyUp(code);
-                        Thread.sleep(50); // 【修复】动作间隔延长到 50ms，防止连招粘连
+                        Thread.sleep(50); 
                     }
                 } catch (InterruptedException e) { }
                 isMacroPlaying = false;
             }).start();
         }
-    } // <====== 兄弟，就是少了这一个大括号！！！它是用来把 VirtualButton 这个类关上的！
        
         // 【新增】启动连发线程
         public void startTurbo() {
@@ -284,8 +283,9 @@ public class DynamicGamepadView extends View {
             turboRunning = false;
         }
 
+    } // <====== 兄弟，大括号必须放在这里！！！它必须把所有 VirtualButton 相关的变量和方法全部包在里面！
     
-    private static int mapStringToKeyCode(String k) {        
+    private static int mapStringToKeyCode(String k) {            
         if (k.equals("UP")) return KeyEvent.KEYCODE_DPAD_UP;
         if (k.equals("DOWN")) return KeyEvent.KEYCODE_DPAD_DOWN;
         if (k.equals("LEFT")) return KeyEvent.KEYCODE_DPAD_LEFT;
@@ -2030,8 +2030,8 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                 btn.pressedEffectColor = o.optInt("pressedColor", 0);
                 btn.pressedEffectAlpha = o.optInt("pressedAlpha", 150);
                 btn.isTurbo = o.optBoolean("isTurbo", false);
-                
-                btn.loadSkinFromUri(getContext());
+                 
+                btn.loadSkinFromUri(getContext());                
                 buttons.add(btn);
             }
             joystickMode = prefs.getInt("JoystickMode_" + slot, 0);
@@ -2114,8 +2114,6 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         
         // 【终极修复：引入 1080p 基准缩放比例】
         // 无论屏幕是 720p 还是 2K，都以高度作为缩放基准，确保按键始终保持正圆且相对距离完美
-        float scale = Math.min(sw, sh) / 1080f;
-                // 【终极修复：引入 1080p 基准缩放比例】
         float scale = Math.min(sw, sh) / 1080f;
         
         // 【新增】：强制同步菜单按钮的大小和位置，使其跟随屏幕自适应
