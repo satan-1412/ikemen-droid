@@ -1561,7 +1561,8 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
 
         scroll.addView(layout); rootLayout.addView(scroll);
         dialog.setContentView(rootLayout); setupMovableDialog(dialog, dragHandle); 
-        dialog.setOnWindowFocusChanged(hasFocus -> { if(hasFocus) rootLayout.setBackground(getCustomDialogBackground()); });
+        rootLayout.getViewTreeObserver().addOnWindowFocusChangeListener(hasFocus -> { if(hasFocus) rootLayout.setBackground(getCustomDialogBackground()); });
+        
         dialog.show();
     }
 
