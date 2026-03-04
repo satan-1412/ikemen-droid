@@ -1218,7 +1218,7 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
                 // 获取手机真实的物理屏幕高度，不受底层游戏分辨率影响
                 int screenH = getResources().getDisplayMetrics().heightPixels;
                 // 强制限制弹窗的最大高度为屏幕高度的 65%
-                int maxHeight = (int) (screenH * 0.65f);
+                int maxHeight = (int) (screenH * 0.85f);
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
@@ -1490,7 +1490,7 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
                 // 获取手机真实的物理屏幕高度，不受底层游戏分辨率影响
                 int screenH = getResources().getDisplayMetrics().heightPixels;
                 // 强制限制弹窗的最大高度为屏幕高度的 65%
-                int maxHeight = (int) (screenH * 0.65f);
+                int maxHeight = (int) (screenH * 0.85f);
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
@@ -1633,7 +1633,7 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
                 // 获取手机真实的物理屏幕高度，不受底层游戏分辨率影响
                 int screenH = getResources().getDisplayMetrics().heightPixels;
                 // 强制限制弹窗的最大高度为屏幕高度的 65%
-                int maxHeight = (int) (screenH * 0.65f);
+                int maxHeight = (int) (screenH * 0.85f);
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
@@ -2429,7 +2429,7 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
                 // 获取手机真实的物理屏幕高度，不受底层游戏分辨率影响
                 int screenH = getResources().getDisplayMetrics().heightPixels;
                 // 强制限制弹窗的最大高度为屏幕高度的 65%
-                int maxHeight = (int) (screenH * 0.65f);
+                int maxHeight = (int) (screenH * 0.85f);
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
