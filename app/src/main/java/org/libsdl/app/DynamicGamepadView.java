@@ -386,100 +386,147 @@ import java.util.List;
     }
 
         // 自动生成视频里的“街机风格”图片并存入沙盒，返回URI
+        // ================= 新增：超级按键风格生成矩阵 (12套预设) =================
     private void generateVideoArcadeStyle() {
-        int size = 400; // 高清分辨率
+        styleList.clear();
+
+        // 1. 系统原生风格 (占位符，触发代码内置渐变渲染)
+        GamepadStyle style1 = new GamepadStyle("01. 原生渐变引擎 (System Default)");
+        style1.joyBaseUri = ""; style1.joyKnobUri = ""; style1.btnNormalUri = ""; style1.btnPressedUri = "";
+        style1.globalPressedColor = 0; 
+        styleList.add(style1);
+
+        int size = 400; // 统一生成高清 400x400 贴图
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-        // --- 只画【风格2】需要的街机风图片 ---
-        Bitmap baseBmp2 = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-        Canvas cBase2 = new Canvas(baseBmp2);
-        p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#0C141E")); 
-        cBase2.drawCircle(size/2f, size/2f, size/2f - 4, p);
-        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(6f); p.setColor(Color.parseColor("#90CAF9")); 
-        cBase2.drawCircle(size/2f, size/2f, size/2f - 4, p);
-        String baseUri2 = saveImageToLocal(baseBmp2, "arcade_base.png");
+        // 核心数据矩阵：{风格名称, 底盘底色, 底盘边框, 摇杆底色, 摇杆边框, 按键底色, 按键边框, 按下特效高亮色}
+        String[][] themes = {
+            {"02. 经典街机 (Retro Arcade)", "#0C141E", "#90CAF9", "#D32F2F", "#B71C1C", "#1A2B42", "#90CAF9", "#4CAF50"},
+            {"03. 赛博朋克霓虹 (Cyberpunk)", "#110022", "#00FFFF", "#FF007F", "#FF00FF", "#110022", "#00FFFF", "#FF00FF"},
+            {"04. 暗物质黑武士 (Dark Matter)", "#111111", "#333333", "#444444", "#111111", "#1A1A1A", "#333333", "#FFFFFF"},
+            {"05. 皇家奢华黑金 (Luxury Gold)", "#1A1813", "#D4AF37", "#C5B358", "#8A793D", "#26241D", "#D4AF37", "#FFDF00"},
+            {"06. SFC 经典主机 (SNES Classic)", "#D3D3D3", "#A9A9A9", "#4A4E69", "#2F3241", "#D3D3D3", "#A9A9A9", "#7B68EE"},
+            {"07. 生化毒液 (Toxic Acid)", "#0F1A0F", "#39FF14", "#2E8B57", "#00FF00", "#142214", "#39FF14", "#ADFF2F"},
+            {"08. 猩红之月 (Blood Moon)", "#1A0505", "#DC143C", "#8B0000", "#660000", "#240A0A", "#DC143C", "#FF0000"},
+            {"09. 深海幽蓝 (Ocean Depth)", "#001F3F", "#00BFFF", "#0074D9", "#00008B", "#001A33", "#00BFFF", "#1E90FF"},
+            {"10. 极简拟物白 (White Glass)", "#F5F5F5", "#E0E0E0", "#FFFFFF", "#CCCCCC", "#FAFAFA", "#E0E0E0", "#87CEEB"},
+            {"11. 紫晶矿石 (Royal Amethyst)", "#20102B", "#9932CC", "#8A2BE2", "#4B0082", "#2A1538", "#9932CC", "#DDA0DD"},
+            {"12. 熔岩火山核心 (Magma Core)", "#2B0F0E", "#FF4500", "#FF8C00", "#8B0000", "#361311", "#FF4500", "#FFFF00"}
+        };
 
-        Bitmap knobBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-        Canvas cKnob = new Canvas(knobBmp);
-        p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#D32F2F")); 
-        cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
-        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(4f); p.setColor(Color.parseColor("#B71C1C")); 
-        cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
-        String knobUri = saveImageToLocal(knobBmp, "arcade_knob.png");
+        // 批量自动绘制并存入沙盒
+        for (String[] t : themes) {
+            String name = t[0];
+            int baseFill = Color.parseColor(t[1]), baseStroke = Color.parseColor(t[2]);
+            int knobFill = Color.parseColor(t[3]), knobStroke = Color.parseColor(t[4]);
+            int btnFill = Color.parseColor(t[5]), btnStroke = Color.parseColor(t[6]);
+            int pressColor = Color.parseColor(t[7]);
 
-        Bitmap btnBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-        Canvas cBtn = new Canvas(btnBmp);
-        p.setStyle(Paint.Style.FILL); p.setColor(Color.parseColor("#1A2B42")); 
-        cBtn.drawCircle(size/2f, size/2f, size/2f - 6, p);
-        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(8f); p.setColor(Color.parseColor("#90CAF9")); 
-        cBtn.drawCircle(size/2f, size/2f, size/2f - 6, p);
-        String btnUri = saveImageToLocal(btnBmp, "arcade_btn.png");
+            // 1. 动态画：摇杆底盘
+            Bitmap baseBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            Canvas cBase = new Canvas(baseBmp);
+            p.setStyle(Paint.Style.FILL); p.setColor(baseFill); cBase.drawCircle(size/2f, size/2f, size/2f - 8, p);
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(12f); p.setColor(baseStroke); cBase.drawCircle(size/2f, size/2f, size/2f - 8, p);
+            String baseUri = saveImageToLocal(baseBmp, "style_base_" + name.substring(0,2) + ".png");
 
-        // --- 组装风格 ---
-        GamepadStyle style1 = new GamepadStyle("纯色渐变风格 (默认1)");
-        style1.joyBaseUri = ""; // 【核心：完全清空，告诉渲染器去画原生红杆】
-        style1.joyKnobUri = ""; 
-        style1.btnNormalUri = ""; 
-        style1.btnPressedUri = "";
-        style1.globalPressedColor = 0; 
-        
-        GamepadStyle style2 = new GamepadStyle("视频街机风格 (默认2)");
-        style2.joyBaseUri = baseUri2; 
-        style2.joyKnobUri = knobUri; 
-        style2.btnNormalUri = btnUri; 
-        style2.globalPressedColor = Color.parseColor("#4CAF50"); 
-        
-        styleList.clear();
-        styleList.add(style1); 
-        styleList.add(style2);
+            // 2. 动态画：摇杆帽
+            Bitmap knobBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            Canvas cKnob = new Canvas(knobBmp);
+            p.setStyle(Paint.Style.FILL); p.setColor(knobFill); cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(8f); p.setColor(knobStroke); cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
+            String knobUri = saveImageToLocal(knobBmp, "style_knob_" + name.substring(0,2) + ".png");
+
+            // 3. 动态画：动作按键
+            Bitmap btnBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            Canvas cBtn = new Canvas(btnBmp);
+            p.setStyle(Paint.Style.FILL); p.setColor(btnFill); cBtn.drawCircle(size/2f, size/2f, size/2f - 10, p);
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(14f); p.setColor(btnStroke); cBtn.drawCircle(size/2f, size/2f, size/2f - 10, p);
+            String btnUri = saveImageToLocal(btnBmp, "style_btn_" + name.substring(0,2) + ".png");
+
+            // 4. 组装并写入数据库
+            GamepadStyle style = new GamepadStyle(name);
+            style.joyBaseUri = baseUri;
+            style.joyKnobUri = knobUri;
+            style.btnNormalUri = btnUri;
+            style.globalPressedColor = pressColor; // 绑上专用的按下发光色
+            styleList.add(style);
+        }
+    }
+    
+
+    // ================= 新增：安全读取动图字节流 =================
+    private byte[] readBytes(InputStream is) throws Exception {
+        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+        int nRead; byte[] data = new byte[16384];
+        while ((nRead = is.read(data, 0, data.length)) != -1) { buffer.write(data, 0, nRead); }
+        return buffer.toByteArray();
     }
 
-                   public void onImagePicked(String uriStr) {
+                       public void onImagePicked(String uriStr) {
         try {
             Uri uri = Uri.parse(uriStr);
+
+            // ================= 终极修复：GIF 灭霸拦截器 =================
+            // 绝对不能让 GIF 图走下面的 Bitmap.compress 逻辑，否则直接被拍扁成单帧死图！
+            if (imagePickerTarget == 4 || imagePickerTarget == 5) {
+                InputStream isGif = getContext().getContentResolver().openInputStream(uri);
+                byte[] bytes = readBytes(isGif); isGif.close();
+                
+                // 将原汁原味的字节流存入沙盒，保住 GIF 的动图命脉
+                File dir = new File(getContext().getFilesDir(), "ikemen_skins");
+                if (!dir.exists()) dir.mkdirs();
+                File file = new File(dir, "overlay_" + System.currentTimeMillis() + ".gif");
+                FileOutputStream fos = new FileOutputStream(file);
+                fos.write(bytes); fos.flush(); fos.close();
+                String localGifUri = android.net.Uri.fromFile(file).toString();
+                
+                android.graphics.Movie movie = android.graphics.Movie.decodeByteArray(bytes, 0, bytes.length);
+                if (imagePickerTarget == 4) {
+                    overlayUri1 = localGifUri;
+                    if (movie != null && movie.duration() > 0) { overlayMovie1 = movie; overlayBmp1 = null; movieStart1 = 0; }
+                    else { overlayMovie1 = null; overlayBmp1 = BitmapFactory.decodeByteArray(bytes, 0, bytes.length); }
+                    if (overlayMode < 1) overlayMode = 1;
+                    Toast.makeText(getContext(), "遮罩图1应用成功！(动态帧已保留)", Toast.LENGTH_SHORT).show();
+                } else {
+                    overlayUri2 = localGifUri;
+                    if (movie != null && movie.duration() > 0) { overlayMovie2 = movie; overlayBmp2 = null; movieStart2 = 0; }
+                    else { overlayMovie2 = null; overlayBmp2 = BitmapFactory.decodeByteArray(bytes, 0, bytes.length); }
+                    if (overlayMode < 2) overlayMode = 2;
+                    Toast.makeText(getContext(), "遮罩图2应用成功！(动态帧已保留)", Toast.LENGTH_SHORT).show();
+                }
+                imagePickerTarget = 0; saveConfig(); invalidate();
+                return; // 直接拦截返回，不走下面的 PNG 压缩逻辑！
+            }
+            // =========================================================
+
+            // 下面是普通按键/背景皮肤的逻辑 (安全地转存为 PNG 格式)
             InputStream is = getContext().getContentResolver().openInputStream(uri);
             Bitmap raw = BitmapFactory.decodeStream(is);
             
-            // 【新增核心】生成私有缓存图，彻底摆脱外部相册依赖
             String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() + ".png");
             final String finalUriStr = localUriStr.isEmpty() ? uriStr : localUriStr; 
             
             if (imagePickerTarget == 1) { 
                 if (joySkinBaseBitmap != null && !joySkinBaseBitmap.isRecycled()) joySkinBaseBitmap.recycle();
-                joySkinBaseUri = finalUriStr; // 【修改】存最终私有路径
+                joySkinBaseUri = finalUriStr; 
                 joySkinBaseBitmap = Bitmap.createScaledBitmap(raw, (int)(joyRadius*2), (int)(joyRadius*2), true);
                 Toast.makeText(getContext(), "摇杆外框皮肤应用成功！", Toast.LENGTH_SHORT).show();
             } else if (imagePickerTarget == 2) { 
                 if (joySkinKnobBitmap != null && !joySkinKnobBitmap.isRecycled()) joySkinKnobBitmap.recycle();
-                joySkinKnobUri = finalUriStr; // 【修改】存最终私有路径
+                joySkinKnobUri = finalUriStr; 
                 joySkinKnobBitmap = Bitmap.createScaledBitmap(raw, (int)(joyRadius*2), (int)(joyRadius*2), true);
                 Toast.makeText(getContext(), "摇杆中心皮肤应用成功！", Toast.LENGTH_SHORT).show();
             } else if (imagePickerTarget == 3 && currentlyEditingButton != null) { 
                 if (currentlyEditingButton.skinBitmap != null && !currentlyEditingButton.skinBitmap.isRecycled()) currentlyEditingButton.skinBitmap.recycle();
-                currentlyEditingButton.customImageUri = finalUriStr; // 【修改】存最终私有路径
+                currentlyEditingButton.customImageUri = finalUriStr; 
                 currentlyEditingButton.skinBitmap = Bitmap.createScaledBitmap(raw, (int)(currentlyEditingButton.radius*2), (int)(currentlyEditingButton.radius*2), true);
                 Toast.makeText(getContext(), "按键皮肤应用成功！", Toast.LENGTH_SHORT).show();
-                            // 【新增：按键按下特效皮肤图片读取 (Target 6)】
             } else if (imagePickerTarget == 6 && currentlyEditingButton != null) { 
                 if (currentlyEditingButton.pressedSkinBitmap != null && !currentlyEditingButton.pressedSkinBitmap.isRecycled()) currentlyEditingButton.pressedSkinBitmap.recycle();
                 currentlyEditingButton.customPressedUri = finalUriStr; 
                 currentlyEditingButton.pressedSkinBitmap = Bitmap.createScaledBitmap(raw, (int)(currentlyEditingButton.radius*2), (int)(currentlyEditingButton.radius*2), true);
                 Toast.makeText(getContext(), "按下状态皮肤应用成功！", Toast.LENGTH_SHORT).show();
-
-            } else if (imagePickerTarget == 4) { 
-                if (overlayBmp1 != null && !overlayBmp1.isRecycled()) overlayBmp1.recycle();
-                overlayUri1 = finalUriStr; // 【修改】存最终私有路径
-                overlayBmp1 = Bitmap.createBitmap(raw); 
-                if (overlayMode < 1) overlayMode = 1; 
-                Toast.makeText(getContext(), "遮罩图1应用成功！", Toast.LENGTH_SHORT).show();
-            } else if (imagePickerTarget == 5) { 
-                if (overlayBmp2 != null && !overlayBmp2.isRecycled()) overlayBmp2.recycle();
-                overlayUri2 = finalUriStr; // 【修改】存最终私有路径
-                overlayBmp2 = Bitmap.createBitmap(raw);
-                if (overlayMode < 2) overlayMode = 2; 
-                Toast.makeText(getContext(), "遮罩图2应用成功！", Toast.LENGTH_SHORT).show();
-            }
-            else if (imagePickerTarget == 7) { 
+            } else if (imagePickerTarget == 7) { 
                 if (dialogBgBitmap != null && !dialogBgBitmap.isRecycled()) dialogBgBitmap.recycle();
                 dialogBgImageUri = finalUriStr; 
                 dialogBgBitmap = Bitmap.createScaledBitmap(raw, 800, 800, true); 
@@ -494,6 +541,7 @@ import java.util.List;
         } catch (Exception e) {}
         imagePickerTarget = 0;
     }
+                   
                
             
     // 【补上这里缺失的收尾代码 👆】
@@ -506,31 +554,61 @@ import java.util.List;
         super.onDraw(canvas);
 
                 // 绘制遮罩图
-        if ((!isFullscreenHideOverlay || isEditMode) && overlayMode > 0) {
+                // 绘制遮罩图 (支持动态 GIF、镜像翻转、任意角度旋转)
+        if ((!isFullscreenHideOverlay || isEditMode) && overlayMode > 0 && isOverlayVisible) {
             paintBtn.setAlpha(255);
-            if (overlayMode >= 1 && overlayBmp1 != null) {
-                tempRect.set(overlayX1, overlayY1, overlayX1 + overlayBmp1.getWidth() * overlayScale1, overlayY1 + overlayBmp1.getHeight() * overlayScale1);
-                canvas.save(); // 保存画布状态
-                canvas.rotate(overlayRotation1, tempRect.centerX(), tempRect.centerY()); // 围绕中心点旋转
-                canvas.drawBitmap(overlayBmp1, null, tempRect, paintBtn);
-                if (isEditMode) { 
-                    paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setColor(Color.GREEN); paintBtn.setStrokeWidth(5f);
-                    canvas.drawRect(tempRect, paintBtn); paintBtn.setStyle(Paint.Style.FILL);
+            // ==== 渲染图 1 ====
+            if (overlayMode >= 1) {
+                canvas.save();
+                if (overlayMovie1 != null) {
+                    long now = android.os.SystemClock.uptimeMillis();
+                    if (movieStart1 == 0) movieStart1 = now;
+                    int dur = overlayMovie1.duration(); if (dur == 0) dur = 1000;
+                    overlayMovie1.setTime((int)((now - movieStart1) % dur));
+                    
+                    float cx = overlayX1 + overlayMovie1.width() * overlayScale1 / 2f;
+                    float cy = overlayY1 + overlayMovie1.height() * overlayScale1 / 2f;
+                    canvas.rotate(overlayRotation1, cx, cy); // 需求3: 角度旋转
+                    canvas.scale(overlayMirror1 ? -overlayScale1 : overlayScale1, overlayScale1, cx, cy); // 需求2: 镜像与缩放
+                    canvas.translate(cx - overlayMovie1.width()/2f, cy - overlayMovie1.height()/2f);
+                    overlayMovie1.draw(canvas, 0, 0); // 需求1: 动图渲染
+                    invalidate(); // 强制不断重绘以播放动画
+                } else if (overlayBmp1 != null) {
+                    tempRect.set(overlayX1, overlayY1, overlayX1 + overlayBmp1.getWidth() * overlayScale1, overlayY1 + overlayBmp1.getHeight() * overlayScale1);
+                    canvas.rotate(overlayRotation1, tempRect.centerX(), tempRect.centerY()); // 需求3: 角度旋转
+                    canvas.scale(overlayMirror1 ? -1 : 1, 1, tempRect.centerX(), tempRect.centerY()); // 需求2: 镜像翻转
+                    canvas.drawBitmap(overlayBmp1, null, tempRect, paintBtn);
+                    if (isEditMode) { paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setColor(Color.GREEN); paintBtn.setStrokeWidth(5f); canvas.drawRect(tempRect, paintBtn); paintBtn.setStyle(Paint.Style.FILL); }
                 }
-                canvas.restore(); // 恢复画布状态
+                canvas.restore();
             }
-            if (overlayMode == 2 && overlayBmp2 != null) {
-                tempRect.set(overlayX2, overlayY2, overlayX2 + overlayBmp2.getWidth() * overlayScale2, overlayY2 + overlayBmp2.getHeight() * overlayScale2);
-                canvas.save(); // 保存画布状态
-                canvas.rotate(overlayRotation2, tempRect.centerX(), tempRect.centerY()); // 围绕中心点旋转
-                canvas.drawBitmap(overlayBmp2, null, tempRect, paintBtn);
-                if (isEditMode) {
-                    paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setColor(Color.BLUE); paintBtn.setStrokeWidth(5f);
-                    canvas.drawRect(tempRect, paintBtn); paintBtn.setStyle(Paint.Style.FILL);
+            // ==== 渲染图 2 ====
+            if (overlayMode == 2) {
+                canvas.save();
+                if (overlayMovie2 != null) {
+                    long now = android.os.SystemClock.uptimeMillis();
+                    if (movieStart2 == 0) movieStart2 = now;
+                    int dur = overlayMovie2.duration(); if (dur == 0) dur = 1000;
+                    overlayMovie2.setTime((int)((now - movieStart2) % dur));
+                    
+                    float cx = overlayX2 + overlayMovie2.width() * overlayScale2 / 2f;
+                    float cy = overlayY2 + overlayMovie2.height() * overlayScale2 / 2f;
+                    canvas.rotate(overlayRotation2, cx, cy); 
+                    canvas.scale(overlayMirror2 ? -overlayScale2 : overlayScale2, overlayScale2, cx, cy); 
+                    canvas.translate(cx - overlayMovie2.width()/2f, cy - overlayMovie2.height()/2f);
+                    overlayMovie2.draw(canvas, 0, 0); 
+                    invalidate(); 
+                } else if (overlayBmp2 != null) {
+                    tempRect.set(overlayX2, overlayY2, overlayX2 + overlayBmp2.getWidth() * overlayScale2, overlayY2 + overlayBmp2.getHeight() * overlayScale2);
+                    canvas.rotate(overlayRotation2, tempRect.centerX(), tempRect.centerY());
+                    canvas.scale(overlayMirror2 ? -1 : 1, 1, tempRect.centerX(), tempRect.centerY());
+                    canvas.drawBitmap(overlayBmp2, null, tempRect, paintBtn);
+                    if (isEditMode) { paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setColor(Color.BLUE); paintBtn.setStrokeWidth(5f); canvas.drawRect(tempRect, paintBtn); paintBtn.setStyle(Paint.Style.FILL); }
                 }
-                canvas.restore(); // 恢复画布状态
+                canvas.restore();
             }
         }
+        
         
 
         // 动态计算菜单按键的位置和缩放
@@ -1069,10 +1147,14 @@ public boolean onTouchEvent(MotionEvent event) {
 
         TextView dragHandle = new TextView(getContext());
         dragHandle.setText("✋ 拖拽此处 | ⚙️ 游戏面板全局设置");
-        android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
-        titleBg.setColor(Color.parseColor("#333333")); titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
-        dragHandle.setBackground(titleBg); dragHandle.setTextColor(Color.WHITE);
-        dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(16f); dragHandle.setTypeface(null, Typeface.BOLD);
+                        android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
+        titleBg.setColor(Color.argb(50, 0, 0, 0)); // 【修复1】改用半透明遮罩，完美融合下方自定义背景色
+        titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
+        dragHandle.setBackground(titleBg); 
+        dragHandle.setTextColor(dialogTextColor); // 【修复2】文字颜色跟随全局
+        dragHandle.setPadding(40, 30, 40, 30); 
+        dragHandle.setTextSize(dialogTextSize + 2f); // 【修复2】文字大小跟随全局(标题略大2号)
+        dragHandle.setTypeface(null, Typeface.BOLD);                
         rootLayout.addView(dragHandle);
 
         ScrollView scroll = new ScrollView(getContext()) {
@@ -1326,8 +1408,11 @@ public boolean onTouchEvent(MotionEvent event) {
                         // ==== 第一张图控件 ====
         contentLayout.addView(createTitle("--- 遮罩图 1 (绿框) ---"));
         LinearLayout btnLayout1 = new LinearLayout(getContext()); btnLayout1.setOrientation(LinearLayout.HORIZONTAL);
+                Button mirrorBmp1 = new Button(getContext()); mirrorBmp1.setText(overlayMirror1 ? "↔️ 镜像: [开]" : "↔️ 镜像: [关]");
+        mirrorBmp1.setOnClickListener(v -> { overlayMirror1 = !overlayMirror1; mirrorBmp1.setText(overlayMirror1 ? "↔️ 镜像: [开]" : "↔️ 镜像: [关]"); invalidate(); });
+        btnLayout1.addView(mirrorBmp1);
         Button pickBmp1 = new Button(getContext()); pickBmp1.setText("选择图片"); pickBmp1.setOnClickListener(v -> { imagePickerTarget = 4; pickImage(); });
-        Button clearBmp1 = new Button(getContext()); clearBmp1.setText("清除图片"); clearBmp1.setOnClickListener(v -> { overlayUri1 = ""; overlayBmp1 = null; invalidate(); });
+        Button clearBmp1 = new Button(getContext()); clearBmp1.setText("清除图片"); clearBmp1.setOnClickListener(v -> { overlayUri1 = ""; overlayBmp1 = null; overlayMovie1 = null; invalidate(); });
         btnLayout1.addView(pickBmp1); btnLayout1.addView(clearBmp1); contentLayout.addView(btnLayout1);
 
         // 【修复：先声明全部滑动条，系统才能认识它们】
@@ -1349,8 +1434,11 @@ public boolean onTouchEvent(MotionEvent event) {
         // ==== 第二张图控件 ====
         contentLayout.addView(createTitle("--- 遮罩图 2 (蓝框) ---"));
         LinearLayout btnLayout2 = new LinearLayout(getContext()); btnLayout2.setOrientation(LinearLayout.HORIZONTAL);
+                Button mirrorBmp2 = new Button(getContext()); mirrorBmp2.setText(overlayMirror2 ? "↔️ 镜像: [开]" : "↔️ 镜像: [关]");
+        mirrorBmp2.setOnClickListener(v -> { overlayMirror2 = !overlayMirror2; mirrorBmp2.setText(overlayMirror2 ? "↔️ 镜像: [开]" : "↔️ 镜像: [关]"); invalidate(); });
+        btnLayout2.addView(mirrorBmp2);
         Button pickBmp2 = new Button(getContext()); pickBmp2.setText("选择图片"); pickBmp2.setOnClickListener(v -> { imagePickerTarget = 5; pickImage(); });
-        Button clearBmp2 = new Button(getContext()); clearBmp2.setText("清除图片"); clearBmp2.setOnClickListener(v -> { overlayUri2 = ""; overlayBmp2 = null; invalidate(); });
+        Button clearBmp2 = new Button(getContext()); clearBmp2.setText("清除图片"); clearBmp2.setOnClickListener(v -> { overlayUri2 = ""; overlayBmp2 = null; overlayMovie2 = null; invalidate(); });        
         btnLayout2.addView(pickBmp2); btnLayout2.addView(clearBmp2); contentLayout.addView(btnLayout2);
 
         // 【修复：同理，先声明滑动条】
@@ -1461,10 +1549,14 @@ public boolean onTouchEvent(MotionEvent event) {
 
         final TextView dragHandle = new TextView(getContext());
         dragHandle.setText("✋ 拖拽窗口 | 🪟 全局弹窗 UI 实验室");
-        android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
-        titleBg.setColor(Color.parseColor("#333333")); titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
-        dragHandle.setBackground(titleBg); dragHandle.setTextColor(Color.WHITE);
-        dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(16f); dragHandle.setTypeface(null, Typeface.BOLD);
+                android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
+        titleBg.setColor(Color.argb(50, 0, 0, 0)); // 【修复1】改用半透明遮罩，完美融合下方自定义背景色
+        titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
+        dragHandle.setBackground(titleBg); 
+        dragHandle.setTextColor(dialogTextColor); // 【修复2】文字颜色跟随全局
+        dragHandle.setPadding(40, 30, 40, 30); 
+        dragHandle.setTextSize(dialogTextSize + 2f); // 【修复2】文字大小跟随全局(标题略大2号)
+        dragHandle.setTypeface(null, Typeface.BOLD);        
         rootLayout.addView(dragHandle);
 
         ScrollView scroll = new ScrollView(getContext()) {
@@ -1480,11 +1572,19 @@ public boolean onTouchEvent(MotionEvent event) {
         layout.addView(createTitle("0. 窗口全局缩放比例"));
         final SeekBar widthBar = createColorBar(layout, "↔️ 窗口宽度百分比", (int)(dialogWidthRatio * 100)); widthBar.setMax(100);
         final SeekBar heightBar = createColorBar(layout, "↕️ 窗口高度百分比", (int)(dialogHeightRatio * 100)); heightBar.setMax(100);
-        SeekBar.OnSeekBarChangeListener ratioUpdater = new SeekBar.OnSeekBarChangeListener() {
+                SeekBar.OnSeekBarChangeListener ratioUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
                 if (fromUser) {
                     if (s == widthBar) dialogWidthRatio = Math.max(0.4f, p / 100f);
                     else if (s == heightBar) dialogHeightRatio = Math.max(0.4f, p / 100f);
+                    
+                    // 【新增：实时改变窗口大小】
+                    android.view.Window window = dialog.getWindow();
+                    if (window != null) {
+                        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+                        window.setLayout((int)(metrics.widthPixels * dialogWidthRatio), ViewGroup.LayoutParams.WRAP_CONTENT);
+                    }
+                    scroll.requestLayout(); 
                 }
             }
             public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
@@ -1497,12 +1597,17 @@ public boolean onTouchEvent(MotionEvent event) {
         final SeekBar sizeBar = createColorBar(layout, "字体缩放大小", (int)dialogTextSize); sizeBar.setMax(30);
         final SeekBar alphaBar = createColorBar(layout, "背景不透明度 (0为全透)", dialogBgAlpha); 
         
-        sizeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                sizeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
-                if(fromUser) { dialogTextSize = Math.max(10f, p); }
+                if(fromUser) { 
+                    dialogTextSize = Math.max(10f, p); 
+                    dragHandle.setTextSize(dialogTextSize + 2f); // 标题单独大2号
+                    refreshRealtimeUI(rootLayout); // 【新增：瞬间刷新整个弹窗的字体】
+                }
             }
             public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
         });
+        
 
         alphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -1517,12 +1622,15 @@ public boolean onTouchEvent(MotionEvent event) {
         ArrayAdapter<String> textAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, TEXT_COLOR_NAMES);
         textColorSpinner.setAdapter(textAdapter);
         for (int i=0; i<TEXT_COLOR_VALUES.length; i++) { if (dialogTextColor == TEXT_COLOR_VALUES[i]) { textColorSpinner.setSelection(i); break; } }
-        textColorSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+                textColorSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
-                dialogTextColor = TEXT_COLOR_VALUES[position]; dragHandle.setTextColor(dialogTextColor); 
+                dialogTextColor = TEXT_COLOR_VALUES[position]; 
+                dragHandle.setTextColor(dialogTextColor); 
+                refreshRealtimeUI(rootLayout); // 【新增：瞬间刷新整个弹窗的文字颜色】
             }
             public void onNothingSelected(android.widget.AdapterView<?> parent) {}
         });
+        
         layout.addView(textColorSpinner);
 
         final EditText hexInput = createEditText("背景颜色代码: #222222", String.format("#%06X", (0xFFFFFF & dialogBgColor))); layout.addView(hexInput);
@@ -1568,10 +1676,13 @@ public boolean onTouchEvent(MotionEvent event) {
         LinearLayout bottomButtons = new LinearLayout(getContext()); bottomButtons.setOrientation(LinearLayout.HORIZONTAL); bottomButtons.setPadding(0, 50, 0, 0);
         Button defaultBtn = new Button(getContext()); defaultBtn.setText("🔄 默认"); defaultBtn.setTextColor(Color.WHITE); defaultBtn.setBackgroundColor(Color.parseColor("#9E9E9E"));
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f); btnParams.setMargins(5, 0, 5, 0); defaultBtn.setLayoutParams(btnParams);
-        defaultBtn.setOnClickListener(v -> {
+                defaultBtn.setOnClickListener(v -> {
             dialogBgColor = Color.parseColor("#222222"); dialogBgAlpha = 230; dialogTextColor = Color.WHITE; dialogTextSize = 14f; dialogBgImageUri = ""; dialogBgBitmap = null;
+            dialogWidthRatio = 0.8f; dialogHeightRatio = 0.8f; // 【补充修复：强制重置窗口比例】
             saveConfig(); dialog.dismiss(); showDialogCustomizationSettings();
-        }); bottomButtons.addView(defaultBtn);
+        }); 
+        bottomButtons.addView(defaultBtn);
+        
 
         Button cancelBtn = new Button(getContext()); cancelBtn.setText("❌ 取消"); cancelBtn.setTextColor(Color.WHITE); cancelBtn.setBackgroundColor(Color.parseColor("#F44336"));
         cancelBtn.setLayoutParams(btnParams);
@@ -1689,10 +1800,14 @@ public boolean onTouchEvent(MotionEvent event) {
 
         TextView dragHandle = new TextView(getContext());
         dragHandle.setText("✋ 按住此处拖拽窗口 | 🕹️ 摇杆配置");
-        android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
-        titleBg.setColor(Color.parseColor("#333333")); titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
-        dragHandle.setBackground(titleBg); dragHandle.setTextColor(Color.WHITE);
-        dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(16f); dragHandle.setTypeface(null, Typeface.BOLD);
+                android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
+        titleBg.setColor(Color.argb(50, 0, 0, 0)); // 【修复1】改用半透明遮罩，完美融合下方自定义背景色
+        titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
+        dragHandle.setBackground(titleBg); 
+        dragHandle.setTextColor(dialogTextColor); // 【修复2】文字颜色跟随全局
+        dragHandle.setPadding(40, 30, 40, 30); 
+        dragHandle.setTextSize(dialogTextSize + 2f); // 【修复2】文字大小跟随全局(标题略大2号)
+        dragHandle.setTypeface(null, Typeface.BOLD);        
         rootLayout.addView(dragHandle);
 
                         ScrollView scroll = new ScrollView(getContext()) {
@@ -1835,10 +1950,14 @@ public boolean onTouchEvent(MotionEvent event) {
 
         TextView dragHandle = new TextView(getContext());
         dragHandle.setText("✋ 按住此处拖拽窗口 | 🔧 配置: " + btn.id);
-        android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
-        titleBg.setColor(Color.parseColor("#333333")); titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
-        dragHandle.setBackground(titleBg); dragHandle.setTextColor(Color.WHITE);
-        dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(16f); dragHandle.setTypeface(null, Typeface.BOLD);
+               android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
+        titleBg.setColor(Color.argb(50, 0, 0, 0)); // 【修复1】改用半透明遮罩，完美融合下方自定义背景色
+        titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
+        dragHandle.setBackground(titleBg); 
+        dragHandle.setTextColor(dialogTextColor); // 【修复2】文字颜色跟随全局
+        dragHandle.setPadding(40, 30, 40, 30); 
+        dragHandle.setTextSize(dialogTextSize + 2f); // 【修复2】文字大小跟随全局(标题略大2号)
+        dragHandle.setTypeface(null, Typeface.BOLD);       
         rootLayout.addView(dragHandle);
 
                         ScrollView scroll = new ScrollView(getContext()) {
@@ -2058,7 +2177,12 @@ public boolean onTouchEvent(MotionEvent event) {
 
         LinearLayout bottomButtons = new LinearLayout(getContext()); bottomButtons.setOrientation(LinearLayout.HORIZONTAL); bottomButtons.setPadding(0, 50, 0, 0);
         Button deleteBtn = new Button(getContext()); deleteBtn.setText("🗑️ 删除按键"); deleteBtn.setTextColor(Color.WHITE); deleteBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
-        deleteBtn.setOnClickListener(v -> { buttons.remove(btn); saveConfig(); invalidate(); dialog.dismiss(); });
+                deleteBtn.setOnClickListener(v -> { 
+            btn.stopTurbo(); btn.isMacroPlaying = false; // 修复：先斩断后台独立线程
+            buttons.remove(btn); 
+            saveConfig(); invalidate(); dialog.dismiss(); 
+        });
+        
         bottomButtons.addView(deleteBtn);
         
         Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存修改并退出"); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
@@ -2085,7 +2209,7 @@ public boolean onTouchEvent(MotionEvent event) {
         et.setText(text);
         et.setTextColor(Color.BLACK); 
         et.setHintTextColor(Color.GRAY);
-        et.setTextSize(14f); // 【修复】强制限制输入框字体大小
+        et.setTextSize(dialogTextSize);
         
         android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
         bg.setColor(Color.WHITE);
@@ -2104,7 +2228,7 @@ public boolean onTouchEvent(MotionEvent event) {
           private TextView createTitle(String text) {
         TextView tv = new TextView(getContext());
         tv.setText(text);
-        tv.setTextSize(dialogTextSize - 1f); // 标题稍微比基础字体小一点或者你自己定
+        tv.setTextSize(dialogTextSize); // 标题稍微比基础字体小一点或者你自己定
         tv.setTypeface(Typeface.DEFAULT_BOLD);
         tv.setTextColor(dialogTextColor); // 动态应用颜色
         tv.setPadding(0, 15, 0, 5);
@@ -2122,17 +2246,17 @@ public boolean onTouchEvent(MotionEvent event) {
         
         TextView tv = new TextView(getContext());
         tv.setText(label);
-        tv.setTextColor(Color.WHITE); 
+        tv.setTextColor(dialogTextColor); // 【修复】跟随全局颜色
+        tv.setTextSize(dialogTextSize);   // 【修复】跟随全局字体大小
         tv.setPadding(0, 10, 0, 0);
-        // 让文本占用剩余的左侧空间
         LinearLayout.LayoutParams tvParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         tv.setLayoutParams(tvParams);
         
-        // 2. 创建数值输入小框
         final EditText input = new EditText(getContext());
         input.setText(String.valueOf(progress));
         input.setTextColor(Color.BLACK);
-        input.setTextSize(14f);
+        input.setTextSize(dialogTextSize); // 【修复】跟随全局字体大小
+        
         input.setPadding(20, 10, 20, 10);
         input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         input.setGravity(android.view.Gravity.CENTER);
@@ -2223,7 +2347,28 @@ public boolean onTouchEvent(MotionEvent event) {
         
         return sb;
     }
-    
+      // ================= 修复：UI 实时预览刷新引擎 (解决标题栏覆盖问题) =================
+    private void refreshRealtimeUI(ViewGroup group) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child instanceof TextView) {
+                TextView tv = (TextView) child;
+                if (!(tv instanceof Button) && !(tv instanceof EditText)) {
+                    tv.setTextColor(dialogTextColor); // 更新颜色
+                }
+                // 智能判断：如果是顶部的拖拽标题栏(包含✋)，维持大2号字体；否则更新为全局常规字体
+                if (tv.getText().toString().contains("✋")) {
+                    tv.setTextSize(dialogTextSize + 2f);
+                } else {
+                    tv.setTextSize(dialogTextSize); 
+                }
+            }
+            if (child instanceof ViewGroup) {
+                refreshRealtimeUI((ViewGroup) child); // 递归遍历
+            }
+        }
+    }
+
 
 
     // =====================================
@@ -2385,8 +2530,27 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
             } else { dialogBgBitmap = null; }
 
             
-                        try { if (!overlayUri1.isEmpty()) overlayBmp1 = BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(overlayUri1))); else overlayBmp1 = null; } catch(Exception e) { overlayBmp1 = null; }
-            try { if (!overlayUri2.isEmpty()) overlayBmp2 = BitmapFactory.decodeStream(getContext().getContentResolver().openInputStream(Uri.parse(overlayUri2))); else overlayBmp2 = null; } catch(Exception e) { overlayBmp2 = null; }
+                                    // ================= 彻底修复：存读档时的 GIF 动静双重识别引擎 =================
+            try { 
+                if (!overlayUri1.isEmpty()) { 
+                    InputStream is = getContext().getContentResolver().openInputStream(Uri.parse(overlayUri1));
+                    byte[] bytes = readBytes(is); is.close();
+                    android.graphics.Movie m = android.graphics.Movie.decodeByteArray(bytes, 0, bytes.length);
+                    if (m != null && m.duration() > 0) { overlayMovie1 = m; overlayBmp1 = null; } 
+                    else { overlayMovie1 = null; overlayBmp1 = BitmapFactory.decodeByteArray(bytes, 0, bytes.length); }
+                } else { overlayMovie1 = null; overlayBmp1 = null; }
+            } catch(Exception e) { overlayMovie1 = null; overlayBmp1 = null; }
+
+            try { 
+                if (!overlayUri2.isEmpty()) { 
+                    InputStream is = getContext().getContentResolver().openInputStream(Uri.parse(overlayUri2));
+                    byte[] bytes = readBytes(is); is.close();
+                    android.graphics.Movie m = android.graphics.Movie.decodeByteArray(bytes, 0, bytes.length);
+                    if (m != null && m.duration() > 0) { overlayMovie2 = m; overlayBmp2 = null; } 
+                    else { overlayMovie2 = null; overlayBmp2 = BitmapFactory.decodeByteArray(bytes, 0, bytes.length); }
+                } else { overlayMovie2 = null; overlayBmp2 = null; }
+            } catch(Exception e) { overlayMovie2 = null; overlayBmp2 = null; }
+                        
 
             menuScale = prefs.getFloat("MenuScale", 1.0f); menuAlpha = prefs.getInt("MenuAlpha", 220);
             
@@ -2441,8 +2605,8 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         joyColor = Color.parseColor("#FF5555"); 
         joySkinBaseUri = ""; joySkinKnobUri = ""; joySkinBaseBitmap = null; joySkinKnobBitmap = null;
         
-        overlayMode = 0; overlayUri1 = ""; overlayUri2 = ""; overlayBmp1 = null; overlayBmp2 = null;
-        overlayX1 = 0; overlayY1 = 0; overlayScale1 = 1.0f; overlayX2 = 0; overlayY2 = 0; overlayScale2 = 1.0f;
+                overlayMode = 0; overlayUri1 = ""; overlayUri2 = ""; overlayBmp1 = null; overlayBmp2 = null; overlayMovie1 = null; overlayMovie2 = null;
+        overlayX1 = 0; overlayY1 = 0; overlayScale1 = 1.0f; overlayX2 = 0; overlayY2 = 0; overlayScale2 = 1.0f;        
         isFullscreenHideOverlay = false;
         isAutoHideEnabled = true;
         autoHideSeconds = 5;
