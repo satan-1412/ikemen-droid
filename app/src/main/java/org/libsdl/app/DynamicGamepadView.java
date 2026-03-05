@@ -45,16 +45,28 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
-    public class DynamicGamepadView extends View {
-    // ================= 新增：全局弹窗 UI 自定义系统变量 =================
-    public int dialogBgColor = Color.parseColor("#222222"); // 背景颜色
-    public int dialogBgAlpha = 230; // 背景透明度 (0-255)
-    public int dialogTextColor = Color.WHITE; // 全局文字颜色
-    public float dialogTextSize = 14f; // 全局基础文字大小
-    public String dialogBgImageUri = ""; // 自定义背景图路径
-    public Bitmap dialogBgBitmap = null; // 自定义背景图缓存
-    
+        public class DynamicGamepadView extends View {
+    // ================= UI 尺寸比例与遮罩图控制变量 =================
+    public float dialogWidthRatio = 0.8f;  
+    public float dialogHeightRatio = 0.8f; 
+    public boolean isOverlayVisible = true; 
+    public boolean overlayMirror1 = false;  
+    public boolean overlayMirror2 = false;  
+    public android.graphics.Movie overlayMovie1 = null; 
+    public android.graphics.Movie overlayMovie2 = null;
+    public long movieStart1 = 0;
+    public long movieStart2 = 0;
+
+    // ================= 全局弹窗 UI 自定义系统变量 (被误删的变量补回) =================
+    public int dialogBgColor = Color.parseColor("#222222"); 
+    public int dialogBgAlpha = 230; 
+    public int dialogTextColor = Color.WHITE; 
+    public float dialogTextSize = 14f; 
+    public String dialogBgImageUri = ""; 
+    public Bitmap dialogBgBitmap = null; 
+
     private static final String PREFS_NAME = "IkemenGamepad_Pro_V5";    
+    
     private static final String KEY_LAYOUT_PREFIX = "LayoutSlot_";
     public int currentSlot = 0;
     public int joystickMode = 0; // 0=十字, 1=圆盘, 2=街机
@@ -188,6 +200,7 @@ import java.util.List;
         public List<List<Integer>> macroSteps = new ArrayList<>(); 
         public long pressTimestamp = 0; // 【新增】记录精准按下时间戳，用于防吃键
         public boolean isTurbo = false; // 【新增】是否开启连发
+        public int turboInterval = 40; 
         private volatile boolean turboRunning = false; // 【新增】连发线程控制锁
 
         
@@ -277,9 +290,9 @@ import java.util.List;
                 while (turboRunning) {
                     try {
                         for (int code : macroSteps.get(0)) SDLActivity.onNativeKeyDown(code);
-                        Thread.sleep(40); // 按下持续时间
+                        Thread.sleep(turboInterval); // 【优化】自定义按下持续时间
                         for (int code : macroSteps.get(0)) SDLActivity.onNativeKeyUp(code);
-                        Thread.sleep(40); // 松开间隔时间（越小射速越快）
+                        Thread.sleep(turboInterval); // 【优化】自定义松开间隔时间                       
                     } catch (InterruptedException e) { break; }
                 }
             }).start();
@@ -553,8 +566,9 @@ import java.util.List;
         for (VirtualButton btn : buttons) {
             if (joystickMode > 0 && btn.isDirectional) continue;
 
-            int idleAlpha = (int)(btn.alpha * 0.6f); 
-            int currentAlpha = isEditMode ? Math.max(120, btn.alpha) : (btn.isPressed ? 255 : idleAlpha);
+                        int idleAlpha = (int)(btn.alpha * 0.6f); 
+            // 【修复】：去掉 Math.max 限制，让编辑模式完全反映真实透明度
+            int currentAlpha = isEditMode ? btn.alpha : (btn.isPressed ? 255 : idleAlpha);            
             tempRect.set(btn.cx - btn.radius, btn.cy - btn.radius, btn.cx + btn.radius, btn.cy + btn.radius);
             
                         // ==== 新增：按键皮肤与按下特效渲染逻辑 ====
@@ -645,8 +659,10 @@ import java.util.List;
         if (joystickMode > 0) drawJoystick(canvas);
     }
 
-                            private void drawJoystick(Canvas canvas) {
-        int currentAlpha = isEditMode ? Math.max(100, joyAlpha) : joyAlpha;
+    private void drawJoystick(Canvas canvas) {
+        // 【修复】：让摇杆真实反映透明度
+        int currentAlpha = joyAlpha;
+                            
         
         // ========= 1. 绘制底盘 =========
         if (joystickMode == JOYSTICK_MODE_STYLE && joySkinBaseBitmap != null) {
@@ -1043,77 +1059,71 @@ public boolean onTouchEvent(MotionEvent event) {
     // =====================================
     // UI 面板渲染与系统弹窗
     // =====================================
-        private void showMainMenu() {
-        String modeText = isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键编辑";
-        String gridText = isGridSnapMode ? "🧲 网格吸附：已开启" : "🧲 网格吸附：已关闭 (自由拖动)";
-                String joyText = "🕹️ 摇杆形态: " + (joystickMode==0?"分离十字键":joystickMode==1?"现代白圆盘":joystickMode==2?"经典红杆":joystickMode==3?"十字型八键":"[专属] 跟随当前风格");
-        String vibText = "📳 物理震动开关与强度设置 (" + (isVibrationOn?"开启":"关闭") + ")";
+            private void showMainMenu() {
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         
-        // 【新增】判断当前遮罩状态，动态显示快捷按钮文本
-        String quickOverlayText = isFullscreenHideOverlay ? "👁️ 当前: 隐藏遮罩 (点击恢复显示)" : "👁️ 当前: 显示遮罩 (点击临时隐藏)";
-String autoHideText = "⏱️ 按键自动隐藏设置 (" + (isAutoHideEnabled ? autoHideSeconds + "秒" : "已关闭") + ")";
-CharSequence[] options = {modeText, "➕ 新建组合键/宏", gridText, joyText, vibText, "📂 布局存档与导入导出", "🔄 恢复初始默认布局", "🖼️ 屏幕遮罩详细设置", quickOverlayText, "📁 重新选择游戏数据目录", autoHideText, "🎨 按键风格管理系统", "🕹️ 切换至专业街机面板 (Pro Mode)","🪟 自定义设置弹窗 UI外观"};
+        LinearLayout rootLayout = new LinearLayout(getContext());
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setBackground(getCustomDialogBackground()); // 统一应用自定义背景
 
+        TextView dragHandle = new TextView(getContext());
+        dragHandle.setText("✋ 拖拽此处 | ⚙️ 游戏面板全局设置");
+        android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
+        titleBg.setColor(Color.parseColor("#333333")); titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
+        dragHandle.setBackground(titleBg); dragHandle.setTextColor(Color.WHITE);
+        dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(16f); dragHandle.setTypeface(null, Typeface.BOLD);
+        rootLayout.addView(dragHandle);
+
+        ScrollView scroll = new ScrollView(getContext()) {
+            @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                int trueScreenH = Math.min(getResources().getDisplayMetrics().widthPixels, getResources().getDisplayMetrics().heightPixels);
+                // 应用自定义高度比例
+                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec((int)(trueScreenH * dialogHeightRatio) - 120, View.MeasureSpec.AT_MOST));
+            }
+        };
         
-        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle("⚙️ 游戏面板全局设置")
-                .setItems(options, (dialog, which) -> {
-                    if (which == 0) { isEditMode = !isEditMode; if (!isEditMode) saveConfig(); invalidate(); } 
-                    else if (which == 1) {
-                        float scale = Math.max(0.5f, getHeight() / 1080f);
-VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90 * scale, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);                                             
-                        buttons.add(newBtn); isEditMode = true; showButtonSettingsDialog(newBtn);
-                    } 
-                    else if (which == 2) { 
-                        isGridSnapMode = !isGridSnapMode; 
-                        Toast.makeText(getContext(), isGridSnapMode ? "已开启网格吸附" : "已开启自由拖动", Toast.LENGTH_SHORT).show();
-                    } 
-                   else if (which == 3) { 
-                        joystickMode = (joystickMode + 1) % 5; 
-                        if (joystickMode == JOYSTICK_MODE_STYLE) refreshJoystickStyle(); // 切换到风格模式时，强制读一次图
-                        saveConfig(); invalidate(); 
-                    }                     
-                    else if (which == 4) { showVibrationSettingsDialog(); } 
-                    else if (which == 5) { showProfileManager(); } 
-                    else if (which == 6) {
-                        new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                            .setTitle("⚠️ 警告").setMessage("确定要清空所有自定义修改，恢复为原版默认按键布局吗？")
-                            .setPositiveButton("确定恢复", (d, w) -> { loadDefaultLayout(); saveConfig(); invalidate(); })
-                            .setNegativeButton("取消", null).show();
-                    }
-                    else if (which == 7) { showOverlaySettingsDialog(); }
-                                                            else if (which == 8) { 
-                        // 【新增】快捷切换遮罩的显示与隐藏状态，用于应对游戏内修改纵横比
-                        isFullscreenHideOverlay = !isFullscreenHideOverlay;
-                        Toast.makeText(getContext(), isFullscreenHideOverlay ? "已临时隐藏遮罩 (适配全屏)" : "已恢复遮罩显示", Toast.LENGTH_SHORT).show();
-                        saveConfig();
-                        invalidate();
-                    }
-                    // === 在这里追加以下代码 ===
-                    else if (which == 9) {
-                        // 触发主 Activity 中的目录选择器
-                        if (getContext() instanceof SDLActivity) {
-                            ((SDLActivity) getContext()).checkAndPickFolder();
-                        } else {
-                            Toast.makeText(getContext(), "无法调用目录选择器：上下文环境异常", Toast.LENGTH_SHORT).show();
-                        }
-                    }
-                    else if (which == 10) {
-    showAutoHideSettingsDialog();
-                    }
-                    else if (which == 11) { showStyleManagerDialog(); } // 触发风格管理
-                    else if (which == 12) { 
-    useRetroUIMode = true; 
-    saveConfig(); 
-    showRetroMainMenu(); // 立刻弹出新版 UI
-}
-                      else if (which == 13) { showDialogCustomizationSettings(); }
+        LinearLayout layout = new LinearLayout(getContext()); 
+        layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(40, 20, 40, 40);
 
+        layout.addView(createMenuButton(isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键编辑", v -> { isEditMode = !isEditMode; if (!isEditMode) saveConfig(); invalidate(); dialog.dismiss(); }));
+        layout.addView(createMenuButton("➕ 新建组合键/宏", v -> { 
+            float scale = Math.max(0.5f, getHeight() / 1080f);
+            VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90 * scale, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);                                             
+            buttons.add(newBtn); isEditMode = true; showButtonSettingsDialog(newBtn); dialog.dismiss();
+        }));
+        layout.addView(createMenuButton(isGridSnapMode ? "🧲 网格吸附：已开启" : "🧲 网格吸附：已关闭", v -> { isGridSnapMode = !isGridSnapMode; Toast.makeText(getContext(), isGridSnapMode ? "已开启网格吸附" : "已开启自由拖动", Toast.LENGTH_SHORT).show(); dialog.dismiss(); showMainMenu(); }));
+        layout.addView(createMenuButton("🕹️ 切换摇杆形态", v -> { joystickMode = (joystickMode + 1) % 5; if (joystickMode == JOYSTICK_MODE_STYLE) refreshJoystickStyle(); saveConfig(); invalidate(); dialog.dismiss(); showMainMenu(); }));
+        layout.addView(createMenuButton("📳 物理震动开关与强度", v -> { showVibrationSettingsDialog(); dialog.dismiss(); }));
+        layout.addView(createMenuButton("📂 布局存档与导入导出", v -> { showProfileManager(); dialog.dismiss(); }));
+        layout.addView(createMenuButton("🔄 恢复初始默认布局", v -> { loadDefaultLayout(); saveConfig(); invalidate(); dialog.dismiss(); }));
+        layout.addView(createMenuButton("🖼️ 屏幕遮罩详细设置", v -> { showOverlaySettingsDialog(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(isOverlayVisible ? "👁️ 隐藏遮罩图 (当前:显示)" : "👁️ 显示遮罩图 (当前:隐藏)", v -> { isOverlayVisible = !isOverlayVisible; invalidate(); dialog.dismiss(); showMainMenu(); }));
+        layout.addView(createMenuButton("📁 重新选择游戏数据目录", v -> { if (getContext() instanceof SDLActivity) ((SDLActivity) getContext()).checkAndPickFolder(); dialog.dismiss(); }));
+        layout.addView(createMenuButton("⏱️ 面板自动隐藏设置", v -> { showAutoHideSettingsDialog(); dialog.dismiss(); }));
+        layout.addView(createMenuButton("🎨 按键风格管理系统", v -> { showStyleManagerDialog(); dialog.dismiss(); }));
+        layout.addView(createMenuButton("🕹️ 切换至专业街机面板", v -> { useRetroUIMode = true; saveConfig(); dialog.dismiss(); showRetroMainMenu(); }));
+        layout.addView(createMenuButton("🪟 自定义设置弹窗 UI外观", v -> { showDialogCustomizationSettings(); dialog.dismiss(); }));
 
-
-                    // ==========================        
-                }).show();
+        scroll.addView(layout);
+        rootLayout.addView(scroll);
+        dialog.setContentView(rootLayout);
+        setupMovableDialog(dialog, dragHandle);
+        dialog.show();
     }
+
+    private Button createMenuButton(String text, View.OnClickListener listener) {
+        Button btn = new Button(getContext());
+        btn.setText(text);
+        btn.setTextColor(dialogTextColor);
+        btn.setBackgroundColor(Color.parseColor("#33ffffff")); // 半透明底色
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 10, 0, 10);
+        btn.setLayoutParams(params);
+        btn.setOnClickListener(listener);
+        return btn;
+    }
+        
     
         // 【修改】：独立抽出同步摇杆皮肤的方法，供多处调用
     public void refreshJoystickStyle() {
@@ -1467,6 +1477,21 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
 
+        layout.addView(createTitle("0. 窗口全局缩放比例"));
+        final SeekBar widthBar = createColorBar(layout, "↔️ 窗口宽度百分比", (int)(dialogWidthRatio * 100)); widthBar.setMax(100);
+        final SeekBar heightBar = createColorBar(layout, "↕️ 窗口高度百分比", (int)(dialogHeightRatio * 100)); heightBar.setMax(100);
+        SeekBar.OnSeekBarChangeListener ratioUpdater = new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                if (fromUser) {
+                    if (s == widthBar) dialogWidthRatio = Math.max(0.4f, p / 100f);
+                    else if (s == heightBar) dialogHeightRatio = Math.max(0.4f, p / 100f);
+                }
+            }
+            public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
+        };
+        widthBar.setOnSeekBarChangeListener(ratioUpdater);
+        heightBar.setOnSeekBarChangeListener(ratioUpdater);
+
         // --- 1. 文字样式设置 ---
         layout.addView(createTitle("1. 全局字体大小与透明度"));
         final SeekBar sizeBar = createColorBar(layout, "字体缩放大小", (int)dialogTextSize); sizeBar.setMax(30);
@@ -1622,10 +1647,13 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
         // 【新增工具方法】用于让设置对话框变成可移动、半透明的悬浮窗
     private void setupMovableDialog(android.app.Dialog dialog, View dragHandle) {
         android.view.Window window = dialog.getWindow();
-        if (window != null) {
+                if (window != null) {
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); // 窗体透明
-            window.setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            window.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
+            // 【新增】应用用户自定义的窗口宽度比例
+            android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+            int w = (int)(metrics.widthPixels * dialogWidthRatio);
+            window.setLayout(w, ViewGroup.LayoutParams.WRAP_CONTENT);
+            window.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);        
             window.setDimAmount(0f); // 取消黑底遮罩
             final android.view.WindowManager.LayoutParams params = window.getAttributes();
             params.x = 50; params.y = 50; // 默认出生在左上角
@@ -1929,7 +1957,7 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
         btnClearImage.setOnClickListener(v -> { btn.customImageUri = ""; btn.skinBitmap = null; Toast.makeText(getContext(), "已恢复默认材质", Toast.LENGTH_SHORT).show(); invalidate(); });
                 skinLayout.addView(btnClearImage); layout.addView(skinLayout);
                 
-                layout.addView(createTitle("7. 连发功能 (Turbo):"));
+                        layout.addView(createTitle("7. 连发功能 (Turbo):"));
         final Button turboBtn = new Button(getContext());
         turboBtn.setText(btn.isTurbo ? "🔥 连发状态：已开启" : "⚪ 连发状态：已关闭");
         turboBtn.setTextColor(Color.WHITE);
@@ -1940,6 +1968,17 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
             turboBtn.setBackgroundColor(btn.isTurbo ? Color.parseColor("#FF5722") : Color.parseColor("#555555"));
         });
         layout.addView(turboBtn);
+
+        final SeekBar turboIntervalBar = createColorBar(layout, "⏱️ 连发触发间隔 (毫秒)", btn.turboInterval);
+        turboIntervalBar.setMax(500);
+        turboIntervalBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                if (fromUser) btn.turboInterval = Math.max(10, p); // 最小间隔10ms防卡死
+            }
+            public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
+        });
+                
+            
 
 
         // ================= 【新增：按下状态的UI调节控制】 =================
@@ -2211,6 +2250,7 @@ VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() 
                 obj.put("pressedColor", btn.pressedEffectColor);
                 obj.put("pressedAlpha", btn.pressedEffectAlpha);
                 obj.put("isTurbo", btn.isTurbo);
+                obj.put("turboInterval", btn.turboInterval);
                 array.put(obj);
             }
             editor.putString(KEY_LAYOUT_PREFIX + currentSlot, array.toString());
@@ -2247,6 +2287,12 @@ editor.putInt("DlgBgC_" + currentSlot, dialogBgColor);
             editor.putInt("DlgTxtC_" + currentSlot, dialogTextColor);
             editor.putFloat("DlgTxtS_" + currentSlot, dialogTextSize);
             editor.putString("DlgBgUri_" + currentSlot, dialogBgImageUri);
+            editor.putFloat("DlgWidth_" + currentSlot, dialogWidthRatio); 
+            editor.putFloat("DlgHeight_" + currentSlot, dialogHeightRatio); 
+            editor.putBoolean("OverlayVis_" + currentSlot, isOverlayVisible);
+            editor.putBoolean("OverlayMir1_" + currentSlot, overlayMirror1); 
+            editor.putBoolean("OverlayMir2_" + currentSlot, overlayMirror2);
+
             
             editor.apply();
         } catch (Exception e) {}
@@ -2271,6 +2317,7 @@ editor.putInt("DlgBgC_" + currentSlot, dialogBgColor);
                 btn.pressedEffectColor = o.optInt("pressedColor", 0);
                 btn.pressedEffectAlpha = o.optInt("pressedAlpha", 150);
                 btn.isTurbo = o.optBoolean("isTurbo", false);
+                btn.turboInterval = o.optInt("turboInterval", 40);
                  
                 btn.loadSkinFromUri(getContext());                
                 buttons.add(btn);
@@ -2324,6 +2371,11 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
             dialogTextColor = prefs.getInt("DlgTxtC_" + slot, Color.WHITE);
             dialogTextSize = prefs.getFloat("DlgTxtS_" + slot, 14f);
             dialogBgImageUri = prefs.getString("DlgBgUri_" + slot, "");
+                        dialogWidthRatio = prefs.getFloat("DlgWidth_" + slot, 0.8f); 
+            dialogHeightRatio = prefs.getFloat("DlgHeight_" + slot, 0.8f); 
+            isOverlayVisible = prefs.getBoolean("OverlayVis_" + slot, true); 
+            overlayMirror1 = prefs.getBoolean("OverlayMir1_" + slot, false); 
+            overlayMirror2 = prefs.getBoolean("OverlayMir2_" + slot, false);
             if(!dialogBgImageUri.isEmpty()){
                 try { 
                     InputStream dIs = getContext().getContentResolver().openInputStream(Uri.parse(dialogBgImageUri));
