@@ -1157,13 +1157,20 @@ public boolean onTouchEvent(MotionEvent event) {
         dragHandle.setTypeface(null, Typeface.BOLD);                
         rootLayout.addView(dragHandle);
 
-        ScrollView scroll = new ScrollView(getContext()) {
-            @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                int trueScreenH = Math.min(getResources().getDisplayMetrics().widthPixels, getResources().getDisplayMetrics().heightPixels);
-                // 应用自定义高度比例
-                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec((int)(trueScreenH * dialogHeightRatio) - 120, View.MeasureSpec.AT_MOST));
+                ScrollView scroll = new ScrollView(getContext()) {
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
+                int trueScreenH = Math.min(getWidth(), getHeight());
+                
+                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
+                
+                int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
+                super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
         };
+        
         
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(40, 20, 40, 40);
@@ -1353,21 +1360,20 @@ public boolean onTouchEvent(MotionEvent event) {
         layout.setBackground(getCustomDialogBackground());
         
 
-                       ScrollView scroll = new ScrollView(getContext()) {
+                               ScrollView scroll = new ScrollView(getContext()) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-                // 【核心修复】：防止横竖屏旋转导致宽高获取颠倒，永远取最短的那条边作为真实的物理高度！
-                int trueScreenH = Math.min(metrics.widthPixels, metrics.heightPixels);
+                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
+                int trueScreenH = Math.min(getWidth(), getHeight());
                 
-                // 【精细控制】：限制最大高度为真实高度的 80%，并额外减去 120 像素（留给顶部的拖拽条和边距）
-                // 彻底解决 ScrollView 误判导致“滑不动”，以及底部“保存”按钮被挤出屏幕外的问题
-                int maxHeight = (int) (trueScreenH * 0.8f) - 120; 
+                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
                 
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
         };
+                       
                 
     
         
@@ -1559,12 +1565,20 @@ public boolean onTouchEvent(MotionEvent event) {
         dragHandle.setTypeface(null, Typeface.BOLD);        
         rootLayout.addView(dragHandle);
 
-        ScrollView scroll = new ScrollView(getContext()) {
-            @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                int trueScreenH = Math.min(getResources().getDisplayMetrics().widthPixels, getResources().getDisplayMetrics().heightPixels);
-                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec((int)(trueScreenH * 0.8f) - 120, View.MeasureSpec.AT_MOST));
+                ScrollView scroll = new ScrollView(getContext()) {
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
+                int trueScreenH = Math.min(getWidth(), getHeight());
+                
+                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
+                
+                int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
+                super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
         };
+        
         
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
@@ -1861,21 +1875,20 @@ public boolean onTouchEvent(MotionEvent event) {
         dragHandle.setTypeface(null, Typeface.BOLD);        
         rootLayout.addView(dragHandle);
 
-                        ScrollView scroll = new ScrollView(getContext()) {
+        ScrollView scroll = new ScrollView(getContext()) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-                // 【核心修复】：防止横竖屏旋转导致宽高获取颠倒，永远取最短的那条边作为真实的物理高度！
-                int trueScreenH = Math.min(metrics.widthPixels, metrics.heightPixels);
+                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
+                int trueScreenH = Math.min(getWidth(), getHeight());
                 
-                // 【精细控制】：限制最大高度为真实高度的 80%，并额外减去 120 像素（留给顶部的拖拽条和边距）
-                // 彻底解决 ScrollView 误判导致“滑不动”，以及底部“保存”按钮被挤出屏幕外的问题
-                int maxHeight = (int) (trueScreenH * 0.8f) - 120; 
+                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
                 
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
         };
+                        
                 
         
         LinearLayout layout = new LinearLayout(getContext()); 
@@ -2011,21 +2024,20 @@ public boolean onTouchEvent(MotionEvent event) {
         dragHandle.setTypeface(null, Typeface.BOLD);       
         rootLayout.addView(dragHandle);
 
-                        ScrollView scroll = new ScrollView(getContext()) {
+                                ScrollView scroll = new ScrollView(getContext()) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-                // 【核心修复】：防止横竖屏旋转导致宽高获取颠倒，永远取最短的那条边作为真实的物理高度！
-                int trueScreenH = Math.min(metrics.widthPixels, metrics.heightPixels);
+                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
+                int trueScreenH = Math.min(getWidth(), getHeight());
                 
-                // 【精细控制】：限制最大高度为真实高度的 80%，并额外减去 120 像素（留给顶部的拖拽条和边距）
-                // 彻底解决 ScrollView 误判导致“滑不动”，以及底部“保存”按钮被挤出屏幕外的问题
-                int maxHeight = (int) (trueScreenH * 0.8f) - 120; 
+                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
                 
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
         };
+                        
                 
         
         LinearLayout layout = new LinearLayout(getContext()); 
@@ -2909,21 +2921,20 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         header.setBackgroundColor(Color.parseColor("#1A1A1A"));
         rootLayout.addView(header);
 
-                        ScrollView scroll = new ScrollView(getContext()) {
+          ScrollView scroll = new ScrollView(getContext()) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-                // 【核心修复】：防止横竖屏旋转导致宽高获取颠倒，永远取最短的那条边作为真实的物理高度！
-                int trueScreenH = Math.min(metrics.widthPixels, metrics.heightPixels);
+                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
+                int trueScreenH = Math.min(getWidth(), getHeight());
                 
-                // 【精细控制】：限制最大高度为真实高度的 80%，并额外减去 120 像素（留给顶部的拖拽条和边距）
-                // 彻底解决 ScrollView 误判导致“滑不动”，以及底部“保存”按钮被挤出屏幕外的问题
-                int maxHeight = (int) (trueScreenH * 0.8f) - 120; 
+                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
                 
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
         };
+                        
                 
         
         LinearLayout contentLayout = new LinearLayout(getContext());
