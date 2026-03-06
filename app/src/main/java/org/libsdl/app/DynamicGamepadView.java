@@ -1572,23 +1572,30 @@ public boolean onTouchEvent(MotionEvent event) {
         layout.addView(createTitle("0. 窗口全局缩放比例"));
         final SeekBar widthBar = createColorBar(layout, "↔️ 窗口宽度百分比", (int)(dialogWidthRatio * 100)); widthBar.setMax(100);
         final SeekBar heightBar = createColorBar(layout, "↕️ 窗口高度百分比", (int)(dialogHeightRatio * 100)); heightBar.setMax(100);
-                SeekBar.OnSeekBarChangeListener ratioUpdater = new SeekBar.OnSeekBarChangeListener() {
+                        // 找到 showDialogCustomizationSettings 里面的 ratioUpdater，替换为：
+        SeekBar.OnSeekBarChangeListener ratioUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
                 if (fromUser) {
                     if (s == widthBar) dialogWidthRatio = Math.max(0.4f, p / 100f);
                     else if (s == heightBar) dialogHeightRatio = Math.max(0.4f, p / 100f);
                     
-                    // 【新增：实时改变窗口大小】
+                    // 【新增：实时改变窗口大小，同样应用防挤压逻辑】
                     android.view.Window window = dialog.getWindow();
                     if (window != null) {
                         android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-                        window.setLayout((int)(metrics.widthPixels * dialogWidthRatio), ViewGroup.LayoutParams.WRAP_CONTENT);
+                        // 同样强制取长边
+                        int trueScreenW = Math.max(metrics.widthPixels, metrics.heightPixels);
+                        int targetW = (int)(trueScreenW * dialogWidthRatio);
+                        
+                        window.setLayout(targetW, ViewGroup.LayoutParams.WRAP_CONTENT);
+                        dragHandle.setMinimumWidth(targetW); // 同步撑开拖拽条的最小宽度
                     }
                     scroll.requestLayout(); 
                 }
             }
             public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
         };
+                
         widthBar.setOnSeekBarChangeListener(ratioUpdater);
         heightBar.setOnSeekBarChangeListener(ratioUpdater);
 
@@ -1756,19 +1763,30 @@ public boolean onTouchEvent(MotionEvent event) {
     // 各类独立设置弹窗
     // =====================================
         // 【新增工具方法】用于让设置对话框变成可移动、半透明的悬浮窗
+        // 找到原来的 setupMovableDialog 方法，将其替换为以下代码：
     private void setupMovableDialog(android.app.Dialog dialog, View dragHandle) {
         android.view.Window window = dialog.getWindow();
-                if (window != null) {
+        if (window != null) {
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); // 窗体透明
-            // 【新增】应用用户自定义的窗口宽度比例
-            android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-            int w = (int)(metrics.widthPixels * dialogWidthRatio);
-            window.setLayout(w, ViewGroup.LayoutParams.WRAP_CONTENT);
             window.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);        
             window.setDimAmount(0f); // 取消黑底遮罩
             final android.view.WindowManager.LayoutParams params = window.getAttributes();
             params.x = 50; params.y = 50; // 默认出生在左上角
             window.setAttributes(params);
+
+            // 【一加 3 等老机型/特定 ROM 终极适配修复】
+            android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+            // 1. 强制取真实屏幕的长边，防止底层上下文短暂拿到横竖屏倒置的数值
+            final int trueScreenW = Math.max(metrics.widthPixels, metrics.heightPixels);
+            final int targetWidth = (int) (trueScreenW * dialogWidthRatio);
+
+            // 2. 物理防御：强制撑开顶部拖拽条的最小宽度，防止被系统 Dialog 主题强行挤扁
+            dragHandle.setMinimumWidth(targetWidth);
+
+            // 3. 核心机制：利用 onShow 监听，等系统彻底把弹窗挂载出来后，再反向接管并强制赋予正确的宽度
+            dialog.setOnShowListener(d -> {
+                window.setLayout(targetWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
+            });
 
             // 监听拖拽条的触摸事件来实现窗口移动
             dragHandle.setOnTouchListener(new View.OnTouchListener() {
@@ -1787,6 +1805,7 @@ public boolean onTouchEvent(MotionEvent event) {
             });
         }
     }
+    
 
     private void showJoystickSettingsDialog() {
         imagePickerTarget = 0;
