@@ -1157,14 +1157,20 @@ public boolean onTouchEvent(MotionEvent event) {
         dragHandle.setTypeface(null, Typeface.BOLD);                
         rootLayout.addView(dragHandle);
 
-                ScrollView scroll = new ScrollView(getContext()) {
+                        ScrollView scroll = new ScrollView(getContext()) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
-                int trueScreenH = Math.min(getWidth(), getHeight());
+                // 【核心救命修复】：必须指明是 DynamicGamepadView.this，去拿全屏的真实宽高！
+                // 绝不能让 ScrollView 拿自己还没算出来的高度 (0) 互为因果地死循环！
+                int trueScreenH = Math.min(DynamicGamepadView.this.getWidth(), DynamicGamepadView.this.getHeight());
                 
-                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                // 按比例截取，留出 120px 给顶部的拖拽条
                 int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
+                
+                // 终极安全锁：防止在极端瞬间（比如横竖屏刚切换还没渲染完）高度变成负数导致崩溃
+                if (maxHeight < 200) {
+                    maxHeight = 200; 
+                }
                 
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
@@ -1360,19 +1366,26 @@ public boolean onTouchEvent(MotionEvent event) {
         layout.setBackground(getCustomDialogBackground());
         
 
-                               ScrollView scroll = new ScrollView(getContext()) {
+                                      ScrollView scroll = new ScrollView(getContext()) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
-                int trueScreenH = Math.min(getWidth(), getHeight());
+                // 【核心救命修复】：必须指明是 DynamicGamepadView.this，去拿全屏的真实宽高！
+                // 绝不能让 ScrollView 拿自己还没算出来的高度 (0) 互为因果地死循环！
+                int trueScreenH = Math.min(DynamicGamepadView.this.getWidth(), DynamicGamepadView.this.getHeight());
                 
-                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                // 按比例截取，留出 120px 给顶部的拖拽条
                 int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
+                
+                // 终极安全锁：防止在极端瞬间（比如横竖屏刚切换还没渲染完）高度变成负数导致崩溃
+                if (maxHeight < 200) {
+                    maxHeight = 200; 
+                }
                 
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
         };
+                               
                        
                 
     
@@ -1565,19 +1578,27 @@ public boolean onTouchEvent(MotionEvent event) {
         dragHandle.setTypeface(null, Typeface.BOLD);        
         rootLayout.addView(dragHandle);
 
-                ScrollView scroll = new ScrollView(getContext()) {
+                                ScrollView scroll = new ScrollView(getContext()) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
-                int trueScreenH = Math.min(getWidth(), getHeight());
+                // 【核心救命修复】：必须指明是 DynamicGamepadView.this，去拿全屏的真实宽高！
+                // 绝不能让 ScrollView 拿自己还没算出来的高度 (0) 互为因果地死循环！
+                int trueScreenH = Math.min(DynamicGamepadView.this.getWidth(), DynamicGamepadView.this.getHeight());
                 
-                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                // 按比例截取，留出 120px 给顶部的拖拽条
                 int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
+                
+                // 终极安全锁：防止在极端瞬间（比如横竖屏刚切换还没渲染完）高度变成负数导致崩溃
+                if (maxHeight < 200) {
+                    maxHeight = 200; 
+                }
                 
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
         };
+                        
+                
         
         
         LinearLayout layout = new LinearLayout(getContext()); 
@@ -1875,19 +1896,27 @@ public boolean onTouchEvent(MotionEvent event) {
         dragHandle.setTypeface(null, Typeface.BOLD);        
         rootLayout.addView(dragHandle);
 
-        ScrollView scroll = new ScrollView(getContext()) {
+                        ScrollView scroll = new ScrollView(getContext()) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
-                int trueScreenH = Math.min(getWidth(), getHeight());
+                // 【核心救命修复】：必须指明是 DynamicGamepadView.this，去拿全屏的真实宽高！
+                // 绝不能让 ScrollView 拿自己还没算出来的高度 (0) 互为因果地死循环！
+                int trueScreenH = Math.min(DynamicGamepadView.this.getWidth(), DynamicGamepadView.this.getHeight());
                 
-                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                // 按比例截取，留出 120px 给顶部的拖拽条
                 int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
+                
+                // 终极安全锁：防止在极端瞬间（比如横竖屏刚切换还没渲染完）高度变成负数导致崩溃
+                if (maxHeight < 200) {
+                    maxHeight = 200; 
+                }
                 
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
         };
+                
+        
                         
                 
         
@@ -2024,19 +2053,26 @@ public boolean onTouchEvent(MotionEvent event) {
         dragHandle.setTypeface(null, Typeface.BOLD);       
         rootLayout.addView(dragHandle);
 
-                                ScrollView scroll = new ScrollView(getContext()) {
+                                        ScrollView scroll = new ScrollView(getContext()) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
-                int trueScreenH = Math.min(getWidth(), getHeight());
+                // 【核心救命修复】：必须指明是 DynamicGamepadView.this，去拿全屏的真实宽高！
+                // 绝不能让 ScrollView 拿自己还没算出来的高度 (0) 互为因果地死循环！
+                int trueScreenH = Math.min(DynamicGamepadView.this.getWidth(), DynamicGamepadView.this.getHeight());
                 
-                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                // 按比例截取，留出 120px 给顶部的拖拽条
                 int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
+                
+                // 终极安全锁：防止在极端瞬间（比如横竖屏刚切换还没渲染完）高度变成负数导致崩溃
+                if (maxHeight < 200) {
+                    maxHeight = 200; 
+                }
                 
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
         };
+                                
                         
                 
         
@@ -2921,19 +2957,26 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         header.setBackgroundColor(Color.parseColor("#1A1A1A"));
         rootLayout.addView(header);
 
-          ScrollView scroll = new ScrollView(getContext()) {
+                  ScrollView scroll = new ScrollView(getContext()) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                // 【核心修复】：彻底抛弃不可靠的 DisplayMetrics，统一使用 View 当前真实渲染的长短边！
-                int trueScreenH = Math.min(getWidth(), getHeight());
+                // 【核心救命修复】：必须指明是 DynamicGamepadView.this，去拿全屏的真实宽高！
+                // 绝不能让 ScrollView 拿自己还没算出来的高度 (0) 互为因果地死循环！
+                int trueScreenH = Math.min(DynamicGamepadView.this.getWidth(), DynamicGamepadView.this.getHeight());
                 
-                // 【精细控制】：按当前真实高度比例截取，留出 120px 给顶部的拖拽条
+                // 按比例截取，留出 120px 给顶部的拖拽条
                 int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
+                
+                // 终极安全锁：防止在极端瞬间（比如横竖屏刚切换还没渲染完）高度变成负数导致崩溃
+                if (maxHeight < 200) {
+                    maxHeight = 200; 
+                }
                 
                 int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
                 super.onMeasure(widthMeasureSpec, customHeightSpec);
             }
         };
+          
                         
                 
         
