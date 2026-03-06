@@ -1573,28 +1573,39 @@ public boolean onTouchEvent(MotionEvent event) {
         final SeekBar widthBar = createColorBar(layout, "↔️ 窗口宽度百分比", (int)(dialogWidthRatio * 100)); widthBar.setMax(100);
         final SeekBar heightBar = createColorBar(layout, "↕️ 窗口高度百分比", (int)(dialogHeightRatio * 100)); heightBar.setMax(100);
                         // 找到 showDialogCustomizationSettings 里面的 ratioUpdater，替换为：
-        SeekBar.OnSeekBarChangeListener ratioUpdater = new SeekBar.OnSeekBarChangeListener() {
+                SeekBar.OnSeekBarChangeListener ratioUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
                 if (fromUser) {
                     if (s == widthBar) dialogWidthRatio = Math.max(0.4f, p / 100f);
                     else if (s == heightBar) dialogHeightRatio = Math.max(0.4f, p / 100f);
                     
-                    // 【新增：实时改变窗口大小，同样应用防挤压逻辑】
                     android.view.Window window = dialog.getWindow();
                     if (window != null) {
-                        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-                        // 同样强制取长边
-                        int trueScreenW = Math.max(metrics.widthPixels, metrics.heightPixels);
+                        // 【同步修复】：继续用真实 View 的长宽
+                        int trueScreenW = Math.max(getWidth(), getHeight());
                         int targetW = (int)(trueScreenW * dialogWidthRatio);
                         
                         window.setLayout(targetW, ViewGroup.LayoutParams.WRAP_CONTENT);
-                        dragHandle.setMinimumWidth(targetW); // 同步撑开拖拽条的最小宽度
+                        dragHandle.setMinimumWidth(targetW); 
+                        
+                        // 【强制同步到底层 View】
+                        View rootView = window.findViewById(android.R.id.content);
+                        if (rootView != null && rootView instanceof ViewGroup && ((ViewGroup)rootView).getChildCount() > 0) {
+                            View realRoot = ((ViewGroup)rootView).getChildAt(0);
+                            ViewGroup.LayoutParams lp = realRoot.getLayoutParams();
+                            if(lp != null) {
+                                lp.width = targetW;
+                                realRoot.setLayoutParams(lp);
+                            }
+                            realRoot.setMinimumWidth(targetW);
+                        }
                     }
                     scroll.requestLayout(); 
                 }
             }
             public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
         };
+        
                 
         widthBar.setOnSeekBarChangeListener(ratioUpdater);
         heightBar.setOnSeekBarChangeListener(ratioUpdater);
@@ -1764,31 +1775,51 @@ public boolean onTouchEvent(MotionEvent event) {
     // =====================================
         // 【新增工具方法】用于让设置对话框变成可移动、半透明的悬浮窗
         // 找到原来的 setupMovableDialog 方法，将其替换为以下代码：
-    private void setupMovableDialog(android.app.Dialog dialog, View dragHandle) {
+        private void setupMovableDialog(android.app.Dialog dialog, View dragHandle) {
         android.view.Window window = dialog.getWindow();
         if (window != null) {
-            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); // 窗体透明
+            // 1. 彻底清除系统弹窗自带的各类内边距和背景黑盒限制
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); 
+            window.getDecorView().setPadding(0, 0, 0, 0);
             window.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);        
-            window.setDimAmount(0f); // 取消黑底遮罩
-            final android.view.WindowManager.LayoutParams params = window.getAttributes();
-            params.x = 50; params.y = 50; // 默认出生在左上角
-            window.setAttributes(params);
+            window.setDimAmount(0f); 
 
-            // 【一加 3 等老机型/特定 ROM 终极适配修复】
-            android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-            // 1. 强制取真实屏幕的长边，防止底层上下文短暂拿到横竖屏倒置的数值
-            final int trueScreenW = Math.max(metrics.widthPixels, metrics.heightPixels);
+            // 2. 【核心修复】放弃不可靠的 DisplayMetrics，直接拿当前 View 真实渲染的长宽尺寸！
+            final int trueScreenW = Math.max(getWidth(), getHeight());
             final int targetWidth = (int) (trueScreenW * dialogWidthRatio);
 
-            // 2. 物理防御：强制撑开顶部拖拽条的最小宽度，防止被系统 Dialog 主题强行挤扁
+            // 3. 强制把 Window 设定为我们算好的精确像素宽度
+            window.setLayout(targetWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
+            final android.view.WindowManager.LayoutParams params = window.getAttributes();
+            params.x = 50; params.y = 50; 
+            params.width = targetWidth; 
+            window.setAttributes(params);
+
+            // 4. 【暴力破解系统自动折行】强制让根布局(rootLayout)的宽度撑满 targetWidth
+            View rootView = window.findViewById(android.R.id.content);
+            if (rootView != null && rootView instanceof ViewGroup) {
+                ViewGroup contentParent = (ViewGroup) rootView;
+                if (contentParent.getChildCount() > 0) {
+                    View realRoot = contentParent.getChildAt(0);
+                    ViewGroup.LayoutParams lp = realRoot.getLayoutParams();
+                    if (lp == null) {
+                        lp = new ViewGroup.LayoutParams(targetWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    } else {
+                        lp.width = targetWidth;
+                    }
+                    realRoot.setLayoutParams(lp);
+                    realRoot.setMinimumWidth(targetWidth); 
+                }
+            }
+
+            // 5. 【防御文字成列】给拖拽条上“免死金牌”，绝对不允许文字换行，强行撑开宽度！
+            if (dragHandle instanceof TextView) {
+                ((TextView) dragHandle).setSingleLine(true);
+                ((TextView) dragHandle).setEllipsize(android.text.TextUtils.TruncateAt.END);
+            }
             dragHandle.setMinimumWidth(targetWidth);
 
-            // 3. 核心机制：利用 onShow 监听，等系统彻底把弹窗挂载出来后，再反向接管并强制赋予正确的宽度
-            dialog.setOnShowListener(d -> {
-                window.setLayout(targetWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
-            });
-
-            // 监听拖拽条的触摸事件来实现窗口移动
+            // 6. 拖拽逻辑保持不变
             dragHandle.setOnTouchListener(new View.OnTouchListener() {
                 float dX, dY;
                 @Override
@@ -1805,6 +1836,7 @@ public boolean onTouchEvent(MotionEvent event) {
             });
         }
     }
+    
     
 
     private void showJoystickSettingsDialog() {
