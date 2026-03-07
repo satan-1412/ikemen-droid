@@ -2817,10 +2817,11 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
                             root.put("autoHideSeconds", DynamicGamepadView.instance.autoHideSeconds);
                         }
 
-                        java.io.OutputStream os = getActivity().getContentResolver().openOutputStream(uri);
+                                               java.io.OutputStream os = getActivity().getContentResolver().openOutputStream(uri);
                         os.write(root.toString(4).getBytes(StandardCharsets.UTF_8));
                         os.close();
                         Toast.makeText(getActivity(), "✅ 导出成功！", Toast.LENGTH_SHORT).show();
+                        
                     } catch (Exception e) { Toast.makeText(getActivity(), "❌ 导出失败", Toast.LENGTH_SHORT).show(); }                
                                                } else if (requestCode == 45 && DynamicGamepadView.instance != null) { 
                     // 【修复1】提前获取安全的 Context
@@ -2838,18 +2839,26 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
                         boolean hasLayout = false;
                         boolean hasStyles = false;
                         
-                        // 【三合一完美兼容逻辑：新版JSON、旧版JSON、经典XML】
+                                       // 【三合一完美兼容逻辑：新版JSON、旧版JSON、经典XML】
                         if (fileContent.startsWith("[")) {
                             // 1. 兼容旧版：纯按键数组 JSON
                             root = new JSONObject();
                             root.put("buttons", new JSONArray(fileContent));
                             hasLayout = true;
                         } else if (fileContent.startsWith("{")) {
+                            // 【自动抢救受损文件】：即使文件末尾有乱码残留，也智能截取最后一个 } 之前的内容
+                            if (!fileContent.endsWith("}")) {
+                                int lastBracket = fileContent.lastIndexOf("}");
+                                if (lastBracket != -1) {
+                                    fileContent = fileContent.substring(0, lastBracket + 1);
+                                }
+                            }
                             // 2. 兼容新版：包含 layout 和 styles 的完整 JSON
                             root = new JSONObject(fileContent);
                             hasLayout = root.has("layout") || root.has("buttons");
                             hasStyles = root.has("styles");
                         } else if (fileContent.contains("org.libsdl.app") || fileContent.contains("JoystickOverlay") || fileContent.contains("virtual_controller")) {
+                        
                             // 3. 【新增修复】兼容极早期经典文件：virtual_controller.xml (编译后的二进制或纯文本)
                             // 核心思路：既然用户导入了经典文件，我们直接调用最新的动态自适应引擎，为其生成完美适配当前屏幕比例的经典六键+摇杆键位。
                             DynamicGamepadView.instance.post(() -> {
@@ -2883,14 +2892,13 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
                                 try {
                                     SharedPreferences.Editor editor = DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
                                     
-                                                                       // 处理布局导入
+                                                                                                         // 处理布局导入
                                     if ((which == 0 || which == 1) && finalHasLayout) {
-                                        DynamicGamepadView v = DynamicGamepadView.instance; // 提取实例，让代码更短
+                                        DynamicGamepadView v = DynamicGamepadView.instance;
                                         JSONArray btnArray = root.has("layout") ? root.getJSONArray("layout") : root.getJSONArray("buttons");
                                         editor.putString(KEY_LAYOUT_PREFIX + v.currentSlot, btnArray.toString());
                                         
-                                        // 【核心修复】：把写死的 250、700 等默认值，全部替换为当前面板的真实数据 v.xxx
-                                        // 这样如果导入的文件不含摇杆配置，摇杆将保持当前状态和位置不动！
+                                        // 【核心修复】：找不到摇杆参数时使用 v.xxx，保证摇杆位置继承你算好的动态分辨率坐标
                                         editor.putInt("JoystickMode_" + v.currentSlot, root.optInt("joystickMode", v.joystickMode));
                                         editor.putFloat("JoyX_" + v.currentSlot, (float) root.optDouble("joyBaseX", v.joyBaseX));
                                         editor.putFloat("JoyY_" + v.currentSlot, (float) root.optDouble("joyBaseY", v.joyBaseY));
@@ -2903,6 +2911,7 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
                                         editor.putString("JoySkinBase_" + v.currentSlot, root.optString("joySkinBase", v.joySkinBaseUri != null ? v.joySkinBaseUri : ""));
                                         editor.putString("JoySkinKnob_" + v.currentSlot, root.optString("joySkinKnob", v.joySkinKnobUri != null ? v.joySkinKnobUri : ""));                       
                                     }
+                                                                       
                                     
                                     
                                     // 处理风格库导入
