@@ -2374,8 +2374,8 @@ public boolean onTouchEvent(MotionEvent event) {
         headerLayout.addView(input);
         parent.addView(headerLayout);
         
-        // 3. 使用匿名内部类重写 SeekBar 的事件，实现“隐形”双向绑定
-        final SeekBar sb = new SeekBar(getContext()) {
+               // 3. 使用匿名内部类重写 SeekBar 的事件，实现“隐形”双向绑定
+        final SeekBar sb = new SeekBar(getContext(), null, android.R.attr.seekBarStyle) {        
             private OnSeekBarChangeListener extListener;
             
             @Override
@@ -2416,7 +2416,7 @@ public boolean onTouchEvent(MotionEvent event) {
         
         sb.setMax(255);
         sb.setProgress(progress);
-        sb.setPadding(0, 20, 0, 30);
+        sb.setPadding(30, 20, 30, 30);        
                 // 【修复老旧机型滑动条消失的 Bug】：强制指定宽度占满父容器
         LinearLayout.LayoutParams sbParams = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 
@@ -2883,23 +2883,27 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
                                 try {
                                     SharedPreferences.Editor editor = DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
                                     
-                                    // 处理布局导入
+                                                                       // 处理布局导入
                                     if ((which == 0 || which == 1) && finalHasLayout) {
+                                        DynamicGamepadView v = DynamicGamepadView.instance; // 提取实例，让代码更短
                                         JSONArray btnArray = root.has("layout") ? root.getJSONArray("layout") : root.getJSONArray("buttons");
-                                        editor.putString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, btnArray.toString());
-                                        editor.putInt("JoystickMode_" + DynamicGamepadView.instance.currentSlot, root.optInt("joystickMode", 0));
-                                        editor.putFloat("JoyX_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyBaseX", 250));
-                                        editor.putFloat("JoyY_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyBaseY", 700));
-                                        editor.putFloat("JoyR_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyRadius", 180));
-                                        editor.putFloat("JoyHitR_" + DynamicGamepadView.instance.currentSlot, (float) root.optDouble("joyHitboxRadius", 270));
-                                        editor.putInt("JoyA_" + DynamicGamepadView.instance.currentSlot, root.optInt("joyAlpha", 200));
-                                        editor.putInt("JoyColor_" + DynamicGamepadView.instance.currentSlot, root.optInt("joyColor", Color.parseColor("#FF5555"))); 
-                                        editor.putBoolean("Vibration_" + DynamicGamepadView.instance.currentSlot, root.optBoolean("isVibrationOn", true));                        
-                                        editor.putInt("VibIntensity_" + DynamicGamepadView.instance.currentSlot, root.optInt("vibrationIntensity", 30));
+                                        editor.putString(KEY_LAYOUT_PREFIX + v.currentSlot, btnArray.toString());
                                         
-                                        editor.putString("JoySkinBase_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinBase", ""));
-                                        editor.putString("JoySkinKnob_" + DynamicGamepadView.instance.currentSlot, root.optString("joySkinKnob", ""));                       
+                                        // 【核心修复】：把写死的 250、700 等默认值，全部替换为当前面板的真实数据 v.xxx
+                                        // 这样如果导入的文件不含摇杆配置，摇杆将保持当前状态和位置不动！
+                                        editor.putInt("JoystickMode_" + v.currentSlot, root.optInt("joystickMode", v.joystickMode));
+                                        editor.putFloat("JoyX_" + v.currentSlot, (float) root.optDouble("joyBaseX", v.joyBaseX));
+                                        editor.putFloat("JoyY_" + v.currentSlot, (float) root.optDouble("joyBaseY", v.joyBaseY));
+                                        editor.putFloat("JoyR_" + v.currentSlot, (float) root.optDouble("joyRadius", v.joyRadius));
+                                        editor.putFloat("JoyHitR_" + v.currentSlot, (float) root.optDouble("joyHitboxRadius", v.joyHitboxRadius));
+                                        editor.putInt("JoyA_" + v.currentSlot, root.optInt("joyAlpha", v.joyAlpha));
+                                        editor.putInt("JoyColor_" + v.currentSlot, root.optInt("joyColor", v.joyColor)); 
+                                        editor.putBoolean("Vibration_" + v.currentSlot, root.optBoolean("isVibrationOn", v.isVibrationOn));                        
+                                        editor.putInt("VibIntensity_" + v.currentSlot, root.optInt("vibrationIntensity", v.vibrationIntensity));
+                                        editor.putString("JoySkinBase_" + v.currentSlot, root.optString("joySkinBase", v.joySkinBaseUri != null ? v.joySkinBaseUri : ""));
+                                        editor.putString("JoySkinKnob_" + v.currentSlot, root.optString("joySkinKnob", v.joySkinKnobUri != null ? v.joySkinKnobUri : ""));                       
                                     }
+                                    
                                     
                                     // 处理风格库导入
                                     if ((which == 0 || which == 2) && finalHasStyles) {
