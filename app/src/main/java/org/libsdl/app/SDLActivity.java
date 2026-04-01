@@ -334,9 +334,18 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     private static String mBasePath;
     private Button mSDButton;
     private ControllerOverlay mControllerOverlay;
-    private final Runnable hideRunnable = () -> {
-        if (mLayout != null) mLayout.setVisibility(View.INVISIBLE);
+    private final Runnable hideRunnable = new Runnable() {
+    @Override
+    public void run() {
+            if (DynamicGamepadView.instance != null && DynamicGamepadView.instance.isEditMode) {
+                mUIHandler.postDelayed(this, 2000);
+                return;
+            }
+           
+            if (mLayout != null) mLayout.setVisibility(View.INVISIBLE);
+        }
     };
+    
     private Handler mUIHandler = new Handler(android.os.Looper.getMainLooper());
 
     // Update this with the directories you wish to check every time for file updates.
@@ -469,11 +478,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
         params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
 
-        if (USE_FOLDER_SELECT) {
-            mLayout.addView(mSDButton, params);
+                if (USE_FOLDER_SELECT) {
             mSDButton.setOnClickListener(v -> checkAndPickFolder());
-            mUIHandler.postDelayed(hideRunnable, 5000);
         }
+        
 
         // Get our current screen orientation and pass it down.
         mCurrentOrientation = SDLActivity.getCurrentOrientation();
@@ -491,9 +499,19 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         mSDButton.setZ(100f); // Force it to the top of the Z-axis
 
-        mControllerOverlay = new ControllerOverlay(this);
-        RelativeLayout.LayoutParams lp = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
-        mLayout.addView(mControllerOverlay, lp);
+        //mControllerOverlay = new ControllerOverlay(this); 
+        //RelativeLayout.LayoutParams lp = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+       // mLayout.addView(mControllerOverlay, lp);
+        DynamicGamepadView dynamicGamepad = new DynamicGamepadView(this);
+        android.widget.RelativeLayout.LayoutParams lp = new android.widget.RelativeLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, 
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT);
+        mLayout.addView(dynamicGamepad, lp);
+        
+        if (dynamicGamepad.isAutoHideEnabled) {
+            mUIHandler.postDelayed(hideRunnable, dynamicGamepad.autoHideSeconds * 1000L);
+        }
+
 
 //        setContentView(mLayout); // WHAT IT WAS
         setContentView(rootLayout);
@@ -526,26 +544,42 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         }
     }
 
+    // === 把方法放在这里 ===
+    public void cancelAutoHide() {
+        if (mUIHandler != null) {
+            mUIHandler.removeCallbacks(hideRunnable);
+        }
+        if (mLayout != null) {
+            mLayout.setVisibility(View.VISIBLE);
+        }
+    }
+
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
         int action = ev.getAction();
-        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
+                if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
             if (mLayout != null) {
                 ViewGroup root = (ViewGroup) mLayout.getParent();
-                // Get the index of the last child
                 int lastChildIndex = root.getChildCount() - 1;
 
-                // CRITICAL: Only call bringToFront if the UI is hidden OR not actually on top.
-                // If it is ALREADY on top, calling bringToFront() kills the current touch!
                 if (mLayout.getVisibility() != View.VISIBLE || root.getChildAt(lastChildIndex) != mLayout) {
                     mLayout.setVisibility(View.VISIBLE);
                     mLayout.bringToFront();
                     root.requestLayout();
                 }
             }
+            
             mUIHandler.removeCallbacks(hideRunnable);
-            mUIHandler.postDelayed(hideRunnable, 5000);
+            
+            if (DynamicGamepadView.instance != null) {
+                if (DynamicGamepadView.instance.isAutoHideEnabled) {
+                    mUIHandler.postDelayed(hideRunnable, DynamicGamepadView.instance.autoHideSeconds * 1000L);
+                }
+            } else {
+                mUIHandler.postDelayed(hideRunnable, 5000);
+            }
         }
+        
         return super.dispatchTouchEvent(ev);
     }
 
@@ -652,16 +686,20 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     String relativePath = checkDir + "/" + fileName;
                     File localFile = new File(baseDir, relativePath);
 
-                    // If a script is missing locally, update
-                    if (!localFile.exists()) return true;
+// 如果本地文件丢失，返回 true 触发解压（保证新玩家初次安装正常）
+if (!localFile.exists()) {
+    return true; 
+}
 
-                    // If the CRC doesn't match, update
-                    long apkCRC = AssetExtractor.getAssetCRC(getAssets(), relativePath);
+                    // [修改] 为了方便开发者制作和调试 Mod，屏蔽掉 CRC 哈希值校验。
+                    // 这样即使开发者修改了 external/script 下的 lua 文件，也不会被强制还原了。
+                    /* long apkCRC = AssetExtractor.getAssetCRC(getAssets(), relativePath);
                     long localCRC = AssetExtractor.getFileCRC(localFile);
                     if (apkCRC != localCRC) {
                         Log.i("AssetExtractor", "Mismatch detected: " + fileName);
                         return true;
                     }
+                    */                                       
                 }
             }
         } catch (java.io.IOException e) {
@@ -2357,7 +2395,7 @@ class SDLInputConnection extends BaseInputConnection {
             }
             matchLength += Character.charCount(codePoint);
         }
-        /* FIXME: This doesn't handle graphemes, like '🌬️' */
+        /* FIXME: This doesn't handle graphemes, like 'ðŸŒ¬ï¸„1ï¿½7' */
         for (offset = matchLength; offset < mCommittedText.length(); ) {
             int codePoint = mCommittedText.codePointAt(offset);
             nativeGenerateScancodeForUnichar('\b');
@@ -2429,4 +2467,3 @@ class SDLClipboardHandler implements
         SDLActivity.onNativeClipboardChanged();
     }
 }
-
