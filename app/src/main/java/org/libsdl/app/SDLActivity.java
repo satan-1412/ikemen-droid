@@ -671,9 +671,30 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     public void openDirectoryPicker() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        startActivityForResult(intent, FOLDER_PICKER_CODE);
+        // === 兼容性修改：安卓 7.0 (API 24) 以下直接默认释放，不弹窗 ===
+        if (Build.VERSION.SDK_INT < 24) {
+            Log.i(TAG, "检测到旧版安卓(API < 24)，自动指定根目录 IkemenGO 文件夹");
+            
+            // 1. 在手机内部存储根目录创建一个叫 "IkemenGO" 的文件夹
+            File defaultGameDir = new File(Environment.getExternalStorageDirectory(), "IkemenGO");
+            if (!defaultGameDir.exists()) {
+                defaultGameDir.mkdirs();
+            }
+            
+            // 2. 将这个路径赋值给全局变量并保存到记忆里
+            mBasePath = defaultGameDir.getAbsolutePath();
+            mSharedPrefs.edit().putString(getString(R.string.game_folder_key), mBasePath).commit();
+            
+            // 3. 直接调用游戏原本自带的文件释放与启动方法
+            setupContent();
+            
+        } else {
+            // === 安卓 7.0 及以上，保留原本的选择文件夹逻辑 ===
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            startActivityForResult(intent, FOLDER_PICKER_CODE);
+        }
     }
+    
 
     private boolean filesNeedUpdate(File baseDir, String[] dirsToCheck) {
         try {
