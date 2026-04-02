@@ -1,8 +1,8 @@
 package org.libsdl.app;
 
-
 import android.content.Context;
 import android.content.pm.ActivityInfo;
+import android.graphics.PixelFormat;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -19,7 +19,6 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.WindowManager;
-
 
 /**
     SDLSurface. This is what we draw on, so we need to know when it's created
@@ -104,7 +103,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     @Override
     public void surfaceChanged(SurfaceHolder holder,
                                int format, int width, int height) {
-        Log.v("SDL", "surfaceChanged()");
+        Log.v("SDL", "surfaceChanged() - [Pro Optimized Version]");
 
         if (SDLActivity.mSingleton == null) {
             return;
@@ -114,16 +113,55 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         mHeight = height;
         int nDeviceWidth = width;
         int nDeviceHeight = height;
-        try
-        {
-            if (Build.VERSION.SDK_INT >= 17 /* Android 4.2 (JELLY_BEAN_MR1) */) {
+        
+        // ==============================================================
+        // 1. [性能分流] 32位求稳 (防爆显存黑屏)，64位求极致画质
+        // ==============================================================
+        boolean is64Bit = false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            String[] abis = Build.SUPPORTED_64_BIT_ABIS;
+            is64Bit = (abis != null && abis.length > 0);
+        }
+        
+        if (is64Bit) {
+            // 64位现代设备：使用最高色彩精度 RGBA_8888，完美呈现复杂滤镜
+            holder.setFormat(PixelFormat.RGBA_8888); 
+            Log.v("SDL", "64-bit Architecture Detected: Using RGBA_8888");
+        } else {
+            // 32位老旧设备：强制降级为 RGB_565，极大降低显存带宽压力，防止滤镜黑屏
+            holder.setFormat(PixelFormat.RGB_565);
+            Log.v("SDL", "32-bit Architecture Detected: Fallback to RGB_565");
+        }
+
+        // ==============================================================
+        // 2. [极限流畅] 自动侦测并解锁手机硬件允许的最高刷新率
+        // ==============================================================
+        float maxRefreshRate = 60.0f;
+        try {
+            if (Build.VERSION.SDK_INT >= 17 /* Android 4.2 */) {
                 DisplayMetrics realMetrics = new DisplayMetrics();
-                mDisplay.getRealMetrics( realMetrics );
+                mDisplay.getRealMetrics(realMetrics);
                 nDeviceWidth = realMetrics.widthPixels;
                 nDeviceHeight = realMetrics.heightPixels;
             }
-        } catch(Exception ignored) {
-        }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                android.view.Window window = ((android.app.Activity)getContext()).getWindow();
+                WindowManager.LayoutParams params = window.getAttributes();
+                Display.Mode[] modes = mDisplay.getSupportedModes();
+                Display.Mode bestMode = modes[0];
+                for (Display.Mode mode : modes) {
+                    if (mode.getRefreshRate() > bestMode.getRefreshRate()) {
+                        bestMode = mode;
+                    }
+                }
+                params.preferredDisplayModeId = bestMode.getModeId();
+                window.setAttributes(params);
+                maxRefreshRate = bestMode.getRefreshRate();
+                Log.v("SDL", "Unlocked Max Refresh Rate: " + maxRefreshRate + " Hz");
+            } else {
+                maxRefreshRate = mDisplay.getRefreshRate();
+            }
+        } catch(Exception ignored) {}
 
         synchronized(SDLActivity.getContext()) {
             // In case we're waiting on a size change after going fullscreen, send a notification.
@@ -132,51 +170,14 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
         Log.v("SDL", "Window size: " + width + "x" + height);
         Log.v("SDL", "Device size: " + nDeviceWidth + "x" + nDeviceHeight);
-        SDLActivity.nativeSetScreenResolution(width, height, nDeviceWidth, nDeviceHeight, mDisplay.getRefreshRate());
+        
+        // 传递刷新率和分辨率给底层引擎
+        SDLActivity.nativeSetScreenResolution(width, height, nDeviceWidth, nDeviceHeight, maxRefreshRate);
         SDLActivity.onNativeResize();
 
-        // Prevent a screen distortion glitch,
-        // for instance when the device is in Landscape and a Portrait App is resumed.
-        boolean skip = false;
-        int requestedOrientation = SDLActivity.mSingleton.getRequestedOrientation();
-
-        if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT) {
-            if (mWidth > mHeight) {
-               skip = true;
-            }
-        } else if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
-            if (mWidth < mHeight) {
-               skip = true;
-            }
-        }
-
-        // Special Patch for Square Resolution: Black Berry Passport
-        if (skip) {
-           double min = Math.min(mWidth, mHeight);
-           double max = Math.max(mWidth, mHeight);
-
-           if (max / min < 1.20) {
-              Log.v("SDL", "Don't skip on such aspect-ratio. Could be a square resolution.");
-              skip = false;
-           }
-        }
-
-        // Don't skip in MultiWindow.
-        if (skip) {
-            if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */) {
-                if (SDLActivity.mSingleton.isInMultiWindowMode()) {
-                    Log.v("SDL", "Don't skip in Multi-Window");
-                    skip = false;
-                }
-            }
-        }
-
-        if (skip) {
-           Log.v("SDL", "Skip .. Surface is not ready.");
-           mIsSurfaceReady = false;
-           return;
-        }
-
+        // ==============================================================
+        // 3. [终极修复] 强制引擎挂载，绝不静默跳过 (彻底干掉滤镜黑屏)
+        // ==============================================================
         /* If the surface has been previously destroyed by onNativeSurfaceDestroyed, recreate it here */
         SDLActivity.onNativeSurfaceChanged();
 
@@ -204,19 +205,10 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         int i = -1;
         float x,y,p;
 
-        /*
-         * Prevent id to be -1, since it's used in SDL internal for synthetic events
-         * Appears when using Android emulator, eg:
-         *  adb shell input mouse tap 100 100
-         *  adb shell input touchscreen tap 100 100
-         */
         if (touchDevId < 0) {
             touchDevId -= 1;
         }
 
-        // 12290 = Samsung DeX mode desktop mouse
-        // 12290 = 0x3002 = 0x2002 | 0x1002 = SOURCE_MOUSE | SOURCE_TOUCHSCREEN
-        // 0x2   = SOURCE_CLASS_POINTER
         if (event.getSource() == InputDevice.SOURCE_MOUSE || event.getSource() == (InputDevice.SOURCE_MOUSE | InputDevice.SOURCE_TOUCHSCREEN)) {
             int mouseButton = 1;
             try {
@@ -224,11 +216,8 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 if (object != null) {
                     mouseButton = (Integer) object;
                 }
-            } catch(Exception ignored) {
-            }
+            } catch(Exception ignored) {}
 
-            // We need to check if we're in relative mouse mode and get the axis offset rather than the x/y values
-            // if we are.  We'll leverage our existing mouse motion listener
             SDLGenericMotionListener_API12 motionListener = SDLActivity.getMotionListener();
             x = motionListener.getEventX(event);
             y = motionListener.getEventY(event);
@@ -237,14 +226,27 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         } else {
             switch(action) {
                 case MotionEvent.ACTION_MOVE:
+                    // ==============================================================
+                    // 4. [电竞级防断触] 抓取硬件缓冲区里的“历史微操”轨迹
+                    // ==============================================================
+                    int historySize = event.getHistorySize();
+                    for (int h = 0; h < historySize; h++) {
+                        for (i = 0; i < pointerCount; i++) {
+                            pointerFingerId = event.getPointerId(i);
+                            x = event.getHistoricalX(i, h) / mWidth;
+                            y = event.getHistoricalY(i, h) / mHeight;
+                            p = event.getHistoricalPressure(i, h);
+                            if (p > 1.0f) p = 1.0f;
+                            SDLActivity.onNativeTouch(touchDevId, pointerFingerId, action, x, y, p);
+                        }
+                    }
+                    // 处理当前最新坐标点
                     for (i = 0; i < pointerCount; i++) {
                         pointerFingerId = event.getPointerId(i);
                         x = event.getX(i) / mWidth;
                         y = event.getY(i) / mHeight;
                         p = event.getPressure(i);
                         if (p > 1.0f) {
-                            // may be larger than 1.0f on some devices
-                            // see the documentation of getPressure(i)
                             p = 1.0f;
                         }
                         SDLActivity.onNativeTouch(touchDevId, pointerFingerId, action, x, y, p);
@@ -253,12 +255,10 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_DOWN:
-                    // Primary pointer up/down, the index is always zero
                     i = 0;
                     /* fallthrough */
                 case MotionEvent.ACTION_POINTER_UP:
                 case MotionEvent.ACTION_POINTER_DOWN:
-                    // Non primary pointer up/down
                     if (i == -1) {
                         i = event.getActionIndex();
                     }
@@ -268,8 +268,6 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                     y = event.getY(i) / mHeight;
                     p = event.getPressure(i);
                     if (p > 1.0f) {
-                        // may be larger than 1.0f on some devices
-                        // see the documentation of getPressure(i)
                         p = 1.0f;
                     }
                     SDLActivity.onNativeTouch(touchDevId, pointerFingerId, action, x, y, p);
@@ -282,8 +280,6 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                         y = event.getY(i) / mHeight;
                         p = event.getPressure(i);
                         if (p > 1.0f) {
-                            // may be larger than 1.0f on some devices
-                            // see the documentation of getPressure(i)
                             p = 1.0f;
                         }
                         SDLActivity.onNativeTouch(touchDevId, pointerFingerId, MotionEvent.ACTION_UP, x, y, p);
@@ -300,7 +296,6 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
     // Sensor events
     public void enableSensor(int sensortype, boolean enabled) {
-        // TODO: This uses getDefaultSensor - what if we have >1 accels?
         if (enabled) {
             mSensorManager.registerListener(this,
                             mSensorManager.getDefaultSensor(sensortype),
@@ -320,10 +315,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     public void onSensorChanged(SensorEvent event) {
         if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
 
-            // Since we may have an orientation set, we won't receive onConfigurationChanged events.
-            // We thus should check here.
             int newOrientation;
-
             float x, y;
             switch (mDisplay.getRotation()) {
                 case Surface.ROTATION_90:
@@ -357,8 +349,6 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
             SDLActivity.onNativeAccel(-x / SensorManager.GRAVITY_EARTH,
                                       y / SensorManager.GRAVITY_EARTH,
                                       event.values[2] / SensorManager.GRAVITY_EARTH);
-
-
         }
     }
 
