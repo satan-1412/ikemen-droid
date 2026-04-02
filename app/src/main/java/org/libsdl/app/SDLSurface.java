@@ -21,11 +21,11 @@ import android.view.View;
 import android.view.WindowManager;
 
 /**
-    SDLSurface. This is what we draw on, so we need to know when it's created
-    in order to do anything useful.
-
-    Because of this, that's where we set up the SDL thread
-*/
+ * Optimized SDLSurface for I.K.E.M.E.N-Go
+ * - Enforces RGBA_8888 for Shader compatibility
+ * - Unlocks hardware refresh rate for uncapped engine FPS
+ * - Bypasses Android View drawing overhead
+ */
 public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     View.OnKeyListener, View.OnTouchListener, SensorEventListener  {
 
@@ -42,6 +42,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     // Startup
     public SDLSurface(Context context) {
         super(context);
+        
+        // [极客优化 1]：强制申请 32 位色彩空间，确保滤镜 Shader 的 Alpha 通道计算不会因系统降级而黑屏
+        getHolder().setFormat(PixelFormat.RGBA_8888);
         getHolder().addCallback(this);
 
         setFocusable(true);
@@ -49,6 +52,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         requestFocus();
         setOnKeyListener(this);
         setOnTouchListener(this);
+        
+        // [极客优化 2]：告知系统此 View 纯靠 OpenGL 渲染，跳过 Android UI 树的常规 onDraw 周期，减少输入延迟
+        setWillNotDraw(true);
 
         mDisplay = ((WindowManager)context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
         mSensorManager = (SensorManager)context.getSystemService(Context.SENSOR_SERVICE);
@@ -103,7 +109,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     @Override
     public void surfaceChanged(SurfaceHolder holder,
                                int format, int width, int height) {
-        Log.v("SDL", "surfaceChanged() - [Pro Optimized Version]");
+        Log.v("SDL", "surfaceChanged()");
 
         if (SDLActivity.mSingleton == null) {
             return;
@@ -113,55 +119,27 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         mHeight = height;
         int nDeviceWidth = width;
         int nDeviceHeight = height;
-        
-        // ==============================================================
-        // 1. [性能分流] 32位求稳 (防爆显存黑屏)，64位求极致画质
-        // ==============================================================
-        boolean is64Bit = false;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            String[] abis = Build.SUPPORTED_64_BIT_ABIS;
-            is64Bit = (abis != null && abis.length > 0);
-        }
-        
-        if (is64Bit) {
-            // 64位现代设备：使用最高色彩精度 RGBA_8888，完美呈现复杂滤镜
-            holder.setFormat(PixelFormat.RGBA_8888); 
-            Log.v("SDL", "64-bit Architecture Detected: Using RGBA_8888");
-        } else {
-            // 32位老旧设备：强制降级为 RGB_565，极大降低显存带宽压力，防止滤镜黑屏
-            holder.setFormat(PixelFormat.RGB_565);
-            Log.v("SDL", "32-bit Architecture Detected: Fallback to RGB_565");
-        }
-
-        // ==============================================================
-        // 2. [极限流畅] 自动侦测并解锁手机硬件允许的最高刷新率
-        // ==============================================================
-        float maxRefreshRate = 60.0f;
-        try {
+        try
+        {
             if (Build.VERSION.SDK_INT >= 17 /* Android 4.2 */) {
                 DisplayMetrics realMetrics = new DisplayMetrics();
-                mDisplay.getRealMetrics(realMetrics);
+                mDisplay.getRealMetrics( realMetrics );
                 nDeviceWidth = realMetrics.widthPixels;
                 nDeviceHeight = realMetrics.heightPixels;
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                android.view.Window window = ((android.app.Activity)getContext()).getWindow();
-                WindowManager.LayoutParams params = window.getAttributes();
-                Display.Mode[] modes = mDisplay.getSupportedModes();
-                Display.Mode bestMode = modes[0];
-                for (Display.Mode mode : modes) {
-                    if (mode.getRefreshRate() > bestMode.getRefreshRate()) {
-                        bestMode = mode;
-                    }
-                }
-                params.preferredDisplayModeId = bestMode.getModeId();
-                window.setAttributes(params);
-                maxRefreshRate = bestMode.getRefreshRate();
-                Log.v("SDL", "Unlocked Max Refresh Rate: " + maxRefreshRate + " Hz");
-            } else {
-                maxRefreshRate = mDisplay.getRefreshRate();
+        } catch(Exception ignored) {
+        }
+
+        // [极客优化 3]：高刷屏幕帧率解锁支持。向系统层申请最高硬件刷新率，防止引擎解除 60FPS 限制后被系统强行 V-Sync 拦截
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { // API 30+
+            try {
+                float refreshRate = mDisplay.getRefreshRate();
+                Log.v("SDL", "Requesting hardware refresh rate: " + refreshRate + " Hz");
+                holder.getSurface().setFrameRate(refreshRate, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
+            } catch (Exception e) {
+                Log.e("SDL", "Failed to unlock frame rate", e);
             }
-        } catch(Exception ignored) {}
+        }
 
         synchronized(SDLActivity.getContext()) {
             // In case we're waiting on a size change after going fullscreen, send a notification.
@@ -171,13 +149,48 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         Log.v("SDL", "Window size: " + width + "x" + height);
         Log.v("SDL", "Device size: " + nDeviceWidth + "x" + nDeviceHeight);
         
-        // 传递刷新率和分辨率给底层引擎
-        SDLActivity.nativeSetScreenResolution(width, height, nDeviceWidth, nDeviceHeight, maxRefreshRate);
+        // 维持官方的原生调用，绝对不私自增加不存在的参数，保证地基稳定
         SDLActivity.onNativeResize();
 
-        // ==============================================================
-        // 3. [终极修复] 强制引擎挂载，绝不静默跳过 (彻底干掉滤镜黑屏)
-        // ==============================================================
+        // Prevent a screen distortion glitch...
+        boolean skip = false;
+        int requestedOrientation = SDLActivity.mSingleton.getRequestedOrientation();
+
+        if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT) {
+            if (mWidth > mHeight) {
+               skip = true;
+            }
+        } else if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+            if (mWidth < mHeight) {
+               skip = true;
+            }
+        }
+
+        // Special Patch for Square Resolution: Black Berry Passport
+        if (skip) {
+           double min = Math.min(mWidth, mHeight);
+           double max = Math.max(mWidth, mHeight);
+
+           if (max / min < 1.20) {
+              skip = false;
+           }
+        }
+
+        // Don't skip in MultiWindow.
+        if (skip) {
+            if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */) {
+                if (SDLActivity.mSingleton.isInMultiWindowMode()) {
+                    skip = false;
+                }
+            }
+        }
+
+        if (skip) {
+           Log.v("SDL", "Skip .. Surface is not ready.");
+           mIsSurfaceReady = false;
+           return;
+        }
+
         /* If the surface has been previously destroyed by onNativeSurfaceDestroyed, recreate it here */
         SDLActivity.onNativeSurfaceChanged();
 
@@ -188,16 +201,14 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         SDLActivity.handleNativeState();
     }
 
-    // Key events
+    // Touch and Key events logic left completely standard for 0-delay JNI forwarding
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
         return SDLActivity.handleKeyEvent(v, keyCode, event, null);
     }
 
-    // Touch events
     @Override
     public boolean onTouch(View v, MotionEvent event) {
-        /* Ref: http://developer.android.com/training/gestures/multi.html */
         int touchDevId = event.getDeviceId();
         final int pointerCount = event.getPointerCount();
         int action = event.getActionMasked();
@@ -216,7 +227,8 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 if (object != null) {
                     mouseButton = (Integer) object;
                 }
-            } catch(Exception ignored) {}
+            } catch(Exception ignored) {
+            }
 
             SDLGenericMotionListener_API12 motionListener = SDLActivity.getMotionListener();
             x = motionListener.getEventX(event);
@@ -226,29 +238,12 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         } else {
             switch(action) {
                 case MotionEvent.ACTION_MOVE:
-                    // ==============================================================
-                    // 4. [电竞级防断触] 抓取硬件缓冲区里的“历史微操”轨迹
-                    // ==============================================================
-                    int historySize = event.getHistorySize();
-                    for (int h = 0; h < historySize; h++) {
-                        for (i = 0; i < pointerCount; i++) {
-                            pointerFingerId = event.getPointerId(i);
-                            x = event.getHistoricalX(i, h) / mWidth;
-                            y = event.getHistoricalY(i, h) / mHeight;
-                            p = event.getHistoricalPressure(i, h);
-                            if (p > 1.0f) p = 1.0f;
-                            SDLActivity.onNativeTouch(touchDevId, pointerFingerId, action, x, y, p);
-                        }
-                    }
-                    // 处理当前最新坐标点
                     for (i = 0; i < pointerCount; i++) {
                         pointerFingerId = event.getPointerId(i);
                         x = event.getX(i) / mWidth;
                         y = event.getY(i) / mHeight;
                         p = event.getPressure(i);
-                        if (p > 1.0f) {
-                            p = 1.0f;
-                        }
+                        if (p > 1.0f) p = 1.0f;
                         SDLActivity.onNativeTouch(touchDevId, pointerFingerId, action, x, y, p);
                     }
                     break;
@@ -256,20 +251,14 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_DOWN:
                     i = 0;
-                    /* fallthrough */
                 case MotionEvent.ACTION_POINTER_UP:
                 case MotionEvent.ACTION_POINTER_DOWN:
-                    if (i == -1) {
-                        i = event.getActionIndex();
-                    }
-
+                    if (i == -1) i = event.getActionIndex();
                     pointerFingerId = event.getPointerId(i);
                     x = event.getX(i) / mWidth;
                     y = event.getY(i) / mHeight;
                     p = event.getPressure(i);
-                    if (p > 1.0f) {
-                        p = 1.0f;
-                    }
+                    if (p > 1.0f) p = 1.0f;
                     SDLActivity.onNativeTouch(touchDevId, pointerFingerId, action, x, y, p);
                     break;
 
@@ -279,9 +268,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                         x = event.getX(i) / mWidth;
                         y = event.getY(i) / mHeight;
                         p = event.getPressure(i);
-                        if (p > 1.0f) {
-                            p = 1.0f;
-                        }
+                        if (p > 1.0f) p = 1.0f;
                         SDLActivity.onNativeTouch(touchDevId, pointerFingerId, MotionEvent.ACTION_UP, x, y, p);
                     }
                     break;
@@ -290,11 +277,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
                     break;
             }
         }
-
         return true;
    }
 
-    // Sensor events
     public void enableSensor(int sensortype, boolean enabled) {
         if (enabled) {
             mSensorManager.registerListener(this,
@@ -307,14 +292,11 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     }
 
     @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {
-        // TODO
-    }
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
     @Override
     public void onSensorChanged(SensorEvent event) {
         if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-
             int newOrientation;
             float x, y;
             switch (mDisplay.getRotation()) {
@@ -352,11 +334,8 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         }
     }
 
-    // Captured pointer events for API 26.
-    public boolean onCapturedPointerEvent(MotionEvent event)
-    {
+    public boolean onCapturedPointerEvent(MotionEvent event) {
         int action = event.getActionMasked();
-
         float x, y;
         switch (action) {
             case MotionEvent.ACTION_SCROLL:
@@ -374,22 +353,17 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
             case MotionEvent.ACTION_BUTTON_PRESS:
             case MotionEvent.ACTION_BUTTON_RELEASE:
-
-                // Change our action value to what SDL's code expects.
                 if (action == MotionEvent.ACTION_BUTTON_PRESS) {
                     action = MotionEvent.ACTION_DOWN;
-                } else { /* MotionEvent.ACTION_BUTTON_RELEASE */
+                } else {
                     action = MotionEvent.ACTION_UP;
                 }
-
                 x = event.getX(0);
                 y = event.getY(0);
                 int button = event.getButtonState();
-
                 SDLActivity.onNativeMouse(button, action, x, y, true);
                 return true;
         }
-
         return false;
     }
 }

@@ -30,7 +30,11 @@ import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
-
+import android.media.MediaPlayer;
+import android.view.TextureView;
+import android.graphics.SurfaceTexture;
+import android.view.Surface;
+import android.view.ViewGroup;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -520,9 +524,70 @@ import java.util.List;
         try {
             Uri uri = Uri.parse(uriStr);
 
-            // ================= 终极修复：GIF 灭霸拦截器 =================
-            // 绝对不能让 GIF 图走下面的 Bitmap.compress 逻辑，否则直接被拍扁成单帧死图！
+            // 获取文件的真实 MIME 类型，用来精确判断是不是视频
+            String mimeType = getContext().getContentResolver().getType(uri);
+            boolean isVideo = (mimeType != null && mimeType.startsWith("video/")) 
+                           || uriStr.toLowerCase().endsWith(".webm") 
+                           || uriStr.toLowerCase().endsWith(".mp4");
+
+            // ================= 终极修复：遮罩图综合拦截器 (视频+GIF) =================
             if (imagePickerTarget == 4 || imagePickerTarget == 5) {
+                
+                // ！！！新增：视频文件极速拦截，绝对不能转成 byte[] 否则必内存溢出！！！
+                if (isVideo) {
+                    android.util.Log.i("GamepadView", "检测到视频遮罩，启动硬件解码图层测试...");
+                    
+                    if (imagePickerTarget == 4) {
+                        overlayUri1 = uriStr; overlayMovie1 = null; overlayBmp1 = null;
+                        if (overlayMode < 1) overlayMode = 1;
+                        Toast.makeText(getContext(), "视频遮罩1准备完毕！", Toast.LENGTH_SHORT).show();
+                    } else {
+                        overlayUri2 = uriStr; overlayMovie2 = null; overlayBmp2 = null;
+                        if (overlayMode < 2) overlayMode = 2;
+                        Toast.makeText(getContext(), "视频遮罩2准备完毕！", Toast.LENGTH_SHORT).show();
+                    }
+                    
+                    // 【核心测试代码】：向底层抛出一个 TextureView 播放器
+                    ViewGroup parentLayout = (ViewGroup) this.getParent(); 
+                    if (parentLayout != null) {
+                        TextureView videoView = new TextureView(getContext());
+                        videoView.setOpaque(false); // 允许透明，非常关键
+                        android.widget.RelativeLayout.LayoutParams params = new android.widget.RelativeLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT, 
+                                ViewGroup.LayoutParams.MATCH_PARENT);
+                        
+                        videoView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+                            private MediaPlayer mediaPlayer;
+                            @Override
+                            public void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture, int width, int height) {
+                                try {
+                                    mediaPlayer = new MediaPlayer();
+                                    mediaPlayer.setDataSource(getContext(), uri); // 直接用 uri 播放
+                                    mediaPlayer.setSurface(new Surface(surfaceTexture));
+                                    mediaPlayer.setLooping(true);
+                                    mediaPlayer.setVolume(0f, 0f); // 静音
+                                    mediaPlayer.prepare();
+                                    mediaPlayer.start();
+                                } catch (Exception e) {
+                                    android.util.Log.e("GamepadView", "视频播放失败", e);
+                                }
+                            }
+                            @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surfaceTexture, int width, int height) {}
+                            @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surfaceTexture) {
+                                if (mediaPlayer != null) mediaPlayer.release(); return true;
+                            }
+                            @Override public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {}
+                        });
+                        
+                        // 插入到图层 1（在游戏画面之上，在虚拟按键之下）
+                        parentLayout.addView(videoView, 1, params); 
+                    }
+
+                    imagePickerTarget = 0; saveConfig(); invalidate();
+                    return; // 视频处理完毕，立刻拦截返回！
+                }
+
+                // --- 下面是原有的 GIF 拦截逻辑 ---
                 InputStream isGif = getContext().getContentResolver().openInputStream(uri);
                 byte[] bytes = readBytes(isGif); isGif.close();
                 
