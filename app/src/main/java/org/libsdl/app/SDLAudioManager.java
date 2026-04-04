@@ -1,6 +1,7 @@
 package org.libsdl.app;
 
 import android.content.Context;
+import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
@@ -83,19 +84,14 @@ public class SDLAudioManager {
         }
 
         if (is64Bit && !isCapture) {
-            // [64位 发烧模式]：极致立体声与Z轴衰减表现
             Log.v(TAG, "Arch: 64-bit detected. Enabling Aggressive Audio Mode.");
-            // 强制将基础格式拉升至 32位浮点，获得最强动态范围
             if (Build.VERSION.SDK_INT >= 21) {
                 audioFormat = AudioFormat.ENCODING_PCM_FLOAT;
             }
-            // 至少保证立体声，为 Z 轴和左右 Panning 提供基础
             if (desiredChannels < 2) desiredChannels = 2;
         } else if (!isCapture) {
-            // [32位 求稳模式]：老设备不配发烧，稳住不爆音就是胜利
             Log.v(TAG, "Arch: 32-bit detected. Enabling Stable Safe Mode.");
             audioFormat = AudioFormat.ENCODING_PCM_16BIT;
-            // 老设备强制降维到最高双声道，节约 CPU 混音算力
             if (desiredChannels > 2) desiredChannels = 2;
         }
 
@@ -169,17 +165,14 @@ public class SDLAudioManager {
 
         if (!isCapture) {
             if (is64Bit && Build.VERSION.SDK_INT >= 17) {
-                // 64位：榨干延迟。获取系统底层的 FastMixer 硬件重采样基准块大小
                 AudioManager am = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
                 String framesPerBuffer = am.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER);
                 if (framesPerBuffer != null) {
                     int hardwareFrames = Integer.parseInt(framesPerBuffer);
-                    // 将缓冲区强行锁在硬件原生大小的边缘（乘2留微小冗余），实现硬直通
                     minBufferSize = hardwareFrames * frameSize * 2;
                     Log.v(TAG, "Aggressive Profile: Fast Track Audio Enabled. Buffer size forced to: " + minBufferSize);
                 }
             } else {
-                // 32位：稳字当头。强行将系统建议缓冲区放大一倍，彻底杜绝老旧 CPU 运算波动导致的杂音和爆音
                 minBufferSize = minBufferSize * 2;
                 Log.v(TAG, "Stable Profile: Double Buffering Enabled. Buffer size expanded to: " + minBufferSize);
             }
@@ -214,7 +207,40 @@ public class SDLAudioManager {
 
         } else {
             if (mAudioTrack == null) {
-                mAudioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, channelConfig, audioFormat, desiredFrames * frameSize, AudioTrack.MODE_STREAM);
+                // =========================================================
+                // [极客优化] 针对格斗游戏的 Low Latency (低延迟) 音频构造
+                // =========================================================
+                if (Build.VERSION.SDK_INT >= 26) {
+                    AudioAttributes attributes = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_GAME) // 声明为游戏音频
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION) // 强化打击音效优先级
+                            .build();
+                    AudioFormat format = new AudioFormat.Builder()
+                            .setSampleRate(sampleRate)
+                            .setChannelMask(channelConfig)
+                            .setEncoding(audioFormat)
+                            .build();
+                    mAudioTrack = new AudioTrack.Builder()
+                            .setAudioAttributes(attributes)
+                            .setAudioFormat(format)
+                            .setBufferSizeInBytes(desiredFrames * frameSize)
+                            .setTransferMode(AudioTrack.MODE_STREAM)
+                            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY) // 核心：请求底层极低延迟
+                            .build();
+                } else if (Build.VERSION.SDK_INT >= 21) {
+                    AudioAttributes attributes = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_GAME)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build();
+                    AudioFormat format = new AudioFormat.Builder()
+                            .setSampleRate(sampleRate)
+                            .setChannelMask(channelConfig)
+                            .setEncoding(audioFormat)
+                            .build();
+                    mAudioTrack = new AudioTrack(attributes, format, desiredFrames * frameSize, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE);
+                } else {
+                    mAudioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, channelConfig, audioFormat, desiredFrames * frameSize, AudioTrack.MODE_STREAM);
+                }
 
                 if (mAudioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
                     Log.e(TAG, "Failed during initialization of Audio Track");
