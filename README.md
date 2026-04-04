@@ -1,6 +1,7 @@
 # I.K.E.M.E.N-Go for Android
 
 ## Instructions for building (debug)
+增加全新虚拟按键系统，兼容32位系统，画质音质上限提升，解除内存限制
 
 ### Requirements: Android Studio, Android NDK r27d.
 
