@@ -826,6 +826,23 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+    
+            // [新增逻辑]：最高优先级拦截物理手柄与摇杆按键，交由自定义键位系统接管
+        if (org.libsdl.app.DynamicGamepadView.instance != null) {
+            int source = event.getSource();
+            // 判断来源是否为物理手柄或摇杆
+            if ((source & android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD ||
+                (source & android.view.InputDevice.SOURCE_JOYSTICK) == android.view.InputDevice.SOURCE_JOYSTICK) {
+                
+                // 将事件抛给动态手柄面板
+                boolean handled = org.libsdl.app.DynamicGamepadView.instance.onPhysicalGamepadKeyEvent(event);
+                // 如果自定义面板接管了该按键，直接返回 true 拦截，禁止原版 SDL 处理
+                if (handled) {
+                    return true;
+                }
+            }
+        }
+
         if (SDLActivity.mBrokenLibraries) {
            return false;
         }
@@ -840,6 +857,28 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             return false;
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        // [新增逻辑]：最高优先级拦截物理摇杆的轴向移动与线性扳机，交由自定义键位系统接管
+        if (org.libsdl.app.DynamicGamepadView.instance != null) {
+            int source = event.getSource();
+            // 判断来源是否为物理摇杆或手柄
+            if ((source & android.view.InputDevice.SOURCE_JOYSTICK) == android.view.InputDevice.SOURCE_JOYSTICK ||
+                (source & android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD) {
+                
+                // 将事件抛给动态手柄面板
+                boolean handled = org.libsdl.app.DynamicGamepadView.instance.onPhysicalGamepadMotionEvent(event);
+                // 如果自定义面板接管了该动作，直接返回 true 销毁事件，禁止原版 SDL 处理
+                if (handled) {
+                    return true;
+                }
+            }
+        }
+        
+        // 如果自定义面板没有接管，或者没有外设接入，则放行给原版逻辑
+        return super.dispatchGenericMotionEvent(event);
     }
 
     public static void handleNativeState() {

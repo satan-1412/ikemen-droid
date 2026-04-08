@@ -96,8 +96,18 @@ import java.util.List;
     // 【新增】全局按压反馈变量
     public boolean isGlobalFeedbackEnabled = true; 
     public int globalFeedbackScaleInt = 85; // 85代表缩小至85%，115代表放大至115%，100代表不变
-    // 【新增】UI 模式切换开关：false 为经典模式，true 为复古街机模式
-    public boolean useRetroUIMode = false; 
+    // ================= 新增：物理手柄系统核心变量 =================
+    public float gamepadDeadzone = 0.2f;      // 摇杆死区/灵敏度 (0.01~1.0)
+    public int gamepadUIMode = 1;             // 手柄联动模式: 0=无反应, 1=屏幕按键同步发光, 2=按下手柄时自动隐藏虚拟按键
+    public boolean isGamepadVibrationOn = true; // 手柄硬件震动开关
+    public java.util.HashMap<Integer, String> gamepadBinds = new java.util.HashMap<>(); // 物理键值 -> 虚拟按键ID 的映射表
+    
+    // 手柄测试与绑定模式的状态锁
+    public boolean isGamepadBindingMode = false;
+    public String currentBindingTargetId = "";
+    public android.app.Dialog currentBindingDialog = null;
+    public android.widget.TextView testFeedbackText = null;
+
 
 
 
@@ -1194,6 +1204,109 @@ import java.util.List;
     }
     
     
+    // =====================================
+    // 物理手柄拦截引擎 (桥接自 SDLActivity)
+    // =====================================
+    public boolean onPhysicalGamepadKeyEvent(KeyEvent event) {
+        int keyCode = event.getKeyCode();
+        boolean isDown = event.getAction() == KeyEvent.ACTION_DOWN;
+
+        // 1. 拦截：按键绑定模式
+        if (isGamepadBindingMode && isDown) {
+            gamepadBinds.put(keyCode, currentBindingTargetId);
+            isGamepadBindingMode = false;
+            if (currentBindingDialog != null) currentBindingDialog.dismiss();
+            Toast.makeText(getContext(), "绑定成功！键值: " + keyCode, Toast.LENGTH_SHORT).show();
+            saveConfig();
+            return true;
+        }
+
+        // 2. 拦截：手柄测试模式
+        if (testFeedbackText != null) {
+            if (isDown) {
+                testFeedbackText.setText("当前按下键值: " + keyCode + "\n尝试触发手柄震动...");
+                triggerHardwareGamepadVibration(event.getDevice());
+            } else {
+                testFeedbackText.setText("手柄已连接，等待按键...");
+            }
+            return true;
+        }
+
+        // 3. 正常游戏模式映射
+        String targetId = gamepadBinds.get(keyCode);
+        
+        // 默认映射兜底 (如果没有自定义映射)
+        if (targetId == null) {
+            if (keyCode == KeyEvent.KEYCODE_BUTTON_A) targetId = "A";
+            else if (keyCode == KeyEvent.KEYCODE_BUTTON_B) targetId = "B";
+            else if (keyCode == KeyEvent.KEYCODE_BUTTON_X) targetId = "X";
+            else if (keyCode == KeyEvent.KEYCODE_BUTTON_Y) targetId = "Y";
+            else if (keyCode == KeyEvent.KEYCODE_BUTTON_R1 || keyCode == KeyEvent.KEYCODE_BUTTON_C) targetId = "C";
+            else if (keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_BUTTON_Z) targetId = "Z";
+            else if (keyCode == KeyEvent.KEYCODE_BUTTON_START) targetId = "START";
+            else if (keyCode == KeyEvent.KEYCODE_BUTTON_SELECT || keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL) targetId = "ESC";
+            else if (keyCode == KeyEvent.KEYCODE_DPAD_UP) targetId = "UP";
+            else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) targetId = "DOWN";
+            else if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) targetId = "LEFT";
+            else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) targetId = "RIGHT";
+        }
+
+        if (targetId != null) {
+            for (VirtualButton btn : buttons) {
+                if (btn.id.equals(targetId)) {
+                    if (isDown && !btn.isPressed) {
+                        btn.isPressed = true;
+                        if (gamepadUIMode == 1) invalidate(); // 屏幕按键同步发光
+                        if (gamepadUIMode == 2 && isLayoutVisible()) hideLayoutTemporarily(); // 隐藏屏幕UI
+                        
+                        if (isGamepadVibrationOn) triggerHardwareGamepadVibration(event.getDevice());
+                        for (int c : btn.keyCodes) SDLActivity.onNativeKeyDown(c);
+                    } else if (!isDown && btn.isPressed) {
+                        btn.isPressed = false;
+                        if (gamepadUIMode == 1) invalidate();
+                        for (int c : btn.keyCodes) SDLActivity.onNativeKeyUp(c);
+                    }
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public boolean onPhysicalGamepadMotionEvent(MotionEvent event) {
+        if (testFeedbackText != null) return true; // 测试模式屏蔽摇杆
+        
+        float x = event.getAxisValue(MotionEvent.AXIS_X);
+        float y = event.getAxisValue(MotionEvent.AXIS_Y);
+        // 如果是右摇杆或者十字键轴向，可以加判断，这里以左摇杆为核心
+        
+        boolean up = y < -gamepadDeadzone;
+        boolean down = y > gamepadDeadzone;
+        boolean left = x < -gamepadDeadzone;
+        boolean right = x > gamepadDeadzone;
+
+        // 映射摇杆到虚拟十字键方向
+        triggerDirection("UP", up);
+        triggerDirection("DOWN", down);
+        triggerDirection("LEFT", left);
+        triggerDirection("RIGHT", right);
+        
+        if (gamepadUIMode == 2 && (up || down || left || right) && isLayoutVisible()) {
+            hideLayoutTemporarily();
+        }
+        return true;
+    }
+
+    private void triggerHardwareGamepadVibration(android.view.InputDevice device) {
+        if (device != null && device.getVibrator().hasVibrator()) {
+            try { device.getVibrator().vibrate(100); } catch(Exception e){}
+        }
+    }
+    private boolean isLayoutVisible() { return getVisibility() == View.VISIBLE; }
+    private void hideLayoutTemporarily() {
+        if (getContext() instanceof SDLActivity) ((SDLActivity)getContext()).cancelAutoHide();
+        setVisibility(View.INVISIBLE); // 隐藏面板本身
+    }
 
             
     // =====================================
@@ -1235,8 +1348,7 @@ import java.util.List;
             removeCallbacks(menuLongPressRunnable); // 抬手时如果在500ms内，取消长按倒计时
             invalidate(); // 取消按下特效
             // 触发短按，打开主菜单
-            if (useRetroUIMode) showRetroMainMenu(); 
-            else showMainMenu();      
+            showMainMenu(); 
             return true;
         }
     
@@ -1433,9 +1545,7 @@ import java.util.List;
                     isMenuDown = false;
                     removeCallbacks(menuLongPressRunnable); 
                     invalidate(); 
-                    if (System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) {
-                        if (useRetroUIMode) showRetroMainMenu(); 
-                        else showMainMenu(); 
+                    if (System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) {                                   showMainMenu();  
                     }
                 } else if (System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) {
                     if (isDraggingJoy) {
@@ -1754,7 +1864,7 @@ import java.util.List;
         layout.addView(createMenuButton("📁 重新选择游戏数据目录", v -> { if (getContext() instanceof SDLActivity) ((SDLActivity) getContext()).checkAndPickFolder(); dialog.dismiss(); }));
         layout.addView(createMenuButton("⏱️ 面板自动隐藏设置", v -> { showAutoHideSettingsDialog(); dialog.dismiss(); }));
         layout.addView(createMenuButton("🎨 按键风格管理系统", v -> { showStyleManagerDialog(); dialog.dismiss(); }));
-        layout.addView(createMenuButton("🕹️ 切换至专业街机面板", v -> { useRetroUIMode = true; saveConfig(); dialog.dismiss(); showRetroMainMenu(); }));
+                layout.addView(createMenuButton("🎮 物理手柄与外设专区", v -> { showGamepadSettingsDialog(); dialog.dismiss(); }));
         layout.addView(createMenuButton("🪟 自定义设置弹窗 UI外观", v -> { showDialogCustomizationSettings(); dialog.dismiss(); }));
 
         scroll.addView(layout);
@@ -3301,8 +3411,16 @@ import java.util.List;
             editor.putBoolean("FS_HideOverlay_" + currentSlot, isFullscreenHideOverlay);
             editor.putBoolean("AutoHide_" + currentSlot, isAutoHideEnabled);
 editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
-            editor.putBoolean("RetroUI_" + currentSlot, useRetroUIMode);
-editor.putInt("DlgBgC_" + currentSlot, dialogBgColor);
+            editor.putFloat("PadDeadzone_" + currentSlot, gamepadDeadzone);
+            editor.putInt("PadUIMode_" + currentSlot, gamepadUIMode);
+            editor.putBoolean("PadVib_" + currentSlot, isGamepadVibrationOn);
+            // 简单序列化按键绑定表
+            org.json.JSONObject bindJson = new org.json.JSONObject();
+            for (java.util.Map.Entry<Integer, String> entry : gamepadBinds.entrySet()) {
+                bindJson.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            editor.putString("PadBinds_" + currentSlot, bindJson.toString());
+            editor.putInt("DlgBgC_" + currentSlot, dialogBgColor);
             editor.putInt("DlgBgA_" + currentSlot, dialogBgAlpha);
             editor.putInt("DlgTxtC_" + currentSlot, dialogTextColor);
             editor.putFloat("DlgTxtS_" + currentSlot, dialogTextSize);
@@ -3413,8 +3531,19 @@ editor.putInt("DlgBgC_" + currentSlot, dialogBgColor);
             overlayRotation2 = prefs.getFloat("OverlayRot2_" + slot, 0f);
             isFullscreenHideOverlay = prefs.getBoolean("FS_HideOverlay_" + slot, false);
             isAutoHideEnabled = prefs.getBoolean("AutoHide_" + slot, true);
-useRetroUIMode = prefs.getBoolean("RetroUI_" + slot, false);
-autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
+            gamepadDeadzone = prefs.getFloat("PadDeadzone_" + slot, 0.2f);
+            gamepadUIMode = prefs.getInt("PadUIMode_" + slot, 1);
+            isGamepadVibrationOn = prefs.getBoolean("PadVib_" + slot, true);
+            gamepadBinds.clear();
+            try {
+                org.json.JSONObject bindJson = new org.json.JSONObject(prefs.getString("PadBinds_" + slot, "{}"));
+                java.util.Iterator<String> keys = bindJson.keys();
+                while(keys.hasNext()) {
+                    String k = keys.next();
+                    gamepadBinds.put(Integer.parseInt(k), bindJson.getString(k));
+                }
+            } catch(Exception e){}
+            autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
             // 读取自定义弹窗 UI 设置
             dialogBgColor = prefs.getInt("DlgBgC_" + slot, Color.parseColor("#222222"));
             dialogBgAlpha = prefs.getInt("DlgBgA_" + slot, 230);
@@ -3794,198 +3923,141 @@ autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
         }
    }     
     // =====================================
-    // 新增：专业复古街机风 UI 系统 (Pro Arcade UI)
+    // 物理手柄控制面板系统
     // =====================================
-    private void showRetroMainMenu() {
+    private void showGamepadSettingsDialog() {
         final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
         dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         
-        // 1. 核心底板：CRT 监视器深黑底色 + 绝对直角边框 (完全摒弃系统圆角)
         LinearLayout rootLayout = new LinearLayout(getContext());
         rootLayout.setOrientation(LinearLayout.VERTICAL);
-        rootLayout.setPadding(10, 10, 10, 10);
-        android.graphics.drawable.GradientDrawable crtBg = new android.graphics.drawable.GradientDrawable();
-        crtBg.setColor(Color.parseColor("#0A0A0A")); // 极深的 CRT 黑
-        crtBg.setStroke(6, Color.parseColor("#555555")); // 工业感灰色粗外框
-        crtBg.setCornerRadius(0f); // 绝对直角！
-        rootLayout.setBackground(crtBg);
+        rootLayout.setBackground(getCustomDialogBackground());
 
-        // 顶栏拖拽条
-        TextView header = new TextView(getContext());
-        header.setText("IKEMEN GO CONTROL PANEL (PRO)");
-        header.setTextColor(Color.parseColor("#FFCC00")); // 街机投币黄
-        header.setTextSize(18f);
-        header.setTypeface(Typeface.DEFAULT_BOLD);
-        header.setGravity(android.view.Gravity.CENTER);
-        header.setPadding(20, 30, 20, 30);
-        header.setBackgroundColor(Color.parseColor("#1A1A1A"));
-        rootLayout.addView(header);
+        TextView dragHandle = new TextView(getContext());
+        dragHandle.setText("✋ 拖拽此处 | 🎮 物理手柄外设专区");
+        android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
+        titleBg.setColor(Color.argb(50, 0, 0, 0));
+        titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
+        dragHandle.setBackground(titleBg); dragHandle.setTextColor(dialogTextColor);
+        dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(dialogTextSize + 2f);
+        dragHandle.setTypeface(null, Typeface.BOLD); rootLayout.addView(dragHandle);
 
-                  ScrollView scroll = new ScrollView(getContext()) {
-            @Override
-            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                // 【核心救命修复】：必须指明是 DynamicGamepadView.this，去拿全屏的真实宽高！
-                // 绝不能让 ScrollView 拿自己还没算出来的高度 (0) 互为因果地死循环！
-                int trueScreenH = Math.min(DynamicGamepadView.this.getWidth(), DynamicGamepadView.this.getHeight());
-                
-                // 按比例截取，留出 120px 给顶部的拖拽条
-                int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
-                
-                // 终极安全锁：防止在极端瞬间（比如横竖屏刚切换还没渲染完）高度变成负数导致崩溃
-                if (maxHeight < 200) {
-                    maxHeight = 200; 
-                }
-                
-                int customHeightSpec = View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST);
-                super.onMeasure(widthMeasureSpec, customHeightSpec);
-            }
-        };
-          
-                        
-                
-        
-        LinearLayout contentLayout = new LinearLayout(getContext());
-        contentLayout.setOrientation(LinearLayout.VERTICAL);
-        contentLayout.setPadding(30, 20, 30, 40);
+        ScrollView scroll = new ScrollView(getContext());
+        LinearLayout layout = new LinearLayout(getContext()); 
+        layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
 
-        // ================= ZONE 1: 操作面板构建区 (红色警示主题) =================
-        contentLayout.addView(createRetroZoneTitle("ZONE 1 : LAYOUT & EDIT", "#FF0033"));
-        LinearLayout zone1 = createRetroZoneContainer("#FF0033");
-        
-        Button btnEdit = createRetroButton(isEditMode ? "💾 保存并退出编辑模式" : "🛠️ 开启全局按键编辑", isEditMode ? "#4CAF50" : "#FF0033");
-        btnEdit.setOnClickListener(v -> { isEditMode = !isEditMode; if (!isEditMode) saveConfig(); invalidate(); dialog.dismiss(); });
-        zone1.addView(btnEdit);
-        
-        Button btnNewBtn = createRetroButton("➕ 新建按键 / 宏映射", "#555555");
-        btnNewBtn.setOnClickListener(v -> { 
-            float scale = Math.max(0.5f, getHeight() / 1080f);
-VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90 * scale, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);             
-            buttons.add(newBtn); isEditMode = true; 
-            // 注意：这里暂时调用经典面板，下一步我们再重构按键设置面板
-            showButtonSettingsDialog(newBtn); dialog.dismiss(); 
+        // 1. 硬件连接测试仪
+        layout.addView(createTitle("1. 手柄通讯与硬件检测"));
+        Button testBtn = new Button(getContext()); testBtn.setText("🕹️ 打开手柄信号检测仪");
+        testBtn.setTextColor(Color.WHITE); testBtn.setBackgroundColor(Color.parseColor("#9C27B0"));
+        testBtn.setOnClickListener(v -> showGamepadTestDialog());
+        layout.addView(testBtn);
+
+        // 2. 灵敏度与视觉联动
+        layout.addView(createTitle("2. 摇杆灵敏度与 UI 联动"));
+        final SeekBar deadzoneBar = createColorBar(layout, "摇杆死区/灵敏度 (%)", (int)(gamepadDeadzone * 100));
+        deadzoneBar.setMax(100);
+        deadzoneBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) { if(fromUser) gamepadDeadzone = p / 100f; }
+            public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
         });
-        zone1.addView(btnNewBtn);
 
-        Button btnGrid = createRetroButton(isGridSnapMode ? "🧲 网格吸附：[ON]" : "🧲 网格吸附：[OFF]", "#555555");
-        btnGrid.setOnClickListener(v -> { isGridSnapMode = !isGridSnapMode; btnGrid.setText(isGridSnapMode ? "🧲 网格吸附：[ON]" : "🧲 网格吸附：[OFF]"); });
-        zone1.addView(btnGrid);
-        contentLayout.addView(zone1);
+        final Spinner uiModeSpinner = new Spinner(getContext());
+        ArrayAdapter<String> modeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, 
+            new String[]{"0 - 屏幕按键无反应", "1 - 手柄按压时屏幕按键同步发光", "2 - 操作手柄时自动隐藏整个屏幕UI"});
+        uiModeSpinner.setAdapter(modeAdapter); uiModeSpinner.setSelection(gamepadUIMode);
+        layout.addView(uiModeSpinner);
 
-        // ================= ZONE 2: 视觉与机台美化 (霓虹蓝主题) =================
-        contentLayout.addView(createRetroZoneTitle("ZONE 2 : VISUAL & STYLE", "#00FFFF"));
-        LinearLayout zone2 = createRetroZoneContainer("#00FFFF");
-        
-        Button btnStyle = createRetroButton("🎨 风格管理系统 (Style System)", "#555555");
-        btnStyle.setOnClickListener(v -> { showStyleManagerDialog(); dialog.dismiss(); });
-        zone2.addView(btnStyle);
-        
-        String joyText = "🕹️ 摇杆形态: " + (joystickMode==0?"分离十字键":joystickMode==1?"现代白圆盘":joystickMode==2?"经典红杆":joystickMode==3?"十字型八键":"跟随当前风格");
-        Button btnJoy = createRetroButton(joyText, "#555555");
-        btnJoy.setOnClickListener(v -> { joystickMode = (joystickMode + 1) % 5; if (joystickMode == JOYSTICK_MODE_STYLE) refreshJoystickStyle(); saveConfig(); invalidate(); dialog.dismiss(); showRetroMainMenu(); });
-        zone2.addView(btnJoy);
-
-        Button btnOverlay = createRetroButton("🖼️ 屏幕遮罩引擎配置", "#555555");
-        btnOverlay.setOnClickListener(v -> { showOverlaySettingsDialog(); dialog.dismiss(); });
-        zone2.addView(btnOverlay);
-        contentLayout.addView(zone2);
-
-        // ================= ZONE 3: 硬件与系统控制 (工业黄主题) =================
-        contentLayout.addView(createRetroZoneTitle("ZONE 3 : HARDWARE & SYS", "#FFCC00"));
-        LinearLayout zone3 = createRetroZoneContainer("#FFCC00");
-        
-        Button btnVib = createRetroButton("📳 物理震动与强度调配", "#555555");
-        btnVib.setOnClickListener(v -> { showVibrationSettingsDialog(); dialog.dismiss(); });
-        zone3.addView(btnVib);
-
-        Button btnAuto = createRetroButton("⏱️ 自动隐藏延迟控制", "#555555");
-        btnAuto.setOnClickListener(v -> { showAutoHideSettingsDialog(); dialog.dismiss(); });
-        zone3.addView(btnAuto);
-
-        Button btnDir = createRetroButton("📁 重新挂载游戏数据目录", "#555555");
-        btnDir.setOnClickListener(v -> { 
-            if (getContext() instanceof SDLActivity) ((SDLActivity) getContext()).checkAndPickFolder();
-            dialog.dismiss();
+        // 3. 外设物理震动
+        layout.addView(createTitle("3. 外设硬件震动 (依赖系统驱动)"));
+        final Button vibBtn = new Button(getContext());
+        vibBtn.setText(isGamepadVibrationOn ? "📳 外设实体震动：已开启" : "📳 外设实体震动：已关闭");
+        vibBtn.setTextColor(Color.WHITE);
+        vibBtn.setBackgroundColor(isGamepadVibrationOn ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
+        vibBtn.setOnClickListener(v -> {
+            isGamepadVibrationOn = !isGamepadVibrationOn;
+            vibBtn.setText(isGamepadVibrationOn ? "📳 外设实体震动：已开启" : "📳 外设实体震动：已关闭");
+            vibBtn.setBackgroundColor(isGamepadVibrationOn ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
         });
-        zone3.addView(btnDir);
-        contentLayout.addView(zone3);
+        layout.addView(vibBtn);
 
-        // ================= ZONE 4: 记忆卡与插槽 (电路板绿主题) =================
-        contentLayout.addView(createRetroZoneTitle("ZONE 4 : MEMORY CARD", "#4CAF50"));
-        LinearLayout zone4 = createRetroZoneContainer("#4CAF50");
+        // 4. 自定义改键
+        layout.addView(createTitle("4. 外设自定义映射 (改键)"));
+        Button bindBtn = new Button(getContext()); bindBtn.setText("🛠️ 进入手柄自定义映射模式");
+        bindBtn.setTextColor(Color.WHITE); bindBtn.setBackgroundColor(Color.parseColor("#FF9800"));
+        bindBtn.setOnClickListener(v -> { dialog.dismiss(); showGamepadBindingManager(); });
+        layout.addView(bindBtn);
+
+        // 底部保存按钮
+        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存设置");
+        saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); p.setMargins(0, 40, 0, 0); saveBtn.setLayoutParams(p);
+        saveBtn.setOnClickListener(v -> { gamepadUIMode = uiModeSpinner.getSelectedItemPosition(); saveConfig(); dialog.dismiss(); });
+        layout.addView(saveBtn);
+
+        scroll.addView(layout); rootLayout.addView(scroll);
+        dialog.setContentView(rootLayout); setupMovableDialog(dialog, dragHandle); dialog.show();
+    }
+
+    private void showGamepadTestDialog() {
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         
-        Button btnFile = createRetroButton("📂 布局存档与导入导出", "#555555");
-        btnFile.setOnClickListener(v -> { showProfileManager(); dialog.dismiss(); });
-        zone4.addView(btnFile);
-
-        Button btnReset = createRetroButton("⚠️ 格式化：恢复出厂布局", "#8B0000"); // 深红色警告
-        btnReset.setOnClickListener(v -> {
-            new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle("⚠️ SYSTEM WARNING").setMessage("确定抹除所有自定义数据，恢复出厂设置吗？")
-                .setPositiveButton("EXECUTE (执行)", (d, w) -> { loadDefaultLayout(); saveConfig(); invalidate(); dialog.dismiss(); })
-                .setNegativeButton("CANCEL (取消)", null).show();
-        });
-        zone4.addView(btnReset);
-        contentLayout.addView(zone4);
-
-        // ================= 底部：退回经典模式 =================
-        Button btnSwitchBack = createRetroButton("↩ 退回经典 UI 模式", "#333333");
-        btnSwitchBack.setOnClickListener(v -> { useRetroUIMode = false; saveConfig(); dialog.dismiss(); showMainMenu(); });
-        LinearLayout.LayoutParams bottomParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        bottomParams.setMargins(0, 40, 0, 0);
-        btnSwitchBack.setLayoutParams(bottomParams);
-        contentLayout.addView(btnSwitchBack);
-
-        scroll.addView(contentLayout);
-        rootLayout.addView(scroll);
+        LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setBackgroundColor(Color.parseColor("#222222")); layout.setPadding(60, 60, 60, 60);
         
-        dialog.setContentView(rootLayout);
-        setupMovableDialog(dialog, header); // 复用你的拖拽逻辑
+        TextView title = new TextView(getContext()); title.setText("📡 手柄信号接收测试仪");
+        title.setTextColor(Color.GREEN); title.setTextSize(20f); title.setGravity(android.view.Gravity.CENTER);
+        layout.addView(title);
+
+        testFeedbackText = new TextView(getContext());
+        testFeedbackText.setText("请随意按下手柄任意按键...\n(测试期间会拦截所有引擎指令)");
+        testFeedbackText.setTextColor(Color.WHITE); testFeedbackText.setTextSize(16f); testFeedbackText.setPadding(0, 40, 0, 40);
+        layout.addView(testFeedbackText);
+
+        Button closeBtn = new Button(getContext()); closeBtn.setText("结束测试");
+        closeBtn.setOnClickListener(v -> { testFeedbackText = null; dialog.dismiss(); });
+        layout.addView(closeBtn);
+        
+        dialog.setContentView(layout); 
+        dialog.setOnDismissListener(d -> testFeedbackText = null);
         dialog.show();
     }
 
-    // --- 以下是生成复古 UI 组件的辅助工具方法 ---
+    private void showGamepadBindingManager() {
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        
+        LinearLayout rootLayout = new LinearLayout(getContext()); rootLayout.setOrientation(LinearLayout.VERTICAL); rootLayout.setBackground(getCustomDialogBackground());
+        TextView header = new TextView(getContext()); header.setText("✋ 拖拽此处 | 🛠️ 手柄映射管理器");
+        header.setTextColor(dialogTextColor); header.setPadding(40, 30, 40, 30); header.setTextSize(dialogTextSize + 2f); header.setTypeface(null, Typeface.BOLD); rootLayout.addView(header);
 
-    private TextView createRetroZoneTitle(String text, String hexColor) {
-        TextView tv = new TextView(getContext());
-        tv.setText(text);
-        tv.setTextColor(Color.parseColor(hexColor));
-        tv.setTextSize(14f);
-        tv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD); // 暂时使用自带等宽字体模拟像素感
-        tv.setPadding(10, 30, 0, 10);
-        return tv;
-    }
+        ScrollView scroll = new ScrollView(getContext()); LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(40, 20, 40, 40);
+        layout.addView(createTitle("请选择你要绑定手柄按键的【屏幕虚拟键】:"));
+        
+        for (VirtualButton btn : buttons) {
+            Button targetBtn = new Button(getContext());
+            targetBtn.setText("绑定手柄按键 -> [" + btn.id + "]");
+            targetBtn.setOnClickListener(v -> {
+                isGamepadBindingMode = true; currentBindingTargetId = btn.id;
+                currentBindingDialog = new android.app.Dialog(getContext());
+                TextView tv = new TextView(getContext()); tv.setText("请按下外设手柄上想要绑定到 [" + btn.id + "] 的按键...");
+                tv.setTextColor(Color.WHITE); tv.setTextSize(18f); tv.setPadding(60,60,60,60);
+                currentBindingDialog.setContentView(tv); currentBindingDialog.show();
+            });
+            layout.addView(targetBtn);
+        }
+        
+        Button clearBtn = new Button(getContext()); clearBtn.setText("❌ 清除所有自定义绑定 (恢复默认)");
+        clearBtn.setTextColor(Color.WHITE); clearBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
+        clearBtn.setOnClickListener(v -> { gamepadBinds.clear(); saveConfig(); Toast.makeText(getContext(), "已清空", Toast.LENGTH_SHORT).show(); });
+        layout.addView(clearBtn);
 
-        private LinearLayout createRetroZoneContainer(String borderColorHex) {
-        LinearLayout layout = new LinearLayout(getContext());
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(20, 20, 20, 20);
-        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-        bg.setColor(Color.parseColor("#121212")); // 略浅一点的黑底
-        bg.setStroke(2, Color.parseColor(borderColorHex)); // 细线霓虹边框
-        bg.setCornerRadius(0f); // 绝对直角
-        
-        layout.setBackground(bg);  // <---- 【补上这一句就完美了】
-        
-        return layout;
-    }
-    
+        Button exitBtn = new Button(getContext()); exitBtn.setText("退出管理器");
+        exitBtn.setOnClickListener(v -> dialog.dismiss());
+        layout.addView(exitBtn);
 
-    private Button createRetroButton(String text, String bgColorHex) {
-        Button btn = new Button(getContext());
-        btn.setText(text);
-        btn.setTextColor(Color.WHITE);
-        btn.setTextSize(13f);
-        btn.setTypeface(Typeface.DEFAULT_BOLD);
-        
-        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-        bg.setColor(Color.parseColor(bgColorHex));
-        bg.setCornerRadius(0f); // 绝对直角
-        bg.setStroke(2, Color.BLACK); // 黑色内嵌描边增加立体感
-        btn.setBackground(bg);
-        
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 10, 0, 10);
-        btn.setLayoutParams(params);
-        return btn;
+        scroll.addView(layout); rootLayout.addView(scroll);
+        dialog.setContentView(rootLayout); setupMovableDialog(dialog, header); dialog.show();
     }
-}    
+} // <==== 注意：确保代码的最后以这个大括号结尾！
