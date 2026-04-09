@@ -3437,12 +3437,6 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             editor.putFloat("PadDeadzone_" + currentSlot, gamepadDeadzone);
             editor.putInt("PadUIMode_" + currentSlot, gamepadUIMode);
             editor.putBoolean("PadVib_" + currentSlot, isGamepadVibrationOn);
-            // 简单序列化按键绑定表
-            org.json.JSONObject bindJson = new org.json.JSONObject();
-            for (java.util.Map.Entry<Integer, String> entry : gamepadBinds.entrySet()) {
-                bindJson.put(String.valueOf(entry.getKey()), entry.getValue());
-            }
-            editor.putString("PadBinds_" + currentSlot, bindJson.toString());
             editor.putInt("DlgBgC_" + currentSlot, dialogBgColor);
             editor.putInt("DlgBgA_" + currentSlot, dialogBgAlpha);
             editor.putInt("DlgTxtC_" + currentSlot, dialogTextColor);
@@ -3557,16 +3551,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             isAutoHideEnabled = prefs.getBoolean("AutoHide_" + slot, true);
             gamepadDeadzone = prefs.getFloat("PadDeadzone_" + slot, 0.2f);
             gamepadUIMode = prefs.getInt("PadUIMode_" + slot, 1);
-            isGamepadVibrationOn = prefs.getBoolean("PadVib_" + slot, true);
-            gamepadBinds.clear();
-            try {
-                org.json.JSONObject bindJson = new org.json.JSONObject(prefs.getString("PadBinds_" + slot, "{}"));
-                java.util.Iterator<String> keys = bindJson.keys();
-                while(keys.hasNext()) {
-                    String k = keys.next();
-                    gamepadBinds.put(Integer.parseInt(k), bindJson.getString(k));
-                }
-            } catch(Exception e){}
+            isGamepadVibrationOn = prefs.getBoolean("PadVib_" + slot, true);           
             autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
             // 读取自定义弹窗 UI 设置
             dialogBgColor = prefs.getInt("DlgBgC_" + slot, Color.parseColor("#222222"));
