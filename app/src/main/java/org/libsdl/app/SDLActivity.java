@@ -79,6 +79,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
     public static boolean mIsResumedCalled, mHasFocus;
     public static final boolean mHasMultiWindow = (Build.VERSION.SDK_INT >= 24  /* Android 7.0 (N) */);
+    public static boolean mHasPromptedFolderThisSession = false; // 【核心修复】防止引擎切换横竖屏导致无限选目录的冷启动锁
 
     // Cursor types
     private static final int SDL_SYSTEM_CURSOR_ARROW = 0;
@@ -390,10 +391,14 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         if (USE_FOLDER_SELECT) {
             mBasePath = mSharedPrefs.getString(getString(R.string.game_folder_key), "");
-            // 【新增】读取控制面板的全局变量，决定是否强制重新选择目录（默认开启）
             boolean alwaysAsk = this.getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE).getBoolean("AlwaysAskFolder", true);
-            if (alwaysAsk) mBasePath = ""; // 强制清空路径，触发重新选择
+            // 【核心修复】：只有在真正的进程冷启动时才清空路径，防止引擎重置画面时引发死循环
+            if (alwaysAsk && !mHasPromptedFolderThisSession) {
+                mBasePath = ""; 
+                mHasPromptedFolderThisSession = true; // 标记本次游戏进程已触发过选择，下次重启屏幕时失效
+            }
         } else {
+
 
             mBasePath = getExternalFilesDir(null).getAbsolutePath();
         }
