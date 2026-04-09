@@ -1279,6 +1279,7 @@ import java.util.List;
         return handled;
     }
 
+    public boolean onPhysicalGamepadMotionEvent(MotionEvent event) {
         if (testFeedbackText != null) return true; // 测试模式屏蔽摇杆
         
         float x = event.getAxisValue(MotionEvent.AXIS_X);
