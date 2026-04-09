@@ -74,6 +74,9 @@ import java.util.List;
     public Bitmap menuPressedSkinBitmap = null;
     public int menuPressedEffectColor = 0;
     public int menuPressedEffectAlpha = 150;
+    public String menuButtonName = "⚙ 高级设置"; // 【新增】菜单按钮自定义名字
+    public static boolean alwaysAskFolder = true; // 【新增】每次启动选择目录开关 (全局生效)
+
 
     // ================= 全局弹窗 UI 自定义系统变量 (被误删的变量补回) =================
     public int dialogBgColor = Color.parseColor("#222222"); 
@@ -891,10 +894,14 @@ import java.util.List;
         paintText.setAlpha(currentMenuAlpha);
         paintText.setTextSize(38f * menuScale * (menuTextSizeFactor / 100f));
         paintText.setShadowLayer(3f, 1f, 1f, (menuTextColor == Color.BLACK) ? Color.WHITE : Color.BLACK);
-        paintText.setTextAlign(Paint.Align.CENTER);
+                paintText.setTextAlign(Paint.Align.CENTER);
         float textOffset = (paintText.descent() - paintText.ascent()) / 2 - paintText.descent();
-        canvas.drawText("⚙ 高级设置", menuButtonRect.centerX(), menuButtonRect.centerY() + textOffset, paintText);
+        // 【修改】如果自定义名字不为空，才绘制文字
+        if (menuButtonName != null && !menuButtonName.trim().isEmpty()) {
+            canvas.drawText(menuButtonName, menuButtonRect.centerX(), menuButtonRect.centerY() + textOffset, paintText);
+        }
         paintText.clearShadowLayer();
+
 
         if (isEditMode) {
             paintBtn.setStyle(Paint.Style.STROKE); 
@@ -1279,29 +1286,45 @@ import java.util.List;
         return handled;
     }
 
-    public boolean onPhysicalGamepadMotionEvent(MotionEvent event) {
+        public boolean onPhysicalGamepadMotionEvent(MotionEvent event) {
         if (testFeedbackText != null) return true; // 测试模式屏蔽摇杆
         
         float x = event.getAxisValue(MotionEvent.AXIS_X);
         float y = event.getAxisValue(MotionEvent.AXIS_Y);
-        // 如果是右摇杆或者十字键轴向，可以加判断，这里以左摇杆为核心
         
         boolean up = y < -gamepadDeadzone;
         boolean down = y > gamepadDeadzone;
         boolean left = x < -gamepadDeadzone;
         boolean right = x > gamepadDeadzone;
 
-        // 映射摇杆到虚拟十字键方向
+        // 1. 映射物理摇杆到虚拟十字键状态 (发送 SDL 信号 + 方向键发光)
         triggerDirection("UP", up);
         triggerDirection("DOWN", down);
         triggerDirection("LEFT", left);
         triggerDirection("RIGHT", right);
         
+        // 2. 【新增】同步屏幕上的摇杆球视觉位置
+        if (joystickMode > 0) {
+            float dist = (float) Math.hypot(x, y);
+            if (dist > 1.0f) dist = 1.0f; // 限制最大半径比例
+            if (dist > gamepadDeadzone) {
+                float maxDist = joyRadius * 0.75f;
+                joyKnobX = joyBaseX + x * maxDist;
+                joyKnobY = joyBaseY + y * maxDist;
+            } else {
+                joyKnobX = joyBaseX;
+                joyKnobY = joyBaseY;
+            }
+        }
+        
+        // 3. UI 联动与刷新
+        if (gamepadUIMode == 1) invalidate(); // 屏幕按键/摇杆球同步刷新
         if (gamepadUIMode == 2 && (up || down || left || right) && isLayoutVisible()) {
             hideLayoutTemporarily();
         }
         return true;
     }
+
 
     private void triggerHardwareGamepadVibration(android.view.InputDevice device) {
         if (device != null && device.getVibrator().hasVibrator()) {
@@ -1656,8 +1679,13 @@ import java.util.List;
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(50, 20, 50, 50);
 
+        layout.addView(createTitle("0. 菜单自定义文字 (留空则不显示文字):"));
+        final EditText nameInput = createEditText("例如: ⚙ 高级设置", menuButtonName);
+        layout.addView(nameInput);
+
         layout.addView(createTitle("1. 菜单位置锁定:"));
         final Button lockBtn = new Button(getContext());
+
         lockBtn.setText(isMenuLocked ? "🔒 拖拽位置锁定：已开启" : "🔓 拖拽位置锁定：已关闭");
         lockBtn.setTextColor(Color.WHITE);
         lockBtn.setBackgroundColor(isMenuLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50"));
@@ -1792,6 +1820,7 @@ import java.util.List;
         LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); saveParams.setMargins(20, 0, 0, 0); saveBtn.setLayoutParams(saveParams);
         
         saveBtn.setOnClickListener(v -> {
+            menuButtonName = nameInput.getText().toString(); // 获取新名字
             menuTextColor = TEXT_COLOR_VALUES[textColorSpinner.getSelectedItemPosition()];
             menuShape = shapeSpinner.getSelectedItemPosition(); 
             saveConfig(); invalidate(); dialog.dismiss();
@@ -1868,6 +1897,14 @@ import java.util.List;
         layout.addView(createMenuButton("🖼️ 屏幕遮罩详细设置", v -> { showOverlaySettingsDialog(); dialog.dismiss(); }));
         layout.addView(createMenuButton(isOverlayVisible ? "👁️ 隐藏遮罩图 (当前:显示)" : "👁️ 显示遮罩图 (当前:隐藏)", v -> { isOverlayVisible = !isOverlayVisible; invalidate(); dialog.dismiss(); showMainMenu(); }));
         layout.addView(createMenuButton("📁 重新选择游戏数据目录", v -> { if (getContext() instanceof SDLActivity) ((SDLActivity) getContext()).checkAndPickFolder(); dialog.dismiss(); }));
+        
+        layout.addView(createMenuButton(alwaysAskFolder ? "📂 每次启动强制重选目录: [已开启]" : "📂 每次启动强制重选目录: [已关闭]", v -> {
+            alwaysAskFolder = !alwaysAskFolder;
+            saveConfig();
+            Toast.makeText(getContext(), alwaysAskFolder ? "已开启: 每次启动/更新都会提示选择目录" : "已关闭: 启动时将直接进入上次的目录", Toast.LENGTH_SHORT).show();
+            dialog.dismiss(); showMainMenu();
+        }));
+
         layout.addView(createMenuButton("⏱️ 面板自动隐藏设置", v -> { showAutoHideSettingsDialog(); dialog.dismiss(); }));
         layout.addView(createMenuButton("🎨 按键风格管理系统", v -> { showStyleManagerDialog(); dialog.dismiss(); }));
                 layout.addView(createMenuButton("🎮 物理手柄与外设专区", v -> { showGamepadSettingsDialog(); dialog.dismiss(); }));
@@ -3455,9 +3492,12 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             editor.putInt("MenuTextColor_" + currentSlot, menuTextColor);
             editor.putInt("MenuTextSizeFactor_" + currentSlot, menuTextSizeFactor);
             editor.putInt("MenuShape_" + currentSlot, menuShape);
-            editor.putString("MenuPressedSkin_" + currentSlot, menuPressedSkinUri);
+             editor.putString("MenuPressedSkin_" + currentSlot, menuPressedSkinUri);
             editor.putInt("MenuPressedColor_" + currentSlot, menuPressedEffectColor);
             editor.putInt("MenuPressedAlpha_" + currentSlot, menuPressedEffectAlpha);
+            editor.putString("MenuButtonName_" + currentSlot, menuButtonName);
+            editor.putBoolean("AlwaysAskFolder", alwaysAskFolder); // 全局保存
+
 
             JSONArray styleArr = new JSONArray();
             for(GamepadStyle s : styleList) styleArr.put(s.toJson());
@@ -3609,6 +3649,9 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             menuPressedSkinUri = prefs.getString("MenuPressedSkin_" + slot, "");
             menuPressedEffectColor = prefs.getInt("MenuPressedColor_" + slot, 0);
             menuPressedEffectAlpha = prefs.getInt("MenuPressedAlpha_" + slot, 150);
+            menuButtonName = prefs.getString("MenuButtonName_" + slot, "⚙ 高级设置");
+            alwaysAskFolder = prefs.getBoolean("AlwaysAskFolder", true);
+
 
             if(!menuPressedSkinUri.isEmpty()) { 
                 try {

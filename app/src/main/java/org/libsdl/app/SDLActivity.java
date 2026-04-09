@@ -390,7 +390,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         if (USE_FOLDER_SELECT) {
             mBasePath = mSharedPrefs.getString(getString(R.string.game_folder_key), "");
+            // 【新增】读取控制面板的全局变量，决定是否强制重新选择目录（默认开启）
+            boolean alwaysAsk = this.getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE).getBoolean("AlwaysAskFolder", true);
+            if (alwaysAsk) mBasePath = ""; // 强制清空路径，触发重新选择
         } else {
+
             mBasePath = getExternalFilesDir(null).getAbsolutePath();
         }
 
