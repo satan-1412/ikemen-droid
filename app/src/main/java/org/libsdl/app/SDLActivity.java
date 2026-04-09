@@ -492,7 +492,8 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == FOLDER_PICKER_CODE) {
-            boolean isFreshRun = (mBasePath == null);
+            // 【修复】：加入 isEmpty() 判断，彻底阻断重启导致的无限死循环
+            boolean isFreshRun = (mBasePath == null || mBasePath.isEmpty());
             if (resultCode == RESULT_OK) {
                 if (data != null) {
                     Uri treeUri = data.getData();
