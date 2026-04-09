@@ -1,4 +1,4 @@
-package org.libsdl.app;
+Package org.libsdl.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -79,7 +79,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
     public static boolean mIsResumedCalled, mHasFocus;
     public static final boolean mHasMultiWindow = (Build.VERSION.SDK_INT >= 24  /* Android 7.0 (N) */);
-    public static boolean mHasPromptedFolderThisSession = false; // 【核心修复】防止引擎切换横竖屏导致无限选目录的冷启动锁
+    public static boolean mHasPromptedFolderThisSession = false; 
+    public static boolean mIsPickerActive = false; // 【终极修复】防止 onResume 触发双重弹窗的绝对物理锁
+
 
     // Cursor types
     private static final int SDL_SYSTEM_CURSOR_ARROW = 0;
@@ -392,12 +394,22 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         if (USE_FOLDER_SELECT) {
             mBasePath = mSharedPrefs.getString(getString(R.string.game_folder_key), "");
             boolean alwaysAsk = this.getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE).getBoolean("AlwaysAskFolder", true);
-            // 【核心修复】：只有在真正的进程冷启动时才清空路径，防止引擎重置画面时引发死循环
-            if (alwaysAsk && !mHasPromptedFolderThisSession) {
+            
+            // 【完美闭环】：如果是玩家刚才在菜单里点“重选目录”引发的重启，强制跳过开局询问
+            boolean skipNextAsk = mSharedPrefs.getBoolean("SkipNextAsk", false);
+            if (skipNextAsk) {
+                alwaysAsk = false;
+                mSharedPrefs.edit().putBoolean("SkipNextAsk", false).commit(); // 阅后即焚
+            }
+
+            // 【究极修复】：只有在游戏底层引擎尚未启动且本回合未弹窗时，才清空路径强制重选
+            if (alwaysAsk && mSDLThread == null && !mHasPromptedFolderThisSession) {
                 mBasePath = ""; 
-                mHasPromptedFolderThisSession = true; // 标记本次游戏进程已触发过选择，下次重启屏幕时失效
+                mHasPromptedFolderThisSession = true; 
             }
         } else {
+
+
 
 
             mBasePath = getExternalFilesDir(null).getAbsolutePath();
@@ -497,32 +509,38 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == FOLDER_PICKER_CODE) {
-            // 【修复】：加入 isEmpty() 判断，彻底阻断重启导致的无限死循环
-            boolean isFreshRun = (mBasePath == null || mBasePath.isEmpty());
-            if (resultCode == RESULT_OK) {
-                if (data != null) {
-                    Uri treeUri = data.getData();
-                    getContentResolver().takePersistableUriPermission(treeUri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                    String selectedPath = getFullPathFromTreeUri(treeUri);
-                    if (selectedPath != null && !selectedPath.isEmpty()) {
-                        mBasePath = selectedPath;
-                    } else {
-                        mBasePath = getExternalFilesDir(null).getAbsolutePath();
-                    }
-                } else if (isFreshRun) {
+            mIsPickerActive = false; // 解除防连弹物理锁
+            
+            // 【究极防死循环判定】：不要管路径空不空，直接看底层引擎有没有在跑！没跑就是开局，绝对不准重启！
+            boolean isFreshRun = (mSDLThread == null);
+            
+            if (resultCode == RESULT_OK && data != null) {
+                Uri treeUri = data.getData();
+                getContentResolver().takePersistableUriPermission(treeUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                String selectedPath = getFullPathFromTreeUri(treeUri);
+                if (selectedPath != null && !selectedPath.isEmpty()) {
+                    mBasePath = selectedPath;
+                } else {
                     mBasePath = getExternalFilesDir(null).getAbsolutePath();
                 }
-            } else if (isFreshRun) {
-                mBasePath = getExternalFilesDir(null).getAbsolutePath();
+            } else {
+                if (mBasePath == null || mBasePath.isEmpty()) {
+                    mBasePath = getExternalFilesDir(null).getAbsolutePath();
+                }
             }
+            
             mSharedPrefs.edit().putString(getString(R.string.game_folder_key), mBasePath).commit();
 
             if (isFreshRun) {
-                setupContent();
+                // 如果是冷启动，选完目录直接放行进入游戏！
+                setupContent(); 
             } else {
-                Intent intent = getBaseContext().getPackageManager()
-                        .getLaunchIntentForPackage(getBaseContext().getPackageName());
+                // 【完美闭环】：写入免打扰标记，告诉下一次启动“这是我主动重启的，别再弹框烦我”
+                mSharedPrefs.edit().putBoolean("SkipNextAsk", true).commit();
+
+                // 只有游戏已经在运行（玩家在菜单里点了“重选目录”），此时才必须杀进程重启App
+                Intent intent = getBaseContext().getPackageManager().getLaunchIntentForPackage(getBaseContext().getPackageName());
                 intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
                 startActivity(intent);
                 android.os.Process.killProcess(android.os.Process.myPid());
@@ -531,14 +549,21 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         }
     }
 
+
+
     public void openDirectoryPicker() {
+        if (mIsPickerActive) return; 
+        mIsPickerActive = true;
+
         if (Build.VERSION.SDK_INT < 24) {
             Log.i(TAG, "检测到旧版安卓(API < 24)，自动指定根目录 IkemenGO 文件夹");
+            mIsPickerActive = false; 
             File defaultGameDir = new File(Environment.getExternalStorageDirectory(), "IkemenGO");
             if (!defaultGameDir.exists()) {
                 defaultGameDir.mkdirs();
             }
             mBasePath = defaultGameDir.getAbsolutePath();
+            // 【修复你代码里的中文逗号报错】
             mSharedPrefs.edit().putString(getString(R.string.game_folder_key), mBasePath).commit();
             setupContent();
         } else {
@@ -546,6 +571,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             startActivityForResult(intent, FOLDER_PICKER_CODE);
         }
     }
+
 
     private boolean filesNeedUpdate(File baseDir, String[] dirsToCheck) {
         try {
