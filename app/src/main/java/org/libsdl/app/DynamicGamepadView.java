@@ -100,11 +100,9 @@ import java.util.List;
     public float gamepadDeadzone = 0.2f;      // 摇杆死区/灵敏度 (0.01~1.0)
     public int gamepadUIMode = 1;             // 手柄联动模式: 0=无反应, 1=屏幕按键同步发光, 2=按下手柄时自动隐藏虚拟按键
     public boolean isGamepadVibrationOn = true; // 手柄硬件震动开关
-    public java.util.HashMap<Integer, String> gamepadBinds = new java.util.HashMap<>(); // 物理键值 -> 虚拟按键ID 的映射表
-    
     // 手柄测试与绑定模式的状态锁
     public boolean isGamepadBindingMode = false;
-    public String currentBindingTargetId = "";
+    public VirtualButton currentBindingTargetButton = null;
     public android.app.Dialog currentBindingDialog = null;
     public android.widget.TextView testFeedbackText = null;
 
@@ -253,7 +251,8 @@ import java.util.List;
         public List<List<Integer>> macroSteps = new ArrayList<>(); 
                 
         public long pressTimestamp = 0; // 【新增】记录精准按下时间戳，用于防吃键
-                public boolean isTurbo = false; // 【新增】是否开启连发
+         public int boundGamepadKeyCode = 0; // 【新增】记录该虚拟键绑定的物理手柄键值 (0为无)
+        public boolean isTurbo = false; // 【新增】是否开启连发
         public int turboInterval = 40; 
         private volatile boolean turboRunning = false; // 【新增】连发线程控制锁
         
@@ -1204,76 +1203,82 @@ import java.util.List;
     }
     
     
-    // =====================================
-    // 物理手柄拦截引擎 (桥接自 SDLActivity)
-    // =====================================
     public boolean onPhysicalGamepadKeyEvent(KeyEvent event) {
         int keyCode = event.getKeyCode();
         boolean isDown = event.getAction() == KeyEvent.ACTION_DOWN;
 
-        // 1. 拦截：按键绑定模式
+        // 1. 拦截：手柄绑定模式 (核心：生成或绑定虚拟按键)
         if (isGamepadBindingMode && isDown) {
-            gamepadBinds.put(keyCode, currentBindingTargetId);
             isGamepadBindingMode = false;
             if (currentBindingDialog != null) currentBindingDialog.dismiss();
-            Toast.makeText(getContext(), "绑定成功！键值: " + keyCode, Toast.LENGTH_SHORT).show();
+
+            if (currentBindingTargetButton != null) {
+                // 模式A：绑定到现有的预设屏幕按键
+                currentBindingTargetButton.boundGamepadKeyCode = keyCode;
+                Toast.makeText(getContext(), "绑定成功！[" + currentBindingTargetButton.id + "] 已绑定手柄键值: " + keyCode, Toast.LENGTH_SHORT).show();
+            } else {
+                // 模式B：按下手柄，直接在屏幕中央无中生有出一个新按键
+                float scale = Math.max(0.5f, getHeight() / 1080f);
+                VirtualButton newBtn = new VirtualButton("待绑定", getWidth() / 2f, getHeight() / 2f, 90 * scale, Color.parseColor("#9C27B0"), 200, Color.WHITE, SHAPE_CIRCLE, "", false);
+                newBtn.boundGamepadKeyCode = keyCode;
+                buttons.add(newBtn);
+                isEditMode = true; // 强制进入编辑模式，方便玩家待会儿直接拖走它
+                showButtonSettingsDialog(newBtn); // 瞬间弹出设置面板
+                Toast.makeText(getContext(), "已捕捉手柄键值: " + keyCode + "，请配置功能并拖动位置", Toast.LENGTH_LONG).show();
+            }
             saveConfig();
             return true;
         }
 
-        // 2. 拦截：手柄测试模式
+        // 2. 拦截：测试仪模式
         if (testFeedbackText != null) {
             if (isDown) {
                 testFeedbackText.setText("当前按下键值: " + keyCode + "\n尝试触发手柄震动...");
                 triggerHardwareGamepadVibration(event.getDevice());
-            } else {
-                testFeedbackText.setText("手柄已连接，等待按键...");
-            }
+            } else { testFeedbackText.setText("手柄已连接，等待按键..."); }
             return true;
         }
 
-        // 3. 正常游戏模式映射
-        String targetId = gamepadBinds.get(keyCode);
-        
-        // 默认映射兜底 (如果没有自定义映射)
-        if (targetId == null) {
-            if (keyCode == KeyEvent.KEYCODE_BUTTON_A) targetId = "A";
-            else if (keyCode == KeyEvent.KEYCODE_BUTTON_B) targetId = "B";
-            else if (keyCode == KeyEvent.KEYCODE_BUTTON_X) targetId = "X";
-            else if (keyCode == KeyEvent.KEYCODE_BUTTON_Y) targetId = "Y";
-            else if (keyCode == KeyEvent.KEYCODE_BUTTON_R1 || keyCode == KeyEvent.KEYCODE_BUTTON_C) targetId = "C";
-            else if (keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_BUTTON_Z) targetId = "Z";
-            else if (keyCode == KeyEvent.KEYCODE_BUTTON_START) targetId = "START";
-            else if (keyCode == KeyEvent.KEYCODE_BUTTON_SELECT || keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL) targetId = "ESC";
-            else if (keyCode == KeyEvent.KEYCODE_DPAD_UP) targetId = "UP";
-            else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) targetId = "DOWN";
-            else if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) targetId = "LEFT";
-            else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) targetId = "RIGHT";
-        }
+        // 3. 正常游戏模式 (直接扫描屏幕上的所有按键)
+        boolean handled = false;
+        for (VirtualButton btn : buttons) {
+            // 优先检查玩家自定义绑定的物理键
+            boolean match = (btn.boundGamepadKeyCode == keyCode);
+            
+            // 兜底逻辑：如果这个虚拟按键还没被自定义绑定过，我们给标准手柄一个默认支持
+            if (!match && btn.boundGamepadKeyCode == 0) {
+                if (keyCode == KeyEvent.KEYCODE_BUTTON_A && btn.id.equals("A")) match = true;
+                else if (keyCode == KeyEvent.KEYCODE_BUTTON_B && btn.id.equals("B")) match = true;
+                else if (keyCode == KeyEvent.KEYCODE_BUTTON_X && btn.id.equals("X")) match = true;
+                else if (keyCode == KeyEvent.KEYCODE_BUTTON_Y && btn.id.equals("Y")) match = true;
+                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_R1 || keyCode == KeyEvent.KEYCODE_BUTTON_C) && btn.id.equals("C")) match = true;
+                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_BUTTON_Z) && btn.id.equals("Z")) match = true;
+                else if (keyCode == KeyEvent.KEYCODE_BUTTON_START && btn.id.equals("START")) match = true;
+                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_SELECT || keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL) && btn.id.equals("ESC")) match = true;
+                else if (keyCode == KeyEvent.KEYCODE_DPAD_UP && btn.id.equals("UP")) match = true;
+                else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN && btn.id.equals("DOWN")) match = true;
+                else if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && btn.id.equals("LEFT")) match = true;
+                else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && btn.id.equals("RIGHT")) match = true;
+            }
 
-        if (targetId != null) {
-            for (VirtualButton btn : buttons) {
-                if (btn.id.equals(targetId)) {
-                    if (isDown && !btn.isPressed) {
-                        btn.isPressed = true;
-                        if (gamepadUIMode == 1) invalidate(); // 屏幕按键同步发光
-                        if (gamepadUIMode == 2 && isLayoutVisible()) hideLayoutTemporarily(); // 隐藏屏幕UI
-                        
-                        if (isGamepadVibrationOn) triggerHardwareGamepadVibration(event.getDevice());
-                        for (int c : btn.keyCodes) SDLActivity.onNativeKeyDown(c);
-                    } else if (!isDown && btn.isPressed) {
-                        btn.isPressed = false;
-                        if (gamepadUIMode == 1) invalidate();
-                        for (int c : btn.keyCodes) SDLActivity.onNativeKeyUp(c);
-                    }
-                    return true;
+            if (match) {
+                handled = true;
+                if (isDown && !btn.isPressed) {
+                    btn.isPressed = true;
+                    if (gamepadUIMode == 1) invalidate();
+                    if (gamepadUIMode == 2 && isLayoutVisible()) hideLayoutTemporarily();
+                    if (isGamepadVibrationOn) triggerHardwareGamepadVibration(event.getDevice());
+                    for (int c : btn.keyCodes) SDLActivity.onNativeKeyDown(c);
+                } else if (!isDown && btn.isPressed) {
+                    btn.isPressed = false;
+                    if (gamepadUIMode == 1) invalidate();
+                    for (int c : btn.keyCodes) SDLActivity.onNativeKeyUp(c);
                 }
             }
         }
-        return false;
+        return handled;
     }
 
-    public boolean onPhysicalGamepadMotionEvent(MotionEvent event) {
         if (testFeedbackText != null) return true; // 测试模式屏蔽摇杆
         
         float x = event.getAxisValue(MotionEvent.AXIS_X);
@@ -2863,8 +2868,24 @@ import java.util.List;
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
 
         layout.addView(createTitle("1. 按键名称与映射:"));
+        
+        // 【新增】显示绑定的物理手柄键值
+        TextView padInfo = new TextView(getContext());
+        padInfo.setText("🎮 已绑定物理手柄键值: " + (btn.boundGamepadKeyCode != 0 ? btn.boundGamepadKeyCode : "未绑定"));
+        padInfo.setTextColor(Color.parseColor("#FF9800")); padInfo.setTextSize(dialogTextSize); padInfo.setPadding(0,0,0,10);
+        layout.addView(padInfo);
+
         final EditText inputName = createEditText("显示名称 (如: A)", btn.id); layout.addView(inputName);
-        final EditText inputKey = createEditText("映射键值 (如: DOWN/A)", btn.keyMapStr); layout.addView(inputKey);
+        final EditText inputKey = createEditText("映射引擎键值 (如: DOWN/A)", btn.keyMapStr); layout.addView(inputKey);
+
+        // 【新增】如果是系统基础预设按键，则强制锁定底层键值映射，不允许修改，只能改外观
+        boolean isPreset = btn.id.equals("A") || btn.id.equals("B") || btn.id.equals("C") || btn.id.equals("X") || btn.id.equals("Y") || btn.id.equals("Z") || btn.id.equals("ESC") || btn.id.equals("START") || btn.id.equals("UP") || btn.id.equals("DOWN") || btn.id.equals("LEFT") || btn.id.equals("RIGHT");
+        if (isPreset) {
+            inputKey.setEnabled(false);
+            inputKey.setBackgroundColor(Color.parseColor("#555555")); // 变暗暗示锁定
+            inputKey.setHint("核心预设按键，映射键值已锁定");
+        }
+
 
         layout.addView(createTitle("2. 按键样式:"));
         final Spinner textColorSpinner = new Spinner(getContext());
@@ -3365,6 +3386,7 @@ import java.util.List;
                 obj.put("pressedSkin", btn.customPressedUri);
                 obj.put("pressedColor", btn.pressedEffectColor);
                 obj.put("pressedAlpha", btn.pressedEffectAlpha);
+                obj.put("boundPadCode", btn.boundGamepadKeyCode);
                 obj.put("isTurbo", btn.isTurbo);
                 obj.put("turboInterval", btn.turboInterval);
                 // 【新增：保存独立高阶设置】
@@ -3467,7 +3489,8 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                 btn.customPressedUri = o.optString("pressedSkin", "");
                 btn.pressedEffectColor = o.optInt("pressedColor", 0);
                 btn.pressedEffectAlpha = o.optInt("pressedAlpha", 150);
-                                btn.isTurbo = o.optBoolean("isTurbo", false);
+                btn.boundGamepadKeyCode = o.optInt("boundPadCode", 0);
+                btn.isTurbo = o.optBoolean("isTurbo", false);
                 btn.turboInterval = o.optInt("turboInterval", 40);
                 // 【新增：读取独立高阶设置】
                 btn.textSizeFactor = o.optInt("textSizeFactor", 100);
@@ -4033,13 +4056,34 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
         header.setTextColor(dialogTextColor); header.setPadding(40, 30, 40, 30); header.setTextSize(dialogTextSize + 2f); header.setTypeface(null, Typeface.BOLD); rootLayout.addView(header);
 
         ScrollView scroll = new ScrollView(getContext()); LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(40, 20, 40, 40);
-        layout.addView(createTitle("请选择你要绑定手柄按键的【屏幕虚拟键】:"));
         
+        // ===== 【核心功能】：按下手柄新建按键 =====
+        layout.addView(createTitle("【进阶】手柄直连创建自定义按键:"));
+        Button btnNewFromPad = new Button(getContext());
+        btnNewFromPad.setText("➕ 监听手柄按键 -> 在屏幕上新建绑定按键");
+        btnNewFromPad.setTextColor(Color.WHITE); btnNewFromPad.setBackgroundColor(Color.parseColor("#9C27B0"));
+        btnNewFromPad.setPadding(0, 30, 0, 30);
+        btnNewFromPad.setOnClickListener(v -> {
+            isGamepadBindingMode = true; currentBindingTargetButton = null; // null 代表这是新建模式
+            currentBindingDialog = new android.app.Dialog(getContext());
+            TextView tv = new TextView(getContext()); tv.setText("请按下外设手柄上想要使用的按键...\n(按下后将在屏幕中心生成一个新按键并打开设置)");
+            tv.setTextColor(Color.WHITE); tv.setTextSize(18f); tv.setPadding(60,60,60,60);
+            currentBindingDialog.setContentView(tv); currentBindingDialog.show();
+        });
+        layout.addView(btnNewFromPad);
+
+        // ===== 【基础功能】：绑定已有预设 =====
+        layout.addView(createTitle("【基础】绑定到屏幕上已存在的按键:"));
         for (VirtualButton btn : buttons) {
+            if (btn.isDirectional) continue; // 过滤掉方向键，摇杆有独立的物理支持
             Button targetBtn = new Button(getContext());
-            targetBtn.setText("绑定手柄按键 -> [" + btn.id + "]");
+            String bindInfo = (btn.boundGamepadKeyCode != 0) ? " (已绑手柄键值:"+btn.boundGamepadKeyCode+")" : " (未绑定手柄)";
+            targetBtn.setText("绑定 -> [" + btn.id + "]" + bindInfo);
+            targetBtn.setTextColor(Color.WHITE); targetBtn.setBackgroundColor(Color.parseColor("#33ffffff"));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); lp.setMargins(0, 5, 0, 5); targetBtn.setLayoutParams(lp);
+            
             targetBtn.setOnClickListener(v -> {
-                isGamepadBindingMode = true; currentBindingTargetId = btn.id;
+                isGamepadBindingMode = true; currentBindingTargetButton = btn; // 记录要绑定到哪个按键
                 currentBindingDialog = new android.app.Dialog(getContext());
                 TextView tv = new TextView(getContext()); tv.setText("请按下外设手柄上想要绑定到 [" + btn.id + "] 的按键...");
                 tv.setTextColor(Color.WHITE); tv.setTextSize(18f); tv.setPadding(60,60,60,60);
@@ -4048,13 +4092,13 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             layout.addView(targetBtn);
         }
         
-        Button clearBtn = new Button(getContext()); clearBtn.setText("❌ 清除所有自定义绑定 (恢复默认)");
+        Button clearBtn = new Button(getContext()); clearBtn.setText("❌ 清除所有手柄绑定 (恢复默认)");
         clearBtn.setTextColor(Color.WHITE); clearBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
-        clearBtn.setOnClickListener(v -> { gamepadBinds.clear(); saveConfig(); Toast.makeText(getContext(), "已清空", Toast.LENGTH_SHORT).show(); });
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); cp.setMargins(0, 40, 0, 0); clearBtn.setLayoutParams(cp);
+        clearBtn.setOnClickListener(v -> { for(VirtualButton b : buttons) b.boundGamepadKeyCode = 0; saveConfig(); dialog.dismiss(); showGamepadBindingManager(); });
         layout.addView(clearBtn);
 
-        Button exitBtn = new Button(getContext()); exitBtn.setText("退出管理器");
-        exitBtn.setOnClickListener(v -> dialog.dismiss());
+        Button exitBtn = new Button(getContext()); exitBtn.setText("退出管理器"); exitBtn.setOnClickListener(v -> dialog.dismiss());
         layout.addView(exitBtn);
 
         scroll.addView(layout); rootLayout.addView(scroll);
