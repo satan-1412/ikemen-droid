@@ -220,8 +220,11 @@ import java.util.List;
     // 强制全屏时隐藏的标志位，供外部（如SDLActivity）检测到游戏全屏状态时修改
     public boolean isFullscreenHideOverlay = false; 
 
-    private static final int GRID_SIZE = 50; // 网格大小，50像素一个格子，你可以自己调
+    public int gridSize = 50; // 【优化2】自定义网格大小
     private VirtualButton draggedButton = null;
+    public VirtualButton copiedButton = null; // 【优化1】用于复制的按键
+    private long lastEmptyTapTime = 0; // 【优化1】记录双击时间
+    private Runnable btnLongPressRunnable = null; // 【优化1】按键长按复制倒计时
     private long downTime;
     private float downX, downY;
 
@@ -247,6 +250,7 @@ import java.util.List;
         public Bitmap skinBitmap = null;
         public boolean isDirectional = false; 
         public float hitboxRadius; // 触摸判定范围
+        public boolean isLocked = false; // 【优化1】单个按键位置锁定
         // 【优化】全局静态线程池，复用线程防崩溃
         private static final java.util.concurrent.ExecutorService threadPool = java.util.concurrent.Executors.newCachedThreadPool();
 
@@ -922,8 +926,8 @@ import java.util.List;
                 paintBtn.setColor(Color.WHITE);
                 paintBtn.setAlpha(30); 
                 paintBtn.setStrokeWidth(1f);
-                for (int i = 0; i < getWidth(); i += GRID_SIZE) canvas.drawLine(i, 0, i, getHeight(), paintBtn);
-                for (int i = 0; i < getHeight(); i += GRID_SIZE) canvas.drawLine(0, i, getWidth(), i, paintBtn);
+                for (int i = 0; i < getWidth(); i += gridSize) canvas.drawLine(i, 0, i, getHeight(), paintBtn);
+                for (int i = 0; i < getHeight(); i += gridSize) canvas.drawLine(0, i, getWidth(), i, paintBtn);
             }
                         paintText.setTextSize(Math.max(20f, getHeight() * 0.05f)); // 【修复】动态字体大小
             paintText.setShadowLayer(5f, 2f, 2f, Color.BLACK);
@@ -1526,8 +1530,8 @@ import java.util.List;
         int action = event.getActionMasked();
         float x = event.getX(0), y = event.getY(0);
         
-        float targetX = isGridSnapMode ? Math.round(x / GRID_SIZE) * GRID_SIZE : x;
-        float targetY = isGridSnapMode ? Math.round(y / GRID_SIZE) * GRID_SIZE : y;
+                float targetX = isGridSnapMode ? Math.round(x / gridSize) * gridSize : x;
+        float targetY = isGridSnapMode ? Math.round(y / gridSize) * gridSize : y;
 
         switch (action) {
             case MotionEvent.ACTION_DOWN:
@@ -1547,42 +1551,59 @@ import java.util.List;
                             draggedButton = buttons.get(i); break;
                         }
                     }
+                    // 【优化1】长按复制与双击粘贴引擎
+                    if (draggedButton != null) {
+                        btnLongPressRunnable = () -> {
+                            copiedButton = draggedButton;
+                            triggerVibrate(50);
+                            Toast.makeText(getContext(), "已复制按键 [" + copiedButton.id + "]，双击空白处粘贴", Toast.LENGTH_SHORT).show();
+                        };
+                        postDelayed(btnLongPressRunnable, 600);
+                    } else {
+                        if (copiedButton != null && System.currentTimeMillis() - lastEmptyTapTime < 300) {
+                            VirtualButton newBtn = new VirtualButton(copiedButton.id + "_复", targetX, targetY, copiedButton.radius, copiedButton.color, copiedButton.alpha, copiedButton.textColor, copiedButton.shape, copiedButton.keyMapStr, copiedButton.isDirectional);
+                            newBtn.hitboxRadius = copiedButton.hitboxRadius; newBtn.isTurbo = copiedButton.isTurbo; newBtn.turboInterval = copiedButton.turboInterval;
+                            newBtn.customImageUri = copiedButton.customImageUri; newBtn.customPressedUri = copiedButton.customPressedUri;
+                            newBtn.pressedEffectColor = copiedButton.pressedEffectColor; newBtn.pressedEffectAlpha = copiedButton.pressedEffectAlpha;
+                            newBtn.textSizeFactor = copiedButton.textSizeFactor; newBtn.useCustomVib = copiedButton.useCustomVib; newBtn.customVib = copiedButton.customVib;
+                            newBtn.useCustomFeed = copiedButton.useCustomFeed; newBtn.customFeedScale = copiedButton.customFeedScale;
+                            newBtn.loadSkinFromUri(getContext());
+                            buttons.add(newBtn); saveConfig(); invalidate(); triggerVibrate(30);
+                        }
+                        lastEmptyTapTime = System.currentTimeMillis();
+                    }
                 }
                 break;
 
             case MotionEvent.ACTION_MOVE:
                 if (isDraggingMenu) { 
                     if (isMenuDown && Math.hypot(x - downX, y - downY) > 20) {
-                        isMenuDown = false;
-                        removeCallbacks(menuLongPressRunnable); 
-                        invalidate();
+                        isMenuDown = false; removeCallbacks(menuLongPressRunnable); invalidate();
                     }
-                    menuX = targetX - (menuButtonRect.width() / 2f); 
-                    menuY = targetY - (menuButtonRect.height() / 2f); 
-                    invalidate(); 
+                    menuX = targetX - (menuButtonRect.width() / 2f); menuY = targetY - (menuButtonRect.height() / 2f); invalidate(); 
                 } else if (isDraggingJoy) { 
-                    joyBaseX = targetX; joyBaseY = targetY; joyKnobX = targetX; joyKnobY = targetY; 
-                    invalidate(); 
-                } else if (draggedButton != null) { 
-                    draggedButton.cx = targetX; draggedButton.cy = targetY; 
-                    invalidate(); 
+                    joyBaseX = targetX; joyBaseY = targetY; joyKnobX = targetX; joyKnobY = targetY; invalidate(); 
+                } else if (draggedButton != null && !draggedButton.isLocked) { 
+                    if (Math.hypot(x - downX, y - downY) > 20 && btnLongPressRunnable != null) {
+                        removeCallbacks(btnLongPressRunnable); btnLongPressRunnable = null;
+                    }
+                    draggedButton.cx = targetX; draggedButton.cy = targetY; invalidate(); 
                 }
                 break;
 
             case MotionEvent.ACTION_UP:
                 if (isMenuDown) { 
-                    isMenuDown = false;
-                    removeCallbacks(menuLongPressRunnable); 
-                    invalidate(); 
-                    if (System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) {                                   showMainMenu();  
-                    }
+                    isMenuDown = false; removeCallbacks(menuLongPressRunnable); invalidate(); 
+                    if (System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) { showMainMenu(); }
                 } else if (System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) {
+                    if (btnLongPressRunnable != null) { removeCallbacks(btnLongPressRunnable); btnLongPressRunnable = null; }
                     if (isDraggingJoy) {
                         DynamicGamepadView.this.showJoystickSettingsDialog();
                     } else if (draggedButton != null) {
                         DynamicGamepadView.this.showButtonSettingsDialog(draggedButton);
                     }
                 }
+                if (btnLongPressRunnable != null) { removeCallbacks(btnLongPressRunnable); btnLongPressRunnable = null; }
                 isDraggingJoy = false; draggedButton = null; isDraggingMenu = false;
                 break;
         }
@@ -1890,6 +1911,15 @@ import java.util.List;
             buttons.add(newBtn); isEditMode = true; showButtonSettingsDialog(newBtn); dialog.dismiss();
         }));
         layout.addView(createMenuButton(isGridSnapMode ? "🧲 网格吸附：已开启" : "🧲 网格吸附：已关闭", v -> { isGridSnapMode = !isGridSnapMode; Toast.makeText(getContext(), isGridSnapMode ? "已开启网格吸附" : "已开启自由拖动", Toast.LENGTH_SHORT).show(); dialog.dismiss(); showMainMenu(); }));
+        if (isGridSnapMode) {
+            final SeekBar gridBar = createColorBar(layout, "网格尺寸步长 (调整后重开菜单)", gridSize);
+            gridBar.setMax(200);
+            gridBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                public void onProgressChanged(SeekBar s, int p, boolean fromUser) { if (fromUser) gridSize = Math.max(10, p); }
+                public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) { saveConfig(); invalidate(); }
+            });
+        }
+
         layout.addView(createMenuButton("🕹️ 切换摇杆形态", v -> { joystickMode = (joystickMode + 1) % 5; if (joystickMode == JOYSTICK_MODE_STYLE) refreshJoystickStyle(); saveConfig(); invalidate(); dialog.dismiss(); showMainMenu(); }));
         layout.addView(createMenuButton("📳 物理震动开关与强度", v -> { showVibrationSettingsDialog(); dialog.dismiss(); }));
         layout.addView(createMenuButton("📂 布局存档与导入导出", v -> { showProfileManager(); dialog.dismiss(); }));
@@ -1964,8 +1994,11 @@ import java.util.List;
                             refreshJoystickStyle(); 
                             for (VirtualButton b : buttons) {
                                 if (!b.isDirectional) {
-                                    b.customImageUri = style.btnNormalUri != null ? style.btnNormalUri : ""; 
-                                    b.customPressedUri = style.btnPressedUri != null ? style.btnPressedUri : "";
+                                    // 【优化3】只对圆形按键应用圆形的皮肤图，方形按键保留原状，仅应用特效发光色
+                                    if (b.shape == SHAPE_CIRCLE) {
+                                        b.customImageUri = style.btnNormalUri != null ? style.btnNormalUri : ""; 
+                                        b.customPressedUri = style.btnPressedUri != null ? style.btnPressedUri : "";
+                                    }
                                     b.pressedEffectColor = style.globalPressedColor; 
                                     b.pressedEffectAlpha = style.globalPressedAlpha;
                                     b.loadSkinFromUri(getContext());
@@ -2905,6 +2938,13 @@ import java.util.List;
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
 
+        layout.addView(createTitle("0. 按键位置锁定:"));
+        Button lockBtn = new Button(getContext());
+        lockBtn.setText(btn.isLocked ? "🔒 位置已锁定 (不可拖动)" : "🔓 位置未锁定 (可拖动)");
+        lockBtn.setTextColor(Color.WHITE); lockBtn.setBackgroundColor(btn.isLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50"));
+        lockBtn.setOnClickListener(v -> { btn.isLocked = !btn.isLocked; lockBtn.setText(btn.isLocked ? "🔒 位置已锁定 (不可拖动)" : "🔓 位置未锁定 (可拖动)"); lockBtn.setBackgroundColor(btn.isLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50")); invalidate(); });
+        layout.addView(lockBtn);
+
         layout.addView(createTitle("1. 按键名称与映射:"));
         
         // 【新增】显示绑定的物理手柄键值
@@ -2985,7 +3025,7 @@ import java.util.List;
         layout.addView(createTitle("4. 尺寸与隐藏参数:"));
         final SeekBar alphaBar = createColorBar(layout, "可见透明度 (拉到0为隐藏)", btn.alpha); 
         final SeekBar sizeBar = createColorBar(layout, "视觉大小", (int)btn.radius); sizeBar.setMax(300);
-        final SeekBar hitboxBar = createColorBar(layout, "触摸判定范围 (黄线圈)", (int)btn.hitboxRadius); hitboxBar.setMax(400);
+        final SeekBar hitboxBar = createColorBar(layout, "边缘触控灵敏度/范围 (黄线圈)", (int)btn.hitboxRadius); hitboxBar.setMax(600); // 【优化4】重命名并扩大上限
 
         SeekBar.OnSeekBarChangeListener sizeUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -3420,6 +3460,7 @@ import java.util.List;
                 obj.put("keyMap", btn.keyMapStr); obj.put("isDir", btn.isDirectional);
                 obj.put("skin", btn.customImageUri); 
                 obj.put("hitboxRadius", btn.hitboxRadius);
+                obj.put("isLocked", btn.isLocked);
                 // 【新增：保存按下状态特效】
                 obj.put("pressedSkin", btn.customPressedUri);
                 obj.put("pressedColor", btn.pressedEffectColor);
@@ -3474,6 +3515,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             editor.putFloat("PadDeadzone_" + currentSlot, gamepadDeadzone);
             editor.putInt("PadUIMode_" + currentSlot, gamepadUIMode);
             editor.putBoolean("PadVib_" + currentSlot, isGamepadVibrationOn);
+            editor.putInt("GridSize_" + currentSlot, gridSize);
             editor.putInt("DlgBgC_" + currentSlot, dialogBgColor);
             editor.putInt("DlgBgA_" + currentSlot, dialogBgAlpha);
             editor.putInt("DlgTxtC_" + currentSlot, dialogTextColor);
@@ -3518,7 +3560,8 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                 VirtualButton btn = new VirtualButton(o.optString("id", "Btn"), (float)o.optDouble("cx", 500), (float)o.optDouble("cy", 500),
                     (float)o.optDouble("radius", 80), o.optInt("color", Color.GRAY), o.optInt("alpha", 150), o.optInt("textColor", Color.WHITE), 
                     o.optInt("shape", SHAPE_CIRCLE), o.optString("keyMap", ""), o.optBoolean("isDir", false));
-                               btn.hitboxRadius = (float)o.optDouble("hitboxRadius", btn.radius * 1.5f); 
+               btn.hitboxRadius = (float)o.optDouble("hitboxRadius", btn.radius * 1.5f); 
+                btn.isLocked = o.optBoolean("isLocked", false);
                 btn.customImageUri = o.optString("skin", ""); 
                 // 【新增：读取按下状态特效】
                 btn.customPressedUri = o.optString("pressedSkin", "");
@@ -3592,6 +3635,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             gamepadDeadzone = prefs.getFloat("PadDeadzone_" + slot, 0.2f);
             gamepadUIMode = prefs.getInt("PadUIMode_" + slot, 1);
             isGamepadVibrationOn = prefs.getBoolean("PadVib_" + slot, true);           
+            gridSize = prefs.getInt("GridSize_" + slot, 50);
             autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
             // 读取自定义弹窗 UI 设置
             dialogBgColor = prefs.getInt("DlgBgC_" + slot, Color.parseColor("#222222"));
@@ -3792,7 +3836,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             } else { 
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("image/*");
+                intent.setType("*/*"); // 【优化5】放开限制，允许选择任何视频或GIF
                 startActivityForResult(intent, 43);
             }
         }
