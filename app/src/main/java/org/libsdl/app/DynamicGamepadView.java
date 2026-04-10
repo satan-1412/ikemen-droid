@@ -173,6 +173,7 @@ import java.util.List;
         public String joyBaseUri = "";
         public String joyKnobUri = "";
         public String btnNormalUri = "";
+        public String btnSquareUri = ""; // 【新增】方形按键专属皮肤
         public String btnPressedUri = ""; // 全局默认按下特效
         public int globalBtnColor = Color.GRAY;
         public int globalPressedColor = Color.WHITE;
@@ -184,6 +185,7 @@ import java.util.List;
             JSONObject obj = new JSONObject();
             obj.put("name", styleName); obj.put("joyBaseUri", joyBaseUri);
             obj.put("joyKnobUri", joyKnobUri); obj.put("btnNormalUri", btnNormalUri);
+            obj.put("btnSquareUri", btnSquareUri); // 【新增】
             obj.put("btnPressedUri", btnPressedUri); obj.put("btnColor", globalBtnColor);
             obj.put("pressedColor", globalPressedColor); obj.put("pressedAlpha", globalPressedAlpha);
             return obj;
@@ -194,6 +196,7 @@ import java.util.List;
             style.joyBaseUri = obj.optString("joyBaseUri", "");
             style.joyKnobUri = obj.optString("joyKnobUri", "");
             style.btnNormalUri = obj.optString("btnNormalUri", "");
+            style.btnSquareUri = obj.optString("btnSquareUri", ""); // 【新增】
             style.btnPressedUri = obj.optString("btnPressedUri", "");
             style.globalBtnColor = obj.optInt("btnColor", Color.GRAY);
             style.globalPressedColor = obj.optInt("pressedColor", Color.WHITE);
@@ -201,6 +204,7 @@ import java.util.List;
             return style;
         }
     }
+
 
     public String overlayUri1 = "";
     public Bitmap overlayBmp1 = null;
@@ -510,19 +514,29 @@ import java.util.List;
             p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(8f); p.setColor(knobStroke); cKnob.drawCircle(size/2f, size/2f, size/2.5f, p);
             String knobUri = saveImageToLocal(knobBmp, "style_knob_" + name.substring(0,2) + ".png");
 
-            // 3. 动态画：动作按键
+            // 3. 动态画：圆形动作按键
             Bitmap btnBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
             Canvas cBtn = new Canvas(btnBmp);
             p.setStyle(Paint.Style.FILL); p.setColor(btnFill); cBtn.drawCircle(size/2f, size/2f, size/2f - 10, p);
             p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(14f); p.setColor(btnStroke); cBtn.drawCircle(size/2f, size/2f, size/2f - 10, p);
-            String btnUri = saveImageToLocal(btnBmp, "style_btn_" + name.substring(0,2) + ".png");
+            String btnUri = saveImageToLocal(btnBmp, "style_btn_ci_" + name.substring(0,2) + ".png");
+
+            // 3.5 动态画：方形动作按键 【彻底解决方形匹配】
+            Bitmap btnSqBmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            Canvas cBtnSq = new Canvas(btnSqBmp);
+            RectF sqRect = new RectF(10, 10, size - 10, size - 10);
+            p.setStyle(Paint.Style.FILL); p.setColor(btnFill); cBtnSq.drawRoundRect(sqRect, size*0.2f, size*0.2f, p);
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(14f); p.setColor(btnStroke); cBtnSq.drawRoundRect(sqRect, size*0.2f, size*0.2f, p);
+            String btnSqUri = saveImageToLocal(btnSqBmp, "style_btn_sq_" + name.substring(0,2) + ".png");
 
             // 4. 组装并写入数据库
             GamepadStyle style = new GamepadStyle(name);
             style.joyBaseUri = baseUri;
             style.joyKnobUri = knobUri;
             style.btnNormalUri = btnUri;
-            style.globalPressedColor = pressColor; // 绑上专用的按下发光色
+            style.btnSquareUri = btnSqUri; // 【新增】绑定方形皮肤
+            style.globalBtnColor = btnFill; // 修复恢复默认风格失效的Bug
+            style.globalPressedColor = pressColor; 
             styleList.add(style);
         }
     }
@@ -2017,19 +2031,16 @@ import java.util.List;
                             GamepadStyle style = styleList.get(currentStyleIndex);
                             joystickMode = JOYSTICK_MODE_STYLE;
                             refreshJoystickStyle(); 
-                                                        for (VirtualButton b : buttons) {
+                            for (VirtualButton b : buttons) {
                                 if (!b.isDirectional) {
-                                    // 【彻底修复】：同步改变按键的基础底色，解决默认风格失效的问题
-                                    b.color = style.globalBtnColor; 
-                                    
+                                    b.color = style.globalBtnColor; // 同步底色
                                     if (b.shape == SHAPE_CIRCLE) {
                                         b.customImageUri = style.btnNormalUri != null ? style.btnNormalUri : ""; 
-                                        b.customPressedUri = style.btnPressedUri != null ? style.btnPressedUri : "";
                                     } else {
-                                        // 【彻底修复】：如果是方形按键，强行清空圆形的皮肤贴图，让它使用底层颜色渐变渲染出真正的方形！
-                                        b.customImageUri = ""; 
-                                        b.customPressedUri = "";
+                                        // 【智能适配】如果它是方形，喂给它方形专属的贴图！
+                                        b.customImageUri = (style.btnSquareUri != null && !style.btnSquareUri.isEmpty()) ? style.btnSquareUri : (style.btnNormalUri != null ? style.btnNormalUri : ""); 
                                     }
+                                    b.customPressedUri = style.btnPressedUri != null ? style.btnPressedUri : "";
                                     b.pressedEffectColor = style.globalPressedColor; 
                                     b.pressedEffectAlpha = style.globalPressedAlpha;
                                     b.loadSkinFromUri(getContext());
@@ -2041,21 +2052,27 @@ import java.util.List;
                     final EditText input = createEditText("给新风格命名", "我的自定义风格");
                     new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                         .setTitle("提取并保存风格")
-                        .setMessage("将自动提取当前1号位按键和摇杆的外观，打包为新风格。")
+                        .setMessage("将自动提取当前屏幕上的按键外观，打包为新风格。")
                         .setView(input)
                         .setPositiveButton("保存", (d, w) -> {
                             GamepadStyle newStyle = new GamepadStyle(input.getText().toString());
                             newStyle.joyBaseUri = joySkinBaseUri; newStyle.joyKnobUri = joySkinKnobUri;
                             for (VirtualButton b : buttons) { 
                                 if (!b.isDirectional) {
-                                    newStyle.btnNormalUri = b.customImageUri; newStyle.btnPressedUri = b.customPressedUri;
+                                    if (b.shape == SHAPE_CIRCLE) newStyle.btnNormalUri = b.customImageUri; 
+                                    else newStyle.btnSquareUri = b.customImageUri;
+                                    newStyle.btnPressedUri = b.customPressedUri;
                                     newStyle.globalPressedColor = b.pressedEffectColor; newStyle.globalPressedAlpha = b.pressedEffectAlpha;
-                                    break;
                                 }
                             }
+                            // 防空指针兜底：如果屏幕上只有方形或只有圆形，互相借用一下
+                            if(newStyle.btnNormalUri == null || newStyle.btnNormalUri.isEmpty()) newStyle.btnNormalUri = newStyle.btnSquareUri;
+                            if(newStyle.btnSquareUri == null || newStyle.btnSquareUri.isEmpty()) newStyle.btnSquareUri = newStyle.btnNormalUri;
+                            
                             styleList.add(newStyle); currentStyleIndex = styleList.size() - 1;
                             saveConfig(); Toast.makeText(getContext(), "新风格保存成功！", Toast.LENGTH_SHORT).show();
                         }).setNegativeButton("取消", null).show();
+
                 // 👇这里就是你漏掉的重命名逻辑👇
                 } else if (which == 2) {
                     final EditText input = createEditText("新风格名称", styleList.get(currentStyleIndex).styleName);
@@ -3281,7 +3298,20 @@ import java.util.List;
             btn.id = inputName.getText().toString(); 
             btn.displayLines = btn.id.split("\n"); 
             btn.textColor = TEXT_COLOR_VALUES[textColorSpinner.getSelectedItemPosition()];
+            
+            // 【究极无缝换装】如果玩家在设置里把圆的切成了方的，立刻智能换成方形图片
+            int oldShape = btn.shape;
             btn.shape = shapeSpinner.getSelectedItemPosition(); 
+            if (oldShape != btn.shape && joystickMode == JOYSTICK_MODE_STYLE && currentStyleIndex < styleList.size()) {
+                 GamepadStyle currentTheme = styleList.get(currentStyleIndex);
+                 if (btn.shape == SHAPE_CIRCLE) {
+                     btn.customImageUri = currentTheme.btnNormalUri;
+                 } else {
+                     btn.customImageUri = (currentTheme.btnSquareUri != null && !currentTheme.btnSquareUri.isEmpty()) ? currentTheme.btnSquareUri : currentTheme.btnNormalUri;
+                 }
+                 btn.loadSkinFromUri(getContext());
+            }
+
             btn.keyMapStr = inputKey.getText().toString().trim().toUpperCase(); 
             btn.parseKeyCodes(); 
             
@@ -3292,6 +3322,7 @@ import java.util.List;
             
             saveConfig(); invalidate(); dialog.dismiss();
         });
+
 
         bottomButtons.addView(saveBtn); layout.addView(bottomButtons);
 
