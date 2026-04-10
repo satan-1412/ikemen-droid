@@ -2037,8 +2037,8 @@ import java.util.List;
                                     if (b.shape == SHAPE_CIRCLE) {
                                         b.customImageUri = style.btnNormalUri != null ? style.btnNormalUri : ""; 
                                     } else {
-                                        // 【智能适配】如果它是方形，喂给它方形专属的贴图！
-                                        b.customImageUri = (style.btnSquareUri != null && !style.btnSquareUri.isEmpty()) ? style.btnSquareUri : (style.btnNormalUri != null ? style.btnNormalUri : ""); 
+                                        // 【彻底修复】：如果是方形，绝不借用圆图！有方形专图就用，没有就直接置空（让系统画出纯色渐变方块）
+                                        b.customImageUri = (style.btnSquareUri != null && !style.btnSquareUri.isEmpty()) ? style.btnSquareUri : ""; 
                                     }
                                     b.customPressedUri = style.btnPressedUri != null ? style.btnPressedUri : "";
                                     b.pressedEffectColor = style.globalPressedColor; 
@@ -2065,11 +2065,10 @@ import java.util.List;
                                     newStyle.globalPressedColor = b.pressedEffectColor; newStyle.globalPressedAlpha = b.pressedEffectAlpha;
                                 }
                             }
-                            // 防空指针兜底：如果屏幕上只有方形或只有圆形，互相借用一下
-                            if(newStyle.btnNormalUri == null || newStyle.btnNormalUri.isEmpty()) newStyle.btnNormalUri = newStyle.btnSquareUri;
-                            if(newStyle.btnSquareUri == null || newStyle.btnSquareUri.isEmpty()) newStyle.btnSquareUri = newStyle.btnNormalUri;
+                            // 【彻底修复】：取消互相借用！方形键如果没有方形图片，就应该为空，这样底层才会画出完美的方形框。
                             
                             styleList.add(newStyle); currentStyleIndex = styleList.size() - 1;
+
                             saveConfig(); Toast.makeText(getContext(), "新风格保存成功！", Toast.LENGTH_SHORT).show();
                         }).setNegativeButton("取消", null).show();
 
@@ -3307,7 +3306,8 @@ import java.util.List;
                  if (btn.shape == SHAPE_CIRCLE) {
                      btn.customImageUri = currentTheme.btnNormalUri;
                  } else {
-                     btn.customImageUri = (currentTheme.btnSquareUri != null && !currentTheme.btnSquareUri.isEmpty()) ? currentTheme.btnSquareUri : currentTheme.btnNormalUri;
+                     // 【彻底修复】：切方形时，没方形图就置空（触发底层画方块），绝对不套圆形贴图！
+                     btn.customImageUri = (currentTheme.btnSquareUri != null && !currentTheme.btnSquareUri.isEmpty()) ? currentTheme.btnSquareUri : "";
                  }
                  btn.loadSkinFromUri(getContext());
             }
@@ -3775,13 +3775,42 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                 } catch(Exception e) { menuSkinBitmap = null; }
             } else { menuSkinBitmap = null; }
 
-            String styleJson = prefs.getString("StyleList_" + slot, "");
+             String styleJson = prefs.getString("StyleList_" + slot, "");
             if (!styleJson.isEmpty()) {
                 JSONArray styleArr = new JSONArray(styleJson);
                 styleList.clear();
                 for (int i=0; i<styleArr.length(); i++) styleList.add(GamepadStyle.fromJson(styleArr.getJSONObject(i)));
+                
+                // 【无损抢救】：自动检测旧版本。如果发现旧版系统预设缺失方形贴图，静默重置12个系统预设，完美保留玩家自定义风格！
+                if (styleList.size() > 1 && (styleList.get(1).btnSquareUri == null || styleList.get(1).btnSquareUri.isEmpty())) {
+                    List<GamepadStyle> userStyles = new ArrayList<>();
+                    for (int i = 0; i < styleList.size(); i++) {
+                        if (i >= 12 || !styleList.get(i).styleName.matches("^[0-1][0-9]\\..*")) userStyles.add(styleList.get(i));
+                    }
+                    generateVideoArcadeStyle(); // 重置完美的系统风格
+                    styleList.addAll(userStyles); // 无损把玩家的心血加回尾部
+                }
             } else {
                 generateVideoArcadeStyle();
+            }
+
+            // 【开局全局纠偏】：无论玩家存的是什么神仙旧布局，开机瞬间强行把错误穿成“圆形衣服”的“方形按键”扒下来！
+            if (joystickMode == JOYSTICK_MODE_STYLE && currentStyleIndex < styleList.size()) {
+                GamepadStyle currentTheme = styleList.get(currentStyleIndex);
+                for (VirtualButton b : buttons) {
+                    if (!b.isDirectional) {
+                        b.color = currentTheme.globalBtnColor;
+                        if (b.shape == SHAPE_CIRCLE) {
+                            b.customImageUri = currentTheme.btnNormalUri != null ? currentTheme.btnNormalUri : "";
+                        } else {
+                            b.customImageUri = (currentTheme.btnSquareUri != null && !currentTheme.btnSquareUri.isEmpty()) ? currentTheme.btnSquareUri : "";
+                        }
+                        b.customPressedUri = currentTheme.btnPressedUri != null ? currentTheme.btnPressedUri : "";
+                        b.pressedEffectColor = currentTheme.globalPressedColor;
+                        b.pressedEffectAlpha = currentTheme.globalPressedAlpha;
+                        b.loadSkinFromUri(getContext());
+                    }
+                }
             }
 
             // 【新增】：强制重绘摇杆底盘的颜色梯度，避免切换配置时颜色不同步
@@ -3793,7 +3822,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             invalidate();
         } catch (Exception e) { loadDefaultLayout(); }
     }
-            
+
 
         
              private void loadDefaultLayout() {
