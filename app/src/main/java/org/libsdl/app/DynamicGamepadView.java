@@ -528,6 +528,21 @@ import java.util.List;
     }
     
 
+    // ================= 新增：安全图片采样压缩算法 (防大图闪退OOM) =================
+    private int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        final int height = options.outHeight;
+        final int width = options.outWidth;
+        int inSampleSize = 1;
+        if (height > reqHeight || width > reqWidth) {
+            final int halfHeight = height / 2;
+            final int halfWidth = width / 2;
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+        return inSampleSize;
+    }
+
     // ================= 新增：安全读取动图字节流 =================
     private byte[] readBytes(InputStream is) throws Exception {
         java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
@@ -536,78 +551,66 @@ import java.util.List;
         return buffer.toByteArray();
     }
 
-                       public void onImagePicked(String uriStr) {
+    public void onImagePicked(String uriStr) {
         try {
             Uri uri = Uri.parse(uriStr);
-
-            // 获取文件的真实 MIME 类型，用来精确判断是不是视频
             String mimeType = getContext().getContentResolver().getType(uri);
             boolean isVideo = (mimeType != null && mimeType.startsWith("video/")) 
                            || uriStr.toLowerCase().endsWith(".webm") 
                            || uriStr.toLowerCase().endsWith(".mp4");
 
-            // ================= 终极修复：遮罩图综合拦截器 (视频+GIF) =================
-            if (imagePickerTarget == 4 || imagePickerTarget == 5) {
-                
-                // ！！！新增：视频文件极速拦截，绝对不能转成 byte[] 否则必内存溢出！！！
-                if (isVideo) {
-                    android.util.Log.i("GamepadView", "检测到视频遮罩，启动硬件解码图层测试...");
-                    
-                    if (imagePickerTarget == 4) {
-                        overlayUri1 = uriStr; overlayMovie1 = null; overlayBmp1 = null;
-                        if (overlayMode < 1) overlayMode = 1;
-                        Toast.makeText(getContext(), "视频遮罩1准备完毕！", Toast.LENGTH_SHORT).show();
-                    } else {
-                        overlayUri2 = uriStr; overlayMovie2 = null; overlayBmp2 = null;
-                        if (overlayMode < 2) overlayMode = 2;
-                        Toast.makeText(getContext(), "视频遮罩2准备完毕！", Toast.LENGTH_SHORT).show();
-                    }
-                    
-                    // 【核心测试代码】：向底层抛出一个 TextureView 播放器
-                    ViewGroup parentLayout = (ViewGroup) this.getParent(); 
-                    if (parentLayout != null) {
-                        TextureView videoView = new TextureView(getContext());
-                        videoView.setOpaque(false); // 允许透明，非常关键
-                        android.widget.RelativeLayout.LayoutParams params = new android.widget.RelativeLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT, 
-                                ViewGroup.LayoutParams.MATCH_PARENT);
-                        
-                        videoView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
-                            private MediaPlayer mediaPlayer;
-                            @Override
-                            public void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture, int width, int height) {
-                                try {
-                                    mediaPlayer = new MediaPlayer();
-                                    mediaPlayer.setDataSource(getContext(), uri); // 直接用 uri 播放
-                                    mediaPlayer.setSurface(new Surface(surfaceTexture));
-                                    mediaPlayer.setLooping(true);
-                                    mediaPlayer.setVolume(0f, 0f); // 静音
-                                    mediaPlayer.prepare();
-                                    mediaPlayer.start();
-                                } catch (Exception e) {
-                                    android.util.Log.e("GamepadView", "视频播放失败", e);
-                                }
-                            }
-                            @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surfaceTexture, int width, int height) {}
-                            @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surfaceTexture) {
-                                if (mediaPlayer != null) mediaPlayer.release(); return true;
-                            }
-                            @Override public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {}
-                        });
-                        
-                        // 插入到图层 1（在游戏画面之上，在虚拟按键之下）
-                        parentLayout.addView(videoView, 1, params); 
-                    }
-
-                    imagePickerTarget = 0; saveConfig(); invalidate();
-                    return; // 视频处理完毕，立刻拦截返回！
+            // ==== 处理视频遮罩 (Target 4/5) ====
+            if ((imagePickerTarget == 4 || imagePickerTarget == 5) && isVideo) {
+                android.util.Log.i("GamepadView", "检测到视频遮罩，启动异步硬件解码...");
+                if (imagePickerTarget == 4) {
+                    overlayUri1 = uriStr; overlayMovie1 = null; overlayBmp1 = null;
+                    if (overlayMode < 1) overlayMode = 1;
+                } else {
+                    overlayUri2 = uriStr; overlayMovie2 = null; overlayBmp2 = null;
+                    if (overlayMode < 2) overlayMode = 2;
                 }
+                
+                ViewGroup parentLayout = (ViewGroup) this.getParent(); 
+                if (parentLayout != null) {
+                    TextureView videoView = new TextureView(getContext());
+                    videoView.setOpaque(false); // 允许透明
+                    android.widget.RelativeLayout.LayoutParams params = new android.widget.RelativeLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+                    
+                    videoView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+                        private MediaPlayer mediaPlayer;
+                        @Override
+                        public void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture, int width, int height) {
+                            try {
+                                mediaPlayer = new MediaPlayer();
+                                mediaPlayer.setDataSource(getContext(), uri);
+                                mediaPlayer.setSurface(new Surface(surfaceTexture));
+                                mediaPlayer.setLooping(true);
+                                mediaPlayer.setVolume(0f, 0f);
+                                // 【核心修复】必须使用异步加载，否则大视频会直接卡死主线程导致闪退！
+                                mediaPlayer.setOnPreparedListener(mp -> mp.start());
+                                mediaPlayer.prepareAsync(); 
+                            } catch (Exception e) {}
+                        }
+                        @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surfaceTexture, int w, int h) {}
+                        @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surfaceTexture) {
+                            if (mediaPlayer != null) mediaPlayer.release(); return true;
+                        }
+                        @Override public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {}
+                    });
+                    // 【核心修复】将视频插在索引 0（所有UI的底层，但由于游戏画面处于底层Activity，所以刚刚好叠在中间）
+                    parentLayout.addView(videoView, 0, params); 
+                }
+                imagePickerTarget = 0; saveConfig(); invalidate();
+                Toast.makeText(getContext(), "视频遮罩准备完毕！", Toast.LENGTH_SHORT).show();
+                return;
+            }
 
-                // --- 下面是原有的 GIF 拦截逻辑 ---
+            // ==== 处理动图遮罩 (Target 4/5) ====
+            if (imagePickerTarget == 4 || imagePickerTarget == 5) {
                 InputStream isGif = getContext().getContentResolver().openInputStream(uri);
                 byte[] bytes = readBytes(isGif); isGif.close();
                 
-                // 将原汁原味的字节流存入沙盒，保住 GIF 的动图命脉
                 File dir = new File(getContext().getFilesDir(), "ikemen_skins");
                 if (!dir.exists()) dir.mkdirs();
                 File file = new File(dir, "overlay_" + System.currentTimeMillis() + ".gif");
@@ -621,22 +624,46 @@ import java.util.List;
                     if (movie != null && movie.duration() > 0) { overlayMovie1 = movie; overlayBmp1 = null; movieStart1 = 0; }
                     else { overlayMovie1 = null; overlayBmp1 = BitmapFactory.decodeByteArray(bytes, 0, bytes.length); }
                     if (overlayMode < 1) overlayMode = 1;
-                    Toast.makeText(getContext(), "遮罩图1应用成功！(动态帧已保留)", Toast.LENGTH_SHORT).show();
                 } else {
                     overlayUri2 = localGifUri;
                     if (movie != null && movie.duration() > 0) { overlayMovie2 = movie; overlayBmp2 = null; movieStart2 = 0; }
                     else { overlayMovie2 = null; overlayBmp2 = BitmapFactory.decodeByteArray(bytes, 0, bytes.length); }
                     if (overlayMode < 2) overlayMode = 2;
-                    Toast.makeText(getContext(), "遮罩图2应用成功！(动态帧已保留)", Toast.LENGTH_SHORT).show();
                 }
                 imagePickerTarget = 0; saveConfig(); invalidate();
-                return; // 直接拦截返回，不走下面的 PNG 压缩逻辑！
+                Toast.makeText(getContext(), "遮罩应用成功！", Toast.LENGTH_SHORT).show();
+                return; 
             }
-            // =========================================================
 
-            // 下面是普通按键/背景皮肤的逻辑 (安全地转存为 PNG 格式)
-            InputStream is = getContext().getContentResolver().openInputStream(uri);
-            Bitmap raw = BitmapFactory.decodeStream(is);
+            // ==== 处理普通按键/摇杆/背景图 (防OOM终极方案) ====
+            Bitmap raw = null;
+            if (isVideo) {
+                // 【核心修复】如果给按键选了视频，自动抽第一帧当图片用，不闪退
+                android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+                try {
+                    retriever.setDataSource(getContext(), uri);
+                    raw = retriever.getFrameAtTime(0);
+                } catch (Exception e) {} finally { try { retriever.release(); } catch(Exception e){} }
+            } else {
+                // 【核心修复】大图降采样压缩，加载 4K 图绝对不闪退
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inJustDecodeBounds = true;
+                InputStream isBounds = getContext().getContentResolver().openInputStream(uri);
+                BitmapFactory.decodeStream(isBounds, null, options);
+                if(isBounds != null) isBounds.close();
+                
+                options.inSampleSize = calculateInSampleSize(options, 800, 800); // 限制最大读取分辨率到 800x800
+                options.inJustDecodeBounds = false;
+                
+                InputStream isFull = getContext().getContentResolver().openInputStream(uri);
+                raw = BitmapFactory.decodeStream(isFull, null, options);
+                if(isFull != null) isFull.close();
+            }
+
+            if (raw == null) {
+                Toast.makeText(getContext(), "❌ 无法解析该文件，请尝试其他格式", Toast.LENGTH_SHORT).show();
+                return;
+            }
             
             String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() + ".png");
             final String finalUriStr = localUriStr.isEmpty() ? uriStr : localUriStr; 
@@ -661,7 +688,7 @@ import java.util.List;
                 currentlyEditingButton.customPressedUri = finalUriStr; 
                 currentlyEditingButton.pressedSkinBitmap = Bitmap.createScaledBitmap(raw, (int)(currentlyEditingButton.radius*2), (int)(currentlyEditingButton.radius*2), true);
                 Toast.makeText(getContext(), "按下状态皮肤应用成功！", Toast.LENGTH_SHORT).show();
-                        } else if (imagePickerTarget == 7) { 
+            } else if (imagePickerTarget == 7) { 
                 if (dialogBgBitmap != null && !dialogBgBitmap.isRecycled()) dialogBgBitmap.recycle();
                 dialogBgImageUri = finalUriStr; 
                 dialogBgBitmap = Bitmap.createScaledBitmap(raw, 800, 800, true); 
@@ -671,7 +698,6 @@ import java.util.List;
                 menuSkinUri = finalUriStr;
                 menuSkinBitmap = Bitmap.createScaledBitmap(raw, (int)menuWidth, (int)menuHeight, true);
                 Toast.makeText(getContext(), "菜单按钮图片应用成功！", Toast.LENGTH_SHORT).show();
-            // 👇 补充这里 👇
             } else if (imagePickerTarget == 9) {
                 if (menuPressedSkinBitmap != null && !menuPressedSkinBitmap.isRecycled()) menuPressedSkinBitmap.recycle();
                 menuPressedSkinUri = finalUriStr;
@@ -679,16 +705,15 @@ import java.util.List;
                 Toast.makeText(getContext(), "菜单按钮按下状态皮肤应用成功！", Toast.LENGTH_SHORT).show();
             }
             
-            
-            
             if (raw != null && !raw.isRecycled()) raw.recycle(); 
-            if (is != null) is.close();
-            
             saveConfig();
             invalidate();
-        } catch (Exception e) {}
+        } catch (Exception e) {
+             Toast.makeText(getContext(), "文件处理失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
         imagePickerTarget = 0;
     }
+
                    
                
             
@@ -1992,12 +2017,18 @@ import java.util.List;
                             GamepadStyle style = styleList.get(currentStyleIndex);
                             joystickMode = JOYSTICK_MODE_STYLE;
                             refreshJoystickStyle(); 
-                            for (VirtualButton b : buttons) {
+                                                        for (VirtualButton b : buttons) {
                                 if (!b.isDirectional) {
-                                    // 【优化3】只对圆形按键应用圆形的皮肤图，方形按键保留原状，仅应用特效发光色
+                                    // 【彻底修复】：同步改变按键的基础底色，解决默认风格失效的问题
+                                    b.color = style.globalBtnColor; 
+                                    
                                     if (b.shape == SHAPE_CIRCLE) {
                                         b.customImageUri = style.btnNormalUri != null ? style.btnNormalUri : ""; 
                                         b.customPressedUri = style.btnPressedUri != null ? style.btnPressedUri : "";
+                                    } else {
+                                        // 【彻底修复】：如果是方形按键，强行清空圆形的皮肤贴图，让它使用底层颜色渐变渲染出真正的方形！
+                                        b.customImageUri = ""; 
+                                        b.customPressedUri = "";
                                     }
                                     b.pressedEffectColor = style.globalPressedColor; 
                                     b.pressedEffectAlpha = style.globalPressedAlpha;
