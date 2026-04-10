@@ -2112,8 +2112,9 @@ import java.util.List;
                                 root.put("joyBaseX", joyBaseX); root.put("joyBaseY", joyBaseY);
                                 root.put("joyRadius", joyRadius); root.put("joyHitboxRadius", joyHitboxRadius);
                                 root.put("joyAlpha", joyAlpha); root.put("joyColor", joyColor);
-                                root.put("joySkinBase", joySkinBaseUri); root.put("joySkinKnob", joySkinKnobUri);
+                                root.put("joySkinBase", joySkinBaseUri);root.put("joySkinKnob", joySkinKnobUri);
                                 root.put("isVibrationOn", isVibrationOn); root.put("vibrationIntensity", vibrationIntensity);
+                                root.put("currentStyleIndex", currentStyleIndex); // 【导出修复：把选中的风格索引写入文件】
                             }
                             
                             if (which == 0 || which == 2) { // 包含风格
@@ -3576,8 +3577,9 @@ import java.util.List;
 editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             editor.putFloat("PadDeadzone_" + currentSlot, gamepadDeadzone);
             editor.putInt("PadUIMode_" + currentSlot, gamepadUIMode);
-            editor.putBoolean("PadVib_" + currentSlot, isGamepadVibrationOn);
+             editor.putBoolean("PadVib_" + currentSlot, isGamepadVibrationOn);
             editor.putInt("GridSize_" + currentSlot, gridSize);
+            editor.putInt("CurrentStyleIndex_" + currentSlot, currentStyleIndex); // 【记忆修复：保存当前选中的风格】
             editor.putInt("DlgBgC_" + currentSlot, dialogBgColor);
             editor.putInt("DlgBgA_" + currentSlot, dialogBgAlpha);
             editor.putInt("DlgTxtC_" + currentSlot, dialogTextColor);
@@ -3699,6 +3701,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             isGamepadVibrationOn = prefs.getBoolean("PadVib_" + slot, true);           
             gridSize = prefs.getInt("GridSize_" + slot, 50);
             autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
+            currentStyleIndex = prefs.getInt("CurrentStyleIndex_" + slot, 0); // 【记忆修复：读取刚才选中的风格】
             // 读取自定义弹窗 UI 设置
             dialogBgColor = prefs.getInt("DlgBgC_" + slot, Color.parseColor("#222222"));
             dialogBgAlpha = prefs.getInt("DlgBgA_" + slot, 230);
@@ -4073,8 +4076,8 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                                         editor.putInt("JoyColor_" + v.currentSlot, root.optInt("joyColor", v.joyColor)); 
                                         editor.putBoolean("Vibration_" + v.currentSlot, root.optBoolean("isVibrationOn", v.isVibrationOn));                        
                                         editor.putInt("VibIntensity_" + v.currentSlot, root.optInt("vibrationIntensity", v.vibrationIntensity));
-                                        editor.putString("JoySkinBase_" + v.currentSlot, root.optString("joySkinBase", v.joySkinBaseUri != null ? v.joySkinBaseUri : ""));
-                                        editor.putString("JoySkinKnob_" + v.currentSlot, root.optString("joySkinKnob", v.joySkinKnobUri != null ? v.joySkinKnobUri : ""));                       
+                                        editor.putInt("CurrentStyleIndex_" + v.currentSlot, root.optInt("currentStyleIndex", v.currentStyleIndex)); // 【导入修复：覆盖读取风格索引】
+                                        editor.putString("JoySkinBase_" + v.currentSlot, root.optString("joySkinBase", v.joySkinBaseUri != null ? v.joySkinBaseUri : ""));     
                                     }
                                                                        
                                     
