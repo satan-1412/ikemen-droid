@@ -247,6 +247,11 @@ import java.util.List;
     // =========================================
     private VirtualButton draggedButton = null;
     public VirtualButton copiedButton = null; // 【优化1】用于复制的按键
+    // 用于处理按键长按复制的定时任务
+    private Runnable btnLongPressRunnable = null;
+    
+    // 记录上一次点击空白处的时间戳，用于判断双击粘贴
+    private long lastEmptyTapTime = 0;
     private long downTime;
     private float downX, downY;
 
