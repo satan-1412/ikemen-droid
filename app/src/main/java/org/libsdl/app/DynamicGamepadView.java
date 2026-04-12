@@ -131,8 +131,9 @@ import java.util.List;
     public float joyRadius = 180;
     public float joyHitboxRadius = 270; // 【新增】摇杆独立触摸判定范围
     public int joyAlpha = 200;
-    public int joyColor = Color.parseColor("#FF5555"); // 【修改】默认摇杆中心为红色
-    
+    public int joyColor = Color.parseColor("#FF5555"); // 原有行
+    public boolean isJoyLocked = false; // 【新增】摇杆位置锁定状态
+
     private float joyKnobX = 250, joyKnobY = 700;
     private int joyPointerId = -1;
     private boolean isDraggingJoy = false;
@@ -1237,7 +1238,10 @@ import java.util.List;
 
         // ========= 4. 编辑模式提示 =========
         if (isEditMode) {
-            paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setStrokeWidth(5f); paintBtn.setColor(Color.WHITE); paintBtn.setAlpha(255);
+            paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setStrokeWidth(5f); 
+            // 【修改】如果被锁定了外框就变红，没锁定就是白色
+            paintBtn.setColor(isJoyLocked ? Color.RED : Color.WHITE); 
+            paintBtn.setAlpha(255);
             canvas.drawCircle(joyBaseX, joyBaseY, joyRadius + 10, paintBtn); 
             canvas.drawCircle(joyBaseX, joyBaseY, joyHitboxRadius, dashPaint);
             paintText.setColor(Color.WHITE); 
@@ -1605,8 +1609,9 @@ import java.util.List;
                     isMenuDown = true; 
                     postDelayed(menuLongPressRunnable, 500); 
                     invalidate(); 
-                } else if (joystickMode > 0 && Math.hypot(x - joyBaseX, y - joyBaseY) < joyRadius) { 
-                    isDraggingJoy = true; 
+                                } else if (joystickMode > 0 && Math.hypot(x - joyBaseX, y - joyBaseY) < joyRadius) { 
+                    // 只有在未锁定时，才允许标记为“正在拖拽摇杆”
+                    isDraggingJoy = !isJoyLocked; 
                 } else {
                     for (int i = buttons.size() - 1; i >= 0; i--) {
                         if (Math.hypot(x - buttons.get(i).cx, y - buttons.get(i).cy) < buttons.get(i).radius * 1.3f) {
@@ -1659,7 +1664,8 @@ import java.util.List;
                     if (System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) { showMainMenu(); }
                 } else if (System.currentTimeMillis() - downTime < 250 && Math.hypot(x - downX, y - downY) < 20) {
                     if (btnLongPressRunnable != null) { removeCallbacks(btnLongPressRunnable); btnLongPressRunnable = null; }
-                    if (isDraggingJoy) {
+                    // 【修复】直接通过坐标判断是否点中了摇杆区域，无视锁定状态，强行打开设置
+                    if (joystickMode > 0 && Math.hypot(downX - joyBaseX, downY - joyBaseY) < joyRadius) {
                         DynamicGamepadView.this.showJoystickSettingsDialog();
                     } else if (draggedButton != null) {
                         DynamicGamepadView.this.showButtonSettingsDialog(draggedButton);
@@ -2295,8 +2301,9 @@ import java.util.List;
             LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f); lp1.setMargins(0,0,10,0); launchBtn.setLayoutParams(lp1);
             launchBtn.setOnClickListener(v -> {
                 new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle("即将重启引擎").setMessage("确定要读取并切换到【" + preset.name + "】吗？\n(这将会立刻重启游戏)")
-                    .setPositiveButton("立刻读取", (d, w) -> {
+                    .setTitle("🔄 即将重新加载数据")
+                    .setMessage("确定要无缝切换到【" + preset.name + "】并重新加载游戏吗？")
+                    .setPositiveButton("立刻加载", (d, w) -> {
                         if (getContext() instanceof SDLActivity) {
                             dialog.dismiss();
                             ((SDLActivity) getContext()).saveAndRestartWithPresetUri(preset.uri);
@@ -3070,7 +3077,19 @@ import java.util.List;
         
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
-
+               // 【新增：摇杆位置锁定控制区】
+        layout.addView(createTitle("0. 摇杆位置锁定设置:"));
+        final Button lockBtn = new Button(getContext());
+        lockBtn.setText(isJoyLocked ? "🔒 摇杆位置：已锁定" : "🔓 摇杆位置：未锁定");
+        lockBtn.setTextColor(Color.WHITE);
+        lockBtn.setBackgroundColor(isJoyLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50"));
+        lockBtn.setOnClickListener(v -> {
+            isJoyLocked = !isJoyLocked;
+            lockBtn.setText(isJoyLocked ? "🔒 摇杆位置：已锁定" : "🔓 摇杆位置：未锁定");
+            lockBtn.setBackgroundColor(isJoyLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50"));
+            invalidate(); // 刷新编辑模式下的外框颜色
+        });
+        layout.addView(lockBtn);
         layout.addView(createTitle("1. 摇杆中心球颜色 (双向同步):"));
         final EditText hexInput = createEditText("颜色代码如: #FF5555", String.format("#%06X", (0xFFFFFF & joyColor))); 
         layout.addView(hexInput);
@@ -3835,6 +3854,7 @@ import java.util.List;
             editor.putFloat("JoyHitR_" + currentSlot, joyHitboxRadius);
             editor.putInt("JoyA_" + currentSlot, joyAlpha);
             editor.putInt("JoyColor_" + currentSlot, joyColor);
+            editor.putBoolean("JoyLocked_" + currentSlot, isJoyLocked);
             editor.putString("JoySkinBase_" + currentSlot, joySkinBaseUri);
             editor.putString("JoySkinKnob_" + currentSlot, joySkinKnobUri);
             editor.putBoolean("Vibration_" + currentSlot, isVibrationOn);
@@ -3943,7 +3963,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             joyHitboxRadius = prefs.getFloat("JoyHitR_" + slot, 270);
             joyAlpha = prefs.getInt("JoyA_" + slot, 200);
             joyColor = prefs.getInt("JoyColor_" + slot, Color.parseColor("#FF5555"));
-                        isVibrationOn = prefs.getBoolean("Vibration_" + slot, true);
+            isJoyLocked = prefs.getBoolean("JoyLocked_" + slot, false);           isVibrationOn = prefs.getBoolean("Vibration_" + slot, true);
             vibrationIntensity = prefs.getInt("VibIntensity_" + slot, 30);
             // 【新增：读取全局反馈设置】
             isGlobalFeedbackEnabled = prefs.getBoolean("GlobalFeedbackOn_" + slot, true);
