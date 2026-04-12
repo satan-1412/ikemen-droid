@@ -31,10 +31,11 @@ public class AssetExtractor {
             return -3;
         }
     }
-    // 【新增】：无损注入模式，专门用于只把引擎大脑塞进整合包，绝对不碰 data 和 chars
+    // 【修改】：无损注入模式，必须同时注入 external (大脑) 和 font (维持生命的系统字体)
     public static void extractEngineCoreOnly(android.content.res.AssetManager assets, File targetDir) throws java.io.IOException {
-        android.util.Log.i("AssetExtractor", "触发无损注入，仅释放 external 引擎核心...");
+        android.util.Log.i("AssetExtractor", "触发无损注入，仅释放 external 和 font...");
         copyAssetFolder(assets, "external", targetDir); 
+        copyAssetFolder(assets, "font", targetDir); // <--- 【就是漏了这一行救命的代码】
     }
 
     // 替换原有的 extractAll 方法

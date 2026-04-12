@@ -175,6 +175,79 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     protected String[] getArguments() {
+        // 【终极机制】：全自动智能嗅探整合包的真实 UI 路径 (支持老版 Ikemen、纯 MUGEN 及魔改包)
+        SharedPreferences gamepadPrefs = getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE);
+        if (gamepadPrefs.getBoolean("IntegrationMode", false)) {
+            String basePath = mBasePath;
+            if (basePath == null || basePath.isEmpty()) basePath = getExternalFilesDir(null).getAbsolutePath();
+            File baseDir = new File(basePath);
+            
+            String motifPath = ""; 
+
+            // 第一梯队：嗅探老版/新版 Ikemen GO 整合包专属的存档配置 (save/config.json)
+            File ikemenCfg = new File(baseDir, "save/config.json");
+            if (ikemenCfg.exists()) {
+                try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(ikemenCfg))) {
+                    StringBuilder sb = new StringBuilder(); String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                    org.json.JSONObject json = new org.json.JSONObject(sb.toString());
+                    if (json.has("motif")) {
+                        motifPath = json.getString("motif");
+                    }
+                } catch (Exception e) { android.util.Log.e("SDLActivity", "Ikemen 配置文件解析失败", e); }
+            }
+
+            // 第二梯队：嗅探传统 MUGEN 整合包配置 (data/mugen.cfg)
+            if (motifPath.isEmpty()) {
+                File mugenCfg = new File(baseDir, "data/mugen.cfg");
+                if (mugenCfg.exists()) {
+                    try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(mugenCfg))) {
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            String trimmed = line.trim();
+                            if (trimmed.toLowerCase().startsWith("motif")) {
+                                String[] parts = trimmed.split("=");
+                                if (parts.length > 1) {
+                                    motifPath = parts[1].trim().replace("\\", "/").replace("\"", "");
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (Exception e) {}
+                }
+            }
+
+            // 第三梯队：终极暴力兜底！如果配置全被作者藏起来了，直接去 data 目录硬搜主题文件
+            if (motifPath.isEmpty()) {
+                File dataDir = new File(baseDir, "data");
+                if (dataDir.exists() && dataDir.isDirectory()) {
+                    if (new File(dataDir, "system.def").exists()) {
+                        motifPath = "data/system.def";
+                    } else if (new File(dataDir, "mugen1/system.def").exists()) {
+                        motifPath = "data/mugen1/system.def";
+                    } else {
+                        // 暴力扫盘：翻遍 data 下的第一层所有文件夹，找到 system.def 就用
+                        File[] subDirs = dataDir.listFiles();
+                        if (subDirs != null) {
+                            for (File sub : subDirs) {
+                                if (sub.isDirectory() && new File(sub, "system.def").exists()) {
+                                    motifPath = "data/" + sub.getName() + "/system.def";
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 如果千辛万苦找到了真实的 UI 路径，就通过底层命令行强行指引新大脑去穿旧衣服
+            if (!motifPath.isEmpty()) {
+                android.util.Log.i("SDLActivity", "兼容模式：成功嗅探到整合包真实 UI 路径 -> " + motifPath);
+                return new String[] {"-m", motifPath};
+            }
+        }
+        
+        // 没开兼容模式，或者实在是空的文件夹，就什么都不做，走官方默认流程
         return new String[0];
     }
 
@@ -664,12 +737,16 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             boolean isIntegrationValid = false;
 
             // =======================================================
-            // 2. 兼容模式探针检测 (精准定位 + 遍历搜索)
+            // 2. 兼容模式探针检测 (精准定位 + 灵魂目录 + 遍历搜索)
             // =======================================================
             if (isIntegrationMode && baseDir.exists() && baseDir.isDirectory()) {
-                if (new File(baseDir, "data/system.def").exists() || new File(baseDir, "save/stats.json").exists()) {
+                // 终极探针：只要有标准系统文件、存档配置文件，或者干脆同时拥有 chars 和 data 两个灵魂目录，直接放行！(完美兼容无 EXE 手机包)
+                if (new File(baseDir, "data/system.def").exists() || 
+                    new File(baseDir, "save/config.json").exists() || 
+                    (new File(baseDir, "chars").exists() && new File(baseDir, "data").exists())) {
                     isIntegrationValid = true;
                 } else {
+                    // 兜底探针：如果连目录都被魔改了，再去搜有没有 .exe 当锚点
                     File[] files = baseDir.listFiles();
                     if (files != null) {
                         for (File f : files) {
