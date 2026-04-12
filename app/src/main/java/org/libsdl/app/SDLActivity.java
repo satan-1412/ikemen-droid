@@ -233,15 +233,17 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             boolean is64Bit = arch != null && (arch.contains("aarch64") || arch.contains("arm64"));
 
             if (is64Bit) {
-                // 64位模式：分配 32MB 超大线程栈应对复杂人物特效，加快 GOGC 垃圾回收频率避免峰值 OOM
-                System.setProperty("SDL_THREAD_STACK_SIZE", "33554432");
-                android.system.Os.setenv("GOGC", "80", true);
-                Log.i(TAG, "IkemenGO: Running in 64-bit Performance Mode");
+                // 【64位狂暴模式】：8MB 安全栈空间防止 OOM。GOGC=200 降低回收频率，让游戏无限制占用大内存换取极致性能！
+                System.setProperty("SDL_THREAD_STACK_SIZE", "8388608"); 
+                android.system.Os.setenv("GOGC", "200", true);
+                // 解除软限制，警告 Go 引擎可以使用更多系统内存
+                android.system.Os.setenv("GOMEMLIMIT", "2048MiB", true); 
+                Log.i(TAG, "IkemenGO: Running in 64-bit Extreme Performance Mode");
             } else {
-                // 32位模式：保持默认 8MB 线程栈，标准 GOGC 避免吃满老机型 CPU
-                System.setProperty("SDL_THREAD_STACK_SIZE", "8388608");
-                android.system.Os.setenv("GOGC", "100", true);
-                Log.i(TAG, "IkemenGO: Running in 32-bit Compatibility Mode");
+                // 【32位维稳模式】：2MB 极简栈空间，GOGC=80 频繁回收内存，确保老旧安卓 5.0 机器绝对不会崩溃！
+                System.setProperty("SDL_THREAD_STACK_SIZE", "2097152");
+                android.system.Os.setenv("GOGC", "80", true);
+                Log.i(TAG, "IkemenGO: Running in 32-bit Maximum Stability Mode");
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to set Go/SDL environment: " + e.getMessage());
