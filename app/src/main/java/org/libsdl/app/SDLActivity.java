@@ -175,79 +175,6 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     protected String[] getArguments() {
-        // 【终极机制】：全自动智能嗅探整合包的真实 UI 路径 (支持老版 Ikemen、纯 MUGEN 及魔改包)
-        SharedPreferences gamepadPrefs = getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE);
-        if (gamepadPrefs.getBoolean("IntegrationMode", false)) {
-            String basePath = mBasePath;
-            if (basePath == null || basePath.isEmpty()) basePath = getExternalFilesDir(null).getAbsolutePath();
-            File baseDir = new File(basePath);
-            
-            String motifPath = ""; 
-
-            // 第一梯队：嗅探老版/新版 Ikemen GO 整合包专属的存档配置 (save/config.json)
-            File ikemenCfg = new File(baseDir, "save/config.json");
-            if (ikemenCfg.exists()) {
-                try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(ikemenCfg))) {
-                    StringBuilder sb = new StringBuilder(); String line;
-                    while ((line = br.readLine()) != null) sb.append(line);
-                    org.json.JSONObject json = new org.json.JSONObject(sb.toString());
-                    if (json.has("motif")) {
-                        motifPath = json.getString("motif");
-                    }
-                } catch (Exception e) { android.util.Log.e("SDLActivity", "Ikemen 配置文件解析失败", e); }
-            }
-
-            // 第二梯队：嗅探传统 MUGEN 整合包配置 (data/mugen.cfg)
-            if (motifPath.isEmpty()) {
-                File mugenCfg = new File(baseDir, "data/mugen.cfg");
-                if (mugenCfg.exists()) {
-                    try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(mugenCfg))) {
-                        String line;
-                        while ((line = br.readLine()) != null) {
-                            String trimmed = line.trim();
-                            if (trimmed.toLowerCase().startsWith("motif")) {
-                                String[] parts = trimmed.split("=");
-                                if (parts.length > 1) {
-                                    motifPath = parts[1].trim().replace("\\", "/").replace("\"", "");
-                                    break;
-                                }
-                            }
-                        }
-                    } catch (Exception e) {}
-                }
-            }
-
-            // 第三梯队：终极暴力兜底！如果配置全被作者藏起来了，直接去 data 目录硬搜主题文件
-            if (motifPath.isEmpty()) {
-                File dataDir = new File(baseDir, "data");
-                if (dataDir.exists() && dataDir.isDirectory()) {
-                    if (new File(dataDir, "system.def").exists()) {
-                        motifPath = "data/system.def";
-                    } else if (new File(dataDir, "mugen1/system.def").exists()) {
-                        motifPath = "data/mugen1/system.def";
-                    } else {
-                        // 暴力扫盘：翻遍 data 下的第一层所有文件夹，找到 system.def 就用
-                        File[] subDirs = dataDir.listFiles();
-                        if (subDirs != null) {
-                            for (File sub : subDirs) {
-                                if (sub.isDirectory() && new File(sub, "system.def").exists()) {
-                                    motifPath = "data/" + sub.getName() + "/system.def";
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 如果千辛万苦找到了真实的 UI 路径，就通过底层命令行强行指引新大脑去穿旧衣服
-            if (!motifPath.isEmpty()) {
-                android.util.Log.i("SDLActivity", "兼容模式：成功嗅探到整合包真实 UI 路径 -> " + motifPath);
-                return new String[] {"-m", motifPath};
-            }
-        }
-        
-        // 没开兼容模式，或者实在是空的文件夹，就什么都不做，走官方默认流程
         return new String[0];
     }
 
@@ -760,7 +687,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             }
 
             // =======================================================
-            // 3. 兼容模式下的智能无损注入 (含旧包智能升级与备份)
+            // 3. 兼容模式下的智能无损注入 (含物理篡改配置绝杀)
             // =======================================================
             if (isIntegrationValid) {
                 File externalDir = new File(baseDir, "external");
@@ -769,23 +696,80 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 boolean needInject = false;
                 
                 if (!engineBrain.exists()) {
-                    // 纯 MUGEN，连大脑都没有
-                    Log.i("SDLActivity", "兼容模式：检测到纯 MUGEN (无引擎大脑)，准备注入...");
+                    Log.i("SDLActivity", "兼容模式：检测到无引擎大脑，准备注入...");
                     needInject = true;
                 } else {
-                    // 老 Ikemen 包，有大脑，咱们比对一下是不是配套的
                     long localCRC = AssetExtractor.getFileCRC(engineBrain);
                     long apkCRC = AssetExtractor.getAssetCRC(getAssets(), "external/script/main.lua");
-                    
-                    // 如果文件效验码对不上，说明这是老包的废弃脚本，或者是异构版本
                     if (localCRC != apkCRC && localCRC != -2 && apkCRC != -1) {
                         Log.i("SDLActivity", "兼容模式：检测到旧版或不兼容的大脑，准备备份并升级...");
                         needInject = true;
-                        // 佛系处理：留个全尸，把它原本的 external 文件夹改名备份起来
                         File backupDir = new File(baseDir, "external_old_backup_" + System.currentTimeMillis());
                         externalDir.renameTo(backupDir);
                     }
                 }
+
+                // =======================================================
+                // 【终极绝杀】：开机前一秒物理篡改 config.json，强制指定 UI
+                // =======================================================
+                try {
+                    String motifPath = "data/system.def"; // 默认保底
+                    File mugenCfg = new File(baseDir, "data/mugen.cfg");
+                    if (mugenCfg.exists()) {
+                        java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(mugenCfg));
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            if (line.trim().toLowerCase().startsWith("motif")) {
+                                String[] parts = line.split("=");
+                                if (parts.length > 1) {
+                                    motifPath = parts[1].trim().replace("\\", "/").replace("\"", "");
+                                    break;
+                                }
+                            }
+                        }
+                        br.close();
+                    } else if (new File(baseDir, "data/mugen1/system.def").exists()) {
+                        motifPath = "data/mugen1/system.def";
+                    } else {
+                        File dataDir = new File(baseDir, "data");
+                        if (dataDir.exists() && dataDir.isDirectory()) {
+                            File[] subDirs = dataDir.listFiles();
+                            if (subDirs != null) {
+                                for (File sub : subDirs) {
+                                    if (sub.isDirectory() && new File(sub, "system.def").exists()) {
+                                        motifPath = "data/" + sub.getName() + "/system.def";
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 物理写入 save/config.json
+                    File saveDir = new File(baseDir, "save");
+                    if (!saveDir.exists()) saveDir.mkdirs();
+                    File configJson = new File(saveDir, "config.json");
+                    org.json.JSONObject configObj = new org.json.JSONObject();
+                    if (configJson.exists()) {
+                        try {
+                            java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(configJson));
+                            StringBuilder sb = new StringBuilder(); String line;
+                            while ((line = br.readLine()) != null) sb.append(line);
+                            br.close();
+                            configObj = new org.json.JSONObject(sb.toString());
+                        } catch (Exception e) {}
+                    }
+                    configObj.put("motif", motifPath);
+                    configObj.put("Motif", motifPath); // 双写保险
+                    
+                    java.io.FileWriter fw = new java.io.FileWriter(configJson);
+                    fw.write(configObj.toString(4));
+                    fw.close();
+                    Log.i("SDLActivity", "兼容模式：成功将真实 UI 路径强制写入配置 -> " + motifPath);
+                } catch (Exception e) {
+                    Log.e("SDLActivity", "写入配置失败，将使用默认兜底", e);
+                }
+                // =======================================================
 
                 if (needInject) {
                     runOnUiThread(() -> {
@@ -797,7 +781,6 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
                         new Thread(() -> {
                             try {
-                                // 核心魔法：只释放 external 文件夹
                                 AssetExtractor.extractEngineCoreOnly(getAssets(), baseDir);
                                 runOnUiThread(() -> {
                                     progress.dismiss();
@@ -814,7 +797,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     return; 
                 }
                 
-                Log.i("SDLActivity", "兼容模式：环境完美匹配，直接拉起引擎！");
+                Log.i("SDLActivity", "兼容模式：环境完好，直接拉起引擎！");
                 runOnUiThread(this::onSDLReady);
                 return; 
             }
