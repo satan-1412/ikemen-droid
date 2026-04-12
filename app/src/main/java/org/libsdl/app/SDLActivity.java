@@ -478,17 +478,13 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         // 2. 写入免打扰标记，告诉下一次启动“是我主动重启的，直接进游戏别弹窗”
         mSharedPrefs.edit().putBoolean("SkipNextAsk", true).commit();
         
-        // 3. 暴力杀进程并原地复活 (加入极其微小的延迟，确保系统有时间处理启动指令，实现真正的无缝重载)
+        // 3. 完美复刻官方的无缝重启逻辑，去除多余延迟，瞬间拉起新进程
         Intent intent = getBaseContext().getPackageManager().getLaunchIntentForPackage(getBaseContext().getPackageName());
         if (intent != null) {
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                startActivity(intent);
-                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                    android.os.Process.killProcess(android.os.Process.myPid());
-                    System.exit(0);
-                }, 50);
-            }, 100);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            android.os.Process.killProcess(android.os.Process.myPid());
+            Runtime.getRuntime().exit(0);
         }
     }
     // =========================================================================
