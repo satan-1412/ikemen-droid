@@ -656,13 +656,42 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         File baseDir = new File(mBasePath);
 
         new Thread(() -> {
+            // =======================================================
+            // 【新增核心：整合包兼容直读模式 (万能探针)】
+            // =======================================================
+            boolean isIntegrationMode = mSharedPrefs.getBoolean("IntegrationMode", false);
+            boolean isIntegrationValid = false;
+
+            if (isIntegrationMode && baseDir.exists() && baseDir.isDirectory()) {
+                File[] files = baseDir.listFiles();
+                if (files != null) {
+                    for (File f : files) {
+                        // 智能探针：只要根目录下存在任意 .exe 文件，或者存在 data/system.def 核心文件，即判定为合法整合包
+                        if ((f.isFile() && f.getName().toLowerCase().endsWith(".exe")) || 
+                            (f.isDirectory() && f.getName().equalsIgnoreCase("data") && new File(f, "system.def").exists())) {
+                            isIntegrationValid = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (isIntegrationValid) {
+                Log.i("SDLActivity", "兼容模式触发：检测到整合包特征文件 (EXE 或 system.def)，直接拉起引擎，跳过官方资源释放！");
+                runOnUiThread(this::onSDLReady);
+                return; // 核心：暴力 Return，彻底阻断后续的任何解压行为
+            }
+            // =======================================================
+
+
+            // 【原版逻辑】：如果开关没开，或者开启了但文件夹里没有 exe，则继续走官方校验
             boolean updateRequired = filesNeedUpdate(baseDir, UPDATE_FILE_CHECK_DIRS);
 
             if (!updateRequired) {
-                Log.i("SDLActivity", "Scripts match APK. Skipping extraction.");
+                Log.i("SDLActivity", "官方校验：Scripts match APK. Skipping extraction.");
                 runOnUiThread(this::onSDLReady);
             } else {
-                Log.i("SDLActivity", "Specified files are outdated or missing. Beginning extraction...");
+                Log.i("SDLActivity", "官方校验：Specified files are outdated or missing. Beginning extraction...");
 
                 runOnUiThread(() -> {
                     ProgressDialog progress = new ProgressDialog(this);

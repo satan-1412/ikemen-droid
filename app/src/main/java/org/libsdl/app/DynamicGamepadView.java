@@ -76,6 +76,7 @@ import java.util.List;
     public int menuPressedEffectAlpha = 150;
         public String menuButtonName = "⚙ 高级设置"; // 【新增】菜单按钮自定义名字
     public static boolean alwaysAskFolder = true; // 【新增】每次启动选择目录开关 (全局生效)
+    public static boolean isIntegrationModeEnabled = false; // 【新增】整合包兼容模式开关
     
     // ================= 新增：预设文件夹管理系统变量 =================
     public static class FolderPreset {
@@ -2066,6 +2067,21 @@ import java.util.List;
         // 【新增：预设文件夹快速启动列表】
         layout.addView(createMenuButton("🗂️ 预设文件夹管理系统", v -> { showFolderPresetManagerDialog(); dialog.dismiss(); }));
 
+        // 【新增：整合包兼容模式 UI 开关】
+        layout.addView(createMenuButton(isIntegrationModeEnabled ? "📦 整合包兼容直读模式: [已开启]" : "📦 整合包兼容直读模式: [已关闭]", v -> {
+            isIntegrationModeEnabled = !isIntegrationModeEnabled;
+            saveConfig();
+            if (isIntegrationModeEnabled) {
+                new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("📦 兼容模式已开启")
+                    .setMessage("此模式专为第三方整合包设计。\n\n引擎将自动扫描文件夹内是否有【任意.exe文件】或【data/system.def】。\n如果检测到，将直接读取整合包数据，绝对不会释放并覆盖官方脚本！")
+                    .setPositiveButton("我知道了", null).show();
+            } else {
+                Toast.makeText(getContext(), "已关闭：将恢复原版官方文件校验机制", Toast.LENGTH_SHORT).show();
+            }
+            dialog.dismiss(); showMainMenu();
+        }));
+
         layout.addView(createMenuButton("⏱️ 面板自动隐藏设置", v -> { showAutoHideSettingsDialog(); dialog.dismiss(); }));
         layout.addView(createMenuButton("🎨 按键风格管理系统", v -> { showStyleManagerDialog(); dialog.dismiss(); }));
                 layout.addView(createMenuButton("🎮 物理手柄与外设专区", v -> { showGamepadSettingsDialog(); dialog.dismiss(); }));
@@ -3912,6 +3928,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             editor.putInt("MenuPressedAlpha_" + currentSlot, menuPressedEffectAlpha);
             editor.putString("MenuButtonName_" + currentSlot, menuButtonName);
             editor.putBoolean("AlwaysAskFolder", alwaysAskFolder); // 全局保存
+            editor.putBoolean("IntegrationMode", isIntegrationModeEnabled); // 全局保存：整合包兼容模式
             
             // 【新增：保存文件夹预设列表】
             JSONArray folderArr = new JSONArray();
@@ -4078,6 +4095,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             menuPressedEffectAlpha = prefs.getInt("MenuPressedAlpha_" + slot, 150);
             menuButtonName = prefs.getString("MenuButtonName_" + slot, "⚙ 高级设置");
             alwaysAskFolder = prefs.getBoolean("AlwaysAskFolder", true);
+            isIntegrationModeEnabled = prefs.getBoolean("IntegrationMode", false); // 读取整合包兼容模式
             
             // 【新增：读取文件夹预设列表】
             String folderJson = prefs.getString("FolderPresets", "[]");
