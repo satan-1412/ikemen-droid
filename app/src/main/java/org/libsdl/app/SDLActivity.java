@@ -657,19 +657,19 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         new Thread(() -> {
             // =======================================================
-            // 【新增核心：整合包兼容直读模式 (万能探针)】
+            // 1. 读取手柄专属存档中的兼容模式开关
             // =======================================================
-            // 【修复】：必须从手柄专用的配置通道里读取开关状态
             SharedPreferences gamepadPrefs = getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE);
             boolean isIntegrationMode = gamepadPrefs.getBoolean("IntegrationMode", false);
             boolean isIntegrationValid = false;
 
+            // =======================================================
+            // 2. 兼容模式探针检测 (精准定位 + 遍历搜索)
+            // =======================================================
             if (isIntegrationMode && baseDir.exists() && baseDir.isDirectory()) {
-                // 探针优化 1：先直接精准定位核心文件，效率最高
                 if (new File(baseDir, "data/system.def").exists() || new File(baseDir, "save/stats.json").exists()) {
                     isIntegrationValid = true;
                 } else {
-                    // 探针优化 2：如果没有标准核心文件，就遍历扫描任意 .exe 结尾的文件（兼容各种改名情况）
                     File[] files = baseDir.listFiles();
                     if (files != null) {
                         for (File f : files) {
@@ -682,15 +682,69 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 }
             }
 
-            if (isIntegrationValid) {
-                Log.i("SDLActivity", "兼容模式触发：检测到整合包特征文件 (EXE 或 system.def)，直接拉起引擎，跳过官方资源释放！");
-                runOnUiThread(this::onSDLReady);
-                return; // 核心：暴力 Return，彻底阻断后续的任何解压行为
-            }
             // =======================================================
+            // 3. 兼容模式下的智能无损注入 (含旧包智能升级与备份)
+            // =======================================================
+            if (isIntegrationValid) {
+                File externalDir = new File(baseDir, "external");
+                File engineBrain = new File(baseDir, "external/script/main.lua");
+                
+                boolean needInject = false;
+                
+                if (!engineBrain.exists()) {
+                    // 纯 MUGEN，连大脑都没有
+                    Log.i("SDLActivity", "兼容模式：检测到纯 MUGEN (无引擎大脑)，准备注入...");
+                    needInject = true;
+                } else {
+                    // 老 Ikemen 包，有大脑，咱们比对一下是不是配套的
+                    long localCRC = AssetExtractor.getFileCRC(engineBrain);
+                    long apkCRC = AssetExtractor.getAssetCRC(getAssets(), "external/script/main.lua");
+                    
+                    // 如果文件效验码对不上，说明这是老包的废弃脚本，或者是异构版本
+                    if (localCRC != apkCRC && localCRC != -2 && apkCRC != -1) {
+                        Log.i("SDLActivity", "兼容模式：检测到旧版或不兼容的大脑，准备备份并升级...");
+                        needInject = true;
+                        // 佛系处理：留个全尸，把它原本的 external 文件夹改名备份起来
+                        File backupDir = new File(baseDir, "external_old_backup_" + System.currentTimeMillis());
+                        externalDir.renameTo(backupDir);
+                    }
+                }
 
+                if (needInject) {
+                    runOnUiThread(() -> {
+                        ProgressDialog progress = new ProgressDialog(this);
+                        progress.setTitle("⚙️ 智能兼容处理");
+                        progress.setMessage("正在为整合包注入最新引擎核心...\n(原有核心已安全备份，画面与人物不受影响)");
+                        progress.setCancelable(false);
+                        progress.show();
 
-            // 【原版逻辑】：如果开关没开，或者开启了但文件夹里没有 exe，则继续走官方校验
+                        new Thread(() -> {
+                            try {
+                                // 核心魔法：只释放 external 文件夹
+                                AssetExtractor.extractEngineCoreOnly(getAssets(), baseDir);
+                                runOnUiThread(() -> {
+                                    progress.dismiss();
+                                    onSDLReady();
+                                });
+                            } catch (Exception e) {
+                                runOnUiThread(() -> {
+                                    progress.dismiss();
+                                    onSDLReady(); 
+                                });
+                            }
+                        }).start();
+                    });
+                    return; 
+                }
+                
+                Log.i("SDLActivity", "兼容模式：环境完美匹配，直接拉起引擎！");
+                runOnUiThread(this::onSDLReady);
+                return; 
+            }
+
+            // =======================================================
+            // 4. 没开兼容模式的普通官方校验流程（原汁原味不动它）
+            // =======================================================
             boolean updateRequired = filesNeedUpdate(baseDir, UPDATE_FILE_CHECK_DIRS);
 
             if (!updateRequired) {
