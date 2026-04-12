@@ -659,18 +659,24 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             // =======================================================
             // 【新增核心：整合包兼容直读模式 (万能探针)】
             // =======================================================
-            boolean isIntegrationMode = mSharedPrefs.getBoolean("IntegrationMode", false);
+            // 【修复】：必须从手柄专用的配置通道里读取开关状态
+            SharedPreferences gamepadPrefs = getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE);
+            boolean isIntegrationMode = gamepadPrefs.getBoolean("IntegrationMode", false);
             boolean isIntegrationValid = false;
 
             if (isIntegrationMode && baseDir.exists() && baseDir.isDirectory()) {
-                File[] files = baseDir.listFiles();
-                if (files != null) {
-                    for (File f : files) {
-                        // 智能探针：只要根目录下存在任意 .exe 文件，或者存在 data/system.def 核心文件，即判定为合法整合包
-                        if ((f.isFile() && f.getName().toLowerCase().endsWith(".exe")) || 
-                            (f.isDirectory() && f.getName().equalsIgnoreCase("data") && new File(f, "system.def").exists())) {
-                            isIntegrationValid = true;
-                            break;
+                // 探针优化 1：先直接精准定位核心文件，效率最高
+                if (new File(baseDir, "data/system.def").exists() || new File(baseDir, "save/stats.json").exists()) {
+                    isIntegrationValid = true;
+                } else {
+                    // 探针优化 2：如果没有标准核心文件，就遍历扫描任意 .exe 结尾的文件（兼容各种改名情况）
+                    File[] files = baseDir.listFiles();
+                    if (files != null) {
+                        for (File f : files) {
+                            if (f.isFile() && f.getName().toLowerCase().endsWith(".exe")) {
+                                isIntegrationValid = true;
+                                break;
+                            }
                         }
                     }
                 }
