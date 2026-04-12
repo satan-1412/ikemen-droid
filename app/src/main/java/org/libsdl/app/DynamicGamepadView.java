@@ -74,8 +74,23 @@ import java.util.List;
     public Bitmap menuPressedSkinBitmap = null;
     public int menuPressedEffectColor = 0;
     public int menuPressedEffectAlpha = 150;
-    public String menuButtonName = "⚙ 高级设置"; // 【新增】菜单按钮自定义名字
+        public String menuButtonName = "⚙ 高级设置"; // 【新增】菜单按钮自定义名字
     public static boolean alwaysAskFolder = true; // 【新增】每次启动选择目录开关 (全局生效)
+    
+    // ================= 新增：预设文件夹管理系统变量 =================
+    public static class FolderPreset {
+        public String name;
+        public String uri;
+        public int color;
+        public FolderPreset(String n, String u, int c) { this.name=n; this.uri=u; this.color=c; }
+        public JSONObject toJson() throws Exception {
+            JSONObject o = new JSONObject(); o.put("name", name); o.put("uri", uri); o.put("color", color); return o;
+        }
+        public static FolderPreset fromJson(JSONObject o) {
+            return new FolderPreset(o.optString("name",""), o.optString("uri",""), o.optInt("color", Color.WHITE));
+        }
+    }
+    public List<FolderPreset> folderPresets = new ArrayList<>(); // 文件夹预设列表
 
 
     // ================= 全局弹窗 UI 自定义系统变量 (被误删的变量补回) =================
@@ -224,11 +239,14 @@ import java.util.List;
     // 强制全屏时隐藏的标志位，供外部（如SDLActivity）检测到游戏全屏状态时修改
     public boolean isFullscreenHideOverlay = false; 
 
-    public int gridSize = 50; // 【优化2】自定义网格大小
+        public int gridSize = 50; // 【优化2】自定义网格大小
+    // ====== 【新增：网格与背景自定义变量】 ======
+    public int gridLineColor = Color.WHITE; // 网格线颜色
+    public int gridLineAlpha = 30;          // 网格线透明度
+    public int gridBgColor = Color.argb(100, 255, 0, 0); // 编辑模式背景色 (默认半透红)
+    // =========================================
     private VirtualButton draggedButton = null;
     public VirtualButton copiedButton = null; // 【优化1】用于复制的按键
-    private long lastEmptyTapTime = 0; // 【优化1】记录双击时间
-    private Runnable btnLongPressRunnable = null; // 【优化1】按键长按复制倒计时
     private long downTime;
     private float downX, downY;
 
@@ -960,10 +978,10 @@ import java.util.List;
         
         
         if (isEditMode) {
-            canvas.drawColor(Color.argb(100, 255, 50, 50));
+            canvas.drawColor(gridBgColor); // 【修改：使用自定义背景色】
             if (isGridSnapMode) {
-                paintBtn.setColor(Color.WHITE);
-                paintBtn.setAlpha(30); 
+                paintBtn.setColor(gridLineColor); // 【修改：使用自定义网格线颜色】
+                paintBtn.setAlpha(gridLineAlpha); // 【修改：使用自定义网格线透明度】
                 paintBtn.setStrokeWidth(1f);
                 for (int i = 0; i < getWidth(); i += gridSize) canvas.drawLine(i, 0, i, getHeight(), paintBtn);
                 for (int i = 0; i < getHeight(); i += gridSize) canvas.drawLine(0, i, getWidth(), i, paintBtn);
@@ -1951,12 +1969,72 @@ import java.util.List;
         }));
         layout.addView(createMenuButton(isGridSnapMode ? "🧲 网格吸附：已开启" : "🧲 网格吸附：已关闭", v -> { isGridSnapMode = !isGridSnapMode; Toast.makeText(getContext(), isGridSnapMode ? "已开启网格吸附" : "已开启自由拖动", Toast.LENGTH_SHORT).show(); dialog.dismiss(); showMainMenu(); }));
         if (isGridSnapMode) {
-            final SeekBar gridBar = createColorBar(layout, "网格尺寸步长 (调整后重开菜单)", gridSize);
+            // 1. 网格大小滑条 (加入 invalidate 实现实时预览)
+            final SeekBar gridBar = createColorBar(layout, "📐 网格尺寸步长 (拖动实时预览)", gridSize);
             gridBar.setMax(200);
             gridBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-                public void onProgressChanged(SeekBar s, int p, boolean fromUser) { if (fromUser) gridSize = Math.max(10, p); }
-                public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) { saveConfig(); invalidate(); }
+                public void onProgressChanged(SeekBar s, int p, boolean fromUser) { 
+                    if (fromUser) { gridSize = Math.max(10, p); invalidate(); } // 【修改：实时刷新】
+                }
+                public void onStartTrackingTouch(SeekBar s) {} 
+                public void onStopTrackingTouch(SeekBar s) { saveConfig(); }
             });
+
+            // 2. 网格线透明度滑条
+            final SeekBar lineAlphaBar = createColorBar(layout, "👁️ 网格线不透明度 (0-255)", gridLineAlpha);
+            lineAlphaBar.setMax(255);
+            lineAlphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                public void onProgressChanged(SeekBar s, int p, boolean fromUser) { 
+                    if (fromUser) { gridLineAlpha = p; invalidate(); } 
+                }
+                public void onStartTrackingTouch(SeekBar s) {} 
+                public void onStopTrackingTouch(SeekBar s) { saveConfig(); }
+            });
+
+            // 3. 网格线颜色下拉框
+            layout.addView(createTitle("🎨 网格线颜色:"));
+            final Spinner lineColorSpinner = new Spinner(getContext());
+            ArrayAdapter<String> colorAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, TEXT_COLOR_NAMES);
+            lineColorSpinner.setAdapter(colorAdapter);
+            for (int i=0; i<TEXT_COLOR_VALUES.length; i++) { if (gridLineColor == TEXT_COLOR_VALUES[i]) { lineColorSpinner.setSelection(i); break; } }
+            lineColorSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+                public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                    gridLineColor = TEXT_COLOR_VALUES[position]; invalidate(); saveConfig();
+                }
+                public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+            });
+            layout.addView(lineColorSpinner);
+
+            // 4. 背景色透明度滑条
+            int currentBgAlpha = Color.alpha(gridBgColor);
+            final SeekBar bgAlphaBar = createColorBar(layout, "🌫️ 编辑背景不透明度 (0-255)", currentBgAlpha);
+            bgAlphaBar.setMax(255);
+            bgAlphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                public void onProgressChanged(SeekBar s, int p, boolean fromUser) { 
+                    if (fromUser) { 
+                        gridBgColor = Color.argb(p, Color.red(gridBgColor), Color.green(gridBgColor), Color.blue(gridBgColor));
+                        invalidate(); 
+                    } 
+                }
+                public void onStartTrackingTouch(SeekBar s) {} 
+                public void onStopTrackingTouch(SeekBar s) { saveConfig(); }
+            });
+
+            // 5. 背景颜色下拉框
+            layout.addView(createTitle("🖌️ 编辑模式背景色:"));
+            final Spinner bgColorSpinner = new Spinner(getContext());
+            bgColorSpinner.setAdapter(colorAdapter);
+            int rgbOnly = Color.rgb(Color.red(gridBgColor), Color.green(gridBgColor), Color.blue(gridBgColor));
+            for (int i=0; i<TEXT_COLOR_VALUES.length; i++) { if (rgbOnly == TEXT_COLOR_VALUES[i]) { bgColorSpinner.setSelection(i); break; } }
+            bgColorSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+                public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                    int selectedColor = TEXT_COLOR_VALUES[position];
+                    gridBgColor = Color.argb(Color.alpha(gridBgColor), Color.red(selectedColor), Color.green(selectedColor), Color.blue(selectedColor));
+                    invalidate(); saveConfig();
+                }
+                public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+            });
+            layout.addView(bgColorSpinner);
         }
 
         layout.addView(createMenuButton("🕹️ 切换摇杆形态", v -> { joystickMode = (joystickMode + 1) % 5; if (joystickMode == JOYSTICK_MODE_STYLE) refreshJoystickStyle(); saveConfig(); invalidate(); dialog.dismiss(); showMainMenu(); }));
@@ -1968,6 +2046,14 @@ import java.util.List;
         layout.addView(createMenuButton("📁 重新选择游戏数据目录", v -> { if (getContext() instanceof SDLActivity) ((SDLActivity) getContext()).checkAndPickFolder(); dialog.dismiss(); }));
         
         layout.addView(createMenuButton(alwaysAskFolder ? "📂 每次启动强制重选目录: [已开启]" : "📂 每次启动强制重选目录: [已关闭]", v -> {
+            alwaysAskFolder = !alwaysAskFolder;
+            saveConfig();
+            Toast.makeText(getContext(), alwaysAskFolder ? "已开启: 每次启动/更新都会提示选择目录" : "已关闭: 启动时将直接进入上次的目录", Toast.LENGTH_SHORT).show();
+            dialog.dismiss(); showMainMenu();
+        }));
+        
+        // 【新增：预设文件夹快速启动列表】
+        layout.addView(createMenuButton("🗂️ 预设文件夹管理系统", v -> { showFolderPresetManagerDialog(); dialog.dismiss(); }));
             alwaysAskFolder = !alwaysAskFolder;
             saveConfig();
             Toast.makeText(getContext(), alwaysAskFolder ? "已开启: 每次启动/更新都会提示选择目录" : "已关闭: 启动时将直接进入上次的目录", Toast.LENGTH_SHORT).show();
@@ -2132,6 +2218,161 @@ import java.util.List;
                 }).show();
     }
     
+    // ================= 新增：预设文件夹管理系统完整 UI =================
+    private void showFolderPresetManagerDialog() {
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        
+        LinearLayout rootLayout = new LinearLayout(getContext());
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setBackground(getCustomDialogBackground());
+
+        TextView dragHandle = new TextView(getContext());
+        dragHandle.setText("✋ 拖拽此处 | 🗂️ 预设文件夹管理系统");
+        android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
+        titleBg.setColor(Color.argb(50, 0, 0, 0)); titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
+        dragHandle.setBackground(titleBg); dragHandle.setTextColor(dialogTextColor);
+        dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(dialogTextSize + 2f);
+        dragHandle.setTypeface(null, Typeface.BOLD); rootLayout.addView(dragHandle);
+
+        ScrollView scroll = new ScrollView(getContext()) {
+            @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                int trueScreenH = Math.min(DynamicGamepadView.this.getWidth(), DynamicGamepadView.this.getHeight());
+                int maxHeight = (int) (trueScreenH * dialogHeightRatio) - 120; 
+                if (maxHeight < 200) { maxHeight = 200; }
+                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST));
+            }
+        };
+
+        LinearLayout layout = new LinearLayout(getContext()); 
+        layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
+
+        // --- 1. 大大的加号按键区 ---
+        Button addBtn = new Button(getContext());
+        addBtn.setText("➕ 添加一个新的预设文件夹");
+        addBtn.setTextColor(Color.WHITE); addBtn.setTextSize(18f);
+        addBtn.setBackgroundColor(Color.parseColor("#4CAF50"));
+        addBtn.setPadding(0, 40, 0, 40);
+        addBtn.setOnClickListener(v -> {
+            if (getContext() instanceof SDLActivity) {
+                dialog.dismiss();
+                ((SDLActivity) getContext()).pickFolderForPreset(); // 调用系统层选取
+            }
+        });
+        layout.addView(addBtn);
+        
+        layout.addView(createTitle(" ")); // 空行
+
+        // --- 2. 遍历渲染现有文件夹卡片 ---
+        for (int i = 0; i < folderPresets.size(); i++) {
+            final int index = i;
+            final FolderPreset preset = folderPresets.get(i);
+            
+            LinearLayout card = new LinearLayout(getContext());
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(30, 30, 30, 30);
+            android.graphics.drawable.GradientDrawable cardBg = new android.graphics.drawable.GradientDrawable();
+            cardBg.setColor(Color.argb(80, 0, 0, 0)); cardBg.setCornerRadius(20f);
+            cardBg.setStroke(3, preset.color); // 使用自定义的字体颜色作为卡片边框高亮
+            card.setBackground(cardBg);
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            cp.setMargins(0, 20, 0, 20); card.setLayoutParams(cp);
+            
+            // 名字和URI
+            TextView nameTv = new TextView(getContext());
+            nameTv.setText("📁 " + preset.name);
+            nameTv.setTextColor(preset.color); nameTv.setTextSize(dialogTextSize + 4f); nameTv.setTypeface(null, Typeface.BOLD);
+            card.addView(nameTv);
+            TextView uriTv = new TextView(getContext());
+            uriTv.setText(preset.uri); uriTv.setTextColor(Color.GRAY); uriTv.setTextSize(dialogTextSize - 2f); uriTv.setPadding(0,0,0,20);
+            card.addView(uriTv);
+            
+            // 按钮操作区 (水平排列)
+            LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL);
+            
+            // 【启动按钮】带有确认提示
+            Button launchBtn = new Button(getContext()); launchBtn.setText("🚀 读取此文件夹"); launchBtn.setTextColor(Color.WHITE); launchBtn.setBackgroundColor(Color.parseColor("#2196F3"));
+            LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f); lp1.setMargins(0,0,10,0); launchBtn.setLayoutParams(lp1);
+            launchBtn.setOnClickListener(v -> {
+                new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("即将重启引擎").setMessage("确定要读取并切换到【" + preset.name + "】吗？\n(这将会立刻重启游戏)")
+                    .setPositiveButton("立刻读取", (d, w) -> {
+                        if (getContext() instanceof SDLActivity) {
+                            dialog.dismiss();
+                            ((SDLActivity) getContext()).saveAndRestartWithPresetUri(preset.uri);
+                        }
+                    }).setNegativeButton("取消", null).show();
+            });
+            btnRow.addView(launchBtn);
+            
+            // 【编辑按钮】
+            Button editBtn = new Button(getContext()); editBtn.setText("✏️ 编辑"); editBtn.setTextColor(Color.WHITE); editBtn.setBackgroundColor(Color.parseColor("#FF9800"));
+            LinearLayout.LayoutParams lp2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.8f); lp2.setMargins(0,0,10,0); editBtn.setLayoutParams(lp2);
+            editBtn.setOnClickListener(v -> {
+                dialog.dismiss();
+                showEditFolderPresetDialog(preset);
+            });
+            btnRow.addView(editBtn);
+
+            // 【删除按钮】带有确认提示
+            Button delBtn = new Button(getContext()); delBtn.setText("🗑️"); delBtn.setTextColor(Color.WHITE); delBtn.setBackgroundColor(Color.parseColor("#F44336"));
+            LinearLayout.LayoutParams lp3 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); delBtn.setLayoutParams(lp3);
+            delBtn.setOnClickListener(v -> {
+                new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("移除预设").setMessage("确定要从列表中移除【" + preset.name + "】吗？\n(仅移除快捷方式，不会删除手机里的真实文件)")
+                    .setPositiveButton("确定移除", (d, w) -> {
+                        folderPresets.remove(index); saveConfig(); dialog.dismiss(); showFolderPresetManagerDialog();
+                    }).setNegativeButton("取消", null).show();
+            });
+            btnRow.addView(delBtn);
+
+            card.addView(btnRow);
+            layout.addView(card);
+        }
+
+        Button exitBtn = new Button(getContext()); exitBtn.setText("关闭面板");
+        LinearLayout.LayoutParams exParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); exParams.setMargins(0, 40, 0, 0); exitBtn.setLayoutParams(exParams);
+        exitBtn.setOnClickListener(v -> dialog.dismiss()); layout.addView(exitBtn);
+
+        scroll.addView(layout); rootLayout.addView(scroll);
+        dialog.setContentView(rootLayout); setupMovableDialog(dialog, dragHandle); dialog.show();
+    }
+    
+    // 编辑单个文件夹预设属性（名字和颜色）
+    private void showEditFolderPresetDialog(final FolderPreset preset) {
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        LinearLayout rootLayout = new LinearLayout(getContext()); rootLayout.setOrientation(LinearLayout.VERTICAL); rootLayout.setBackground(getCustomDialogBackground());
+        TextView dragHandle = new TextView(getContext()); dragHandle.setText("✋ 拖拽此处 | ✏️ 编辑文件夹预设");
+        android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
+        titleBg.setColor(Color.argb(50, 0, 0, 0)); titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f}); dragHandle.setBackground(titleBg); dragHandle.setTextColor(dialogTextColor);
+        dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(dialogTextSize + 2f); dragHandle.setTypeface(null, Typeface.BOLD); rootLayout.addView(dragHandle);
+
+        LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 50, 50, 50);
+        
+        layout.addView(createTitle("自定义显示名称:"));
+        final EditText nameInput = createEditText("给它起个好记的名字", preset.name); layout.addView(nameInput);
+        
+        layout.addView(createTitle("字体高亮颜色:"));
+        final Spinner colorSpinner = new Spinner(getContext());
+        ArrayAdapter<String> colorAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, TEXT_COLOR_NAMES);
+        colorSpinner.setAdapter(colorAdapter);
+        for (int i=0; i<TEXT_COLOR_VALUES.length; i++) { if (preset.color == TEXT_COLOR_VALUES[i]) { colorSpinner.setSelection(i); break; } }
+        layout.addView(colorSpinner);
+        
+        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存设置"); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); btnParams.setMargins(0, 40, 0, 0); saveBtn.setLayoutParams(btnParams);
+        saveBtn.setOnClickListener(v -> {
+            preset.name = nameInput.getText().toString();
+            preset.color = TEXT_COLOR_VALUES[colorSpinner.getSelectedItemPosition()];
+            saveConfig(); dialog.dismiss(); showFolderPresetManagerDialog(); // 重新打开列表
+        });
+        layout.addView(saveBtn);
+        
+        rootLayout.addView(layout); dialog.setContentView(rootLayout); setupMovableDialog(dialog, dragHandle); dialog.show();
+    }
+    // 【注意】这里需要配合在 SDLActivity 里写一个 pickFolderForPreset 的底层方法来实现系统文件夹选择，如果 SDL 那边还没写，我会帮你处理。
+
     // 动态生成弹窗背景（支持纯色+透明度，或图片+透明度+圆角）
     private android.graphics.drawable.Drawable getCustomDialogBackground() {
         if (dialogBgBitmap != null && !dialogBgBitmap.isRecycled()) {
@@ -3294,43 +3535,86 @@ import java.util.List;
         Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存修改并退出"); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
         LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); saveParams.setMargins(20, 0, 0, 0); saveBtn.setLayoutParams(saveParams);
         
+        // ================= 【新增：第4点要求 - 高级拦截防误触保护】 =================
+        // 1. 获取进入设置前的全部原始数据，用来做“取消恢复”的回滚准备
+        final String origName = btn.id;
+        final String origKey = btn.keyMapStr;
+        final int origColor = btn.color;
+        final int origAlpha = btn.alpha;
+        final float origRadius = btn.radius;
+        final float origHitbox = btn.hitboxRadius;
+        final String origSkin = btn.customImageUri;
+        final String origPressedSkin = btn.customPressedUri;
+        final int origPressedColor = btn.pressedEffectColor;
+        final int origPressedAlpha = btn.pressedEffectAlpha;
+        final boolean origTurbo = btn.isTurbo;
+        final int origTurboInterval = btn.turboInterval;
+        final int origSizeFactor = btn.textSizeFactor;
+        final boolean origUseVib = btn.useCustomVib;
+        final int origVib = btn.customVib;
+        final boolean origUseFeed = btn.useCustomFeed;
+        final int origFeedScale = btn.customFeedScale;
+        final int origShape = btn.shape;
+
+        // 2. 将普通的“点击保存”标记起来，防止它也触发警告
+        final boolean[] isNormalSave = {false};
+        
         saveBtn.setOnClickListener(v -> {
+            isNormalSave[0] = true; // 标记为正常保存操作
+            
             btn.id = inputName.getText().toString(); 
             btn.displayLines = btn.id.split("\n"); 
             btn.textColor = TEXT_COLOR_VALUES[textColorSpinner.getSelectedItemPosition()];
-            
-            // 【究极无缝换装】如果玩家在设置里把圆的切成了方的，立刻智能换成方形图片
-            int oldShape = btn.shape;
-            btn.shape = shapeSpinner.getSelectedItemPosition(); 
+            int oldShape = btn.shape; btn.shape = shapeSpinner.getSelectedItemPosition(); 
             if (oldShape != btn.shape && joystickMode == JOYSTICK_MODE_STYLE && currentStyleIndex < styleList.size()) {
                  GamepadStyle currentTheme = styleList.get(currentStyleIndex);
-                 if (btn.shape == SHAPE_CIRCLE) {
-                     btn.customImageUri = currentTheme.btnNormalUri;
-                 } else {
-                     // 【彻底修复】：切方形时，没方形图就置空（触发底层画方块），绝对不套圆形贴图！
-                     btn.customImageUri = (currentTheme.btnSquareUri != null && !currentTheme.btnSquareUri.isEmpty()) ? currentTheme.btnSquareUri : "";
-                 }
+                 if (btn.shape == SHAPE_CIRCLE) btn.customImageUri = currentTheme.btnNormalUri;
+                 else btn.customImageUri = (currentTheme.btnSquareUri != null && !currentTheme.btnSquareUri.isEmpty()) ? currentTheme.btnSquareUri : "";
                  btn.loadSkinFromUri(getContext());
             }
-
-            btn.keyMapStr = inputKey.getText().toString().trim().toUpperCase(); 
-            btn.parseKeyCodes(); 
-            
-            // 【新增提取高阶参数】
-            btn.textSizeFactor = Math.max(10, txtSizeBar.getProgress());
-            btn.customVib = Math.max(0, customVibBar.getProgress());
-            btn.customFeedScale = Math.max(10, customFeedBar.getProgress());
-            
+            btn.keyMapStr = inputKey.getText().toString().trim().toUpperCase(); btn.parseKeyCodes(); 
+            btn.textSizeFactor = Math.max(10, txtSizeBar.getProgress()); btn.customVib = Math.max(0, customVibBar.getProgress()); btn.customFeedScale = Math.max(10, customFeedBar.getProgress());
             saveConfig(); invalidate(); dialog.dismiss();
         });
-
 
         bottomButtons.addView(saveBtn); layout.addView(bottomButtons);
 
         scroll.addView(layout); rootLayout.addView(scroll);
-        dialog.setContentView(rootLayout); setupMovableDialog(dialog, dragHandle); dialog.show();
-    }
+        dialog.setContentView(rootLayout); setupMovableDialog(dialog, dragHandle); 
         
+        // 3. 开启弹窗的“外部点击取消”拦截系统
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.setOnCancelListener(d -> {
+            if (!isNormalSave[0]) {
+                // 如果是用户点击了外部区域（或返回键），拦截关闭并弹出警告
+                new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("⚠️ 未保存的更改")
+                    .setMessage("您点击了设置窗口外部，是否要保存刚刚做出的修改？")
+                    .setPositiveButton("💾 马上保存", (dialogInterface, i) -> {
+                        saveBtn.performClick(); // 直接触发上面写好的保存按钮
+                    })
+                    .setNeutralButton("🔙 返回继续修改", (dialogInterface, i) -> {
+                        dialog.show(); // 拦截操作，重新把刚刚关掉的弹窗显示回来
+                    })
+                    .setNegativeButton("🗑️ 不保存(复原)", (dialogInterface, i) -> {
+                        // 触发灾难恢复：把上面备份的初始数据强行覆盖回来
+                        btn.id = origName; btn.displayLines = btn.id.split("\n");
+                        btn.keyMapStr = origKey; btn.parseKeyCodes();
+                        btn.color = origColor; btn.alpha = origAlpha;
+                        btn.radius = origRadius; btn.hitboxRadius = origHitbox;
+                        btn.customImageUri = origSkin; btn.customPressedUri = origPressedSkin;
+                        btn.pressedEffectColor = origPressedColor; btn.pressedEffectAlpha = origPressedAlpha;
+                        btn.isTurbo = origTurbo; btn.turboInterval = origTurboInterval;
+                        btn.textSizeFactor = origSizeFactor; btn.useCustomVib = origUseVib; btn.customVib = origVib;
+                        btn.useCustomFeed = origUseFeed; btn.customFeedScale = origFeedScale; btn.shape = origShape;
+                        btn.loadSkinFromUri(getContext());
+                        invalidate(); // 画布还原
+                    }).show();
+            }
+        });
+        
+        dialog.show();
+    }        
     
         // =====================================
     // 补回被误删的 UI 绘制辅助方法
@@ -3579,6 +3863,11 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             editor.putInt("PadUIMode_" + currentSlot, gamepadUIMode);
              editor.putBoolean("PadVib_" + currentSlot, isGamepadVibrationOn);
             editor.putInt("GridSize_" + currentSlot, gridSize);
+            // 【新增：保存网格与背景配置】
+            editor.putInt("GridLineColor_" + currentSlot, gridLineColor);
+            editor.putInt("GridLineAlpha_" + currentSlot, gridLineAlpha);
+            editor.putInt("GridBgColor_" + currentSlot, gridBgColor);
+            
             editor.putInt("CurrentStyleIndex_" + currentSlot, currentStyleIndex); // 【记忆修复：保存当前选中的风格】
             editor.putInt("DlgBgC_" + currentSlot, dialogBgColor);
             editor.putInt("DlgBgA_" + currentSlot, dialogBgAlpha);
@@ -3603,7 +3892,11 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             editor.putInt("MenuPressedAlpha_" + currentSlot, menuPressedEffectAlpha);
             editor.putString("MenuButtonName_" + currentSlot, menuButtonName);
             editor.putBoolean("AlwaysAskFolder", alwaysAskFolder); // 全局保存
-
+            
+            // 【新增：保存文件夹预设列表】
+            JSONArray folderArr = new JSONArray();
+            for(FolderPreset f : folderPresets) folderArr.put(f.toJson());
+            editor.putString("FolderPresets", folderArr.toString());
 
             JSONArray styleArr = new JSONArray();
             for(GamepadStyle s : styleList) styleArr.put(s.toJson());
@@ -3700,6 +3993,11 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             gamepadUIMode = prefs.getInt("PadUIMode_" + slot, 1);
             isGamepadVibrationOn = prefs.getBoolean("PadVib_" + slot, true);           
             gridSize = prefs.getInt("GridSize_" + slot, 50);
+            // 【新增：读取网格与背景配置】
+            gridLineColor = prefs.getInt("GridLineColor_" + slot, Color.WHITE);
+            gridLineAlpha = prefs.getInt("GridLineAlpha_" + slot, 30);
+            gridBgColor = prefs.getInt("GridBgColor_" + slot, Color.argb(100, 255, 0, 0));
+            
             autoHideSeconds = prefs.getInt("AutoHideSec_" + slot, 5);
             currentStyleIndex = prefs.getInt("CurrentStyleIndex_" + slot, 0); // 【记忆修复：读取刚才选中的风格】
             // 读取自定义弹窗 UI 设置
@@ -3760,7 +4058,16 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             menuPressedEffectAlpha = prefs.getInt("MenuPressedAlpha_" + slot, 150);
             menuButtonName = prefs.getString("MenuButtonName_" + slot, "⚙ 高级设置");
             alwaysAskFolder = prefs.getBoolean("AlwaysAskFolder", true);
-
+            
+            // 【新增：读取文件夹预设列表】
+            String folderJson = prefs.getString("FolderPresets", "[]");
+            folderPresets.clear();
+            if (!folderJson.isEmpty() && !folderJson.equals("[]")) {
+                try {
+                    JSONArray fa = new JSONArray(folderJson);
+                    for (int i=0; i<fa.length(); i++) folderPresets.add(FolderPreset.fromJson(fa.getJSONObject(i)));
+                } catch (Exception e){}
+            }
 
             if(!menuPressedSkinUri.isEmpty()) { 
                 try {
@@ -3873,6 +4180,11 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
         isFullscreenHideOverlay = false;
         isAutoHideEnabled = true;
         autoHideSeconds = 5;
+        // 【新增：恢复网格默认值】
+        gridSize = 50;
+        gridLineColor = Color.WHITE;
+        gridLineAlpha = 30;
+        gridBgColor = Color.argb(100, 255, 0, 0);
 
         float btnRadius = 90 * scale; 
         float dirRadius = 80 * scale;  

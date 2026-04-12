@@ -197,6 +197,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         return new SDLSurface(context);
     }
     private static final int FOLDER_PICKER_CODE = 42;
+    public static final int FOLDER_PICKER_PRESET_CODE = 46; // 【新增】：预设文件夹专属的选择码
     private SharedPreferences mSharedPrefs;
     private static String mBasePath;
     private Button mSDButton;
@@ -463,6 +464,29 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         return super.dispatchTouchEvent(ev);
     }
 
+    // ================= 【新增：预设文件夹专属的拾取与重启逻辑】 =================
+    public void pickFolderForPreset() {
+        if (mIsPickerActive) return; 
+        mIsPickerActive = true;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        startActivityForResult(intent, FOLDER_PICKER_PRESET_CODE);
+    }
+
+    public void saveAndRestartWithPresetUri(String uri) {
+        // 1. 保存玩家选择的预设路径为当前主路径
+        mSharedPrefs.edit().putString(getString(R.string.game_folder_key), uri).commit();
+        // 2. 写入免打扰标记，告诉下一次启动“是我主动重启的，直接进游戏别弹窗”
+        mSharedPrefs.edit().putBoolean("SkipNextAsk", true).commit();
+        
+        // 3. 暴力杀进程并原地复活 (实现引擎热重启)
+        Intent intent = getBaseContext().getPackageManager().getLaunchIntentForPackage(getBaseContext().getPackageName());
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
+        android.os.Process.killProcess(android.os.Process.myPid());
+        Runtime.getRuntime().exit(0);
+    }
+    // =========================================================================
+
     public void checkAndPickFolder() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
@@ -510,6 +534,35 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        
+        // === 【新增：拦截并处理预设文件夹的选择结果】 ===
+        if (requestCode == FOLDER_PICKER_PRESET_CODE) {
+            mIsPickerActive = false;
+            if (resultCode == RESULT_OK && data != null) {
+                Uri treeUri = data.getData();
+                getContentResolver().takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                String selectedPath = getFullPathFromTreeUri(treeUri);
+                if (selectedPath != null && !selectedPath.isEmpty()) {
+                    if (org.libsdl.app.DynamicGamepadView.instance != null) {
+                        String name = "新预设文件夹";
+                        try {
+                            String[] parts = selectedPath.split("/");
+                            name = parts[parts.length - 1]; // 自动把最后一级目录名当做预设的默认名字
+                        } catch (Exception e) {}
+                        
+                        // 生成预设对象并保存到游戏面板的存档中
+                        org.libsdl.app.DynamicGamepadView.FolderPreset preset = new org.libsdl.app.DynamicGamepadView.FolderPreset(name, selectedPath, android.graphics.Color.WHITE);
+                        org.libsdl.app.DynamicGamepadView.instance.folderPresets.add(preset);
+                        org.libsdl.app.DynamicGamepadView.instance.saveConfig();
+                        
+                        Toast.makeText(this, "✅ 成功添加预设: " + name, Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+            return; // 处理完毕，直接结束，不走原来的逻辑
+        }
+        // =================================================
+
         if (requestCode == FOLDER_PICKER_CODE) {
             mIsPickerActive = false; // 解除防连弹物理锁
             
