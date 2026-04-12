@@ -175,6 +175,73 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     protected String[] getArguments() {
+        // 【王者归来】：全自动智能嗅探整合包的真实 UI 路径 
+        SharedPreferences gamepadPrefs = getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE);
+        if (gamepadPrefs.getBoolean("IntegrationMode", false)) {
+            String basePath = mBasePath;
+            if (basePath == null || basePath.isEmpty()) basePath = getExternalFilesDir(null).getAbsolutePath();
+            File baseDir = new File(basePath);
+            
+            String motifPath = ""; 
+
+            File ikemenCfg = new File(baseDir, "save/config.json");
+            if (ikemenCfg.exists()) {
+                try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(ikemenCfg))) {
+                    StringBuilder sb = new StringBuilder(); String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                    org.json.JSONObject json = new org.json.JSONObject(sb.toString());
+                    if (json.has("motif")) {
+                        motifPath = json.getString("motif");
+                    }
+                } catch (Exception e) {}
+            }
+
+            if (motifPath.isEmpty()) {
+                File mugenCfg = new File(baseDir, "data/mugen.cfg");
+                if (mugenCfg.exists()) {
+                    try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(mugenCfg))) {
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            String trimmed = line.trim();
+                            if (trimmed.toLowerCase().startsWith("motif")) {
+                                String[] parts = trimmed.split("=");
+                                if (parts.length > 1) {
+                                    motifPath = parts[1].trim().replace("\\", "/").replace("\"", "");
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (Exception e) {}
+                }
+            }
+
+            if (motifPath.isEmpty()) {
+                File dataDir = new File(baseDir, "data");
+                if (dataDir.exists() && dataDir.isDirectory()) {
+                    if (new File(dataDir, "system.def").exists()) {
+                        motifPath = "data/system.def";
+                    } else if (new File(dataDir, "mugen1/system.def").exists()) {
+                        motifPath = "data/mugen1/system.def";
+                    } else {
+                        File[] subDirs = dataDir.listFiles();
+                        if (subDirs != null) {
+                            for (File sub : subDirs) {
+                                if (sub.isDirectory() && new File(sub, "system.def").exists()) {
+                                    motifPath = "data/" + sub.getName() + "/system.def";
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!motifPath.isEmpty()) {
+                android.util.Log.i("SDLActivity", "兼容模式：成功嗅探到真实 UI -> " + motifPath);
+                // 直接通过命令行 -m 强制传给底层，最安全最直接！
+                return new String[] {"-m", motifPath};
+            }
+        }
         return new String[0];
     }
 
@@ -656,24 +723,16 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         File baseDir = new File(mBasePath);
 
         new Thread(() -> {
-            // =======================================================
-            // 1. 读取手柄专属存档中的兼容模式开关
-            // =======================================================
             SharedPreferences gamepadPrefs = getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE);
             boolean isIntegrationMode = gamepadPrefs.getBoolean("IntegrationMode", false);
             boolean isIntegrationValid = false;
 
-            // =======================================================
-            // 2. 兼容模式探针检测 (精准定位 + 灵魂目录 + 遍历搜索)
-            // =======================================================
             if (isIntegrationMode && baseDir.exists() && baseDir.isDirectory()) {
-                // 终极探针：只要有标准系统文件、存档配置文件，或者干脆同时拥有 chars 和 data 两个灵魂目录，直接放行！(完美兼容无 EXE 手机包)
                 if (new File(baseDir, "data/system.def").exists() || 
                     new File(baseDir, "save/config.json").exists() || 
                     (new File(baseDir, "chars").exists() && new File(baseDir, "data").exists())) {
                     isIntegrationValid = true;
                 } else {
-                    // 兜底探针：如果连目录都被魔改了，再去搜有没有 .exe 当锚点
                     File[] files = baseDir.listFiles();
                     if (files != null) {
                         for (File f : files) {
@@ -686,67 +745,97 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 }
             }
 
-            // =======================================================
-            // 3. 兼容模式下的智能无损注入 (含物理篡改配置绝杀)
-            // =======================================================
             if (isIntegrationValid) {
                 File externalDir = new File(baseDir, "external");
                 File engineBrain = new File(baseDir, "external/script/main.lua");
+                File systemFont = new File(baseDir, "font/debug.def");
                 
                 boolean needInject = false;
                 
-                if (!engineBrain.exists()) {
-                    Log.i("SDLActivity", "兼容模式：检测到无引擎大脑，准备注入...");
+                if (!engineBrain.exists() || !systemFont.exists()) {
+                    Log.i("SDLActivity", "兼容模式：无引擎大脑或缺失系统字体，准备注入...");
                     needInject = true;
                 } else {
                     long localCRC = AssetExtractor.getFileCRC(engineBrain);
                     long apkCRC = AssetExtractor.getAssetCRC(getAssets(), "external/script/main.lua");
+                    
                     if (localCRC != apkCRC && localCRC != -2 && apkCRC != -1) {
-                        Log.i("SDLActivity", "兼容模式：检测到旧版或不兼容的大脑，准备备份并升级...");
+                        Log.i("SDLActivity", "兼容模式：检测到旧版大脑，准备备份并升级...");
                         needInject = true;
                         File backupDir = new File(baseDir, "external_old_backup_" + System.currentTimeMillis());
                         externalDir.renameTo(backupDir);
                     }
                 }
 
-                // =======================================================
-                // 【终极绝杀】：开机前一秒物理篡改 config.json，强制指定 UI
-                // =======================================================
-                try {
-                    String motifPath = "data/system.def"; // 默认保底
-                    File mugenCfg = new File(baseDir, "data/mugen.cfg");
-                    if (mugenCfg.exists()) {
-                        java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(mugenCfg));
-                        String line;
-                        while ((line = br.readLine()) != null) {
-                            if (line.trim().toLowerCase().startsWith("motif")) {
-                                String[] parts = line.split("=");
-                                if (parts.length > 1) {
-                                    motifPath = parts[1].trim().replace("\\", "/").replace("\"", "");
-                                    break;
-                                }
-                            }
-                        }
-                        br.close();
-                    } else if (new File(baseDir, "data/mugen1/system.def").exists()) {
-                        motifPath = "data/mugen1/system.def";
-                    } else {
-                        File dataDir = new File(baseDir, "data");
-                        if (dataDir.exists() && dataDir.isDirectory()) {
-                            File[] subDirs = dataDir.listFiles();
-                            if (subDirs != null) {
-                                for (File sub : subDirs) {
-                                    if (sub.isDirectory() && new File(sub, "system.def").exists()) {
-                                        motifPath = "data/" + sub.getName() + "/system.def";
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                if (needInject) {
+                    runOnUiThread(() -> {
+                        ProgressDialog progress = new ProgressDialog(this);
+                        progress.setTitle("⚙️ 智能兼容处理");
+                        progress.setMessage("正在为整合包注入最新引擎核心...\n(原有核心已安全备份，画面与人物不受影响)");
+                        progress.setCancelable(false);
+                        progress.show();
 
-                    // 物理写入 save/config.json
-                    File saveDir = new File(baseDir, "save");
+                        new Thread(() -> {
+                            try {
+                                AssetExtractor.extractEngineCoreOnly(getAssets(), baseDir);
+                                runOnUiThread(() -> {
+                                    progress.dismiss();
+                                    onSDLReady();
+                                });
+                            } catch (Exception e) {
+                                runOnUiThread(() -> {
+                                    progress.dismiss();
+                                    onSDLReady(); 
+                                });
+                            }
+                        }).start();
+                    });
+                    return; 
+                }
+                
+                Log.i("SDLActivity", "兼容模式：环境完美匹配，直接拉起引擎！");
+                runOnUiThread(this::onSDLReady);
+                return; 
+            }
+
+            boolean updateRequired = filesNeedUpdate(baseDir, UPDATE_FILE_CHECK_DIRS);
+
+            if (!updateRequired) {
+                Log.i("SDLActivity", "官方校验：Scripts match APK. Skipping extraction.");
+                runOnUiThread(this::onSDLReady);
+            } else {
+                Log.i("SDLActivity", "官方校验：Specified files are outdated or missing. Beginning extraction...");
+
+                runOnUiThread(() -> {
+                    ProgressDialog progress = new ProgressDialog(this);
+                    progress.setTitle(R.string.updating_files_title);
+                    progress.setMessage(getString(R.string.updating_files_msg));
+                    progress.setCancelable(false);
+                    progress.show();
+
+                    new Thread(() -> {
+                        try {
+                            AssetExtractor.extractAll(getAssets(), baseDir);
+                            runOnUiThread(() -> {
+                                progress.dismiss();
+                                onSDLReady();
+                            });
+                        } catch (Exception e) {
+                            runOnUiThread(() -> {
+                                progress.dismiss();
+                                new AlertDialog.Builder(this)
+                                        .setTitle(R.string.update_error_title)
+                                        .setMessage(e.getMessage())
+                                        .setPositiveButton(R.string.exit_str, (d, w) -> finish())
+                                        .show();
+                            });
+                        }
+                    }).start();
+                });
+            }
+        }).start();
+    }
+le(baseDir, "save");
                     if (!saveDir.exists()) saveDir.mkdirs();
                     File configJson = new File(saveDir, "config.json");
                     org.json.JSONObject configObj = new org.json.JSONObject();
