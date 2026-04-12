@@ -9,7 +9,8 @@ else {
 
 android {
     aaptOptions {
-        noCompress 'txr'
+        // 【极限修复】：禁止压缩所有引擎相关格式，彻底解决首次运行解压闪退和空文件夹问题！
+        noCompress 'txr', 'sff', 'snd', 'def', 'cns', 'st', 'stc', 'cmd', 'mp3', 'ogg', 'wav', 'lua', 'ttf', 'font', 'fnt'
     }
     if (buildAsApplication) {
         namespace "org.ikemen_engine.ikemen_go"
