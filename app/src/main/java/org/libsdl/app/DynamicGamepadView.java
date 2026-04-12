@@ -2054,11 +2054,6 @@ import java.util.List;
         
         // 【新增：预设文件夹快速启动列表】
         layout.addView(createMenuButton("🗂️ 预设文件夹管理系统", v -> { showFolderPresetManagerDialog(); dialog.dismiss(); }));
-            alwaysAskFolder = !alwaysAskFolder;
-            saveConfig();
-            Toast.makeText(getContext(), alwaysAskFolder ? "已开启: 每次启动/更新都会提示选择目录" : "已关闭: 启动时将直接进入上次的目录", Toast.LENGTH_SHORT).show();
-            dialog.dismiss(); showMainMenu();
-        }));
 
         layout.addView(createMenuButton("⏱️ 面板自动隐藏设置", v -> { showAutoHideSettingsDialog(); dialog.dismiss(); }));
         layout.addView(createMenuButton("🎨 按键风格管理系统", v -> { showStyleManagerDialog(); dialog.dismiss(); }));
