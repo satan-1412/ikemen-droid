@@ -725,11 +725,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         return null;
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        
-    // 【新增工具方法：专供列表扫描使用的深度检索】
+    // 【新增工具方法：专供列表扫描使用的深度检索】 (已经移到正确的外部位置)
     private void scanForSystemDefAllForList(File dir, String rootPath, List<String> list) {
         File[] files = dir.listFiles();
         if (files == null) return;
@@ -750,7 +746,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         }
     }
 
-    // === 【新增：拦截并处理主程序列表的选择结果】 ===
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        
+        // === 【新增：拦截并处理主程序列表的选择结果】 ===
     if (requestCode == FOLDER_PICKER_PRESET_CODE) {
         mIsPickerActive = false;
         if (resultCode == RESULT_OK && data != null) {
