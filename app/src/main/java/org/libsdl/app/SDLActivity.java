@@ -78,66 +78,85 @@ import java.util.Locale;
 public class SDLActivity extends Activity implements View.OnSystemUiVisibilityChangeListener {
 
     // --- 自动配置修复机制开始 ---
-    private String foundSystemDefPath = "";
+    private List<String> foundSystemDefs = new ArrayList<>();
 
     /**
-     * 深度扫描 system.def
+     * 深度扫描所有的 system.def (支持多主题)，并过滤官方默认 UI
      */
-    private void scanForSystemDef(File dir, String rootPath) {
+    private void scanForSystemDefAll(File dir, String rootPath) {
         File[] files = dir.listFiles();
         if (files == null) return;
         for (File file : files) {
             if (file.isDirectory()) {
-                // 排除一些没意义的文件夹提高速度
                 if (!file.getName().equalsIgnoreCase("chars") && !file.getName().equalsIgnoreCase("sound") && !file.getName().equalsIgnoreCase("font")) {
-                    scanForSystemDef(file, rootPath);
+                    scanForSystemDefAll(file, rootPath);
                 }
             } else if (file.getName().equalsIgnoreCase("system.def")) {
-                // 找到第一个 system.def 就记录相对路径
                 String absolute = file.getAbsolutePath();
-                foundSystemDefPath = absolute.substring(rootPath.length());
-                if (foundSystemDefPath.startsWith("/")) {
-                    foundSystemDefPath = foundSystemDefPath.substring(1);
+                String relPath = absolute.substring(rootPath.length());
+                if (relPath.startsWith("/")) relPath = relPath.substring(1);
+                
+                // 【核心要求1】：绝对屏蔽 ikemen1 下的原版默认主题，防止抢占玩家整合包！
+                if (!relPath.equalsIgnoreCase("data/ikemen1/system.def") && !relPath.equalsIgnoreCase("data/system.base.def")) {
+                    foundSystemDefs.add(relPath);
                 }
-                return;
             }
         }
     }
 
     /**
-     * 强制重写 config.ini 里的 motif 路径
+     * 强制重写 config.ini 里的 motif 路径，若有多个主题则弹窗让玩家选
      */
     private void fixIkemenConfig(String gamePath) {
-        foundSystemDefPath = "";
+        foundSystemDefs.clear();
         File root = new File(gamePath);
         
-        // 1. 开始全盘扫描
-        scanForSystemDef(root, gamePath);
+        scanForSystemDefAll(root, gamePath);
         
-        if (foundSystemDefPath.isEmpty()) {
-            Log.e("SDL", "未能在文件夹中找到任何 system.def");
+        if (foundSystemDefs.isEmpty()) {
+            Log.e("SDL", "未能在文件夹中找到任何有效的 system.def");
             return; 
         }
 
-        Log.d("SDL", "自动识别到 Motif 路径: " + foundSystemDefPath);
+        final String[] targetMotif = new String[1];
+        
+        // 【核心要求2】：只有一个直接用，有多个则弹窗悬停，等待玩家选择！
+        if (foundSystemDefs.size() == 1) {
+            targetMotif[0] = foundSystemDefs.get(0);
+        } else {
+            final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            runOnUiThread(() -> {
+                AlertDialog.Builder builder = new AlertDialog.Builder(SDLActivity.this, android.R.style.Theme_DeviceDefault_Dialog_Alert);
+                builder.setTitle("发现多个 UI 主题，请选择要启动哪一个：");
+                String[] items = foundSystemDefs.toArray(new String[0]);
+                builder.setItems(items, (dialog, which) -> {
+                    targetMotif[0] = items[which];
+                    latch.countDown();
+                });
+                builder.setCancelable(false);
+                builder.show();
+            });
+            try { latch.await(); } catch (InterruptedException e) { e.printStackTrace(); }
+        }
 
-        // 2. 准备修改 save/config.ini
+        String finalMotif = targetMotif[0];
+        if (finalMotif == null) return;
+
+        Log.d("SDL", "最终选定的 Motif 路径: " + finalMotif);
+
         File saveDir = new File(root, "save");
         if (!saveDir.exists()) saveDir.mkdirs();
-        
         File configFile = new File(saveDir, "config.ini");
         List<String> lines = new ArrayList<>();
         boolean foundMotif = false;
 
-        // 3. 读取并修改内容
         try {
             if (configFile.exists()) {
                 BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(configFile)));
                 String line;
                 while ((line = br.readLine()) != null) {
-                    // 只要开头是 motif 并且包含等号，就拦截替换
                     if (line.trim().toLowerCase().startsWith("motif") && line.contains("=")) {
-                        lines.add("motif = " + foundSystemDefPath);
+                        lines.add("motif = " + finalMotif);
                         foundMotif = true;
                     } else {
                         lines.add(line);
@@ -145,24 +164,14 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 }
                 br.close();
             }
-
-            // 如果没找到 motif 行，或者文件不存在，则追加
             if (!foundMotif) {
-                if (lines.isEmpty()) {
-                    lines.add("[Options]");
-                }
-                lines.add("motif = " + foundSystemDefPath);
+                if (lines.isEmpty()) lines.add("[Options]");
+                lines.add("motif = " + finalMotif);
             }
-
-            // 4. 写回文件
             BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(configFile)));
-            for (String l : lines) {
-                bw.write(l);
-                bw.newLine();
-            }
-            bw.flush();
-            bw.close();
-            Log.d("SDL", "config.ini 修复成功！已指向: " + foundSystemDefPath);
+            for (String l : lines) { bw.write(l); bw.newLine(); }
+            bw.flush(); bw.close();
+            Log.d("SDL", "config.ini 修复成功！已指向: " + finalMotif);
         } catch (Exception e) {
             Log.e("SDL", "修复 config.ini 失败: " + e.getMessage());
         }

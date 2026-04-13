@@ -2064,8 +2064,8 @@ import java.util.List;
             dialog.dismiss(); showMainMenu();
         }));
         
-        // 【新增：预设文件夹快速启动列表】
-        layout.addView(createMenuButton("🗂️ 预设文件夹管理系统", v -> { showFolderPresetManagerDialog(); dialog.dismiss(); }));
+        // 【新增：主程序快速启动列表】
+        layout.addView(createMenuButton("🗂️ 主程序列表管理系统", v -> { showFolderPresetManagerDialog(); dialog.dismiss(); }));
 
         // 【新增：整合包兼容模式 UI 开关】
         layout.addView(createMenuButton(isIntegrationModeEnabled ? "📦 整合包兼容直读模式: [已开启]" : "📦 整合包兼容直读模式: [已关闭]", v -> {
@@ -2250,7 +2250,7 @@ import java.util.List;
         rootLayout.setBackground(getCustomDialogBackground());
 
         TextView dragHandle = new TextView(getContext());
-        dragHandle.setText("✋ 拖拽此处 | 🗂️ 预设文件夹管理系统");
+        dragHandle.setText("✋ 拖拽此处 | 🗂️ 主程序列表管理");
         android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
         titleBg.setColor(Color.argb(50, 0, 0, 0)); titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
         dragHandle.setBackground(titleBg); dragHandle.setTextColor(dialogTextColor);
@@ -2271,7 +2271,7 @@ import java.util.List;
 
         // --- 1. 大大的加号按键区 ---
         Button addBtn = new Button(getContext());
-        addBtn.setText("➕ 添加一个新的预设文件夹");
+        addBtn.setText("➕ 添加一个新的主程序路径");
         addBtn.setTextColor(Color.WHITE); addBtn.setTextSize(18f);
         addBtn.setBackgroundColor(Color.parseColor("#4CAF50"));
         addBtn.setPadding(0, 40, 0, 40);
@@ -2366,7 +2366,7 @@ import java.util.List;
         final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
         dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         LinearLayout rootLayout = new LinearLayout(getContext()); rootLayout.setOrientation(LinearLayout.VERTICAL); rootLayout.setBackground(getCustomDialogBackground());
-        TextView dragHandle = new TextView(getContext()); dragHandle.setText("✋ 拖拽此处 | ✏️ 编辑文件夹预设");
+        TextView dragHandle = new TextView(getContext()); dragHandle.setText("✋ 拖拽此处 | ✏️ 编辑主程序预设");
         android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
         titleBg.setColor(Color.argb(50, 0, 0, 0)); titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f}); dragHandle.setBackground(titleBg); dragHandle.setTextColor(dialogTextColor);
         dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(dialogTextSize + 2f); dragHandle.setTypeface(null, Typeface.BOLD); rootLayout.addView(dragHandle);
