@@ -31,11 +31,63 @@ public class AssetExtractor {
             return -3;
         }
     }
-    // 【修改】：无损注入模式，必须同时注入 external (大脑) 和 font (维持生命的系统字体)
+    // 【修改】：智能查漏补缺模式，扫描 data, external, font
     public static void extractEngineCoreOnly(android.content.res.AssetManager assets, File targetDir) throws java.io.IOException {
-        android.util.Log.i("AssetExtractor", "触发无损注入，仅释放 external 和 font...");
-        copyAssetFolder(assets, "external", targetDir); 
-        copyAssetFolder(assets, "font", targetDir); // <--- 【就是漏了这一行救命的代码】
+        android.util.Log.i("AssetExtractor", "触发查漏补缺，扫描 data, external, font...");
+        // 使用下面新增的专属方法，遇到原版已有的文件会自动跳过
+        copyAssetFolderSmart(assets, "data", targetDir);
+        copyAssetFolderSmart(assets, "external", targetDir); 
+        copyAssetFolderSmart(assets, "font", targetDir);
+    }
+
+    // 【新增】：专门用于查漏补缺的递归扫描逻辑（核心：不覆盖任何已有文件）
+    private static void copyAssetFolderSmart(AssetManager assets, String currentPath, File targetDir) {
+        try {
+            String[] files = assets.list(currentPath);
+            
+            if (files != null && files.length > 0) {
+                for (String file : files) {
+                    if (currentPath.isEmpty() && (file.equals("images") || file.equals("sounds") || file.equals("webkit") || file.equals("kuhana"))) {
+                        continue; 
+                    }
+                    String nextPath = currentPath.isEmpty() ? file : currentPath + "/" + file;
+                    copyAssetFolderSmart(assets, nextPath, targetDir);
+                }
+            } else {
+                if (currentPath.isEmpty() || currentPath.equals("manifest.txt")) {
+                    return; 
+                }
+
+                File outFile = new File(targetDir, currentPath);
+                
+                // 【灵魂机制】：如果同名文件已经存在，直接 return 跳过！绝对不碰玩家原本的血条、特效等资产！
+                // 注意这里用 outFile.isFile() 确保只有文件才跳过，不影响同名文件夹的创建
+                if (outFile.exists() && outFile.isFile()) {
+                    return; 
+                }
+
+                File parentDir = outFile.getParentFile();
+                if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
+                    Log.e("AssetExtractor", "无法创建目录: " + parentDir.getAbsolutePath());
+                }
+
+                try (InputStream in = assets.open(currentPath);
+                     OutputStream out = new FileOutputStream(outFile)) {
+
+                    byte[] buffer = new byte[65536]; 
+                    int read;
+                    while ((read = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, read);
+                    }
+                    out.flush();
+                    Log.d("AssetExtractor", "引擎默默补全了缺失文件: " + currentPath);
+                } catch (IOException e) {
+                    Log.e("AssetExtractor", "释放缺失文件失败: " + currentPath, e);
+                }
+            }
+        } catch (IOException e) {
+            Log.e("AssetExtractor", "扫描路径失败: " + currentPath, e);
+        }
     }
 
     // 替换原有的 extractAll 方法
