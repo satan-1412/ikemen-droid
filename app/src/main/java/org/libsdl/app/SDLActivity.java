@@ -932,11 +932,13 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 File externalDir = new File(baseDir, "external");
                 File engineBrain = new File(baseDir, "external/script/main.lua");
                 File systemFont = new File(baseDir, "font/debug.def");
+                File gofxDef = new File(baseDir, "data/gofx/gofx.def"); // 【新增】把特效文件也加进安检名单
                 
                 boolean needInject = false;
                 
-                if (!engineBrain.exists() || !systemFont.exists()) {
-                    Log.i("SDLActivity", "兼容模式：无引擎大脑或缺失系统字体，准备注入...");
+                // 【修改】只要大脑、字体、或者特效有任何一个没到位，就强制触发你的查漏补缺！
+                if (!engineBrain.exists() || !systemFont.exists() || !gofxDef.exists()) {
+                    Log.i("SDLActivity", "兼容模式：引擎核心或特效文件(gofx)缺失，触发智能补全...");
                     needInject = true;
                 } else {
                     long localCRC = AssetExtractor.getFileCRC(engineBrain);
