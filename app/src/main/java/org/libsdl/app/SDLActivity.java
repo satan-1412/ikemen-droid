@@ -95,8 +95,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 String absolute = file.getAbsolutePath();
                 String relPath = absolute.substring(rootPath.length());
                 if (relPath.startsWith("/")) relPath = relPath.substring(1);
-                
-                // 【核心要求1】：绝对屏蔽 ikemen1 下的原版默认主题，防止抢占玩家整合包！
+                // 屏蔽默认主题
                 if (!relPath.equalsIgnoreCase("data/ikemen1/system.def") && !relPath.equalsIgnoreCase("data/system.base.def")) {
                     foundSystemDefs.add(relPath);
                 }
@@ -105,45 +104,57 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     /**
-     * 强制重写 config.ini 里的 motif 路径，若有多个主题则弹窗让玩家选
+     * 强制重写 config.ini 里的 motif 路径
      */
     private void fixIkemenConfig(String gamePath) {
-        foundSystemDefs.clear();
-        File root = new File(gamePath);
-        
-        scanForSystemDefAll(root, gamePath);
-        
-        if (foundSystemDefs.isEmpty()) {
-            Log.e("SDL", "未能在文件夹中找到任何有效的 system.def");
-            return; 
-        }
+        // 【灵魂逻辑】：检查是否是玩家从“主程序列表”点进来的，并且带有指定的专属主题
+        String targetMotifFromList = mSharedPrefs.getString("TargetMotif", "");
+        mSharedPrefs.edit().putString("TargetMotif", "").apply(); // 阅后即焚，防止影响下次普通启动
 
-        final String[] targetMotif = new String[1];
-        
-        // 【核心要求2】：只有一个直接用，有多个则弹窗悬停，等待玩家选择！
-        if (foundSystemDefs.size() == 1) {
-            targetMotif[0] = foundSystemDefs.get(0);
+        String finalMotif = null;
+
+        if (!targetMotifFromList.isEmpty()) {
+            // 列表直达：什么废话都不说，不弹窗，直接用指定的这个！
+            finalMotif = targetMotifFromList;
+            Log.i("SDL", "收到列表直达指令，直接使用专属 Motif: " + finalMotif);
         } else {
-            final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-            runOnUiThread(() -> {
-                AlertDialog.Builder builder = new AlertDialog.Builder(SDLActivity.this, android.R.style.Theme_DeviceDefault_Dialog_Alert);
-                builder.setTitle("发现多个 UI 主题，请选择要启动哪一个：");
-                String[] items = foundSystemDefs.toArray(new String[0]);
-                builder.setItems(items, (dialog, which) -> {
-                    targetMotif[0] = items[which];
-                    latch.countDown();
+            // 普通启动：全盘扫描 + 弹窗让你选
+            foundSystemDefs.clear();
+            File root = new File(gamePath);
+            scanForSystemDefAll(root, gamePath);
+            
+            if (foundSystemDefs.isEmpty()) {
+                Log.e("SDL", "未能在文件夹中找到任何有效的 system.def");
+                return; 
+            }
+
+            if (foundSystemDefs.size() == 1) {
+                finalMotif = foundSystemDefs.get(0);
+            } else {
+                // 有多个则强制停下引擎，弹出选择窗口
+                final String[] popupMotif = new String[1];
+                final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+                runOnUiThread(() -> {
+                    AlertDialog.Builder builder = new AlertDialog.Builder(SDLActivity.this, android.R.style.Theme_DeviceDefault_Dialog_Alert);
+                    builder.setTitle("发现多个 UI 主题，请选择要启动哪一个：");
+                    String[] items = foundSystemDefs.toArray(new String[0]);
+                    builder.setItems(items, (dialog, which) -> {
+                        popupMotif[0] = items[which];
+                        latch.countDown();
+                    });
+                    builder.setCancelable(false);
+                    builder.show();
                 });
-                builder.setCancelable(false);
-                builder.show();
-            });
-            try { latch.await(); } catch (InterruptedException e) { e.printStackTrace(); }
+                try { latch.await(); } catch (InterruptedException e) { e.printStackTrace(); }
+                finalMotif = popupMotif[0];
+            }
         }
 
-        String finalMotif = targetMotif[0];
         if (finalMotif == null) return;
+        Log.d("SDL", "最终写入 config.ini 的 Motif 路径: " + finalMotif);
 
-        Log.d("SDL", "最终选定的 Motif 路径: " + finalMotif);
-
+        // 写回 config.ini
+        File root = new File(gamePath);
         File saveDir = new File(root, "save");
         if (!saveDir.exists()) saveDir.mkdirs();
         File configFile = new File(saveDir, "config.ini");
@@ -177,6 +188,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         }
     }
     // --- 自动配置修复机制结束 ---
+
 
     static {
 //        System.setProperty("SDL_HIDAPI_IGNORE_DEVICES", "1");
@@ -650,11 +662,13 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         startActivityForResult(intent, FOLDER_PICKER_PRESET_CODE);
     }
 
-    public void saveAndRestartWithPresetUri(String uri) {
+    public void saveAndRestartWithPresetUri(String uri, String motifPath) {
         // 1. 保存玩家选择的预设路径为当前主路径
         mSharedPrefs.edit().putString(getString(R.string.game_folder_key), uri).commit();
         // 2. 写入免打扰标记，告诉下一次启动“是我主动重启的，直接进游戏别弹窗”
         mSharedPrefs.edit().putBoolean("SkipNextAsk", true).commit();
+        // 3. 【新增】：将卡片绑定的专属主题存入档案，启动时直接截获！
+        mSharedPrefs.edit().putString("TargetMotif", motifPath != null ? motifPath : "").commit();
         
         // 3. 完美复刻官方的无缝重启逻辑，去除多余延迟，瞬间拉起新进程
         Intent intent = getBaseContext().getPackageManager().getLaunchIntentForPackage(getBaseContext().getPackageName());
@@ -715,32 +729,83 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         
-        // === 【新增：拦截并处理预设文件夹的选择结果】 ===
-        if (requestCode == FOLDER_PICKER_PRESET_CODE) {
-            mIsPickerActive = false;
-            if (resultCode == RESULT_OK && data != null) {
-                Uri treeUri = data.getData();
-                getContentResolver().takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                String selectedPath = getFullPathFromTreeUri(treeUri);
-                if (selectedPath != null && !selectedPath.isEmpty()) {
-                    if (org.libsdl.app.DynamicGamepadView.instance != null) {
-                        String name = "新预设文件夹";
-                        try {
-                            String[] parts = selectedPath.split("/");
-                            name = parts[parts.length - 1]; // 自动把最后一级目录名当做预设的默认名字
-                        } catch (Exception e) {}
-                        
-                        // 生成预设对象并保存到游戏面板的存档中
-                        org.libsdl.app.DynamicGamepadView.FolderPreset preset = new org.libsdl.app.DynamicGamepadView.FolderPreset(name, selectedPath, android.graphics.Color.WHITE);
-                        org.libsdl.app.DynamicGamepadView.instance.folderPresets.add(preset);
-                        org.libsdl.app.DynamicGamepadView.instance.saveConfig();
-                        
-                        Toast.makeText(this, "✅ 成功添加预设: " + name, Toast.LENGTH_SHORT).show();
-                    }
+    // 【新增工具方法：专供列表扫描使用的深度检索】
+    private void scanForSystemDefAllForList(File dir, String rootPath, List<String> list) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (file.isDirectory()) {
+                if (!file.getName().equalsIgnoreCase("chars") && !file.getName().equalsIgnoreCase("sound") && !file.getName().equalsIgnoreCase("font")) {
+                    scanForSystemDefAllForList(file, rootPath, list);
+                }
+            } else if (file.getName().equalsIgnoreCase("system.def")) {
+                String absolute = file.getAbsolutePath();
+                String relPath = absolute.substring(rootPath.length());
+                if (relPath.startsWith("/")) relPath = relPath.substring(1);
+                // 屏蔽引擎默认的无用 UI
+                if (!relPath.equalsIgnoreCase("data/ikemen1/system.def") && !relPath.equalsIgnoreCase("data/system.base.def")) {
+                    list.add(relPath);
                 }
             }
-            return; // 处理完毕，直接结束，不走原来的逻辑
         }
+    }
+
+    // === 【新增：拦截并处理主程序列表的选择结果】 ===
+    if (requestCode == FOLDER_PICKER_PRESET_CODE) {
+        mIsPickerActive = false;
+        if (resultCode == RESULT_OK && data != null) {
+            Uri treeUri = data.getData();
+            getContentResolver().takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            String selectedPath = getFullPathFromTreeUri(treeUri);
+            if (selectedPath != null && !selectedPath.isEmpty()) {
+                if (org.libsdl.app.DynamicGamepadView.instance != null) {
+                    String baseName = "新主程序";
+                    try {
+                        String[] parts = selectedPath.split("/");
+                        baseName = parts[parts.length - 1]; 
+                    } catch (Exception e) {}
+
+                    // 1. 瞬间深度扫描选中的文件夹
+                    List<String> foundDefs = new ArrayList<>();
+                    scanForSystemDefAllForList(new File(selectedPath), selectedPath, foundDefs);
+
+                    // 2. 遍历添加，并自动排重
+                    int addedCount = 0;
+                    if (foundDefs.isEmpty()) {
+                        // 没扫出 system.def (例如原版官方包)，直接添加一个空模板
+                        boolean exists = false;
+                        for (org.libsdl.app.DynamicGamepadView.FolderPreset p : org.libsdl.app.DynamicGamepadView.instance.folderPresets) {
+                            if (p.uri.equals(selectedPath)) { exists = true; break; }
+                        }
+                        if (!exists) {
+                            org.libsdl.app.DynamicGamepadView.instance.folderPresets.add(
+                                new org.libsdl.app.DynamicGamepadView.FolderPreset(baseName, selectedPath, android.graphics.Color.WHITE, ""));
+                            addedCount++;
+                        }
+                    } else {
+                        // 扫出了多个主题，全部分开生成卡片！
+                        for (String defPath : foundDefs) {
+                            boolean exists = false;
+                            for (org.libsdl.app.DynamicGamepadView.FolderPreset p : org.libsdl.app.DynamicGamepadView.instance.folderPresets) {
+                                if (p.uri.equals(selectedPath) && p.motifPath != null && p.motifPath.equals(defPath)) { 
+                                    exists = true; break; // 查重拦截：列表中已存在绝对不加！
+                                }
+                            }
+                            if (!exists) {
+                                String themeName = baseName + " [" + new File(defPath).getParentFile().getName() + "]";
+                                org.libsdl.app.DynamicGamepadView.instance.folderPresets.add(
+                                    new org.libsdl.app.DynamicGamepadView.FolderPreset(themeName, selectedPath, android.graphics.Color.parseColor("#4CAF50"), defPath));
+                                addedCount++;
+                            }
+                        }
+                    }
+                    org.libsdl.app.DynamicGamepadView.instance.saveConfig();
+                    Toast.makeText(this, "✅ 扫描完毕！成功去重并添加了 " + addedCount + " 个主程序卡片", Toast.LENGTH_LONG).show();
+                }
+            }
+        }
+        return; 
+    }
         // =================================================
 
         if (requestCode == FOLDER_PICKER_CODE) {

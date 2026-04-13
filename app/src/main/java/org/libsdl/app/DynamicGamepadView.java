@@ -83,12 +83,14 @@ import java.util.List;
         public String name;
         public String uri;
         public int color;
-        public FolderPreset(String n, String u, int c) { this.name=n; this.uri=u; this.color=c; }
+        public String motifPath; // 【新增专属主题字段】
+        public FolderPreset(String n, String u, int c, String m) { this.name=n; this.uri=u; this.color=c; this.motifPath=m; }
         public JSONObject toJson() throws Exception {
-            JSONObject o = new JSONObject(); o.put("name", name); o.put("uri", uri); o.put("color", color); return o;
+            JSONObject o = new JSONObject(); o.put("name", name); o.put("uri", uri); o.put("color", color); 
+            o.put("motifPath", motifPath != null ? motifPath : ""); return o;
         }
         public static FolderPreset fromJson(JSONObject o) {
-            return new FolderPreset(o.optString("name",""), o.optString("uri",""), o.optInt("color", Color.WHITE));
+            return new FolderPreset(o.optString("name",""), o.optString("uri",""), o.optInt("color", Color.WHITE), o.optString("motifPath",""));
         }
     }
     public List<FolderPreset> folderPresets = new ArrayList<>(); // 文件夹预设列表
@@ -2306,8 +2308,13 @@ import java.util.List;
             nameTv.setTextColor(preset.color); nameTv.setTextSize(dialogTextSize + 4f); nameTv.setTypeface(null, Typeface.BOLD);
             card.addView(nameTv);
             TextView uriTv = new TextView(getContext());
-            uriTv.setText(preset.uri); uriTv.setTextColor(Color.GRAY); uriTv.setTextSize(dialogTextSize - 2f); uriTv.setPadding(0,0,0,20);
+            uriTv.setText(preset.uri); uriTv.setTextColor(Color.GRAY); uriTv.setTextSize(dialogTextSize - 2f); uriTv.setPadding(0,0,0,5);
             card.addView(uriTv);
+            if (preset.motifPath != null && !preset.motifPath.isEmpty()) {
+                TextView motifTv = new TextView(getContext());
+                motifTv.setText("🎯 专属UI主题: " + preset.motifPath); motifTv.setTextColor(Color.parseColor("#4CAF50")); motifTv.setTextSize(dialogTextSize - 3f); motifTv.setPadding(0,0,0,20);
+                card.addView(motifTv);
+            } else { uriTv.setPadding(0,0,0,20); }
             
             // 按钮操作区 (水平排列)
             LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -2318,11 +2325,11 @@ import java.util.List;
             launchBtn.setOnClickListener(v -> {
                 new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
                     .setTitle("🔄 即将重新加载数据")
-                    .setMessage("确定要无缝切换到【" + preset.name + "】并重新加载游戏吗？")
+                    .setMessage("确定要无缝切换到【" + preset.name + "】并重新加载游戏吗？\n\n⚠️ 警告：如果您读取的是第三方整合包或非官方引擎，请务必确保已在设置中开启【📦 整合包兼容直读模式】，否则可能导致原版素材被无损注入覆盖或数据异常！")
                     .setPositiveButton("立刻加载", (d, w) -> {
                         if (getContext() instanceof SDLActivity) {
                             dialog.dismiss();
-                            ((SDLActivity) getContext()).saveAndRestartWithPresetUri(preset.uri);
+                            ((SDLActivity) getContext()).saveAndRestartWithPresetUri(preset.uri, preset.motifPath);
                         }
                     }).setNegativeButton("取消", null).show();
             });
