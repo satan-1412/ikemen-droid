@@ -829,14 +829,14 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             Log.i("SDL", "准备启动引擎前，执行配置扫描与修复...");
             fixIkemenConfig(mBasePath);
             // ---------------------------
-            
+
             SharedPreferences gamepadPrefs = getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE);
             boolean isIntegrationMode = gamepadPrefs.getBoolean("IntegrationMode", false);
             boolean isIntegrationValid = false;
 
             if (isIntegrationMode && baseDir.exists() && baseDir.isDirectory()) {
                 if (new File(baseDir, "data/system.def").exists() || 
-                    new File(baseDir, "save/config.json").exists() || 
+                    new File(baseDir, "save/config.ini").exists() || 
                     (new File(baseDir, "chars").exists() && new File(baseDir, "data").exists())) {
                     isIntegrationValid = true;
                 } else {
@@ -876,7 +876,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
                 if (needInject) {
                     runOnUiThread(() -> {
-                        ProgressDialog progress = new ProgressDialog(this);
+                        ProgressDialog progress = new ProgressDialog(SDLActivity.this);
                         progress.setTitle("⚙️ 智能兼容处理");
                         progress.setMessage("正在为整合包注入最新引擎核心...\n(原有核心已安全备份，画面与人物不受影响)");
                         progress.setCancelable(false);
@@ -900,11 +900,14 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     return; 
                 }
                 
-                Log.i("SDLActivity", "兼容模式：环境完美匹配，直接拉起引擎！");
+                Log.i("SDLActivity", "兼容模式：环境完好，直接拉起引擎！");
                 runOnUiThread(this::onSDLReady);
                 return; 
             }
 
+            // =======================================================
+            // 没开兼容模式的普通官方校验流程
+            // =======================================================
             boolean updateRequired = filesNeedUpdate(baseDir, UPDATE_FILE_CHECK_DIRS);
 
             if (!updateRequired) {
@@ -914,7 +917,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 Log.i("SDLActivity", "官方校验：Specified files are outdated or missing. Beginning extraction...");
 
                 runOnUiThread(() -> {
-                    ProgressDialog progress = new ProgressDialog(this);
+                    ProgressDialog progress = new ProgressDialog(SDLActivity.this);
                     progress.setTitle(R.string.updating_files_title);
                     progress.setMessage(getString(R.string.updating_files_msg));
                     progress.setCancelable(false);
@@ -929,6 +932,20 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                             });
                         } catch (Exception e) {
                             runOnUiThread(() -> {
+                                progress.dismiss();
+                                new AlertDialog.Builder(SDLActivity.this)
+                                        .setTitle(R.string.update_error_title)
+                                        .setMessage(e.getMessage())
+                                        .setPositiveButton(R.string.exit_str, (d, w) -> finish())
+                                        .show();
+                            });
+                        }
+                    }).start();
+                });
+            }
+        }).start();
+    }
+{
                                 progress.dismiss();
                                 new AlertDialog.Builder(this)
                                         .setTitle(R.string.update_error_title)
