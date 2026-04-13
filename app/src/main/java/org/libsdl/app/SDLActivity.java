@@ -825,13 +825,15 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         File baseDir = new File(mBasePath);
 
         new Thread(() -> {
-            // ---> 强制配置修复触发点 <---
-            Log.i("SDL", "准备启动引擎前，执行配置扫描与修复...");
-            fixIkemenConfig(mBasePath);
-            // ---------------------------
-
             SharedPreferences gamepadPrefs = getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE);
             boolean isIntegrationMode = gamepadPrefs.getBoolean("IntegrationMode", false);
+            
+            // 【完全尊重原版】：只有玩家手动开启兼容模式，才会执行路径嗅探。否则什么都不做。
+            if (isIntegrationMode) {
+                Log.i("SDL", "兼容模式已开启，准备执行配置扫描与路径兜底...");
+                fixIkemenConfig(mBasePath);
+            }
+
             boolean isIntegrationValid = false;
 
             if (isIntegrationMode && baseDir.exists() && baseDir.isDirectory()) {
@@ -945,6 +947,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             }
         }).start();
     }
+
 {
                                 progress.dismiss();
                                 new AlertDialog.Builder(this)
