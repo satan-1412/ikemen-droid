@@ -32,6 +32,15 @@ import android.text.Editable;
 import android.text.InputType;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.util.ArrayList;
+import java.util.List;
 import android.util.SparseArray;
 import android.view.Display;
 import android.view.Gravity;
@@ -67,6 +76,99 @@ import java.util.Locale;
     SDL Activity
 */
 public class SDLActivity extends Activity implements View.OnSystemUiVisibilityChangeListener {
+
+    // --- 自动配置修复机制开始 ---
+    private String foundSystemDefPath = "";
+
+    /**
+     * 深度扫描 system.def
+     */
+    private void scanForSystemDef(File dir, String rootPath) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (file.isDirectory()) {
+                // 排除一些没意义的文件夹提高速度
+                if (!file.getName().equalsIgnoreCase("chars") && !file.getName().equalsIgnoreCase("sound") && !file.getName().equalsIgnoreCase("font")) {
+                    scanForSystemDef(file, rootPath);
+                }
+            } else if (file.getName().equalsIgnoreCase("system.def")) {
+                // 找到第一个 system.def 就记录相对路径
+                String absolute = file.getAbsolutePath();
+                foundSystemDefPath = absolute.substring(rootPath.length());
+                if (foundSystemDefPath.startsWith("/")) {
+                    foundSystemDefPath = foundSystemDefPath.substring(1);
+                }
+                return;
+            }
+        }
+    }
+
+    /**
+     * 强制重写 config.ini 里的 motif 路径
+     */
+    private void fixIkemenConfig(String gamePath) {
+        foundSystemDefPath = "";
+        File root = new File(gamePath);
+        
+        // 1. 开始全盘扫描
+        scanForSystemDef(root, gamePath);
+        
+        if (foundSystemDefPath.isEmpty()) {
+            Log.e("SDL", "未能在文件夹中找到任何 system.def");
+            return; 
+        }
+
+        Log.d("SDL", "自动识别到 Motif 路径: " + foundSystemDefPath);
+
+        // 2. 准备修改 save/config.ini
+        File saveDir = new File(root, "save");
+        if (!saveDir.exists()) saveDir.mkdirs();
+        
+        File configFile = new File(saveDir, "config.ini");
+        List<String> lines = new ArrayList<>();
+        boolean foundMotif = false;
+
+        // 3. 读取并修改内容
+        try {
+            if (configFile.exists()) {
+                BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(configFile)));
+                String line;
+                while ((line = br.readLine()) != null) {
+                    // 只要开头是 motif 并且包含等号，就拦截替换
+                    if (line.trim().toLowerCase().startsWith("motif") && line.contains("=")) {
+                        lines.add("motif = " + foundSystemDefPath);
+                        foundMotif = true;
+                    } else {
+                        lines.add(line);
+                    }
+                }
+                br.close();
+            }
+
+            // 如果没找到 motif 行，或者文件不存在，则追加
+            if (!foundMotif) {
+                if (lines.isEmpty()) {
+                    lines.add("[Options]");
+                }
+                lines.add("motif = " + foundSystemDefPath);
+            }
+
+            // 4. 写回文件
+            BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(configFile)));
+            for (String l : lines) {
+                bw.write(l);
+                bw.newLine();
+            }
+            bw.flush();
+            bw.close();
+            Log.d("SDL", "config.ini 修复成功！已指向: " + foundSystemDefPath);
+        } catch (Exception e) {
+            Log.e("SDL", "修复 config.ini 失败: " + e.getMessage());
+        }
+    }
+    // --- 自动配置修复机制结束 ---
+
     static {
 //        System.setProperty("SDL_HIDAPI_IGNORE_DEVICES", "1");
         System.loadLibrary("main"); // match the Go shared lib name, usually libmain.so
@@ -723,6 +825,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         File baseDir = new File(mBasePath);
 
         new Thread(() -> {
+            // ---> 强制配置修复触发点 <---
+            Log.i("SDL", "准备启动引擎前，执行配置扫描与修复...");
+            fixIkemenConfig(mBasePath);
+            // ---------------------------
+            
             SharedPreferences gamepadPrefs = getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE);
             boolean isIntegrationMode = gamepadPrefs.getBoolean("IntegrationMode", false);
             boolean isIntegrationValid = false;
@@ -835,8 +942,6 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             }
         }).start();
     }
-le(baseDir, "save");
-                    if (!saveDir.exists()) saveDir.mkdirs();
                     File configJson = new File(saveDir, "config.json");
                     org.json.JSONObject configObj = new org.json.JSONObject();
                     if (configJson.exists()) {
