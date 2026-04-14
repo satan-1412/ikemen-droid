@@ -3,19 +3,20 @@ package org.libsdl.app;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 /**
  * Ikemen GO 纯 Java 桌面系统/梦工厂模式 UI 层
  */
-public class DesktopSystemView extends RelativeLayout {
+public class DesktopSystemView extends FrameLayout {
     private Context mContext;
 
     public DesktopSystemView(Context context) {
@@ -25,30 +26,48 @@ public class DesktopSystemView extends RelativeLayout {
     }
 
     private void initPureJavaUI() {
-        // 1. 设定全屏背景色（经典 Win 蓝屏色，彻底遮挡游戏画面）
-        setBackgroundColor(Color.parseColor("#0078D7"));
-        setClickable(true); // 拦截底层的触摸事件，防止点到游戏里
+        // 1. 彻底拦截所有底层的触摸，防止穿透到游戏中
+        setClickable(true);
         setFocusable(true);
+        setFocusableInTouchMode(true);
 
-        // 2. 创建底部任务栏 (Taskbar)
+        // 2. Windows 10/11 风格默认壁纸渐变色 (深蓝到浅蓝)
+        GradientDrawable winBg = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.parseColor("#005A9E"), Color.parseColor("#0078D7"), Color.parseColor("#00A4EF")}
+        );
+        setBackground(winBg);
+
+        // 3. 中心提示文字 (居中)
+        TextView hintText = new TextView(mContext);
+        hintText.setText("💻 Ikemen GO 桌面/梦工厂模式已激活\n\n系统已全屏铺满，底层游戏完美挂起。");
+        hintText.setTextColor(Color.WHITE);
+        hintText.setTextSize(22f);
+        hintText.setTypeface(null, Typeface.BOLD);
+        hintText.setGravity(Gravity.CENTER);
+        
+        FrameLayout.LayoutParams hintParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hintParams.gravity = Gravity.CENTER;
+        addView(hintText, hintParams);
+
+        // 4. 底部任务栏容器 (透明背景，完全与壁纸融为一体)
         LinearLayout taskbar = new LinearLayout(mContext);
-        taskbar.setId(View.generateViewId()); // 动态生成 ID
         taskbar.setOrientation(LinearLayout.HORIZONTAL);
-        taskbar.setBackgroundColor(Color.parseColor("#1E1E1E")); // 深灰色任务栏
-        taskbar.setGravity(Gravity.CENTER_VERTICAL);
-        taskbar.setPadding(30, 0, 30, 0);
+        taskbar.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        taskbar.setPadding(40, 0, 40, 0);
+        taskbar.setBackgroundColor(Color.TRANSPARENT); // 移除之前的黑色，完美融入背景
 
-        // 设定任务栏的高度和位置（锚定在底部）
-        RelativeLayout.LayoutParams taskbarParams = new RelativeLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 120); // 任务栏高度 120px
-        taskbarParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
-        taskbar.setLayoutParams(taskbarParams);
+        FrameLayout.LayoutParams taskbarParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 120);
+        taskbarParams.gravity = Gravity.BOTTOM; // 锚定在底部
+        addView(taskbar, taskbarParams);
 
-        // 3. 任务栏上的 "返回游戏" 按钮
+        // 5. "返回游戏" 按钮 (Win 徽标位置)
         Button btnReturn = new Button(mContext);
         btnReturn.setText("⬅️ 返回游戏 (Resume)");
         btnReturn.setTextColor(Color.WHITE);
-        btnReturn.setBackgroundColor(Color.parseColor("#D32F2F")); // 醒目的红色
+        btnReturn.setBackgroundColor(Color.parseColor("#D32F2F")); // 保持红色醒目
         btnReturn.setTextSize(16f);
         btnReturn.setPadding(40, 20, 40, 20);
         
@@ -62,36 +81,18 @@ public class DesktopSystemView extends RelativeLayout {
             }
         });
         taskbar.addView(btnReturn);
-
-        // 将任务栏加入主视图
-        addView(taskbar);
-
-        // 4. 创建桌面核心区域 (用于后续放置图标、浮窗或调试工具)
-        FrameLayout desktopArea = new FrameLayout(mContext);
-        RelativeLayout.LayoutParams desktopParams = new RelativeLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-        desktopParams.addRule(RelativeLayout.ABOVE, taskbar.getId()); // 严格置于任务栏上方
-        desktopArea.setLayoutParams(desktopParams);
-        
-        // 5. 桌面中心的提示文字
-        TextView hintText = new TextView(mContext);
-        hintText.setText("💻 Ikemen GO 桌面/梦工厂模式已激活\n\n底层游戏引擎已挂起。\n后续可在此区域添加纯 Java 编写的内存修改器或工具窗。");
-        hintText.setTextColor(Color.WHITE);
-        hintText.setTextSize(22f);
-        hintText.setTypeface(null, Typeface.BOLD);
-        hintText.setGravity(Gravity.CENTER);
-        
-        FrameLayout.LayoutParams hintParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        hintParams.gravity = Gravity.CENTER;
-        desktopArea.addView(hintText, hintParams);
-
-        // 将桌面区域加入主视图
-        addView(desktopArea);
     }
 
+    // 每次显示时强制自己跑到最顶层
     public void onOpen() {
-        // 每次进入桌面模式时触发，确保图层在最顶端
         bringToFront();
+        requestFocus();
+    }
+
+    // 终极物理防御：拦截所有的触摸滑动，绝对不让事件漏给底层的 SDLSurface 导致假死
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        super.onTouchEvent(event);
+        return true; 
     }
 }

@@ -2218,15 +2218,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             @Override
             public void run() {
                 if (active) {
-                    // 1. 挂起游戏渲染和逻辑
-                    SDLActivity.nativePause(); 
-                    
-                    // 2. 显示桌面系统层并强制撑满全屏
+                    // 1. 先把桌面系统层盖上去，并强制声明铺满全屏 (MATCH_PARENT)
                     if (mDesktopSystemView == null) {
                         mDesktopSystemView = new DesktopSystemView(SDLActivity.this);
                         
-                        // 【核心修复】：显式声明宽高为 MATCH_PARENT，防止画面被挤压
-                        RelativeLayout.LayoutParams layoutParams = new RelativeLayout.LayoutParams(
+                        android.widget.RelativeLayout.LayoutParams layoutParams = new android.widget.RelativeLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT, 
                                 ViewGroup.LayoutParams.MATCH_PARENT);
                         
@@ -2235,19 +2231,31 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     
                     mDesktopSystemView.setVisibility(View.VISIBLE);
                     mDesktopSystemView.onOpen(); 
+                    mLayout.requestLayout(); // 强制系统立刻重绘排版
                     
-                    // 强制刷新 Android 视图层级，确保桌面挡在游戏画面上方
-                    mDesktopSystemView.bringToFront();
-                    mLayout.requestLayout();
+                    // 2. 【核心修复：延迟挂起】
+                    // 给予 Android UI 线程 100 毫秒的时间，让它先把蓝色的桌面画面完完全全地画在屏幕上，
+                    // 彻底画完之后，再去通知底层 C++ 引擎停止运转。防止画面挤压和渲染死锁。
+                    new android.os.Handler().postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            SDLActivity.nativePause();
+                        }
+                    }, 100);
                     
                 } else {
-                    // 1. 隐藏桌面模式界面
+                    // 1. 退出时，必须先唤醒底层的游戏渲染
+                    SDLActivity.nativeResume();
+                    
+                    // 2. 隐藏桌面模式界面
                     if (mDesktopSystemView != null) {
                         mDesktopSystemView.setVisibility(View.GONE);
                     }
 
-                    // 2. 唤醒游戏运行
-                    SDLActivity.nativeResume();
+                    // 3. 把焦点还给游戏画布，否则人物可能无法移动
+                    if (mSurface != null) {
+                        mSurface.requestFocus();
+                    }
                 }
             }
         });
