@@ -2088,6 +2088,14 @@ import java.util.List;
         layout.addView(createMenuButton("🎨 按键风格管理系统", v -> { showStyleManagerDialog(); dialog.dismiss(); }));
                 layout.addView(createMenuButton("🎮 物理手柄与外设专区", v -> { showGamepadSettingsDialog(); dialog.dismiss(); }));
         layout.addView(createMenuButton("🪟 自定义设置弹窗 UI外观", v -> { showDialogCustomizationSettings(); dialog.dismiss(); }));
+        // 【新增：桌面系统模式入口】
+        layout.addView(createMenuButton("💻 进入桌面/梦工厂模式", v -> { 
+            if (getContext() instanceof SDLActivity) {
+                ((SDLActivity) getContext()).toggleDesktopMode(true);
+            }
+            dialog.dismiss(); 
+        }));
+
 
         scroll.addView(layout);
         rootLayout.addView(scroll);

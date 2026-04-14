@@ -246,6 +246,8 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected static DummyEdit mTextEdit;
     protected static boolean mScreenKeyboardShown;
     protected static ViewGroup mLayout;
+    private DesktopSystemView mDesktopSystemView; // 桌面模式的主视图
+    private boolean isDesktopModeActive = false;
     protected static SDLClipboardHandler mClipboardHandler;
     protected static Hashtable<Integer, PointerIcon> mCursors;
     protected static int mLastCursorID;
@@ -2428,4 +2430,38 @@ class SDLClipboardHandler implements
     public void onPrimaryClipChanged() {
         SDLActivity.onNativeClipboardChanged();
     }
-}
+    
+        // === 桌面系统模式新增方法 开始 ===
+    public void toggleDesktopMode(final boolean active) {
+        this.isDesktopModeActive = active;
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (active) {
+                    // 1. 暂停游戏逻辑
+                    SDLActivity.nativePause(); 
+                    
+                    // 3. 显示桌面系统层
+                    if (mDesktopSystemView == null) {
+                        mDesktopSystemView = new DesktopSystemView(SDLActivity.this);
+                        mLayout.addView(mDesktopSystemView); // 添加到 SDL 的主容器中
+                    }
+                    mDesktopSystemView.setVisibility(View.VISIBLE);
+                    mDesktopSystemView.onOpen(); 
+                    
+                } else {
+                    // 1. 关闭桌面模式界面
+                    if (mDesktopSystemView != null) {
+                        mDesktopSystemView.setVisibility(View.GONE);
+                    }
+
+                    // 3. 恢复游戏运行
+                    SDLActivity.nativeResume();
+                }
+            }
+        });
+    }
+    // === 桌面系统模式新增方法 结束 ===
+
+} // <--- 这是文件原本自带的最后一个大括号
+
