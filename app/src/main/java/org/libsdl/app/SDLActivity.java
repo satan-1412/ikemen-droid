@@ -2211,25 +2211,22 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         return 0;
     }
 
-    // === 桌面系统模式新增方法 (请确保在 SDLActivity 类中) ===
+    // === 桌面系统模式新增方法 开始 ===
     public void toggleDesktopMode(final boolean active) {
         this.isDesktopModeActive = active;
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
                 if (active) {
-                    // 1. 显示桌面
                     if (mDesktopSystemView == null) {
                         mDesktopSystemView = new DesktopSystemView(SDLActivity.this);
                     }
                     mDesktopSystemView.show();
                     
-                    // 2. 挂起引擎
                     SDLActivity.mHasFocus = false;
                     SDLActivity.mNextNativeState = NativeState.PAUSED;
                     SDLActivity.handleNativeState();
                     
-                    // 3. 强制静音底层音频 track
                     try {
                         if (SDLAudioManager.mAudioTrack != null && 
                             SDLAudioManager.mAudioTrack.getState() == android.media.AudioTrack.STATE_INITIALIZED) {
@@ -2238,33 +2235,34 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     } catch (Exception e) {}
 
                 } else {
-                    // 1. 销毁桌面弹窗
+                    // 1. 极速销毁桌面弹窗，并清空内存以便下次重新干净地加载
                     if (mDesktopSystemView != null) {
                         mDesktopSystemView.dismiss();
+                        mDesktopSystemView = null; 
                     }
 
-                    // 2. 恢复引擎
+                    // 2. 瞬间把焦点还给游戏画布 (必须在唤醒引擎前执行)
+                    if (mSurface != null) {
+                        mSurface.requestFocus();
+                    }
+
+                    // 3. 唤醒引擎 (已移除 setWindowStyle，避开 500ms 强制休眠陷阱)
                     SDLActivity.mHasFocus = true;
                     SDLActivity.mNextNativeState = NativeState.RESUMED;
                     SDLActivity.handleNativeState();
                     
-                    // 3. 恢复声音
+                    // 4. 恢复声音
                     try {
                         if (SDLAudioManager.mAudioTrack != null && 
                             SDLAudioManager.mAudioTrack.getState() == android.media.AudioTrack.STATE_INITIALIZED) {
                             SDLAudioManager.mAudioTrack.play();
                         }
                     } catch (Exception e) {}
-                    
-                    // 4. 强制重置全屏状态
-                    SDLActivity.setWindowStyle(true);
-                    if (mSurface != null) {
-                        mSurface.requestFocus();
-                    }
                 }
             }
         });
     }
+    // === 桌面系统模式新增方法 结束 ===
 
 
 }
