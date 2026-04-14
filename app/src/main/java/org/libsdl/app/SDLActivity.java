@@ -2389,7 +2389,40 @@ class SDLInputConnection extends BaseInputConnection {
     public static native void nativeCommitText(String text, int newCursorPosition);
 
     public static native void nativeGenerateScancodeForUnichar(char c);
-}
+    
+        // === 桌面系统模式新增方法 开始 ===
+    public void toggleDesktopMode(final boolean active) {
+        this.isDesktopModeActive = active;
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (active) {
+                    // 1. 暂停游戏逻辑
+                    SDLActivity.nativePause(); 
+                    
+                    // 3. 显示桌面系统层
+                    if (mDesktopSystemView == null) {
+                        mDesktopSystemView = new DesktopSystemView(SDLActivity.this);
+                        mLayout.addView(mDesktopSystemView); // 添加到 SDL 的主容器中
+                    }
+                    mDesktopSystemView.setVisibility(View.VISIBLE);
+                    mDesktopSystemView.onOpen(); 
+                    
+                } else {
+                    // 1. 关闭桌面模式界面
+                    if (mDesktopSystemView != null) {
+                        mDesktopSystemView.setVisibility(View.GONE);
+                    }
+
+                    // 3. 恢复游戏运行
+                    SDLActivity.nativeResume();
+                }
+            }
+        });
+    }
+    // === 桌面系统模式新增方法 结束 ===
+
+} // <--- 这是结束 SDLActivity 类的原有大括号
 
 class SDLClipboardHandler implements
     ClipboardManager.OnPrimaryClipChangedListener {
@@ -2431,37 +2464,5 @@ class SDLClipboardHandler implements
         SDLActivity.onNativeClipboardChanged();
     }
     
-        // === 桌面系统模式新增方法 开始 ===
-    public void toggleDesktopMode(final boolean active) {
-        this.isDesktopModeActive = active;
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                if (active) {
-                    // 1. 暂停游戏逻辑
-                    SDLActivity.nativePause(); 
-                    
-                    // 3. 显示桌面系统层
-                    if (mDesktopSystemView == null) {
-                        mDesktopSystemView = new DesktopSystemView(SDLActivity.this);
-                        mLayout.addView(mDesktopSystemView); // 添加到 SDL 的主容器中
-                    }
-                    mDesktopSystemView.setVisibility(View.VISIBLE);
-                    mDesktopSystemView.onOpen(); 
-                    
-                } else {
-                    // 1. 关闭桌面模式界面
-                    if (mDesktopSystemView != null) {
-                        mDesktopSystemView.setVisibility(View.GONE);
-                    }
-
-                    // 3. 恢复游戏运行
-                    SDLActivity.nativeResume();
-                }
-            }
-        });
-    }
-    // === 桌面系统模式新增方法 结束 ===
-
 } // <--- 这是文件原本自带的最后一个大括号
 
