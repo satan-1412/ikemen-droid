@@ -2218,38 +2218,49 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             @Override
             public void run() {
                 if (active) {
-                    // 1. 弹出桌面 UI
+                    // 1. 利用 Dialog 瞬间接管系统画面，秒出无卡顿
                     if (mDesktopSystemView == null) {
                         mDesktopSystemView = new DesktopSystemView(SDLActivity.this);
-                        android.widget.RelativeLayout.LayoutParams layoutParams = new android.widget.RelativeLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT, 
-                                ViewGroup.LayoutParams.MATCH_PARENT);
-                        mLayout.addView(mDesktopSystemView, layoutParams); 
                     }
-                    mDesktopSystemView.setVisibility(View.VISIBLE);
-                    mDesktopSystemView.onOpen(); 
+                    mDesktopSystemView.show();
                     
-                    // 2. 【核心修复】欺骗 SDL 引擎认为游戏“失去了焦点并被切到后台”
-                    // 这样 SDLActivity.handleNativeState() 会非常安全地同时挂起游戏逻辑和 OpenGL 画布，绝不死锁！
+                    // 2. 欺骗引擎丢失焦点，深度挂起渲染循环
                     SDLActivity.mHasFocus = false;
                     SDLActivity.mNextNativeState = NativeState.PAUSED;
                     SDLActivity.handleNativeState();
+                    
+                    // 3. 【核弹级静音修复：强制阻断底层音频流】
+                    // 直接获取 SDLAudioManager 里的底层扬声器实例，强制暂停播放！
+                    try {
+                        if (SDLAudioManager.mAudioTrack != null && 
+                            SDLAudioManager.mAudioTrack.getState() == android.media.AudioTrack.STATE_INITIALIZED) {
+                            SDLAudioManager.mAudioTrack.pause();
+                        }
+                    } catch (Exception e) {}
 
                 } else {
-                    // 1. 隐藏桌面 UI
+                    // 1. 关掉桌面 UI
                     if (mDesktopSystemView != null) {
-                        mDesktopSystemView.setVisibility(View.GONE);
+                        mDesktopSystemView.dismiss();
                     }
 
-                    // 2. 欺骗 SDL 引擎认为游戏“重新获得了焦点”
+                    // 2. 唤醒引擎
                     SDLActivity.mHasFocus = true;
                     SDLActivity.mNextNativeState = NativeState.RESUMED;
                     SDLActivity.handleNativeState();
                     
-                    // 3. 强行恢复游戏的强制全屏配置，确保不会残留状态栏
+                    // 3. 恢复底层扬声器供电，恢复游戏声音
+                    try {
+                        if (SDLAudioManager.mAudioTrack != null && 
+                            SDLAudioManager.mAudioTrack.getState() == android.media.AudioTrack.STATE_INITIALIZED) {
+                            SDLAudioManager.mAudioTrack.play();
+                        }
+                    } catch (Exception e) {}
+                    
+                    // 4. 强制还原游戏的横屏沉浸式状态
                     SDLActivity.setWindowStyle(true);
                     if (mSurface != null) {
-                        mSurface.requestFocus(); // 把键盘/触摸焦点还给游戏
+                        mSurface.requestFocus(); // 把键盘/触摸操作权还给游戏画布
                     }
                 }
             }
