@@ -2218,43 +2218,38 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             @Override
             public void run() {
                 if (active) {
-                    // 1. 先把桌面系统层盖上去，并强制声明铺满全屏 (MATCH_PARENT)
+                    // 1. 弹出桌面 UI
                     if (mDesktopSystemView == null) {
                         mDesktopSystemView = new DesktopSystemView(SDLActivity.this);
-                        
                         android.widget.RelativeLayout.LayoutParams layoutParams = new android.widget.RelativeLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT, 
                                 ViewGroup.LayoutParams.MATCH_PARENT);
-                        
                         mLayout.addView(mDesktopSystemView, layoutParams); 
                     }
-                    
                     mDesktopSystemView.setVisibility(View.VISIBLE);
                     mDesktopSystemView.onOpen(); 
-                    mLayout.requestLayout(); // 强制系统立刻重绘排版
                     
-                    // 2. 【核心修复：延迟挂起】
-                    // 给予 Android UI 线程 100 毫秒的时间，让它先把蓝色的桌面画面完完全全地画在屏幕上，
-                    // 彻底画完之后，再去通知底层 C++ 引擎停止运转。防止画面挤压和渲染死锁。
-                    new android.os.Handler().postDelayed(new Runnable() {
-                        @Override
-                        public void run() {
-                            SDLActivity.nativePause();
-                        }
-                    }, 100);
-                    
+                    // 2. 【核心修复】欺骗 SDL 引擎认为游戏“失去了焦点并被切到后台”
+                    // 这样 SDLActivity.handleNativeState() 会非常安全地同时挂起游戏逻辑和 OpenGL 画布，绝不死锁！
+                    SDLActivity.mHasFocus = false;
+                    SDLActivity.mNextNativeState = NativeState.PAUSED;
+                    SDLActivity.handleNativeState();
+
                 } else {
-                    // 1. 退出时，必须先唤醒底层的游戏渲染
-                    SDLActivity.nativeResume();
-                    
-                    // 2. 隐藏桌面模式界面
+                    // 1. 隐藏桌面 UI
                     if (mDesktopSystemView != null) {
                         mDesktopSystemView.setVisibility(View.GONE);
                     }
 
-                    // 3. 把焦点还给游戏画布，否则人物可能无法移动
+                    // 2. 欺骗 SDL 引擎认为游戏“重新获得了焦点”
+                    SDLActivity.mHasFocus = true;
+                    SDLActivity.mNextNativeState = NativeState.RESUMED;
+                    SDLActivity.handleNativeState();
+                    
+                    // 3. 强行恢复游戏的强制全屏配置，确保不会残留状态栏
+                    SDLActivity.setWindowStyle(true);
                     if (mSurface != null) {
-                        mSurface.requestFocus();
+                        mSurface.requestFocus(); // 把键盘/触摸焦点还给游戏
                     }
                 }
             }
