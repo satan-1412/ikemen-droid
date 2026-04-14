@@ -2218,30 +2218,42 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             @Override
             public void run() {
                 if (active) {
-                    // 1. 暂停游戏逻辑
+                    // 1. 挂起游戏渲染和逻辑
                     SDLActivity.nativePause(); 
-
-                    // 3. 显示桌面系统层
+                    
+                    // 2. 显示桌面系统层并强制撑满全屏
                     if (mDesktopSystemView == null) {
                         mDesktopSystemView = new DesktopSystemView(SDLActivity.this);
-                        mLayout.addView(mDesktopSystemView); 
+                        
+                        // 【核心修复】：显式声明宽高为 MATCH_PARENT，防止画面被挤压
+                        RelativeLayout.LayoutParams layoutParams = new RelativeLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT, 
+                                ViewGroup.LayoutParams.MATCH_PARENT);
+                        
+                        mLayout.addView(mDesktopSystemView, layoutParams); 
                     }
+                    
                     mDesktopSystemView.setVisibility(View.VISIBLE);
                     mDesktopSystemView.onOpen(); 
-
+                    
+                    // 强制刷新 Android 视图层级，确保桌面挡在游戏画面上方
+                    mDesktopSystemView.bringToFront();
+                    mLayout.requestLayout();
+                    
                 } else {
-                    // 1. 关闭桌面模式界面
+                    // 1. 隐藏桌面模式界面
                     if (mDesktopSystemView != null) {
                         mDesktopSystemView.setVisibility(View.GONE);
                     }
 
-                    // 3. 恢复游戏运行
+                    // 2. 唤醒游戏运行
                     SDLActivity.nativeResume();
                 }
             }
         });
     }
     // === 桌面系统模式新增方法 结束 ===
+
 
 }
 
