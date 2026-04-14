@@ -2399,15 +2399,15 @@ class SDLInputConnection extends BaseInputConnection {
                 if (active) {
                     // 1. 暂停游戏逻辑
                     SDLActivity.nativePause(); 
-                    
+
                     // 3. 显示桌面系统层
                     if (mDesktopSystemView == null) {
                         mDesktopSystemView = new DesktopSystemView(SDLActivity.this);
-                        mLayout.addView(mDesktopSystemView); // 添加到 SDL 的主容器中
+                        mLayout.addView(mDesktopSystemView); 
                     }
                     mDesktopSystemView.setVisibility(View.VISIBLE);
                     mDesktopSystemView.onOpen(); 
-                    
+
                 } else {
                     // 1. 关闭桌面模式界面
                     if (mDesktopSystemView != null) {
@@ -2422,7 +2422,7 @@ class SDLInputConnection extends BaseInputConnection {
     }
     // === 桌面系统模式新增方法 结束 ===
 
-} // <--- 这是结束 SDLActivity 类的原有大括号
+}
 
 class SDLClipboardHandler implements
     ClipboardManager.OnPrimaryClipChangedListener {
