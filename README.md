@@ -1,7 +1,6 @@
 # I.K.E.M.E.N-Go for Android
 
 ## Instructions for building (debug)
-增加全新虚拟按键系统，兼容32位系统，画质音质上限提升，解除内存限制
 
 ### Requirements: Android Studio, Android NDK r27d.
 
@@ -27,3 +26,9 @@ Special thanks:
 * dionednd - Filipino & Meranaw translations
 
 The original license is included in LICENSE.txt
+
+
+
+以上为源仓库内容
+
+个人修改部分为：增加自定义模拟键盘的虚拟按键，支持安卓5以上，支持32位和64位安卓系统，支持手柄系统，读取整合包等功能，
