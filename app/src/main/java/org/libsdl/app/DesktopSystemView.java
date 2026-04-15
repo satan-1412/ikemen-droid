@@ -507,8 +507,12 @@ public class DesktopSystemView extends Dialog {
         if (customFont != null) tv.setTypeface(customFont);
         tv.setTextColor(fontColor);
         tv.setTextSize(fontSize);
-        if (fontShadowEnabled) tv.setShadowLayer(4f, 2f, 2f, fontShadowColor);
-        else tv.clearShadowLayer();
+        if (fontShadowEnabled) {
+            tv.setShadowLayer(4f, 2f, 2f, fontShadowColor);
+        } else {
+            // 【编译错误修复点】：使用设为透明的方式来清除阴影，完美兼容所有 Android 版本
+            tv.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT); 
+        }
     }
 
     private void loadDesktopSettings() {
