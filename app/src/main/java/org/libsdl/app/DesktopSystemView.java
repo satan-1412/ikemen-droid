@@ -43,9 +43,11 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Ikemen GO 真·PC桌面系统引擎 (纯正底层文件选取 / 模态快照回滚 / Win10 UI)
+ * Ikemen GO 真·PC桌面系统引擎 (智能音量 / 任务栏透视 / 模态快照回滚)
  */
 public class DesktopSystemView extends Dialog {
 
@@ -65,21 +67,28 @@ public class DesktopSystemView extends Dialog {
     private FrameLayout desktopBgLayer;
     private FrameLayout desktopIconsLayer;
     private FrameLayout windowsLayer;
+    private LinearLayout taskbar; 
     private LinearLayout taskbarAppsLayout;
 
     // === 系统设置参数 ===
     public int bgAlpha = 180; 
     public int gridSizeBase = 100;
     public boolean showGrid = false;
-    public int iconShape = 1;
     public String customDesktopBg = "";
     public String customWindowBg = "";
-
-    // === 媒体引擎参数 ===
-    public int mediaVolume = 50; 
+    
+    // === UI 与媒体引擎高阶参数 ===
+    public int taskbarAlpha = 230; // 任务栏独立透明度
+    public int bgMediaVolume = 50; // 桌面背景音量
+    public int winMediaVolume = 50; // 窗口背景音量
     public int mediaScaleMode = 1; 
+    
     public static int savedVideoPositionDesk = 0;
     public static int savedVideoPositionWin = 0;
+    
+    // 媒体音量仲裁器列表
+    private MediaPlayer bgMediaPlayer = null;
+    private List<MediaPlayer> winMediaPlayers = new ArrayList<>();
     
     // === 字体定制引擎 ===
     public String fontPath = "";
@@ -159,18 +168,19 @@ public class DesktopSystemView extends Dialog {
         rootLayer.addView(desktopIconsLayer, new FrameLayout.LayoutParams(-1, -1));
         rootLayer.addView(windowsLayer, new FrameLayout.LayoutParams(-1, -1));
 
-        LinearLayout taskbar = new LinearLayout(getContext());
+        taskbar = new LinearLayout(getContext());
         taskbar.setOrientation(LinearLayout.HORIZONTAL);
         taskbar.setGravity(Gravity.CENTER_VERTICAL);
-        taskbar.setPadding((int)(15*density), 0, (int)(15*density), 0);
-        taskbar.setBackgroundColor(Color.parseColor("#E6111111")); 
+        // 【优化】靠左贴边，减小左侧 padding 距离
+        taskbar.setPadding((int)(4*density), 0, (int)(15*density), 0);
+        taskbar.setBackgroundColor(Color.argb(taskbarAlpha, 17, 17, 17)); // #111111 且支持独立透明度
         FrameLayout.LayoutParams taskbarParams = new FrameLayout.LayoutParams(-1, (int)(50*density));
         taskbarParams.gravity = Gravity.BOTTOM;
         rootLayer.addView(taskbar, taskbarParams);
 
         final LinearLayout startBtn = new LinearLayout(getContext());
         startBtn.setOrientation(LinearLayout.HORIZONTAL); startBtn.setGravity(Gravity.CENTER);
-        startBtn.setPadding((int)(15*density), (int)(8*density), (int)(15*density), (int)(8*density));
+        startBtn.setPadding((int)(10*density), (int)(8*density), (int)(15*density), (int)(8*density));
         
         TextView btnIcon = new TextView(getContext()); btnIcon.setText("⊞"); btnIcon.setTextColor(Color.parseColor("#00A4EF")); btnIcon.setTextSize(20f);
         TextView btnText = new TextView(getContext()); btnText.setText(" 进入游戏"); 
@@ -208,7 +218,34 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ==========================================
-    // 媒体引擎
+    // 智能媒体音量仲裁引擎
+    // ==========================================
+    public void updateMediaVolumes() {
+        boolean hasActiveWindowAudio = false;
+        for (int i = 0; i < winMediaPlayers.size(); i++) {
+            MediaPlayer mp = winMediaPlayers.get(i);
+            if (mp != null) {
+                try {
+                    float v = winMediaVolume / 100f;
+                    mp.setVolume(v, v);
+                    if (winMediaVolume > 0) hasActiveWindowAudio = true;
+                } catch (Exception e) {}
+            }
+        }
+        if (bgMediaPlayer != null) {
+            try {
+                if (hasActiveWindowAudio) {
+                    bgMediaPlayer.setVolume(0f, 0f); // 给窗口让位，强制静音
+                } else {
+                    float v = bgMediaVolume / 100f;
+                    bgMediaPlayer.setVolume(v, v);
+                }
+            } catch (Exception e) {}
+        }
+    }
+
+    // ==========================================
+    // 媒体解析引擎 (支持 图片/GIF/视频 自动识别)
     // ==========================================
     private View createMediaBackground(String uriString, int alpha, final boolean isDesktopBg) {
         if (uriString == null || uriString.trim().isEmpty()) return null;
@@ -229,7 +266,7 @@ public class DesktopSystemView extends Dialog {
                 public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
                     try {
                         mp = new MediaPlayer(); mp.setDataSource(mContext, uri); mp.setSurface(new Surface(surface)); mp.setLooping(true);
-                        float vol = mediaVolume / 100f; mp.setVolume(vol, vol);
+                        // 完全隔离音频焦点，保证游戏BGM不受影响
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) mp.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build());
                         mp.prepareAsync();
                         mp.setOnPreparedListener(m -> {
@@ -241,8 +278,14 @@ public class DesktopSystemView extends Dialog {
                                 else lp = new FrameLayout.LayoutParams(-1, -1);
                                 tv.setLayoutParams(lp);
                             }
-                            if (isDesktopBg && savedVideoPositionDesk > 0) m.seekTo(savedVideoPositionDesk);
-                            else if (!isDesktopBg && savedVideoPositionWin > 0) m.seekTo(savedVideoPositionWin);
+                            if (isDesktopBg) {
+                                bgMediaPlayer = m;
+                                if (savedVideoPositionDesk > 0) m.seekTo(savedVideoPositionDesk);
+                            } else {
+                                winMediaPlayers.add(m);
+                                if (savedVideoPositionWin > 0) m.seekTo(savedVideoPositionWin);
+                            }
+                            updateMediaVolumes(); // 执行仲裁
                             m.start();
                         });
                     } catch (Exception e) {}
@@ -250,8 +293,9 @@ public class DesktopSystemView extends Dialog {
                 @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {}
                 @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
                     if (mp != null) { 
-                        if (isDesktopBg) savedVideoPositionDesk = mp.getCurrentPosition(); else savedVideoPositionWin = mp.getCurrentPosition();
-                        mp.release(); mp = null; 
+                        if (isDesktopBg) { savedVideoPositionDesk = mp.getCurrentPosition(); bgMediaPlayer = null; } 
+                        else { savedVideoPositionWin = mp.getCurrentPosition(); winMediaPlayers.remove(mp); }
+                        mp.release(); mp = null; updateMediaVolumes();
                     } return true;
                 }
                 @Override public void onSurfaceTextureUpdated(SurfaceTexture surface) {}
@@ -295,7 +339,7 @@ public class DesktopSystemView extends Dialog {
 
         TextView iconView = new TextView(getContext()); iconView.setText(iconStr); iconView.setTextSize(26f); iconView.setGravity(Gravity.CENTER);
         GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#44000000"));
-        if (iconShape == 1) bg.setCornerRadius(6f*density); else if (iconShape == 2) bg.setCornerRadius(50f*density); else bg.setColor(Color.TRANSPARENT);
+        bg.setCornerRadius(6f*density); 
         iconView.setBackground(bg); iconLayout.addView(iconView, new LinearLayout.LayoutParams((int)(iconSize*0.6f), (int)(iconSize*0.6f)));
         
         TextView nameView = new TextView(getContext()); nameView.setText(name); applyGlobalFontSettings(nameView, 1.0f, false); nameView.setSingleLine(true);
@@ -327,12 +371,84 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ==========================================
+    // 真·PC窗口管理系统
+    // ==========================================
+    private void openAppWindow(String windowTitle, View contentView) {
+        View existingWin = windowsLayer.findViewWithTag(windowTitle);
+        if (existingWin != null) { existingWin.setVisibility(View.VISIBLE); existingWin.bringToFront(); return; }
+
+        final FrameLayout windowFrame = new FrameLayout(getContext());
+        windowFrame.setTag(windowTitle); windowFrame.setClickable(true); 
+        
+        View winMediaBg = createMediaBackground(customWindowBg, 255, false);
+        if (winMediaBg != null) windowFrame.addView(winMediaBg, new FrameLayout.LayoutParams(-1, -1));
+        else { GradientDrawable winBg = new GradientDrawable(); winBg.setColor(Color.parseColor("#FA1E1E1E")); winBg.setStroke(2, Color.parseColor("#3F3F46")); windowFrame.setBackground(winBg); }
+        windowFrame.setElevation(25f * density); 
+
+        LinearLayout winContainer = new LinearLayout(getContext()); winContainer.setOrientation(LinearLayout.VERTICAL); windowFrame.addView(winContainer, new FrameLayout.LayoutParams(-1, -1));
+
+        final LinearLayout titleBar = new LinearLayout(getContext()); titleBar.setOrientation(LinearLayout.HORIZONTAL); titleBar.setGravity(Gravity.CENTER_VERTICAL); titleBar.setBackgroundColor(Color.parseColor("#F22D2D30")); 
+        TextView title = new TextView(getContext()); title.setText("  " + windowTitle); applyGlobalFontSettings(title, 1.2f, true); titleBar.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL);
+        TextView btnMin = new TextView(getContext()); btnMin.setText(" ─ "); applyGlobalFontSettings(btnMin, 1.0f, true); btnMin.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density)); btnMin.setOnClickListener(v -> windowFrame.setVisibility(View.GONE)); controls.addView(btnMin);
+        TextView btnClose = new TextView(getContext()); btnClose.setText(" ✕ "); applyGlobalFontSettings(btnClose, 1.0f, true); btnClose.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(5*density));
+        btnClose.setOnTouchListener((v, e) -> { if(e.getAction()==MotionEvent.ACTION_DOWN) v.setBackgroundColor(Color.parseColor("#E81123")); else if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL) v.setBackgroundColor(Color.TRANSPARENT); return false; });
+        controls.addView(btnClose); titleBar.addView(controls);
+
+        titleBar.setOnTouchListener(new View.OnTouchListener() {
+            float dX, dY;
+            @Override public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_DOWN) { dX = windowFrame.getX() - mouseX; dY = windowFrame.getY() - mouseY; windowFrame.bringToFront(); } 
+                else if (event.getAction() == MotionEvent.ACTION_MOVE) { windowFrame.setX(mouseX + dX); windowFrame.setY(mouseY + dY); } return true;
+            }
+        });
+
+        winContainer.addView(titleBar, new LinearLayout.LayoutParams(-1, (int)(35*density)));
+        View sep = new View(getContext()); sep.setBackgroundColor(Color.parseColor("#0078D7")); winContainer.addView(sep, new LinearLayout.LayoutParams(-1, (int)(1.5f*density)));
+        winContainer.addView(contentView, new LinearLayout.LayoutParams(-1, -1));
+
+        final LinearLayout taskBtn = new LinearLayout(getContext()); taskBtn.setOrientation(LinearLayout.HORIZONTAL); taskBtn.setGravity(Gravity.CENTER); taskBtn.setPadding((int)(10*density), (int)(5*density), (int)(10*density), (int)(5*density));
+        GradientDrawable tbBg = new GradientDrawable(); tbBg.setColor(Color.parseColor("#22FFFFFF")); taskBtn.setBackground(tbBg);
+        LinearLayout.LayoutParams tbParams = new LinearLayout.LayoutParams(-2, -1); tbParams.setMargins(0,0,(int)(5*density),0);
+        
+        TextView tbText = new TextView(getContext()); tbText.setText("▤ " + windowTitle.split(" ")[0]); applyGlobalFontSettings(tbText, 1.1f, false); taskBtn.addView(tbText);
+        
+        taskBtn.setOnTouchListener(new View.OnTouchListener() {
+            float startX, originalX; boolean isDragging = false;
+            @Override public boolean onTouch(View v, MotionEvent event) {
+                switch(event.getAction()) {
+                    case MotionEvent.ACTION_DOWN: startX = event.getRawX(); originalX = v.getX(); isDragging = false; v.setBackgroundColor(Color.parseColor("#44FFFFFF")); v.bringToFront(); return true;
+                    case MotionEvent.ACTION_MOVE: float dx = event.getRawX() - startX; if (Math.abs(dx) > 10) isDragging = true; if (isDragging) v.setX(originalX + dx); return true;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        v.setBackground(tbBg);
+                        if (isDragging) {
+                            int newIndex = -1; float currentCenter = v.getX() + v.getWidth()/2f;
+                            for (int i=0; i<taskbarAppsLayout.getChildCount(); i++) { View child = taskbarAppsLayout.getChildAt(i); if (child != v && currentCenter < child.getX() + child.getWidth()/2f) { newIndex = i; break; } }
+                            taskbarAppsLayout.removeView(v); if (newIndex == -1) taskbarAppsLayout.addView(v, tbParams); else taskbarAppsLayout.addView(v, newIndex, tbParams);
+                            for (int i=0; i<taskbarAppsLayout.getChildCount(); i++) taskbarAppsLayout.getChildAt(i).setTranslationX(0);
+                        } else { if (windowFrame.getVisibility() == View.VISIBLE) windowFrame.setVisibility(View.GONE); else { windowFrame.setVisibility(View.VISIBLE); windowFrame.bringToFront(); } }
+                        return true;
+                } return false;
+            }
+        });
+        taskbarAppsLayout.addView(taskBtn, tbParams);
+
+        btnClose.setOnClickListener(v -> { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); });
+
+        int w = (int) (rootLayer.getWidth() * 0.70f); int h = (int) (rootLayer.getHeight() * 0.80f);
+        FrameLayout.LayoutParams frameParams = new FrameLayout.LayoutParams(w, h); frameParams.gravity = Gravity.CENTER; windowsLayer.addView(windowFrame, frameParams);
+    }
+
+    // ==========================================
     // 模态设置窗口引擎 (Win10 风格 & 快照回滚)
     // ==========================================
     private void loadDesktopSettings() {
         bgAlpha = prefs.getInt("dt_bgAlpha", 180); gridSizeBase = prefs.getInt("dt_gridSize", 100); showGrid = prefs.getBoolean("dt_showGrid", false);
         customDesktopBg = prefs.getString("dt_customDeskBg", ""); customWindowBg = prefs.getString("dt_customWinBg", "");
-        mediaVolume = prefs.getInt("dt_mediaVol", 50); mediaScaleMode = prefs.getInt("dt_mediaScale", 1);
+        bgMediaVolume = prefs.getInt("dt_bgMediaVol", 50); winMediaVolume = prefs.getInt("dt_winMediaVol", 50); taskbarAlpha = prefs.getInt("dt_taskbarAlpha", 230);
+        mediaScaleMode = prefs.getInt("dt_mediaScale", 1);
         fontPath = prefs.getString("dt_fontPath", ""); fontColor = prefs.getInt("dt_fontColor", Color.WHITE);
         fontSize = prefs.getFloat("dt_fontSize", 12f); fontShadowEnabled = prefs.getBoolean("dt_fontShadow", true); fontShadowColor = prefs.getInt("dt_fontShadowC", Color.BLACK);
         reloadTypeface();
@@ -343,45 +459,43 @@ public class DesktopSystemView extends Dialog {
     }
 
     private void showSettingsWindow() {
-        // 【1】快照备份 (Snapshot Backup)
+        // 【快照备份 - 完整回滚准备】
         final int b_bgAlpha = bgAlpha; final int b_gridSizeBase = gridSizeBase; final boolean b_showGrid = showGrid;
         final String b_customDesktopBg = customDesktopBg; final String b_customWindowBg = customWindowBg;
-        final int b_mediaVolume = mediaVolume; final int b_mediaScaleMode = mediaScaleMode;
+        final int b_bgMediaVolume = bgMediaVolume; final int b_winMediaVolume = winMediaVolume; final int b_taskbarAlpha = taskbarAlpha;
+        final int b_mediaScaleMode = mediaScaleMode;
         final String b_fontPath = fontPath; final int b_fontColor = fontColor; final float b_fontSize = fontSize;
         final boolean b_fontShadowEnabled = fontShadowEnabled; final int b_fontShadowColor = fontShadowColor;
 
         final Dialog dialog = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
         FrameLayout blackOverlay = new FrameLayout(getContext()); blackOverlay.setBackgroundColor(Color.argb(80, 0, 0, 0));
         
-        // 核心 Win10 窗口容器
-        LinearLayout winFrame = new LinearLayout(getContext()); winFrame.setOrientation(LinearLayout.VERTICAL);
-        winFrame.setBackgroundColor(Color.parseColor("#1E1E1E")); // Win10 暗色底
-        GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#1E1E1E")); border.setStroke(2, Color.parseColor("#3F3F46")); winFrame.setBackground(border);
-        winFrame.setElevation(40f); winFrame.setClickable(true); // 阻挡点击穿透
+        LinearLayout winFrame = new LinearLayout(getContext()); winFrame.setOrientation(LinearLayout.VERTICAL); winFrame.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#1E1E1E")); border.setStroke(2, Color.parseColor("#3F3F46")); winFrame.setBackground(border); winFrame.setElevation(40f); winFrame.setClickable(true);
 
-        // Win10 标题栏
-        LinearLayout titleBar = new LinearLayout(getContext()); titleBar.setOrientation(LinearLayout.HORIZONTAL); titleBar.setGravity(Gravity.CENTER_VERTICAL);
-        titleBar.setBackgroundColor(Color.parseColor("#2D2D30")); 
-        TextView title = new TextView(getContext()); title.setText("  ⚙️ 系统控制台"); applyGlobalFontSettings(title, 1.2f, true);
-        titleBar.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout titleBar = new LinearLayout(getContext()); titleBar.setOrientation(LinearLayout.HORIZONTAL); titleBar.setGravity(Gravity.CENTER_VERTICAL); titleBar.setBackgroundColor(Color.parseColor("#2D2D30")); 
+        TextView title = new TextView(getContext()); title.setText("  ⚙️ 系统控制台"); applyGlobalFontSettings(title, 1.2f, true); titleBar.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
         
         TextView btnClose = new TextView(getContext()); btnClose.setText(" ✕ "); applyGlobalFontSettings(btnClose, 1.1f, true); btnClose.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(5*density));
-        btnClose.setOnTouchListener((v, e) -> {
-            if(e.getAction()==MotionEvent.ACTION_DOWN) v.setBackgroundColor(Color.parseColor("#E81123")); else if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL) v.setBackgroundColor(Color.TRANSPARENT);
-            return false;
-        });
-        titleBar.addView(btnClose);
-        winFrame.addView(titleBar, new LinearLayout.LayoutParams(-1, (int)(40*density)));
+        btnClose.setOnTouchListener((v, e) -> { if(e.getAction()==MotionEvent.ACTION_DOWN) v.setBackgroundColor(Color.parseColor("#E81123")); else if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL) v.setBackgroundColor(Color.TRANSPARENT); return false; });
+        titleBar.addView(btnClose); winFrame.addView(titleBar, new LinearLayout.LayoutParams(-1, (int)(40*density)));
         View sep = new View(getContext()); sep.setBackgroundColor(Color.parseColor("#0078D7")); winFrame.addView(sep, new LinearLayout.LayoutParams(-1, (int)(2*density)));
 
-        // --- 内部滚动界面构造 ---
+        // --- 内部界面 ---
         ScrollView scroll = new ScrollView(getContext()); LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding((int)(20*density), (int)(10*density), (int)(20*density), (int)(20*density));
+        
         layout.addView(createTitle("🖥️ 桌面基础布局"));
-        layout.addView(createSubTitle("桌面背景不透明度 (拉到0完全显示底层游戏):"));
+        layout.addView(createSubTitle("桌面壁纸不透明度 (拉到0完全显示底层游戏):"));
         SeekBar alphaBar = new SeekBar(getContext()); alphaBar.setMax(255); alphaBar.setProgress(bgAlpha);
         alphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean b) { bgAlpha = p; refreshDesktopBackground(); } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){}
         }); layout.addView(alphaBar);
+        
+        layout.addView(createSubTitle("底部任务栏不透明度 (不影响工具和按钮):"));
+        SeekBar tbAlphaBar = new SeekBar(getContext()); tbAlphaBar.setMax(255); tbAlphaBar.setProgress(taskbarAlpha);
+        tbAlphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean b) { taskbarAlpha = p; if (taskbar != null) taskbar.setBackgroundColor(Color.argb(p, 17, 17, 17)); } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){}
+        }); layout.addView(tbAlphaBar);
 
         layout.addView(createSubTitle("桌面网格间距:")); SeekBar gridBar = new SeekBar(getContext()); gridBar.setMax(250); gridBar.setProgress(gridSizeBase);
         gridBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -396,6 +510,12 @@ public class DesktopSystemView extends Dialog {
         Button pickFont = createButton("📂 浏览本地选取字体文件 (.ttf/.otf)", "#444444");
         pickFont.setOnClickListener(v -> showWin10FilePicker("选择字体文件", 3, fontLabel, scroll)); layout.addView(pickFont);
 
+        layout.addView(createSubTitle("字体字号大小:"));
+        SeekBar sizeBar = new SeekBar(getContext()); sizeBar.setMax(30); sizeBar.setProgress((int)fontSize);
+        sizeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean b) { fontSize = Math.max(8, p); } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){}
+        }); layout.addView(sizeBar);
+
         layout.addView(createSubTitle("全局字体颜色代码 (Hex):"));
         final EditText colorInput = createInput("如: #FFFFFF", String.format("#%06X", (0xFFFFFF & fontColor))); layout.addView(colorInput);
         colorInput.addTextChangedListener(new TextWatcher() {
@@ -405,24 +525,43 @@ public class DesktopSystemView extends Dialog {
         Button shadowToggle = createButton(fontShadowEnabled ? "✔️ 字体投影：开启" : "❌ 字体投影：关闭", "#333333");
         shadowToggle.setOnClickListener(v -> { fontShadowEnabled = !fontShadowEnabled; shadowToggle.setText(fontShadowEnabled ? "✔️ 字体投影：开启" : "❌ 字体投影：关闭"); }); layout.addView(shadowToggle);
 
-        layout.addView(createTitle("🎬 动态媒体矩阵"));
+        layout.addView(createSubTitle("投影颜色代码 (Hex):"));
+        final EditText shadowColorInput = createInput("如: #000000", String.format("#%06X", (0xFFFFFF & fontShadowColor))); layout.addView(shadowColorInput);
+        shadowColorInput.addTextChangedListener(new TextWatcher() {
+            public void afterTextChanged(Editable s) { try{ fontShadowColor = Color.parseColor(s.toString()); }catch(Exception e){} } public void beforeTextChanged(CharSequence s, int x, int y, int z) {} public void onTextChanged(CharSequence s, int x, int y, int z) {}
+        });
+
+        layout.addView(createTitle("🎬 动态媒体矩阵 (优先读取窗口声音)"));
+        
+        layout.addView(createSubTitle("桌面壁纸视频音量 (独立声道，静音绝不影响BGM):"));
+        SeekBar bgVolBar = new SeekBar(getContext()); bgVolBar.setMax(100); bgVolBar.setProgress(bgMediaVolume);
+        bgVolBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean b) { bgMediaVolume = p; updateMediaVolumes(); } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){}
+        }); layout.addView(bgVolBar);
+
+        layout.addView(createSubTitle("窗口壁纸视频音量 (窗口打开有声时优先静音桌面):"));
+        SeekBar winVolBar = new SeekBar(getContext()); winVolBar.setMax(100); winVolBar.setProgress(winMediaVolume);
+        winVolBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean b) { winMediaVolume = p; updateMediaVolumes(); } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){}
+        }); layout.addView(winVolBar);
+
         layout.addView(createSubTitle("多媒体渲染模式:")); Spinner scaleSpinner = new Spinner(getContext());
         ArrayAdapter<String> scaleAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, new String[]{"📏 强制拉伸填满", "✂️ 居中裁切填满", "🎯 保持原比例居中"});
         scaleSpinner.setAdapter(scaleAdapter); scaleSpinner.setSelection(mediaScaleMode); layout.addView(scaleSpinner);
 
         final TextView deskBgLabel = createSubTitle("桌面壁纸: " + (customDesktopBg.isEmpty()?"未配置":"已应用")); layout.addView(deskBgLabel);
-        Button pickDesk = createButton("📂 浏览本地选取桌面壁纸", "#444444"); 
+        Button pickDesk = createButton("📂 浏览本地选取桌面动态壁纸", "#444444"); 
         pickDesk.setOnClickListener(v -> showWin10FilePicker("选择桌面动态壁纸", 1, deskBgLabel, scroll)); layout.addView(pickDesk);
 
         final TextView winBgLabel = createSubTitle("窗口壁纸: " + (customWindowBg.isEmpty()?"未配置":"已应用")); layout.addView(winBgLabel);
-        Button pickWin = createButton("📂 浏览本地选取窗口壁纸", "#444444"); 
+        Button pickWin = createButton("📂 浏览本地选取窗口动态壁纸", "#444444"); 
         pickWin.setOnClickListener(v -> showWin10FilePicker("选择窗口动态壁纸", 2, winBgLabel, scroll)); layout.addView(pickWin);
 
         Button saveBtn = createButton("💾 保存设置并应用", "#0078D7");
         LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(-1, -2); btnP.setMargins(0, (int)(30*density), 0, 0); saveBtn.setLayoutParams(btnP);
         saveBtn.setOnClickListener(v -> {
             fontPath = fontPath.trim(); mediaScaleMode = scaleSpinner.getSelectedItemPosition();
-            prefs.edit().putInt("dt_bgAlpha", bgAlpha).putInt("dt_gridSize", gridSizeBase).putBoolean("dt_showGrid", showGrid).putString("dt_customDeskBg", customDesktopBg).putString("dt_customWinBg", customWindowBg).putInt("dt_mediaVol", mediaVolume).putInt("dt_mediaScale", mediaScaleMode).putString("dt_fontPath", fontPath).putInt("dt_fontColor", fontColor).putFloat("dt_fontSize", fontSize).putBoolean("dt_fontShadow", fontShadowEnabled).putInt("dt_fontShadowC", fontShadowColor).apply();
+            prefs.edit().putInt("dt_bgAlpha", bgAlpha).putInt("dt_gridSize", gridSizeBase).putBoolean("dt_showGrid", showGrid).putString("dt_customDeskBg", customDesktopBg).putString("dt_customWinBg", customWindowBg).putInt("dt_bgMediaVol", bgMediaVolume).putInt("dt_winMediaVol", winMediaVolume).putInt("dt_taskbarAlpha", taskbarAlpha).putInt("dt_mediaScale", mediaScaleMode).putString("dt_fontPath", fontPath).putInt("dt_fontColor", fontColor).putFloat("dt_fontSize", fontSize).putBoolean("dt_fontShadow", fontShadowEnabled).putInt("dt_fontShadowC", fontShadowColor).apply();
             savedVideoPositionDesk = 0; savedVideoPositionWin = 0;
             reloadTypeface(); refreshDesktopBackground(); setupDesktopIcons();
             Toast.makeText(getContext(), "✅ 设置已保存！", Toast.LENGTH_SHORT).show(); dialog.dismiss();
@@ -439,13 +578,13 @@ public class DesktopSystemView extends Dialog {
 
         // 【回滚检测判定逻辑】
         Runnable checkAndPromptClose = () -> {
-            boolean changed = (bgAlpha!=b_bgAlpha || gridSizeBase!=b_gridSizeBase || showGrid!=b_showGrid || !customDesktopBg.equals(b_customDesktopBg) || !customWindowBg.equals(b_customWindowBg) || mediaScaleMode!=b_mediaScaleMode || !fontPath.equals(b_fontPath) || fontColor!=b_fontColor || fontShadowEnabled!=b_fontShadowEnabled);
+            boolean changed = (bgAlpha!=b_bgAlpha || gridSizeBase!=b_gridSizeBase || showGrid!=b_showGrid || !customDesktopBg.equals(b_customDesktopBg) || !customWindowBg.equals(b_customWindowBg) || bgMediaVolume!=b_bgMediaVolume || winMediaVolume!=b_winMediaVolume || taskbarAlpha!=b_taskbarAlpha || mediaScaleMode!=b_mediaScaleMode || !fontPath.equals(b_fontPath) || fontColor!=b_fontColor || fontShadowEnabled!=b_fontShadowEnabled);
             if (changed) {
                 showWin10SavePrompt(
                     () -> saveBtn.performClick(), // 保存
                     () -> { // 不保存 (回滚)
-                        bgAlpha = b_bgAlpha; gridSizeBase = b_gridSizeBase; showGrid = b_showGrid; customDesktopBg = b_customDesktopBg; customWindowBg = b_customWindowBg; mediaVolume = b_mediaVolume; mediaScaleMode = b_mediaScaleMode; fontPath = b_fontPath; fontColor = b_fontColor; fontSize = b_fontSize; fontShadowEnabled = b_fontShadowEnabled; fontShadowColor = b_fontShadowColor;
-                        reloadTypeface(); refreshDesktopBackground(); setupDesktopIcons(); dialog.dismiss();
+                        bgAlpha = b_bgAlpha; gridSizeBase = b_gridSizeBase; showGrid = b_showGrid; customDesktopBg = b_customDesktopBg; customWindowBg = b_customWindowBg; bgMediaVolume = b_bgMediaVolume; winMediaVolume = b_winMediaVolume; taskbarAlpha = b_taskbarAlpha; mediaScaleMode = b_mediaScaleMode; fontPath = b_fontPath; fontColor = b_fontColor; fontSize = b_fontSize; fontShadowEnabled = b_fontShadowEnabled; fontShadowColor = b_fontShadowColor;
+                        if (taskbar != null) taskbar.setBackgroundColor(Color.argb(taskbarAlpha, 17, 17, 17)); updateMediaVolumes(); reloadTypeface(); refreshDesktopBackground(); setupDesktopIcons(); dialog.dismiss();
                     }
                 );
             } else dialog.dismiss();
@@ -468,7 +607,7 @@ public class DesktopSystemView extends Dialog {
         TextView title = new TextView(getContext()); title.setText(" ⚠️ 未保存的更改"); applyGlobalFontSettings(title, 1.1f, true); title.setPadding((int)(10*density), (int)(8*density), 0, (int)(8*density)); titleBar.addView(title); box.addView(titleBar);
         View sep = new View(getContext()); sep.setBackgroundColor(Color.parseColor("#0078D7")); box.addView(sep, new LinearLayout.LayoutParams(-1, (int)(2*density)));
         
-        TextView msg = new TextView(getContext()); msg.setText("检测到设置发生变更，是否保存？\n(如果不保存，将自动恢复之前状态)"); applyGlobalFontSettings(msg, 1.0f, false); msg.setPadding((int)(20*density), (int)(25*density), (int)(20*density), (int)(25*density)); box.addView(msg);
+        TextView msg = new TextView(getContext()); msg.setText("检测到设置发生变更，是否保存？\n(如果不保存，将自动恢复到打开设置前的状态)"); applyGlobalFontSettings(msg, 1.0f, false); msg.setPadding((int)(20*density), (int)(25*density), (int)(20*density), (int)(25*density)); box.addView(msg);
         
         LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); btnRow.setGravity(Gravity.RIGHT); btnRow.setPadding((int)(10*density), 0, (int)(10*density), (int)(15*density));
         
@@ -485,7 +624,7 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ==========================================
-    // 纯正底层原生文件系统引擎 (Win10 UI风格)
+    // 纯正底层原生文件系统引擎 (Win10 UI风格 + 彻底防死胡同)
     // ==========================================
     private void showWin10FilePicker(String winTitle, final int targetType, final TextView labelRef, final View hostViewToRefresh) {
         final Dialog pDialog = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
@@ -511,6 +650,10 @@ public class DesktopSystemView extends Dialog {
                 if (lastVisitedDir == null || !lastVisitedDir.exists()) lastVisitedDir = Environment.getExternalStorageDirectory();
                 pathView.setText("当前路径: " + lastVisitedDir.getAbsolutePath());
                 
+                // 【终极逃生手段】：不管在哪个文件夹，永远能一键跳回根目录
+                Button goRoot = createButton("🏠 强制回到手机内部存储根目录", "#0078D7"); goRoot.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); goRoot.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                goRoot.setOnClickListener(v -> { lastVisitedDir = Environment.getExternalStorageDirectory(); this.run(); }); listLayout.addView(goRoot);
+
                 if (lastVisitedDir.getParentFile() != null) {
                     Button up = createButton("⬆️ 返回上一级文件夹", "#333333"); up.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); up.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     up.setOnClickListener(v -> { lastVisitedDir = lastVisitedDir.getParentFile(); this.run(); }); listLayout.addView(up);
@@ -541,7 +684,7 @@ public class DesktopSystemView extends Dialog {
                         listLayout.addView(btn);
                     }
                 } else {
-                    TextView empty = new TextView(getContext()); empty.setText("  无权限读取或目录为空..."); applyGlobalFontSettings(empty, 1.0f, false); empty.setPadding(0, (int)(20*density), 0, 0); listLayout.addView(empty);
+                    TextView empty = new TextView(getContext()); empty.setText("  无权限读取或目录为空... 请点击上方蓝色按钮回到根目录"); applyGlobalFontSettings(empty, 1.0f, false); empty.setPadding(0, (int)(20*density), 0, 0); listLayout.addView(empty);
                 }
             }
         };
