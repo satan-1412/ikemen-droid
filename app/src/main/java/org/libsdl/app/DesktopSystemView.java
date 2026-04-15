@@ -5,7 +5,6 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
@@ -50,7 +49,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Ikemen GO 真·PC桌面系统引擎 (含角色资源工坊)
+ * Ikemen GO 真·PC桌面系统引擎 (通用素材工坊 / 终极沉浸模式 / 视窗任务栏 / 快照回滚)
  */
 public class DesktopSystemView extends Dialog {
 
@@ -101,6 +100,11 @@ public class DesktopSystemView extends Dialog {
     public int fontShadowColor = Color.BLACK;
 
     private static File lastVisitedDir = Environment.getExternalStorageDirectory();
+
+    // === 素材提取工坊专用引用 ===
+    private LinearLayout currentGalleryLayout = null;
+    private TextView currentStatusText = null;
+    private volatile boolean isAssetScannerRunning = false;
 
     public DesktopSystemView(Context context) {
         super(context, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
@@ -317,7 +321,7 @@ public class DesktopSystemView extends Dialog {
     private void setupDesktopIcons() {
         desktopIconsLayer.removeAllViews(); 
         createDesktopIcon("sys_settings", "⚙️", "系统控制台");
-        createDesktopIcon("char_viewer", "🎭", "角色资源工坊");
+        createDesktopIcon("asset_extractor", "📦", "素材提取工坊");
     }
 
     private void createDesktopIcon(final String id, String iconStr, String name) {
@@ -350,9 +354,8 @@ public class DesktopSystemView extends Dialog {
                     } else {
                         long clickTime = System.currentTimeMillis();
                         if (clickTime - lastClickTime < 600) { 
-                            // --- 【核心修改点：这里添加双击判断分支】 ---
                             if (id.equals("sys_settings")) openSettingsInAppWindow(); 
-                            else if (id.equals("char_viewer")) openAppWindow("角色资源工坊", buildCharViewerContent(), null);
+                            else if (id.equals("asset_extractor")) openAppWindow("素材提取工坊", buildAssetExtractorContent(), null);
                             lastClickTime = 0; 
                         } else lastClickTime = clickTime;
                     }
@@ -439,7 +442,6 @@ public class DesktopSystemView extends Dialog {
         int w = (int) (rootLayer.getWidth() * 0.70f); int h = (int) (rootLayer.getHeight() * 0.80f);
         FrameLayout.LayoutParams frameParams = new FrameLayout.LayoutParams(w, h); frameParams.gravity = Gravity.CENTER; windowsLayer.addView(windowFrame, frameParams);
     }
-
 
     // ==========================================
     // 模态设置窗口引擎 (原生窗口挂载 & 快照回滚)
@@ -631,6 +633,9 @@ public class DesktopSystemView extends Dialog {
         pDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
     }
 
+    // ==========================================
+    // 原生文件系统引擎 (完美沉浸式防白条 + 深度扫描支持)
+    // ==========================================
     private void showWin10FilePicker(String winTitle, final int targetType, final TextView labelRef, final View hostViewToRefresh) {
         final Dialog pDialog = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
         pDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
@@ -664,6 +669,17 @@ public class DesktopSystemView extends Dialog {
                     Button up = createButton("⬆️ 返回上一级文件夹", "#333333"); up.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); up.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     up.setOnClickListener(v -> { lastVisitedDir = lastVisitedDir.getParentFile(); this.run(); }); listLayout.addView(up);
                 }
+
+                // 【新增：如果是素材提取器，允许一键提取当前整个文件夹】
+                if (targetType == 4) {
+                    Button scanDirBtn = createButton("✔️ 扫描提取当前所在的整个文件夹 (支持多角色/多地图)", "#4CAF50"); 
+                    scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                    scanDirBtn.setOnClickListener(v -> {
+                        startAssetScanner(lastVisitedDir);
+                        pDialog.dismiss();
+                    }); 
+                    listLayout.addView(scanDirBtn);
+                }
                 
                 File[] files = lastVisitedDir.listFiles();
                 if (files != null) {
@@ -680,11 +696,18 @@ public class DesktopSystemView extends Dialog {
                             if (f.isDirectory()) { lastVisitedDir = f; this.run(); }
                             else {
                                 String absPath = f.getAbsolutePath();
-                                if (targetType == 3) { fontPath = absPath; reloadTypeface(); labelRef.setText("字体状态: 已挂载 " + f.getName()); }
-                                else if (targetType == 1) { customDesktopBg = absPath; labelRef.setText("桌面壁纸: " + f.getName()); refreshDesktopBackground(); }
-                                else if (targetType == 2) { customWindowBg = absPath; labelRef.setText("窗口壁纸: " + f.getName()); }
+                                if (targetType == 4) { // 素材提取单文件选中模式
+                                    if (absPath.toLowerCase().endsWith(".def") || absPath.toLowerCase().endsWith(".sff")) {
+                                        startAssetScanner(f);
+                                        pDialog.dismiss();
+                                    } else {
+                                        Toast.makeText(getContext(), "❌ 请选择 .def 或 .sff 文件", Toast.LENGTH_SHORT).show();
+                                    }
+                                }
+                                else if (targetType == 3) { fontPath = absPath; reloadTypeface(); labelRef.setText("字体状态: 已挂载 " + f.getName()); pDialog.dismiss(); }
+                                else if (targetType == 1) { customDesktopBg = absPath; labelRef.setText("桌面壁纸: " + f.getName()); refreshDesktopBackground(); pDialog.dismiss(); }
+                                else if (targetType == 2) { customWindowBg = absPath; labelRef.setText("窗口壁纸: " + f.getName()); pDialog.dismiss(); }
                                 if (hostViewToRefresh != null) hostViewToRefresh.invalidate();
-                                pDialog.dismiss();
                             }
                         });
                         listLayout.addView(btn);
@@ -709,13 +732,10 @@ public class DesktopSystemView extends Dialog {
     private Button createButton(String text, String colorHex) { Button btn = new Button(getContext()); btn.setText(text); btn.setBackgroundColor(Color.parseColor(colorHex)); applyGlobalFontSettings(btn, 1.0f, false); return btn; }
 
     // ==========================================
-    // 🎭 模块化：角色资源工坊 (Character Viewer)
+    // 📦 模块化：通用素材提取工坊 (Asset Extractor)
     // ==========================================
     
-    // 线程控制锁，窗口关闭时停止后台扫描
-    private volatile boolean isCharScannerRunning = false;
-
-    private View buildCharViewerContent() {
+    private View buildAssetExtractorContent() {
         LinearLayout root = new LinearLayout(getContext());
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
@@ -726,10 +746,10 @@ public class DesktopSystemView extends Dialog {
         topBar.setGravity(Gravity.CENTER_VERTICAL);
         
         TextView statusText = new TextView(getContext());
-        statusText.setText("状态: 等待扫描...");
+        statusText.setText(" 状态: 等待选取目录或文件...");
         applyGlobalFontSettings(statusText, 1.0f, false);
         
-        Button scanBtn = createButton("🔍 扫描 Chars 目录", "#0078D7");
+        Button scanBtn = createButton("📂 浏览并选择要提取的目录或文件", "#0078D7");
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, -2);
         btnParams.setMargins(0, 0, (int)(15*density), 0);
         
@@ -737,246 +757,193 @@ public class DesktopSystemView extends Dialog {
         topBar.addView(statusText);
         root.addView(topBar);
 
-        // 2. 角色画廊 (使用动态包裹的 LinearLayout 模拟网格)
+        // 2. 结果画廊
         ScrollView scroll = new ScrollView(getContext());
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, -1);
         scrollParams.setMargins(0, (int)(15*density), 0, 0);
         scroll.setLayoutParams(scrollParams);
         
-        // 存放角色卡片的容器
         final LinearLayout galleryLayout = new LinearLayout(getContext());
         galleryLayout.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(galleryLayout);
         root.addView(scroll);
 
-        // 3. 扫描按钮点击事件 (启动独立后台线程)
+        // 3. 点击打开文件选择器 (目标类型 4)
         scanBtn.setOnClickListener(v -> {
-            if (isCharScannerRunning) return;
-            galleryLayout.removeAllViews();
-            statusText.setText("状态: 正在深度扫描 def 文件...");
-            scanBtn.setEnabled(false);
-            scanBtn.setBackgroundColor(Color.GRAY);
-            isCharScannerRunning = true;
-            
-            // 启动异步模块
-            new Thread(() -> runCharacterScanner(galleryLayout, statusText, scanBtn)).start();
+            if (isAssetScannerRunning) return;
+            currentGalleryLayout = galleryLayout;
+            currentStatusText = statusText;
+            showWin10FilePicker("选择目录或 .def/.sff 素材文件", 4, null, null);
         });
 
-        // 拦截窗口关闭事件，销毁线程
+        // 4. 监听窗口关闭中断扫描
         root.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
             @Override public void onViewAttachedToWindow(View v) {}
-            @Override public void onViewDetachedFromWindow(View v) {
-                isCharScannerRunning = false; // 窗口关闭，通知线程停止
-            }
+            @Override public void onViewDetachedFromWindow(View v) { isAssetScannerRunning = false; }
         });
 
         return root;
     }
 
-    // 后台扫描与解析引擎
-    private void runCharacterScanner(final LinearLayout galleryLayout, final TextView statusText, final Button scanBtn) {
-        // 自动定位游戏 chars 目录 (通过你之前的 mBasePath 或默认沙盒)
-        String baseGamePath = prefs.getString(getContext().getString(org.ikemen_engine.ikemen_go.R.string.game_folder_key), Environment.getExternalStorageDirectory().getAbsolutePath());
-        File charsDir = new File(baseGamePath, "chars");
-        
-        if (!charsDir.exists() || !charsDir.isDirectory()) {
-            updateUI(statusText, "错误: 未找到 chars 文件夹!", scanBtn);
-            isCharScannerRunning = false;
-            return;
-        }
+    private void startAssetScanner(File targetFile) {
+        if (currentGalleryLayout != null) currentGalleryLayout.removeAllViews();
+        if (currentStatusText != null) currentStatusText.setText("状态: 正在深度扫描解析...");
+        isAssetScannerRunning = true;
+        new Thread(() -> runAssetScanner(targetFile, currentGalleryLayout, currentStatusText)).start();
+    }
 
-        File[] charFolders = charsDir.listFiles();
-        if (charFolders == null) {
-            updateUI(statusText, "错误: chars 文件夹读取失败!", scanBtn);
-            isCharScannerRunning = false;
+    private void runAssetScanner(File targetFile, final LinearLayout galleryLayout, final TextView statusText) {
+        List<File> sffFiles = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        
+        // 执行深度为 2 的递归扫描，防止庞大目录卡死
+        findSffTargets(targetFile, sffFiles, names, 0);
+
+        if (!isAssetScannerRunning) return; // 窗口已关
+
+        if (sffFiles.isEmpty()) {
+            updateUI(statusText, "未找到有效的 .sff 或 .def 素材");
+            isAssetScannerRunning = false;
             return;
         }
 
         int count = 0;
-        // 当前行的水平容器 (每行放 3 个角色)
         LinearLayout[] currentRow = new LinearLayout[1]; 
         final int[] itemsInRow = {0};
 
-        for (File folder : charFolders) {
-            if (!isCharScannerRunning) break; // 监听窗口关闭中断
+        for (int i = 0; i < sffFiles.size(); i++) {
+            if (!isAssetScannerRunning) break;
+            
+            File sffFile = sffFiles.get(i);
+            String name = names.get(i);
+            count++;
+            final int currentCount = count;
 
-            if (folder.isDirectory()) {
-                String charName = folder.getName();
-                File defFile = new File(folder, charName + ".def");
-                
-                if (defFile.exists()) {
-                    // 解析 def 文件获取 SFF 路径
-                    File sffFile = parseDefForSff(defFile, folder);
-                    count++;
-                    
-                    final int currentCount = count;
-                    final String sffPath = (sffFile != null && sffFile.exists()) ? sffFile.getAbsolutePath() : "未找到SFF";
-                    
-                    // 切回主线程更新 UI 网格
-                    if (getContext() instanceof Activity) {
-                        ((Activity) getContext()).runOnUiThread(() -> {
-                            if (itemsInRow[0] == 0) {
-                                currentRow[0] = new LinearLayout(getContext());
-                                currentRow[0].setOrientation(LinearLayout.HORIZONTAL);
-                                galleryLayout.addView(currentRow[0], new LinearLayout.LayoutParams(-1, -2));
-                            }
-                            
-                            // 生成单个角色卡片
-                            View charCard = buildCharacterCard(charName, sffFile);
-                            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1f);
-                            cardParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
-                            currentRow[0].addView(charCard, cardParams);
-                            
-                            itemsInRow[0]++;
-                            if (itemsInRow[0] >= 3) itemsInRow[0] = 0; // 满3个换行
-                            
-                            statusText.setText("状态: 已加载 " + currentCount + " 个角色");
-                        });
+            if (getContext() instanceof Activity) {
+                ((Activity) getContext()).runOnUiThread(() -> {
+                    if (itemsInRow[0] == 0) {
+                        currentRow[0] = new LinearLayout(getContext());
+                        currentRow[0].setOrientation(LinearLayout.HORIZONTAL);
+                        galleryLayout.addView(currentRow[0], new LinearLayout.LayoutParams(-1, -2));
                     }
+                    
+                    View card = buildAssetCard(name, sffFile);
+                    LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1f);
+                    cardParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
+                    currentRow[0].addView(card, cardParams);
+                    
+                    itemsInRow[0]++;
+                    if (itemsInRow[0] >= 3) itemsInRow[0] = 0; // 每行3个卡片
+                    
+                    statusText.setText("状态: 已加载 " + currentCount + " 个素材资源");
+                });
+            }
+        }
+        updateUI(statusText, "扫描完成! 发现 " + count + " 个资源");
+        isAssetScannerRunning = false;
+    }
+
+    // 智能递归探测器
+    private void findSffTargets(File f, List<File> sffFiles, List<String> names, int depth) {
+        if (depth > 99 || !isAssetScannerRunning) return; 
+        if (f.isDirectory()) {
+            File[] children = f.listFiles();
+            if (children != null) {
+                for (File child : children) findSffTargets(child, sffFiles, names, depth + 1);
+            }
+        } else {
+            String name = f.getName().toLowerCase();
+            if (name.endsWith(".sff")) {
+                if (!sffFiles.contains(f)) {
+                    sffFiles.add(f);
+                    names.add(f.getName());
+                }
+            } else if (name.endsWith(".def")) {
+                File sff = parseDefForSff(f, f.getParentFile());
+                if (sff != null && sff.exists() && !sffFiles.contains(sff)) {
+                    sffFiles.add(sff);
+                    names.add(f.getName().replace(".def", "").replace(".DEF", ""));
                 }
             }
         }
-        
-        updateUI(statusText, "扫描完成! 共发现 " + count + " 个角色", scanBtn);
-        isCharScannerRunning = false;
     }
 
-    // 解析 def 文件，正则提取 [Files] 下的 sprite 参数
-    private File parseDefForSff(File defFile, File charFolder) {
+    private File parseDefForSff(File defFile, File parentFolder) {
         try {
             java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(defFile));
-            String line;
-            boolean inFilesSection = false;
+            String line; boolean inFilesSection = false;
             while ((line = br.readLine()) != null) {
                 line = line.trim().toLowerCase();
-                if (line.startsWith("[files]")) {
-                    inFilesSection = true;
-                } else if (line.startsWith("[")) {
-                    inFilesSection = false;
-                } else if (inFilesSection && line.startsWith("sprite")) {
+                if (line.startsWith("[files]")) inFilesSection = true;
+                else if (line.startsWith("[")) inFilesSection = false;
+                else if (inFilesSection && line.startsWith("sff")) { // 通用匹配 sprite 或 sff
                     String[] parts = line.split("=");
                     if (parts.length > 1) {
-                        String sffName = parts[1].trim().split(";")[0].trim(); // 去除注释
-                        // 兼容反斜杠
-                        sffName = sffName.replace("\\", "/");
-                        br.close();
-                        return new File(charFolder, sffName);
+                        String sffName = parts[1].trim().split(";")[0].trim().replace("\\", "/");
+                        br.close(); return new File(parentFolder, sffName);
                     }
                 }
             }
             br.close();
-        } catch (Exception e) { }
-        return null;
+        } catch (Exception e) { } return null;
     }
 
-    // 构建单个角色 UI 卡片
-    private View buildCharacterCard(final String charName, final File sffFile) {
-        LinearLayout card = new LinearLayout(getContext());
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setGravity(Gravity.CENTER);
+    private View buildAssetCard(final String name, final File sffFile) {
+        LinearLayout card = new LinearLayout(getContext()); card.setOrientation(LinearLayout.VERTICAL); card.setGravity(Gravity.CENTER);
         card.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
-        
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.parseColor("#2D2D30"));
-        bg.setCornerRadius(8f*density);
-        bg.setStroke(1, Color.parseColor("#3F3F46"));
-        card.setBackground(bg);
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#2D2D30")); bg.setCornerRadius(8f*density); bg.setStroke(1, Color.parseColor("#3F3F46")); card.setBackground(bg);
 
-        // 头像预览区域
-        ImageView avatarView = new ImageView(getContext());
+        ImageView previewView = new ImageView(getContext());
         LinearLayout.LayoutParams imgParams = new LinearLayout.LayoutParams((int)(80*density), (int)(80*density));
-        avatarView.setLayoutParams(imgParams);
-        avatarView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        avatarView.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        previewView.setLayoutParams(imgParams); previewView.setScaleType(ImageView.ScaleType.FIT_CENTER); previewView.setBackgroundColor(Color.parseColor("#1E1E1E"));
         
-        // 【核心】在这里调用 SFF 解析器提取头像 (Group 9000, Index 1)
-        Bitmap avatarBmp = extractAvatarFromSff(sffFile);
-        if (avatarBmp != null) {
-            avatarView.setImageBitmap(avatarBmp);
-        } else {
-            // 解析失败的占位图
-            avatarView.setImageResource(android.R.drawable.ic_menu_report_image);
-        }
-        card.addView(avatarView);
+        Bitmap bmp = extractPreviewFromSff(sffFile);
+        if (bmp != null) previewView.setImageBitmap(bmp);
+        else previewView.setImageResource(android.R.drawable.ic_menu_report_image);
+        card.addView(previewView);
 
-        TextView nameText = new TextView(getContext());
-        nameText.setText(charName);
-        nameText.setSingleLine(true);
-        nameText.setGravity(Gravity.CENTER);
-        nameText.setPadding(0, (int)(8*density), 0, (int)(8*density));
-        applyGlobalFontSettings(nameText, 0.9f, false);
+        TextView nameText = new TextView(getContext()); nameText.setText(name); nameText.setSingleLine(true); nameText.setGravity(Gravity.CENTER); nameText.setPadding(0, (int)(8*density), 0, (int)(8*density)); applyGlobalFontSettings(nameText, 0.9f, false);
         card.addView(nameText);
 
-        Button exportBtn = createButton("💾 导出全部PNG", "#4CAF50");
-        exportBtn.setPadding(0, (int)(5*density), 0, (int)(5*density));
+        Button exportBtn = createButton("💾 导出PNG序列", "#4CAF50"); exportBtn.setPadding(0, (int)(5*density), 0, (int)(5*density));
         exportBtn.setOnClickListener(v -> {
-            if (sffFile != null && sffFile.exists()) {
-                exportCharacterSprites(charName, sffFile);
-            } else {
-                Toast.makeText(getContext(), "未找到有效的 SFF 资源文件", Toast.LENGTH_SHORT).show();
-            }
+            if (sffFile != null && sffFile.exists()) exportSffSprites(name, sffFile);
+            else Toast.makeText(getContext(), "文件不存在", Toast.LENGTH_SHORT).show();
         });
-        card.addView(exportBtn);
-
-        return card;
+        card.addView(exportBtn); return card;
     }
 
-    // SFF 提取器占位接口 (读取头像)
-    private Bitmap extractAvatarFromSff(File sffFile) {
+    private Bitmap extractPreviewFromSff(File sffFile) {
         if (sffFile == null || !sffFile.exists()) return null;
         // -------------------------------------------------------------
-        // 【SFF解析预留区】
-        // 这里需要实现二进制流的读取：
-        // 1. RandomAccessFile raf = new RandomAccessFile(sffFile, "r");
-        // 2. 读取 512 字节 Header，判断是 V1 还是 V2 (Elecbyte\0\0\0\0\0)
-        // 3. 寻找 Group 9000, Item 1 的 Sprite 节点
-        // 4. 根据类型 (PCX, LZ5, RLE) 解压调色板和图像像素阵列
-        // 5. Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888);
+        // 【SFF底层二进制解码接口保留区】
+        // 留给后续导入 J-SFF-Parser 库来读取第一帧
         // -------------------------------------------------------------
-        
-        // 占位返回 Null，等待后续植入专门的 SFF 二进制解码库
         return null; 
     }
 
-    // 一键导出全套图片引擎
-    private void exportCharacterSprites(String charName, File sffFile) {
-        File exportRoot = new File(Environment.getExternalStorageDirectory(), "IkemenGO_ExportedSprites");
-        File charExportDir = new File(exportRoot, charName);
-        if (!charExportDir.exists()) charExportDir.mkdirs();
+    private void exportSffSprites(String name, File sffFile) {
+        File exportRoot = new File(Environment.getExternalStorageDirectory(), "IkemenGO_Assets");
+        File itemExportDir = new File(exportRoot, name);
+        if (!itemExportDir.exists()) itemExportDir.mkdirs();
 
-        Toast.makeText(getContext(), "开始导出 " + charName + " 到: " + charExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show();
+        Toast.makeText(getContext(), "准备导出 [" + name + "] 到: " + itemExportDir.getAbsolutePath() + "\n(该功能等待 SFF 解析库实装)", Toast.LENGTH_LONG).show();
 
-        // 开启线程将 SFF 里的所有帧转为 PNG 存入此文件夹
         new Thread(() -> {
             try {
-                // 模拟导出操作...
-                // 这里调用解析器循环获取 Bitmap
-                // Bitmap bmp = getNextSprite();
-                // FileOutputStream out = new FileOutputStream(new File(charExportDir, "Group0_Index0.png"));
-                // bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
-                // out.close();
-                
+                // SFF 解码导出逻辑...
                 if (getContext() instanceof Activity) {
                     ((Activity) getContext()).runOnUiThread(() -> {
-                        Toast.makeText(getContext(), "✅ " + charName + " 导出完成！", Toast.LENGTH_SHORT).show();
+                        // Toast.makeText(getContext(), "✅ " + name + " 导出完成！", Toast.LENGTH_SHORT).show();
                     });
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            } catch (Exception e) { e.printStackTrace(); }
         }).start();
     }
 
-    // UI 线程辅助回调
-    private void updateUI(final TextView status, final String msg, final Button btn) {
+    private void updateUI(final TextView status, final String msg) {
         if (getContext() instanceof Activity) {
-            ((Activity) getContext()).runOnUiThread(() -> {
-                status.setText("状态: " + msg);
-                btn.setEnabled(true);
-                btn.setBackgroundColor(Color.parseColor("#0078D7"));
-            });
+            ((Activity) getContext()).runOnUiThread(() -> status.setText("状态: " + msg));
         }
     }
-
-    @Override public void onBackPressed() { } 
 }
