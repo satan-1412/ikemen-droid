@@ -11,6 +11,7 @@ import android.graphics.Path;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -24,9 +25,6 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Ikemen GO 纯 Java 桌面系统 / Windows 11 风格梦工厂模式
@@ -52,9 +50,6 @@ public class DesktopSystemView extends Dialog {
     public int bgAlpha = 255;
     public int gridSize = 120;
     public int iconShape = 1; // 0=隐藏底框, 1=圆角矩形, 2=圆形
-    
-    // 桌面图标列表
-    private List<DesktopIcon> desktopIcons = new ArrayList<>();
 
     public DesktopSystemView(Context context) {
         super(context, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
@@ -222,7 +217,7 @@ public class DesktopSystemView extends Dialog {
         cursorPath.lineTo(30, 26);        
         cursorPath.close();               
 
-        // 【优化】鼠标缩小 50%，更加符合 PC 观感
+        // 鼠标缩小 50%，更加符合 PC 观感
         Matrix scaleMatrix = new Matrix();
         scaleMatrix.setScale(density * 0.35f, density * 0.35f);
         cursorPath.transform(scaleMatrix);
@@ -233,7 +228,6 @@ public class DesktopSystemView extends Dialog {
      */
     private void setupDesktopIcons() {
         desktopArea.removeAllViews();
-        desktopIcons.clear();
 
         // 创建唯一的系统应用：系统设置
         createDesktopIcon("system_settings", "⚙️", "系统设置");
