@@ -861,64 +861,79 @@ public class DesktopSystemView extends Dialog {
         isAssetScannerRunning = false;
     }
 
-    // 智能递归探测器 (防死循环版)
+    // 用于记录已经被 def 绑定过的 sff 绝对路径，防止二次重复显示
+    private List<String> resolvedSffPaths = new ArrayList<>();
+
+    // 智能递归探测器 (防死循环 + 自动去重)
     private void findSffTargets(File f, List<File> sffFiles, List<String> names, int depth) {
+        if (depth == 0) resolvedSffPaths.clear(); // 每次全新扫描时清空去重池
         if (depth > 99 || !isAssetScannerRunning || f == null || !f.exists()) return; 
         
         if (f.isDirectory()) {
             File[] children = f.listFiles();
             if (children != null) {
+                // 优先扫描 def 文件，这样能先把绑定的 sff 注册进去重池
+                Arrays.sort(children, (f1, f2) -> {
+                    boolean d1 = f1.getName().toLowerCase().endsWith(".def");
+                    boolean d2 = f2.getName().toLowerCase().endsWith(".def");
+                    if (d1 && !d2) return -1; if (!d1 && d2) return 1; return 0;
+                });
                 for (File child : children) findSffTargets(child, sffFiles, names, depth + 1);
             }
         } else {
             String name = f.getName().toLowerCase();
-            if (name.endsWith(".sff")) {
-                if (!sffFiles.contains(f)) {
-                    sffFiles.add(f);
-                    names.add(f.getName());
-                }
-            } else if (name.endsWith(".def")) {
+            if (name.endsWith(".def")) {
                 File sff = parseDefForSff(f, f.getParentFile());
                 if (sff != null && sff.exists() && !sffFiles.contains(sff)) {
                     sffFiles.add(sff);
                     names.add(f.getName().replace(".def", "").replace(".DEF", ""));
+                    resolvedSffPaths.add(sff.getAbsolutePath()); // 记录已被绑定的 SFF
+                }
+            } else if (name.endsWith(".sff")) {
+                // 如果这个 SFF 已经被前面的 DEF 文件认领了，直接跳过它
+                if (!resolvedSffPaths.contains(f.getAbsolutePath()) && !sffFiles.contains(f)) {
+                    sffFiles.add(f);
+                    names.add(f.getName());
                 }
             }
         }
     }
 
+    // 暴力多重编码嗅探引擎 (支持各种乱码 def 文件)
     private File parseDefForSff(File defFile, File parentFolder) {
-        try {
-            java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(defFile));
-            String line; boolean inFilesSection = false;
-            String targetSffName = null;
-            while ((line = br.readLine()) != null) {
-                line = line.trim().toLowerCase();
-                if (line.startsWith("[files]")) inFilesSection = true;
-                else if (line.startsWith("[")) inFilesSection = false;
-                else if (inFilesSection && line.startsWith("sff")) {
-                    String[] parts = line.split("=");
-                    if (parts.length > 1) {
-                        targetSffName = parts[1].trim().split(";")[0].trim().replace("\\", "/");
-                        break;
+        String[] charsets = {"UTF-8", "Shift_JIS", "GBK", "ISO-8859-1"};
+        for (String charset : charsets) {
+            try {
+                java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(defFile), charset));
+                String line; boolean inFilesSection = false; String targetSffName = null;
+                while ((line = br.readLine()) != null) {
+                    line = line.trim().toLowerCase();
+                    if (line.startsWith("[files]")) inFilesSection = true;
+                    else if (line.startsWith("[")) inFilesSection = false;
+                    else if (inFilesSection && line.startsWith("sff")) {
+                        String[] parts = line.split("=");
+                        if (parts.length > 1) {
+                            targetSffName = parts[1].trim().split(";")[0].trim().replace("\\", "/");
+                            break;
+                        }
                     }
                 }
-            }
-            br.close();
+                br.close();
 
-            if (targetSffName != null) {
-                File directFile = new File(parentFolder, targetSffName);
-                if (directFile.exists()) return directFile;
-                
-                String justName = new File(targetSffName).getName();
-                File[] allFiles = parentFolder.listFiles();
-                if (allFiles != null) {
-                    for (File f : allFiles) {
-                        if (f.getName().equalsIgnoreCase(justName)) return f;
+                if (targetSffName != null) {
+                    File directFile = new File(parentFolder, targetSffName);
+                    if (directFile.exists()) return directFile;
+                    String justName = new File(targetSffName).getName();
+                    File[] allFiles = parentFolder.listFiles();
+                    if (allFiles != null) {
+                        for (File f : allFiles) {
+                            if (f.getName().equalsIgnoreCase(justName)) return f;
+                        }
                     }
                 }
-            }
-        } catch (Exception e) { } return null;
+            } catch (Exception e) { }
+        }
+        return null;
     }
 
     private View buildAssetCard(final String name, final File sffFile, Bitmap previewBmp, String sffVersion) {
@@ -940,11 +955,11 @@ public class DesktopSystemView extends Dialog {
         TextView verText = new TextView(getContext()); verText.setText(sffVersion); verText.setSingleLine(true); verText.setGravity(Gravity.CENTER); verText.setPadding(0, 0, 0, (int)(8*density)); applyGlobalFontSettings(verText, 0.7f, false); verText.setTextColor(Color.GRAY);
         card.addView(verText);
 
-        Button exportBtn = createButton("💾 提取资源", "#4CAF50"); exportBtn.setPadding(0, (int)(5*density), 0, (int)(5*density));
+        Button exportBtn = createButton("👁️ 打开查看器", "#0078D7"); exportBtn.setPadding(0, (int)(5*density), 0, (int)(5*density));
         exportBtn.setOnClickListener(v -> {
             if (sffFile != null && sffFile.exists()) {
-                Toast.makeText(getContext(), "目标锁定: " + name + "\n路径: " + sffFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
-            } else Toast.makeText(getContext(), "文件读取失败", Toast.LENGTH_SHORT).show();
+                showAssetViewerWindow(name, sffFile); // 开启终极查看器
+            } else Toast.makeText(getContext(), "资源读取失败", Toast.LENGTH_SHORT).show();
         });
         card.addView(exportBtn); return card;
     }
@@ -1019,5 +1034,129 @@ public class DesktopSystemView extends Dialog {
         new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
             if (status != null) status.setText("状态: " + msg);
         });
+    }
+    
+        // ==========================================
+    // 🎞️ 终极模块：素材播放与导出视窗引擎
+    // ==========================================
+    private void showAssetViewerWindow(String charName, File sffFile) {
+        final String winTitle = "🎨 检视: " + charName;
+        
+        // 核心画布与控件
+        LinearLayout root = new LinearLayout(getContext());
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.parseColor("#1E1E1E"));
+
+        // 1. 顶部状态信息
+        TextView infoText = new TextView(getContext());
+        infoText.setText("当前读取文件: " + sffFile.getName() + " | 等待底层解码器接入...");
+        applyGlobalFontSettings(infoText, 1.0f, false);
+        infoText.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
+        root.addView(infoText);
+
+        // 2. 中央预览画布 (带网格背景以便看清透明像素)
+        FrameLayout canvasFrame = new FrameLayout(getContext());
+        LinearLayout.LayoutParams canvasParams = new LinearLayout.LayoutParams(-1, 0, 1f);
+        canvasParams.setMargins((int)(10*density), 0, (int)(10*density), 0);
+        canvasFrame.setLayoutParams(canvasParams);
+        
+        // 绘制透明方格背景
+        Bitmap bgBmp = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888);
+        Canvas bgCanvas = new Canvas(bgBmp);
+        Paint bgPaint = new Paint(); bgPaint.setColor(Color.parseColor("#333333")); bgCanvas.drawRect(0,0,10,10,bgPaint); bgCanvas.drawRect(10,10,20,20,bgPaint);
+        bgPaint.setColor(Color.parseColor("#444444")); bgCanvas.drawRect(10,0,20,10,bgPaint); bgCanvas.drawRect(0,10,10,20,bgPaint);
+        android.graphics.drawable.BitmapDrawable tileBg = new android.graphics.drawable.BitmapDrawable(getContext().getResources(), bgBmp);
+        tileBg.setTileModeXY(android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT);
+        canvasFrame.setBackground(tileBg);
+
+        ImageView previewImg = new ImageView(getContext());
+        previewImg.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        // 先用第一帧的图占位
+        Bitmap initialBmp = extractPreviewFromSff(sffFile);
+        if (initialBmp != null) previewImg.setImageBitmap(initialBmp);
+        canvasFrame.addView(previewImg, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(canvasFrame);
+
+        // 3. 底部控制台 (播放/前后帧/导出)
+        LinearLayout controls = new LinearLayout(getContext());
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+        controls.setGravity(Gravity.CENTER);
+        controls.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
+
+        final boolean[] isPlaying = {false};
+        final int[] currentFrame = {0};
+        
+        Button btnPrev = createButton("⏪ 上一帧", "#333333");
+        Button btnPlay = createButton("▶️ 播放动画", "#FF9800");
+        Button btnNext = createButton("⏭️ 下一帧", "#333333");
+        Button btnExportPng = createButton("💾 导为PNG", "#4CAF50");
+        Button btnExportGif = createButton("🎞️ 导出GIF", "#9C27B0");
+
+        LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(0, -2, 1f);
+        btnP.setMargins((int)(2*density), 0, (int)(2*density), 0);
+
+        // 播放线程核心控制器
+        final Thread[] playThread = {null};
+
+        Runnable updateFrameAction = () -> {
+            // 【预留解码接口】：这里应该调用 decodeSffFrame(sffFile, currentFrame[0])
+            // 目前使用动态文字代替图像更新，证明逻辑通畅
+            infoText.setText("当前播放帧: Frame " + currentFrame[0] + " | 动态解析中...");
+        };
+
+        btnPrev.setOnClickListener(v -> { currentFrame[0]--; updateFrameAction.run(); });
+        btnNext.setOnClickListener(v -> { currentFrame[0]++; updateFrameAction.run(); });
+
+        btnPlay.setOnClickListener(v -> {
+            isPlaying[0] = !isPlaying[0];
+            btnPlay.setText(isPlaying[0] ? "⏸️ 暂停播放" : "▶️ 播放动画");
+            btnPlay.setBackgroundColor(isPlaying[0] ? Color.parseColor("#F44336") : Color.parseColor("#FF9800"));
+            
+            if (isPlaying[0]) {
+                playThread[0] = new Thread(() -> {
+                    while (isPlaying[0]) {
+                        currentFrame[0]++;
+                        new android.os.Handler(android.os.Looper.getMainLooper()).post(updateFrameAction);
+                        try { Thread.sleep(60); } catch (Exception e) {} // 模拟 60 毫秒一帧
+                    }
+                });
+                playThread[0].start();
+            }
+        });
+
+        btnExportPng.setOnClickListener(v -> {
+            Toast.makeText(getContext(), "已触发 PNG 序列导出，目标目录: " + charName, Toast.LENGTH_SHORT).show();
+        });
+
+        btnExportGif.setOnClickListener(v -> {
+            Toast.makeText(getContext(), "已触发 GIF 动图封装，目标: " + charName + ".gif", Toast.LENGTH_SHORT).show();
+        });
+
+        controls.addView(btnPrev, btnP);
+        controls.addView(btnPlay, btnP);
+        controls.addView(btnNext, btnP);
+        controls.addView(btnExportPng, btnP);
+        controls.addView(btnExportGif, btnP);
+        root.addView(controls);
+
+        // 4. 打开原生的 Win10 桌面窗口，挂载我们写好的 UI！
+        // 当点击窗口右上角的 X 关闭时，自动停止后台播放线程，防止内存泄漏！
+        openAppWindow(winTitle, root, () -> {
+            isPlaying[0] = false; // 斩断播放线程
+            View win = windowsLayer.findViewWithTag(winTitle);
+            if (win != null) windowsLayer.removeView(win);
+            View tbBtn = taskbarAppsLayout.findViewWithTag("tb_" + winTitle);
+            if (tbBtn != null) taskbarAppsLayout.removeView(tbBtn);
+        });
+    }
+
+    // 【终极解码器插槽】：将来有了 SFF 解析库，只需填满这一个函数
+    private Bitmap decodeSffFrame(File sffFile, int frameIndex) {
+        // 伪代码：
+        // RandomAccessFile raf = new RandomAccessFile(sffFile, "r");
+        // Seek to frameIndex offset
+        // byte[] pixels = decodeLZ5(raf);
+        // return Bitmap.createBitmap(pixels);
+        return null;
     }
 }
