@@ -8,13 +8,17 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.SurfaceTexture;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
-import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.Surface;
+import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -24,20 +28,18 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.VideoView;
-import android.widget.ImageView;
-import android.net.Uri;
 
 import java.io.File;
 import java.util.Arrays;
 
 /**
- * Ikemen GO 真·PC桌面系统引擎 (多窗口 / 媒体壁纸 / 透明映射)
+ * Ikemen GO 纯血 PC 桌面操作系统引擎 (Win11 亚克力质感)
  */
 public class DesktopSystemView extends Dialog {
 
@@ -45,65 +47,67 @@ public class DesktopSystemView extends Dialog {
     private SharedPreferences prefs;
     private float density;
 
-    // === 全局鼠标与触摸引擎 ===
+    // === 全局鼠标与网格系统 ===
     private float mouseX = -1f, mouseY = -1f;
     private Path cursorPath;
     private Paint cursorPaintFill, cursorPaintStroke;
     
-    // === 桌面层级容器 ===
-    private FrameLayout rootLayer;         
-    private FrameLayout desktopBgLayer;    
-    private FrameLayout desktopIconsLayer; 
-    private FrameLayout windowsLayer;      
+    // === 核心图层 ===
+    private FrameLayout rootLayer, desktopBgLayer, desktopIconsLayer, windowsLayer;
     private LinearLayout taskbarAppsLayout; 
     
-    // === 系统设置参数 ===
-    public int bgAlpha = 180; // 默认半透明，露出游戏画面
-    public int gridSizeBase = 100;
+    // === 个性化设置中心 ===
+    public int bgAlpha = 180, gridSizeBase = 120, iconShape = 1;
     public boolean showGrid = false;
-    public int iconShape = 1; 
-    public String customDesktopBg = "";
-    public String customWindowBg = "";
+    public String deskBgPath = "", winBgPath = "";
+    public int deskVol = 0, winVol = 0;
+    public int deskScaleMode = 1, winScaleMode = 1; // 0=居中 1=裁切 2=拉伸
+    
+    // === 字体定制引擎 ===
+    public String fontPath = "";
+    public int fontSize = 12;
+    public String fontColor = "#FFFFFF";
+    public boolean fontShadow = true;
+    public String shadowColor = "#000000";
+    private Typeface customTypeface = Typeface.DEFAULT;
 
     public DesktopSystemView(Context context) {
-        // 【关键修复1】使用 Translucent 主题，彻底解决黑屏，透出底层游戏画面！
         super(context, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
         this.mContext = context;
-        this.prefs = context.getSharedPreferences("IkemenDesktopPrefs", Context.MODE_PRIVATE);
+        this.prefs = context.getSharedPreferences("IkemenWin11Prefs", Context.MODE_PRIVATE);
         this.density = context.getResources().getDisplayMetrics().density;
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        Window window = getWindow();
-        if (window != null) {
-            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-            window.getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        Window w = getWindow();
+        if (w != null) {
+            w.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            w.getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         }
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        loadDesktopSettings();
+        loadSettings();
         initMouseEngine();
 
         rootLayer = new FrameLayout(getContext()) {
             @Override
             protected void dispatchDraw(Canvas canvas) {
                 super.dispatchDraw(canvas);
-                // 【新增】可视化网格线渲染
+                // 【核心修复】网格精准渲染
+                float gridPx = gridSizeBase * density;
                 if (showGrid) {
-                    Paint gridPaint = new Paint(); gridPaint.setColor(Color.argb(40, 255, 255, 255)); gridPaint.setStrokeWidth(1);
-                    float actualGrid = gridSizeBase * density;
-                    for (float x = 0; x < getWidth(); x += actualGrid) canvas.drawLine(x, 0, x, getHeight(), gridPaint);
-                    for (float y = 0; y < getHeight(); y += actualGrid) canvas.drawLine(0, y, getWidth(), y, gridPaint);
+                    Paint p = new Paint(); p.setColor(Color.argb(50, 255, 255, 255)); p.setStrokeWidth(1);
+                    for (float x = 0; x <= getWidth(); x += gridPx) canvas.drawLine(x, 0, x, getHeight(), p);
+                    for (float y = 0; y <= getHeight(); y += gridPx) canvas.drawLine(0, y, getWidth(), y, p);
                 }
-                // 鼠标永远最顶层
                 if (mouseX >= 0 && mouseY >= 0) {
                     canvas.save(); canvas.translate(mouseX, mouseY);
                     canvas.drawPath(cursorPath, cursorPaintFill); canvas.drawPath(cursorPath, cursorPaintStroke);
@@ -112,67 +116,53 @@ public class DesktopSystemView extends Dialog {
             }
             @Override
             public boolean dispatchTouchEvent(MotionEvent event) {
-                int action = event.getActionMasked();
-                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) { mouseX = -1f; mouseY = -1f; } 
+                int a = event.getActionMasked();
+                if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) { mouseX = -1; mouseY = -1; } 
                 else { mouseX = event.getX(); mouseY = event.getY(); }
-                invalidate(); 
-                return super.dispatchTouchEvent(event);
+                invalidate(); return super.dispatchTouchEvent(event);
             }
         };
-        // 【关键修复2】让根布局可点击，强制拦截滑动事件，解决空白处鼠标不跟手问题
         rootLayer.setClickable(true);
 
-        // 1. 桌面壁纸层 (支持媒体渲染)
         desktopBgLayer = new FrameLayout(getContext());
-        rootLayer.addView(desktopBgLayer, new FrameLayout.LayoutParams(-1, -1));
-        refreshDesktopBackground();
-
-        // 2. 层级划分
         desktopIconsLayer = new FrameLayout(getContext());
         windowsLayer = new FrameLayout(getContext());
+        rootLayer.addView(desktopBgLayer, new FrameLayout.LayoutParams(-1, -1));
         rootLayer.addView(desktopIconsLayer, new FrameLayout.LayoutParams(-1, -1));
         rootLayer.addView(windowsLayer, new FrameLayout.LayoutParams(-1, -1));
+        refreshDesktopBackground();
 
-        // 3. 底部任务栏
+        // 现代任务栏
         LinearLayout taskbar = new LinearLayout(getContext());
-        taskbar.setOrientation(LinearLayout.HORIZONTAL);
-        taskbar.setGravity(Gravity.CENTER_VERTICAL);
-        taskbar.setPadding((int)(15*density), 0, (int)(15*density), 0);
-        taskbar.setBackgroundColor(Color.parseColor("#D9111111")); // Win11 毛玻璃黑
-        FrameLayout.LayoutParams taskbarParams = new FrameLayout.LayoutParams(-1, (int)(55*density));
-        taskbarParams.gravity = Gravity.BOTTOM;
-        rootLayer.addView(taskbar, taskbarParams);
+        taskbar.setOrientation(LinearLayout.HORIZONTAL); taskbar.setGravity(Gravity.CENTER_VERTICAL);
+        taskbar.setBackgroundColor(Color.parseColor("#E6111111"));
+        FrameLayout.LayoutParams tParams = new FrameLayout.LayoutParams(-1, (int)(55*density)); tParams.gravity = Gravity.BOTTOM;
+        rootLayer.addView(taskbar, tParams);
 
-        // 4. "进入游戏" 按钮
-        final LinearLayout startBtn = new LinearLayout(getContext());
-        startBtn.setOrientation(LinearLayout.HORIZONTAL); startBtn.setGravity(Gravity.CENTER);
-        startBtn.setPadding((int)(15*density), (int)(8*density), (int)(15*density), (int)(8*density));
-        final GradientDrawable btnBg = new GradientDrawable(); btnBg.setColor(Color.parseColor("#22FFFFFF")); btnBg.setCornerRadius(8f*density);
-        startBtn.setBackground(btnBg);
+        // “进入游戏”按钮
+        LinearLayout startBtn = new LinearLayout(getContext()); startBtn.setGravity(Gravity.CENTER);
+        startBtn.setPadding((int)(15*density), 0, (int)(20*density), 0);
+        TextView icon = new TextView(getContext()); icon.setText("⊞"); icon.setTextColor(Color.parseColor("#00A4EF")); icon.setTextSize(22f);
+        TextView text = new TextView(getContext()); text.setText(" 进入游戏"); text.setTextColor(Color.WHITE); text.setTextSize(16f); text.setTypeface(null, Typeface.BOLD);
+        startBtn.addView(icon); startBtn.addView(text);
         
-        TextView btnIcon = new TextView(getContext()); btnIcon.setText("⊞"); btnIcon.setTextColor(Color.parseColor("#00A4EF")); btnIcon.setTextSize(20f);
-        TextView btnText = new TextView(getContext()); btnText.setText(" 进入游戏"); btnText.setTextColor(Color.WHITE); btnText.setTextSize(16f); btnText.setTypeface(null, Typeface.BOLD);
-        startBtn.addView(btnIcon); startBtn.addView(btnText);
-        
-        startBtn.setOnTouchListener((v, event) -> {
-            if (event.getAction() == MotionEvent.ACTION_DOWN) { v.setScaleX(0.92f); v.setScaleY(0.92f); btnBg.setColor(Color.parseColor("#55FFFFFF")); }
-            else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
-                v.setScaleX(1.0f); v.setScaleY(1.0f); btnBg.setColor(Color.parseColor("#22FFFFFF")); 
-                if (event.getAction() == MotionEvent.ACTION_UP) { hide(); if (SDLActivity.mSingleton != null) SDLActivity.mSingleton.toggleDesktopMode(false); }
+        GradientDrawable startBg = new GradientDrawable(); startBg.setColor(Color.TRANSPARENT); startBg.setCornerRadius(8f*density);
+        startBtn.setBackground(startBg);
+        startBtn.setOnTouchListener((v, e) -> {
+            if(e.getAction() == MotionEvent.ACTION_DOWN) startBg.setColor(Color.parseColor("#44FFFFFF"));
+            else if(e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
+                startBg.setColor(Color.TRANSPARENT);
+                if(e.getAction() == MotionEvent.ACTION_UP) { hide(); if (SDLActivity.mSingleton != null) SDLActivity.mSingleton.toggleDesktopMode(false); }
             }
             return true;
         });
-        taskbar.addView(startBtn);
+        taskbar.addView(startBtn, new LinearLayout.LayoutParams(-2, -1));
 
-        // 5. 任务栏多窗口图标承载区
-        HorizontalScrollView taskbarScroll = new HorizontalScrollView(getContext());
-        taskbarScroll.setHorizontalScrollBarEnabled(false);
-        taskbarAppsLayout = new LinearLayout(getContext());
-        taskbarAppsLayout.setOrientation(LinearLayout.HORIZONTAL);
-        taskbarAppsLayout.setGravity(Gravity.CENTER_VERTICAL);
-        taskbarAppsLayout.setPadding((int)(15*density), 0, 0, 0);
-        taskbarScroll.addView(taskbarAppsLayout, new ViewGroup.LayoutParams(-2, -1));
-        taskbar.addView(taskbarScroll, new LinearLayout.LayoutParams(0, -1, 1f));
+        // 任务栏多窗口承载区
+        HorizontalScrollView hScroll = new HorizontalScrollView(getContext()); hScroll.setHorizontalScrollBarEnabled(false);
+        taskbarAppsLayout = new LinearLayout(getContext()); taskbarAppsLayout.setOrientation(LinearLayout.HORIZONTAL); taskbarAppsLayout.setGravity(Gravity.CENTER_VERTICAL);
+        hScroll.addView(taskbarAppsLayout, new ViewGroup.LayoutParams(-2, -1));
+        taskbar.addView(hScroll, new LinearLayout.LayoutParams(0, -1, 1f));
 
         setContentView(rootLayer);
         setupDesktopIcons();
@@ -180,52 +170,72 @@ public class DesktopSystemView extends Dialog {
 
     private void initMouseEngine() {
         cursorPaintFill = new Paint(Paint.ANTI_ALIAS_FLAG); cursorPaintFill.setColor(Color.WHITE); cursorPaintFill.setStyle(Paint.Style.FILL);
-        cursorPaintStroke = new Paint(Paint.ANTI_ALIAS_FLAG); cursorPaintStroke.setColor(Color.BLACK); cursorPaintStroke.setStyle(Paint.Style.STROKE); cursorPaintStroke.setStrokeWidth(1.5f * density); 
-        cursorPath = new Path();
-        cursorPath.moveTo(0, 0); cursorPath.lineTo(0, 35); cursorPath.lineTo(9, 26); cursorPath.lineTo(16, 42);        
-        cursorPath.lineTo(22, 38); cursorPath.lineTo(15, 22); cursorPath.lineTo(26, 22); cursorPath.close();               
-        Matrix scaleMatrix = new Matrix(); scaleMatrix.setScale(density * 0.4f, density * 0.4f); cursorPath.transform(scaleMatrix);
+        cursorPaintStroke = new Paint(Paint.ANTI_ALIAS_FLAG); cursorPaintStroke.setColor(Color.BLACK); cursorPaintStroke.setStyle(Paint.Style.STROKE); cursorPaintStroke.setStrokeWidth(1.2f * density); 
+        cursorPath = new Path(); cursorPath.moveTo(0,0); cursorPath.lineTo(0,35); cursorPath.lineTo(9,26); cursorPath.lineTo(16,42); cursorPath.lineTo(22,38); cursorPath.lineTo(15,22); cursorPath.lineTo(26,22); cursorPath.close();               
+        Matrix sm = new Matrix(); sm.setScale(density * 0.35f, density * 0.35f); cursorPath.transform(sm);
     }
 
     // ==========================================
-    // 媒体解析引擎 (支持 图片/GIF/视频 自动识别)
+    // 万能多媒体渲染引擎 (纯原生防占用设计)
     // ==========================================
-    private View createMediaBackground(String path, int alpha) {
-        if (path == null || path.trim().isEmpty()) return null;
-        File file = new File(path); if (!file.exists()) return null;
+    private View createMediaEngine(String path, int alpha, int volPercent, int scaleMode) {
+        if (path == null || path.trim().isEmpty() || !new File(path).exists()) return null;
         String p = path.toLowerCase();
-        View mediaView = null;
         
-        if (p.endsWith(".mp4") || p.endsWith(".avi") || p.endsWith(".mkv") || p.endsWith(".webm")) {
-            VideoView vv = new VideoView(mContext); vv.setVideoPath(path);
-            vv.setOnPreparedListener(mp -> { mp.setLooping(true); mp.setVolume(0f, 0f); mp.start(); });
-            mediaView = vv;
+        if (p.endsWith(".mp4") || p.endsWith(".avi") || p.endsWith(".mkv")) {
+            // 原生 TextureView 方案：不获取 AudioFocus，绝不暂停游戏背景音乐！
+            TextureView tv = new TextureView(getContext()); tv.setAlpha(alpha / 255f);
+            MediaPlayer mp = new MediaPlayer();
+            try { mp.setDataSource(path); } catch(Exception e){}
+            mp.setLooping(true); float vol = volPercent / 100f; mp.setVolume(vol, vol);
+            
+            tv.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+                public void onSurfaceTextureAvailable(SurfaceTexture st, int w, int h) {
+                    mp.setSurface(new Surface(st)); try { mp.prepareAsync(); } catch(Exception e){}
+                }
+                public void onSurfaceTextureSizeChanged(SurfaceTexture st, int w, int h) { adjustScale(tv, mp, scaleMode, w, h); }
+                public boolean onSurfaceTextureDestroyed(SurfaceTexture st) { mp.release(); return true; }
+                public void onSurfaceTextureUpdated(SurfaceTexture st) {}
+            });
+            mp.setOnPreparedListener(m -> { m.start(); adjustScale(tv, m, scaleMode, tv.getWidth(), tv.getHeight()); });
+            mp.setOnVideoSizeChangedListener((m, vw, vh) -> adjustScale(tv, m, scaleMode, tv.getWidth(), tv.getHeight()));
+            return tv;
         } else if (p.endsWith(".gif")) {
-            WebView wv = new WebView(mContext);
-            wv.loadDataWithBaseURL("", "<html style='margin:0;padding:0;'><body style='margin:0;padding:0;background-color:transparent;'><img src='file://" + path + "' style='width:100%;height:100%;object-fit:cover;' /></body></html>", "text/html", "utf-8", null);
-            wv.setBackgroundColor(Color.TRANSPARENT);
-            mediaView = wv;
+            WebView wv = new WebView(getContext()); wv.setBackgroundColor(Color.TRANSPARENT); wv.setAlpha(alpha/255f);
+            String fit = scaleMode == 0 ? "contain" : (scaleMode == 1 ? "cover" : "fill");
+            wv.loadDataWithBaseURL("", "<html style='margin:0;padding:0;'><body style='margin:0;padding:0;background-color:transparent;display:flex;justify-content:center;align-items:center;'><img src='file://" + path + "' style='width:100%;height:100%;object-fit:" + fit + ";' /></body></html>", "text/html", "utf-8", null);
+            return wv;
         } else {
-            ImageView iv = new ImageView(mContext); iv.setImageURI(Uri.parse("file://" + path)); iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            mediaView = iv;
+            ImageView iv = new ImageView(getContext()); iv.setImageURI(Uri.parse("file://" + path)); iv.setAlpha(alpha/255f);
+            iv.setScaleType(scaleMode == 0 ? ImageView.ScaleType.CENTER_INSIDE : (scaleMode == 1 ? ImageView.ScaleType.CENTER_CROP : ImageView.ScaleType.FIT_XY));
+            return iv;
         }
-        mediaView.setAlpha(alpha / 255f);
-        return mediaView;
+    }
+
+    private void adjustScale(TextureView tv, MediaPlayer mp, int mode, int vW, int vH) {
+        if (vW==0 || vH==0 || mp==null) return;
+        int mX = mp.getVideoWidth(), mY = mp.getVideoHeight(); if (mX==0 || mY==0) return;
+        Matrix m = new Matrix();
+        if (mode != 2) {
+            float sX = (float)vW/mX, sY = (float)vH/mY;
+            float scale = mode == 1 ? Math.max(sX, sY) : Math.min(sX, sY);
+            m.setScale(scale * mX / vW, scale * mY / vH, vW/2f, vH/2f);
+        }
+        tv.setTransform(m);
     }
 
     private void refreshDesktopBackground() {
         desktopBgLayer.removeAllViews();
-        View media = createMediaBackground(customDesktopBg, bgAlpha);
-        if (media != null) {
-            desktopBgLayer.addView(media, new FrameLayout.LayoutParams(-1, -1));
-        } else {
-            GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{Color.parseColor("#003366"), Color.parseColor("#005A9E")});
+        View media = createMediaEngine(deskBgPath, bgAlpha, deskVol, deskScaleMode);
+        if (media != null) desktopBgLayer.addView(media, new FrameLayout.LayoutParams(-1, -1));
+        else {
+            GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{Color.parseColor("#002244"), Color.parseColor("#004488")});
             bg.setAlpha(bgAlpha); desktopBgLayer.setBackground(bg);
         }
     }
 
     // ==========================================
-    // 桌面图标与网格系统
+    // 桌面图标系统与精准拖拽
     // ==========================================
     private void setupDesktopIcons() {
         desktopIconsLayer.removeAllViews();
@@ -233,51 +243,43 @@ public class DesktopSystemView extends Dialog {
     }
 
     private void createDesktopIcon(final String id, String iconStr, String name) {
-        final LinearLayout iconLayout = new LinearLayout(getContext());
-        iconLayout.setOrientation(LinearLayout.VERTICAL); iconLayout.setGravity(Gravity.CENTER);
-        
+        FrameLayout iconContainer = new FrameLayout(getContext());
         float actualGrid = gridSizeBase * density;
-        float savedX = prefs.getFloat("icon_x_" + id, actualGrid * 0.2f);
-        float savedY = prefs.getFloat("icon_y_" + id, actualGrid * 0.2f);
-
-        TextView iconView = new TextView(getContext()); iconView.setText(iconStr); iconView.setTextSize(26f); iconView.setGravity(Gravity.CENTER);
-        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#44000000")); 
-        if (iconShape == 1) bg.setCornerRadius(10f*density); else if (iconShape == 2) bg.setCornerRadius(50f*density); else bg.setColor(Color.TRANSPARENT); 
-        iconView.setBackground(bg);
+        int iconSize = (int)(actualGrid - 2); // 【核心修复】只比网格小2像素，完美贴合
         
-        iconLayout.addView(iconView, new LinearLayout.LayoutParams((int)(actualGrid*0.6f), (int)(actualGrid*0.6f)));
-        TextView nameView = new TextView(getContext()); nameView.setText(name); nameView.setTextColor(Color.WHITE); nameView.setTextSize(11f); nameView.setShadowLayer(3f, 1f, 1f, Color.BLACK); nameView.setSingleLine(true);
-        iconLayout.addView(nameView, new LinearLayout.LayoutParams(-2, -2));
+        float savedX = prefs.getFloat("icon_x_"+id, 0); float savedY = prefs.getFloat("icon_y_"+id, 0);
+        
+        LinearLayout inner = new LinearLayout(getContext()); inner.setOrientation(LinearLayout.VERTICAL); inner.setGravity(Gravity.CENTER);
+        
+        TextView iconView = new TextView(getContext()); iconView.setText(iconStr); iconView.setTextSize(actualGrid * 0.3f); iconView.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#44000000")); 
+        if (iconShape == 1) bg.setCornerRadius(10f*density); else if (iconShape == 2) bg.setCornerRadius(actualGrid); else bg.setColor(Color.TRANSPARENT); 
+        iconView.setBackground(bg);
+        inner.addView(iconView, new LinearLayout.LayoutParams((int)(actualGrid*0.6f), (int)(actualGrid*0.6f)));
 
-        iconLayout.setLayoutParams(new FrameLayout.LayoutParams(-2, -2));
-        iconLayout.setX(savedX); iconLayout.setY(savedY);
-        desktopIconsLayer.addView(iconLayout);
+        TextView nameView = new TextView(getContext()); nameView.setText(name); nameView.setSingleLine(true); nameView.setGravity(Gravity.CENTER);
+        applyFontSettings(nameView); // 应用自定义字体和颜色
+        inner.addView(nameView, new LinearLayout.LayoutParams(-2, -2));
 
-        iconLayout.setOnTouchListener(new View.OnTouchListener() {
-            private float offsetX, offsetY;
-            private boolean isDragging = false;
-            private long lastClickTime = 0;
-            @Override
-            public boolean onTouch(View view, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                    offsetX = view.getX() - mouseX; offsetY = view.getY() - mouseY; isDragging = false;
-                    view.setBackgroundColor(Color.parseColor("#44FFFFFF"));
-                } else if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                    if (!isDragging && (Math.abs(mouseX - (view.getX() - offsetX)) > 10 || Math.abs(mouseY - (view.getY() - offsetY)) > 10)) {
-                        isDragging = true; view.bringToFront();
-                    }
-                    if (isDragging) { view.setX(mouseX + offsetX); view.setY(mouseY + offsetY); }
-                } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
-                    view.setBackgroundColor(Color.TRANSPARENT);
-                    if (isDragging) {
-                        float finalX = Math.round(view.getX() / actualGrid) * actualGrid;
-                        float finalY = Math.round(view.getY() / actualGrid) * actualGrid;
-                        view.setX(finalX); view.setY(finalY);
-                        prefs.edit().putFloat("icon_x_" + id, finalX).putFloat("icon_y_" + id, finalY).apply();
+        iconContainer.addView(inner, new FrameLayout.LayoutParams(-1, -1));
+        iconContainer.setLayoutParams(new FrameLayout.LayoutParams(iconSize, iconSize));
+        iconContainer.setX(savedX); iconContainer.setY(savedY);
+        desktopIconsLayer.addView(iconContainer);
+
+        iconContainer.setOnTouchListener(new View.OnTouchListener() {
+            float ox, oy; boolean isDrag = false; long lastClick = 0;
+            @Override public boolean onTouch(View v, MotionEvent e) {
+                if (e.getAction() == MotionEvent.ACTION_DOWN) { ox = v.getX()-mouseX; oy = v.getY()-mouseY; isDrag=false; inner.setBackgroundColor(Color.parseColor("#44FFFFFF")); }
+                else if (e.getAction() == MotionEvent.ACTION_MOVE) {
+                    if (!isDrag && (Math.abs(mouseX-(v.getX()-ox))>10 || Math.abs(mouseY-(v.getY()-oy))>10)) { isDrag=true; v.bringToFront(); }
+                    if (isDrag) { v.setX(mouseX+ox); v.setY(mouseY+oy); }
+                } else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
+                    inner.setBackgroundColor(Color.TRANSPARENT);
+                    if (isDrag) {
+                        float fx = Math.round(v.getX() / actualGrid) * actualGrid; float fy = Math.round(v.getY() / actualGrid) * actualGrid;
+                        v.setX(fx); v.setY(fy); prefs.edit().putFloat("icon_x_"+id, fx).putFloat("icon_y_"+id, fy).apply();
                     } else {
-                        long clickTime = System.currentTimeMillis();
-                        if (clickTime - lastClickTime < 350) { handleIconDoubleTap(id); lastClickTime = 0; } 
-                        else lastClickTime = clickTime;
+                        long c = System.currentTimeMillis(); if(c - lastClick < 350) { openSettingsWindow(); lastClick = 0; } else lastClick = c;
                     }
                 }
                 return true; 
@@ -285,218 +287,164 @@ public class DesktopSystemView extends Dialog {
         });
     }
 
-    private void handleIconDoubleTap(String id) {
-        if (id.equals("sys_settings")) openAppWindow("系统设置 (System Settings)", buildSettingsContent());
-    }
-
     // ==========================================
-    // 真·PC窗口管理系统 (多开/最小化/任务栏)
+    // 现代多窗口与任务栏拖拽管理器
     // ==========================================
-    private void openAppWindow(String windowTitle, View contentView) {
-        // 防止重复打开，若已打开则直接前置
-        View existingWin = windowsLayer.findViewWithTag(windowTitle);
-        if (existingWin != null) {
-            existingWin.setVisibility(View.VISIBLE); existingWin.bringToFront(); return;
-        }
+    private void openSettingsWindow() {
+        String titleStr = "系统个性化设置";
+        if (windowsLayer.findViewWithTag(titleStr) != null) { windowsLayer.findViewWithTag(titleStr).setVisibility(View.VISIBLE); windowsLayer.findViewWithTag(titleStr).bringToFront(); return; }
 
-        // 1. 窗口主框架
-        final FrameLayout windowFrame = new FrameLayout(getContext());
-        windowFrame.setTag(windowTitle); windowFrame.setClickable(true); 
+        FrameLayout winFrame = new FrameLayout(getContext()); winFrame.setTag(titleStr); winFrame.setClickable(true);
         
-        // 渲染自定义窗口背景
-        View winMediaBg = createMediaBackground(customWindowBg, 255);
-        if (winMediaBg != null) {
-            windowFrame.addView(winMediaBg, new FrameLayout.LayoutParams(-1, -1));
-        } else {
-            GradientDrawable winBg = new GradientDrawable(); winBg.setColor(Color.parseColor("#E61A1A1A")); winBg.setCornerRadius(10f*density); winBg.setStroke(1, Color.parseColor("#444444"));
-            windowFrame.setBackground(winBg);
-        }
-        windowFrame.setElevation(20f * density); // 真实的物理悬浮阴影
+        View mediaBg = createMediaEngine(winBgPath, 255, winVol, winScaleMode);
+        if (mediaBg != null) winFrame.addView(mediaBg, new FrameLayout.LayoutParams(-1, -1));
+        else { GradientDrawable gb = new GradientDrawable(); gb.setColor(Color.parseColor("#F2202020")); gb.setCornerRadius(10f*density); gb.setStroke(1, Color.parseColor("#444444")); winFrame.setBackground(gb); }
+        winFrame.setElevation(25f * density);
 
-        LinearLayout winContainer = new LinearLayout(getContext());
-        winContainer.setOrientation(LinearLayout.VERTICAL);
-        windowFrame.addView(winContainer, new FrameLayout.LayoutParams(-1, -1));
+        LinearLayout content = new LinearLayout(getContext()); content.setOrientation(LinearLayout.VERTICAL); winFrame.addView(content, new FrameLayout.LayoutParams(-1,-1));
 
-        // 2. 标题栏设计
-        final LinearLayout titleBar = new LinearLayout(getContext());
-        titleBar.setOrientation(LinearLayout.HORIZONTAL); titleBar.setGravity(Gravity.CENTER_VERTICAL);
-        titleBar.setBackgroundColor(Color.parseColor("#99000000")); // 半透明标题栏
+        // 标题栏
+        LinearLayout tBar = new LinearLayout(getContext()); tBar.setBackgroundColor(Color.parseColor("#99000000")); tBar.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(getContext()); title.setText("  " + titleStr); applyFontSettings(title);
+        tBar.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        TextView btnMin = new TextView(getContext()); btnMin.setText(" ━ "); btnMin.setTextColor(Color.WHITE); btnMin.setPadding(30,10,30,10); btnMin.setOnClickListener(v -> winFrame.setVisibility(View.GONE));
+        TextView btnClose = new TextView(getContext()); btnClose.setText(" ✕ "); btnClose.setTextColor(Color.WHITE); btnClose.setPadding(30,10,30,10);
+        tBar.addView(btnMin); tBar.addView(btnClose);
         
-        TextView title = new TextView(getContext()); title.setText("  " + windowTitle); title.setTextColor(Color.WHITE); title.setTextSize(14f);
-        titleBar.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        tBar.setOnTouchListener(new View.OnTouchListener() { float dx,dy; public boolean onTouch(View v,MotionEvent e){
+            if(e.getAction()==MotionEvent.ACTION_DOWN){ dx=winFrame.getX()-mouseX; dy=winFrame.getY()-mouseY; winFrame.bringToFront(); }
+            else if(e.getAction()==MotionEvent.ACTION_MOVE){ winFrame.setX(mouseX+dx); winFrame.setY(mouseY+dy); } return true;
+        }});
+        content.addView(tBar, new LinearLayout.LayoutParams(-1, (int)(40*density)));
+        View sep = new View(getContext()); sep.setBackgroundColor(Color.parseColor("#0078D7")); content.addView(sep, new LinearLayout.LayoutParams(-1, 2));
+        content.addView(buildSettingsContent(), new LinearLayout.LayoutParams(-1,-1));
 
-        // 控制按钮 [ _ ] [ X ]
-        LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL);
+        // 任务栏专属图标 (修复显示符并支持左右拖拽)
+        LinearLayout tBtn = new LinearLayout(getContext()); tBtn.setGravity(Gravity.CENTER); tBtn.setPadding(20,0,20,0);
+        GradientDrawable tbBg = new GradientDrawable(); tbBg.setColor(Color.parseColor("#44FFFFFF")); tbBg.setCornerRadius(5f*density); tBtn.setBackground(tbBg);
+        TextView tbTxt = new TextView(getContext()); tbTxt.setText("⚙️ 系统"); applyFontSettings(tbTxt); tBtn.addView(tbTxt);
+        LinearLayout.LayoutParams tbParams = new LinearLayout.LayoutParams((int)(120*density), -1); tbParams.setMargins(0, (int)(8*density), (int)(10*density), (int)(8*density));
         
-        // 最小化按钮
-        TextView btnMin = new TextView(getContext()); btnMin.setText(" _ "); btnMin.setTextColor(Color.WHITE); btnMin.setTextSize(16f); btnMin.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(10*density));
-        btnMin.setOnClickListener(v -> windowFrame.setVisibility(View.GONE));
-        controls.addView(btnMin);
-
-        // 关闭按钮
-        TextView btnClose = new TextView(getContext()); btnClose.setText(" ✕ "); btnClose.setTextColor(Color.WHITE); btnClose.setTextSize(16f); btnClose.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(5*density));
-        controls.addView(btnClose);
-        titleBar.addView(controls);
-
-        // 拖拽窗口
-        titleBar.setOnTouchListener(new View.OnTouchListener() {
-            float dX, dY;
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_DOWN) { dX = windowFrame.getX() - mouseX; dY = windowFrame.getY() - mouseY; windowFrame.bringToFront(); } 
-                else if (event.getAction() == MotionEvent.ACTION_MOVE) { windowFrame.setX(mouseX + dX); windowFrame.setY(mouseY + dY); }
-                return true;
+        // 任务栏拖拽算法
+        tBtn.setOnTouchListener(new View.OnTouchListener() {
+            float sX; int sIdx;
+            public boolean onTouch(View v, MotionEvent e) {
+                if (e.getAction() == MotionEvent.ACTION_DOWN) { sX = mouseX; sIdx = taskbarAppsLayout.indexOfChild(v); v.setAlpha(0.6f); }
+                else if (e.getAction() == MotionEvent.ACTION_MOVE) {
+                    float diff = mouseX - sX; v.setTranslationX(diff);
+                    int nIdx = sIdx;
+                    if (diff > v.getWidth() && sIdx < taskbarAppsLayout.getChildCount()-1) nIdx = sIdx + 1;
+                    else if (diff < -v.getWidth() && sIdx > 0) nIdx = sIdx - 1;
+                    if (nIdx != sIdx) { taskbarAppsLayout.removeView(v); taskbarAppsLayout.addView(v, nIdx); v.setTranslationX(0); sX = mouseX; sIdx = nIdx; }
+                } else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
+                    v.setAlpha(1f); v.setTranslationX(0);
+                    if (Math.abs(mouseX - sX) < 10) { if (winFrame.getVisibility() == View.VISIBLE) winFrame.setVisibility(View.GONE); else { winFrame.setVisibility(View.VISIBLE); winFrame.bringToFront(); } }
+                } return true;
             }
         });
+        taskbarAppsLayout.addView(tBtn, tbParams);
+        btnClose.setOnClickListener(v -> { windowsLayer.removeView(winFrame); taskbarAppsLayout.removeView(tBtn); });
 
-        winContainer.addView(titleBar, new LinearLayout.LayoutParams(-1, (int)(40*density)));
-        View sep = new View(getContext()); sep.setBackgroundColor(Color.parseColor("#0078D7"));
-        winContainer.addView(sep, new LinearLayout.LayoutParams(-1, (int)(2*density)));
-        winContainer.addView(contentView, new LinearLayout.LayoutParams(-1, -1));
-
-        // 3. 动态添加到任务栏
-        final LinearLayout taskBtn = new LinearLayout(getContext());
-        taskBtn.setOrientation(LinearLayout.HORIZONTAL); taskBtn.setGravity(Gravity.CENTER);
-        taskBtn.setPadding((int)(10*density), (int)(5*density), (int)(10*density), (int)(5*density));
-        GradientDrawable tbBg = new GradientDrawable(); tbBg.setColor(Color.parseColor("#33FFFFFF")); tbBg.setCornerRadius(5f*density);
-        taskBtn.setBackground(tbBg);
-        LinearLayout.LayoutParams tbParams = new LinearLayout.LayoutParams(-2, -1); tbParams.setMargins(0,0,(int)(10*density),0);
-        
-        TextView tbText = new TextView(getContext()); tbText.setText("🗔 " + windowTitle.split(" ")[0]); tbText.setTextColor(Color.WHITE); tbText.setTextSize(12f);
-        taskBtn.addView(tbText);
-        
-        // 任务栏控制显示/隐藏
-        taskBtn.setOnClickListener(v -> {
-            if (windowFrame.getVisibility() == View.VISIBLE) windowFrame.setVisibility(View.GONE);
-            else { windowFrame.setVisibility(View.VISIBLE); windowFrame.bringToFront(); }
-        });
-        taskbarAppsLayout.addView(taskBtn, tbParams);
-
-        // 关闭逻辑
-        btnClose.setOnClickListener(v -> {
-            windowsLayer.removeView(windowFrame);
-            taskbarAppsLayout.removeView(taskBtn);
-        });
-
-        // 居中弹出
-        int w = (int) (rootLayer.getWidth() * 0.65f); int h = (int) (rootLayer.getHeight() * 0.75f);
-        FrameLayout.LayoutParams frameParams = new FrameLayout.LayoutParams(w, h); frameParams.gravity = Gravity.CENTER;
-        windowsLayer.addView(windowFrame, frameParams);
+        FrameLayout.LayoutParams fParams = new FrameLayout.LayoutParams((int)(rootLayer.getWidth()*0.65f), (int)(rootLayer.getHeight()*0.75f));
+        fParams.gravity = Gravity.CENTER; windowsLayer.addView(winFrame, fParams);
     }
 
     // ==========================================
-    // 系统设置应用
+    // 超级控制面板 (配置全功能参数)
     // ==========================================
-    private void loadDesktopSettings() {
-        bgAlpha = prefs.getInt("dt_bgAlpha", 180);
-        gridSizeBase = prefs.getInt("dt_gridSize", 100);
-        showGrid = prefs.getBoolean("dt_showGrid", false);
-        iconShape = prefs.getInt("dt_iconShape", 1);
-        customDesktopBg = prefs.getString("dt_customDeskBg", "");
-        customWindowBg = prefs.getString("dt_customWinBg", "");
+    private void loadSettings() {
+        bgAlpha = prefs.getInt("dt_bgAlpha", 180); gridSizeBase = prefs.getInt("dt_gridSize", 100); showGrid = prefs.getBoolean("dt_showGrid", false); iconShape = prefs.getInt("dt_iconShape", 1);
+        deskBgPath = prefs.getString("dt_dPath", ""); winBgPath = prefs.getString("dt_wPath", "");
+        deskVol = prefs.getInt("dt_dVol", 0); winVol = prefs.getInt("dt_wVol", 0);
+        deskScaleMode = prefs.getInt("dt_dSM", 1); winScaleMode = prefs.getInt("dt_wSM", 1);
+        fontPath = prefs.getString("dt_font", ""); fontSize = prefs.getInt("dt_fSize", 12); fontColor = prefs.getString("dt_fColor", "#FFFFFF");
+        fontShadow = prefs.getBoolean("dt_fShadow", true); shadowColor = prefs.getString("dt_sColor", "#000000");
+        try { if (!fontPath.isEmpty()) customTypeface = Typeface.createFromFile(fontPath); } catch (Exception e) { customTypeface = Typeface.DEFAULT; }
     }
 
     private View buildSettingsContent() {
-        ScrollView scroll = new ScrollView(getContext());
-        LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding((int)(20*density), (int)(10*density), (int)(20*density), (int)(20*density));
+        ScrollView scroll = new ScrollView(getContext()); LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(40,20,40,40);
 
-        // 1. 透明度
-        layout.addView(createTitle("桌面背景不透明度 (拉到0完全显示底层游戏):"));
-        SeekBar alphaBar = new SeekBar(getContext()); alphaBar.setMax(255); alphaBar.setProgress(bgAlpha);
-        alphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean b) { bgAlpha = p; refreshDesktopBackground(); }
-            public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){}
-        });
-        layout.addView(alphaBar);
+        layout.addView(cTitle("🎨 桌面网格与外观"));
+        SeekBar gBar = new SeekBar(getContext()); gBar.setMax(200); gBar.setProgress(gridSizeBase);
+        gBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() { public void onProgressChanged(SeekBar s,int p,boolean b){ gridSizeBase=Math.max(60,p); rootLayer.invalidate(); } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){ setupDesktopIcons(); } });
+        layout.addView(gBar);
+        Button btnGrid = new Button(getContext()); btnGrid.setText(showGrid ? "网格线: 开启" : "网格线: 隐藏"); btnGrid.setOnClickListener(v -> { showGrid=!showGrid; btnGrid.setText(showGrid?"网格线: 开启":"网格线: 隐藏"); rootLayer.invalidate(); }); layout.addView(btnGrid);
 
-        // 2. 网格调整与可见性
-        layout.addView(createTitle("桌面网格间距 (支持自适应):"));
-        SeekBar gridBar = new SeekBar(getContext()); gridBar.setMax(250); gridBar.setProgress(gridSizeBase);
-        gridBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean b) { gridSizeBase = Math.max(60, p); rootLayer.invalidate(); }
-            public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){ setupDesktopIcons(); }
-        });
-        layout.addView(gridBar);
+        layout.addView(cTitle("🔤 字体定制引擎"));
+        EditText fPathInput = cInput(fontPath, "自定义字体路径 (.ttf/.otf)"); layout.addView(fPathInput);
+        Button pickF = new Button(getContext()); pickF.setText("选择字体文件"); pickF.setOnClickListener(v -> showFileBrowser(fPathInput)); layout.addView(pickF);
+        
+        EditText fColorInput = cInput(fontColor, "字体颜色代码 (如 #FF0000)"); layout.addView(fColorInput);
+        Button btnShadow = new Button(getContext()); btnShadow.setText(fontShadow ? "字体阴影: 开启" : "字体阴影: 关闭"); btnShadow.setOnClickListener(v -> { fontShadow=!fontShadow; btnShadow.setText(fontShadow?"字体阴影: 开启":"字体阴影: 关闭"); }); layout.addView(btnShadow);
+        EditText sColorInput = cInput(shadowColor, "阴影颜色代码 (如 #000000)"); layout.addView(sColorInput);
 
-        Button gridToggle = new Button(getContext()); gridToggle.setText(showGrid ? "✔️ 网格辅助线：开启" : "❌ 网格辅助线：关闭");
-        gridToggle.setOnClickListener(v -> { showGrid = !showGrid; gridToggle.setText(showGrid ? "✔️ 网格辅助线：开启" : "❌ 网格辅助线：关闭"); rootLayer.invalidate(); });
-        layout.addView(gridToggle);
+        layout.addView(cTitle("🖼️ 桌面背景配置 (支持所有图片/GIF/视频)"));
+        EditText dPathInput = cInput(deskBgPath, "桌面多媒体路径"); layout.addView(dPathInput);
+        Button pickD = new Button(getContext()); pickD.setText("浏览存储卡选择文件"); pickD.setOnClickListener(v -> showFileBrowser(dPathInput)); layout.addView(pickD);
+        
+        SeekBar aBar = new SeekBar(getContext()); aBar.setMax(255); aBar.setProgress(bgAlpha);
+        aBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){ public void onProgressChanged(SeekBar s,int p,boolean b){ bgAlpha=p; refreshDesktopBackground(); } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){} }); layout.addView(aBar);
+        layout.addView(cText("视频音量 (0-100)")); SeekBar dvBar = new SeekBar(getContext()); dvBar.setMax(100); dvBar.setProgress(deskVol); dvBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){ public void onProgressChanged(SeekBar s,int p,boolean b){ deskVol=p; } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){} }); layout.addView(dvBar);
+        Button dModeBtn = new Button(getContext()); dModeBtn.setText(deskScaleMode==0?"模式: 居中":(deskScaleMode==1?"模式: 裁切全屏":"模式: 强制拉伸")); dModeBtn.setOnClickListener(v->{ deskScaleMode=(deskScaleMode+1)%3; dModeBtn.setText(deskScaleMode==0?"模式: 居中":(deskScaleMode==1?"模式: 裁切全屏":"模式: 强制拉伸")); }); layout.addView(dModeBtn);
 
-        // 3. 媒体壁纸引擎设置
-        layout.addView(createTitle("🖼️ 桌面动态壁纸路径 (.mp4/.gif/.jpg)"));
-        EditText deskBgInput = new EditText(getContext()); deskBgInput.setText(customDesktopBg); deskBgInput.setTextColor(Color.WHITE); deskBgInput.setHint("如: /sdcard/bg.mp4");
-        layout.addView(deskBgInput);
-        Button pickDesk = new Button(getContext()); pickDesk.setText("浏览存储卡查找"); pickDesk.setOnClickListener(v -> showMiniFileBrowser(deskBgInput));
-        layout.addView(pickDesk);
+        layout.addView(cTitle("🖼️ 窗口背景配置 (支持所有图片/GIF/视频)"));
+        EditText wPathInput = cInput(winBgPath, "窗口多媒体路径"); layout.addView(wPathInput);
+        Button pickW = new Button(getContext()); pickW.setText("浏览存储卡选择文件"); pickW.setOnClickListener(v -> showFileBrowser(wPathInput)); layout.addView(pickW);
+        layout.addView(cText("视频音量 (0-100)")); SeekBar wvBar = new SeekBar(getContext()); wvBar.setMax(100); wvBar.setProgress(winVol); wvBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){ public void onProgressChanged(SeekBar s,int p,boolean b){ winVol=p; } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){} }); layout.addView(wvBar);
+        Button wModeBtn = new Button(getContext()); wModeBtn.setText(winScaleMode==0?"模式: 居中":(winScaleMode==1?"模式: 裁切填满":"模式: 强制拉伸")); wModeBtn.setOnClickListener(v->{ winScaleMode=(winScaleMode+1)%3; wModeBtn.setText(winScaleMode==0?"模式: 居中":(winScaleMode==1?"模式: 裁切填满":"模式: 强制拉伸")); }); layout.addView(wModeBtn);
 
-        layout.addView(createTitle("🖼️ 窗口动态壁纸路径 (.mp4/.gif/.jpg)"));
-        EditText winBgInput = new EditText(getContext()); winBgInput.setText(customWindowBg); winBgInput.setTextColor(Color.WHITE); winBgInput.setHint("如: /sdcard/win.gif");
-        layout.addView(winBgInput);
-        Button pickWin = new Button(getContext()); pickWin.setText("浏览存储卡查找"); pickWin.setOnClickListener(v -> showMiniFileBrowser(winBgInput));
-        layout.addView(pickWin);
+        layout.addView(cTitle(""));
+        Button resetBtn = new Button(getContext()); resetBtn.setText("🔄 恢复默认布局与设置"); resetBtn.setTextColor(Color.WHITE); resetBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
+        resetBtn.setOnClickListener(v -> { prefs.edit().clear().apply(); loadSettings(); setupDesktopIcons(); refreshDesktopBackground(); Toast.makeText(getContext(),"已重置",Toast.LENGTH_SHORT).show(); }); layout.addView(resetBtn);
 
-        // 4. 保存设置
-        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存并立刻生效"); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
-        LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(-1, -2); btnP.setMargins(0, (int)(20*density), 0, 0); saveBtn.setLayoutParams(btnP);
+        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存所有设置"); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
         saveBtn.setOnClickListener(v -> {
-            customDesktopBg = deskBgInput.getText().toString().trim();
-            customWindowBg = winBgInput.getText().toString().trim();
-            prefs.edit().putInt("dt_bgAlpha", bgAlpha).putInt("dt_gridSize", gridSizeBase).putBoolean("dt_showGrid", showGrid).putString("dt_customDeskBg", customDesktopBg).putString("dt_customWinBg", customWindowBg).apply();
-            refreshDesktopBackground();
-            Toast.makeText(getContext(), "设置已更新，多媒体引擎已重载", Toast.LENGTH_SHORT).show();
-        });
-        layout.addView(saveBtn);
-
-        scroll.addView(layout);
-        return scroll;
+            deskBgPath=dPathInput.getText().toString().trim(); winBgPath=wPathInput.getText().toString().trim(); fontPath=fPathInput.getText().toString().trim(); fontColor=fColorInput.getText().toString().trim(); shadowColor=sColorInput.getText().toString().trim();
+            prefs.edit().putInt("dt_bgAlpha",bgAlpha).putInt("dt_gridSize",gridSizeBase).putBoolean("dt_showGrid",showGrid).putString("dt_dPath",deskBgPath).putString("dt_wPath",winBgPath).putInt("dt_dVol",deskVol).putInt("dt_wVol",winVol).putInt("dt_dSM",deskScaleMode).putInt("dt_wSM",winScaleMode).putString("dt_font",fontPath).putString("dt_fColor",fontColor).putBoolean("dt_fShadow",fontShadow).putString("dt_sColor",shadowColor).apply();
+            loadSettings(); refreshDesktopBackground(); setupDesktopIcons(); Toast.makeText(getContext(),"保存成功，需重新打开窗口生效",Toast.LENGTH_SHORT).show();
+        }); layout.addView(saveBtn);
+        scroll.addView(layout); return scroll;
     }
 
-    private TextView createTitle(String text) {
-        TextView tv = new TextView(getContext()); tv.setText(text); tv.setTextColor(Color.parseColor("#00A4EF"));
-        tv.setTextSize(13f); tv.setPadding(0, (int)(15*density), 0, (int)(5*density)); tv.setTypeface(null, Typeface.BOLD);
-        return tv;
+    // 辅助控件创建方法
+    private TextView cTitle(String t){ TextView tv=new TextView(getContext()); tv.setText(t); tv.setTextColor(Color.parseColor("#00A4EF")); tv.setTextSize(14f); tv.setPadding(0,40,0,10); tv.setTypeface(null,Typeface.BOLD); return tv; }
+    private TextView cText(String t){ TextView tv=new TextView(getContext()); tv.setText(t); tv.setTextColor(Color.LTGRAY); tv.setPadding(0,20,0,0); return tv; }
+    private EditText cInput(String val, String hint){ EditText e=new EditText(getContext()); e.setText(val); e.setHint(hint); e.setTextColor(Color.WHITE); e.setHintTextColor(Color.GRAY); return e; }
+
+    // 颜色解析保护
+    private int parseColor(String hex, String fallback) { try{ return Color.parseColor(hex); }catch(Exception e){ return Color.parseColor(fallback); } }
+    
+    // 全局字体应用接口
+    private void applyFontSettings(TextView tv) {
+        tv.setTypeface(customTypeface); tv.setTextColor(parseColor(fontColor, "#FFFFFF")); tv.setTextSize(fontSize);
+        if (fontShadow) tv.setShadowLayer(4f, 1f, 1f, parseColor(shadowColor, "#000000")); else tv.setShadowLayer(0,0,0,0);
     }
 
     // ==========================================
-    // 微型纯 Java 文件浏览器引擎
+    // 现代化 Fluent 文件选择器
     // ==========================================
-    private void showMiniFileBrowser(final EditText targetInput) {
-        final Dialog fd = new Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
-        fd.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        
-        final LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.parseColor("#222222")); root.setPadding(30,30,30,30);
-        final TextView pathView = new TextView(getContext()); pathView.setTextColor(Color.YELLOW); pathView.setTextSize(14f); pathView.setPadding(0,0,0,20);
-        final ScrollView scroll = new ScrollView(getContext()); final LinearLayout list = new LinearLayout(getContext()); list.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(list); root.addView(pathView); root.addView(scroll);
-        
-        final File[] currentDir = {Environment.getExternalStorageDirectory()};
-        
-        Runnable refreshList = new Runnable() {
-            @Override
-            public void run() {
-                list.removeAllViews(); pathView.setText("当前目录: " + currentDir[0].getAbsolutePath());
-                if (currentDir[0].getParentFile() != null) {
-                    Button up = new Button(getContext()); up.setText("📁 返回上一级"); up.setTextColor(Color.LTGRAY);
-                    up.setOnClickListener(v -> { currentDir[0] = currentDir[0].getParentFile(); this.run(); }); list.addView(up);
-                }
-                File[] files = currentDir[0].listFiles();
-                if (files != null) {
-                    Arrays.sort(files, (f1, f2) -> { if (f1.isDirectory() && !f2.isDirectory()) return -1; if (!f1.isDirectory() && f2.isDirectory()) return 1; return f1.getName().compareToIgnoreCase(f2.getName()); });
-                    for (File f : files) {
-                        Button btn = new Button(getContext()); btn.setAllCaps(false);
-                        btn.setText(f.isDirectory() ? "📁 " + f.getName() : "📄 " + f.getName()); btn.setTextColor(Color.WHITE);
-                        btn.setOnClickListener(v -> {
-                            if (f.isDirectory()) { currentDir[0] = f; this.run(); }
-                            else { targetInput.setText(f.getAbsolutePath()); fd.dismiss(); }
-                        });
-                        list.addView(btn);
-                    }
+    private void showFileBrowser(final EditText targetInput) {
+        final Dialog d = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
+        LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.parseColor("#EE1A1A1A")); root.setPadding(40,40,40,40);
+        TextView title = new TextView(getContext()); title.setText("请选择任意图片、GIF、视频或字体文件"); title.setTextColor(Color.parseColor("#00A4EF")); title.setTextSize(18f); root.addView(title);
+        final TextView pathView = new TextView(getContext()); pathView.setTextColor(Color.WHITE); pathView.setPadding(0,20,0,40); root.addView(pathView);
+        ScrollView scroll = new ScrollView(getContext()); LinearLayout list = new LinearLayout(getContext()); list.setOrientation(LinearLayout.VERTICAL); scroll.addView(list); root.addView(scroll, new LinearLayout.LayoutParams(-1,-1));
+        final File[] curDir = {Environment.getExternalStorageDirectory()};
+        Runnable ref = new Runnable() { public void run() {
+            list.removeAllViews(); pathView.setText(curDir[0].getAbsolutePath());
+            if (curDir[0].getParentFile() != null) { Button up=new Button(getContext()); up.setText("⬅️ 返回上一级"); up.setOnClickListener(v->{ curDir[0]=curDir[0].getParentFile(); this.run(); }); list.addView(up); }
+            File[] files = curDir[0].listFiles();
+            if (files != null) {
+                Arrays.sort(files, (f1,f2)->{ if(f1.isDirectory()&&!f2.isDirectory())return -1; if(!f1.isDirectory()&&f2.isDirectory())return 1; return f1.getName().compareToIgnoreCase(f2.getName());});
+                for (File f : files) {
+                    Button btn = new Button(getContext()); btn.setAllCaps(false); btn.setText((f.isDirectory()?"📁 ":"📄 ") + f.getName()); btn.setTextColor(Color.WHITE);
+                    btn.setBackgroundColor(Color.TRANSPARENT);
+                    btn.setOnClickListener(v->{ if(f.isDirectory()){ curDir[0]=f; this.run(); }else{ targetInput.setText(f.getAbsolutePath()); d.dismiss(); } }); list.addView(btn);
                 }
             }
-        };
-        refreshList.run(); fd.setContentView(root); fd.show();
+        }}; ref.run(); d.setContentView(root); d.show();
     }
-
-    @Override
-    public void onBackPressed() { } // 屏蔽返回键
+    @Override public void onBackPressed() { } 
 }
