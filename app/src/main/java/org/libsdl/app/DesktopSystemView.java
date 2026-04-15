@@ -987,7 +987,7 @@ public class DesktopSystemView extends Dialog {
     private Bitmap extractPreviewFromSff(File sffFile) {
         Bitmap avatar = decodeSffImage(sffFile, 0, true);
         if (avatar != null) return avatar;
-        return createTextBitmap(sffFile.getName(), "等待解析...");
+        return createTextBitmap(sffFile.getName(), "解析失败或无头像");
     }
 
     private Bitmap createTextBitmap(String title, String sub) {
@@ -995,48 +995,94 @@ public class DesktopSystemView extends Dialog {
         Canvas canvas = new Canvas(bmp); canvas.drawColor(Color.parseColor("#333333"));
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(Color.parseColor("#00A4EF")); p.setTextSize(35f); p.setTypeface(Typeface.DEFAULT_BOLD); p.setTextAlign(Paint.Align.CENTER);
         canvas.drawText(title.length() > 10 ? title.substring(0,10)+".." : title, 150, 120, p);
-        p.setColor(Color.WHITE); p.setTextSize(24f); canvas.drawText(sub, 150, 180, p);
+        p.setColor(Color.WHITE); p.setTextSize(20f); canvas.drawText(sub, 150, 180, p);
         return bmp;
     }
 
-    // 核心解码器：防崩溃版。哪怕像素解压失败，也会返回该帧的元数据图像！
+    // 核心解码器：修复了致命的偏移量和签名识别错误
     private Bitmap decodeSffImage(File sffFile, int targetIndex, boolean isAvatar) {
         if (sffFile == null || !sffFile.exists()) return createTextBitmap("错误", "文件不存在");
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
-            byte[] sig = new byte[12]; raf.read(sig);
-            if (!new String(sig).trim().equals("Elecbyte")) return createTextBitmap("错误", "非SFF格式");
+            // 修复1：严格截取前8个字节，过滤掉系统编码带来的隐藏乱码
+            byte[] sig = new byte[8]; raf.read(sig);
+            String sigStr = new String(sig, "US-ASCII");
+            if (!sigStr.equals("Elecbyte")) return createTextBitmap("错误", "非SFF签名:" + sigStr);
             
-            raf.seek(12); int ver3 = raf.read(); int ver2 = raf.read(); int ver1 = raf.read(); int ver0 = raf.read();
-            if (ver0 == 2) return createTextBitmap("SFF v2", "帧: " + targetIndex + " (需LZ5库)");
+            // 读取版本号
+            raf.seek(12); int v0 = raf.readUnsignedByte(); int v1 = raf.readUnsignedByte();
+            int v2 = raf.readUnsignedByte(); int v3 = raf.readUnsignedByte();
+            if (v0 == 2 || v1 == 2 || v2 == 2 || v3 == 2) {
+                return createTextBitmap("SFF v2.0", "需外部 LZ5 解码库");
+            }
 
-            raf.seek(20); int totalImages = Integer.reverseBytes(raf.readInt());
-            raf.seek(24); int nextOffset = Integer.reverseBytes(raf.readInt());
+            // 修复2：SFFv1 真实的偏移量！24才是图片总数，28才是数据起始地址
+            raf.seek(24); int totalImages = Integer.reverseBytes(raf.readInt());
+            raf.seek(28); int nextOffset = Integer.reverseBytes(raf.readInt());
 
+            byte[] sharedPalette = new byte[768]; boolean hasSharedPalette = false;
             int currentIndex = 0;
+
             while (nextOffset > 0 && currentIndex < totalImages) {
                 raf.seek(nextOffset);
                 int nextSub = Integer.reverseBytes(raf.readInt());
                 int length = Integer.reverseBytes(raf.readInt());
                 short x = Short.reverseBytes(raf.readShort()); short y = Short.reverseBytes(raf.readShort());
                 short group = Short.reverseBytes(raf.readShort()); short item = Short.reverseBytes(raf.readShort());
+                short linked = Short.reverseBytes(raf.readShort()); byte sharedPal = raf.readByte();
 
                 boolean isTarget = isAvatar ? (group == 9000) : (currentIndex == targetIndex);
 
-                if (isTarget) {
-                    // 如果成功找到该帧，但解压算法不支持，至少画出一个带有尺寸和组号的占位图，证明解析到了这一帧！
-                    Bitmap fallbackBmp = Bitmap.createBitmap(400, 300, Bitmap.Config.ARGB_8888);
-                    Canvas c = new Canvas(fallbackBmp); c.drawColor(Color.parseColor("#4CAF50"));
-                    Paint p = new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(Color.WHITE); p.setTextSize(30f); p.setTextAlign(Paint.Align.CENTER);
-                    c.drawText("G: " + group + "  I: " + item, 200, 100, p);
-                    c.drawText("Axis: X:" + x + " Y:" + y, 200, 160, p);
-                    c.drawText("Size: " + length + " bytes", 200, 220, p);
-                    return fallbackBmp; 
+                if (isTarget && length > 128) {
+                    raf.seek(nextOffset + 32); 
+                    byte[] pcxHeader = new byte[128]; raf.read(pcxHeader);
+                    
+                    int xmin = (pcxHeader[4] & 0xFF) | ((pcxHeader[5] & 0xFF) << 8); int ymin = (pcxHeader[6] & 0xFF) | ((pcxHeader[7] & 0xFF) << 8);
+                    int xmax = (pcxHeader[8] & 0xFF) | ((pcxHeader[9] & 0xFF) << 8); int ymax = (pcxHeader[10] & 0xFF) | ((pcxHeader[11] & 0xFF) << 8);
+                    int width = xmax - xmin + 1; int height = ymax - ymin + 1;
+                    
+                    if (width <= 0 || height <= 0 || width > 4096 || height > 4096) {
+                        return createTextBitmap("图像损坏", "宽/高异常: " + width + "x" + height);
+                    }
+
+                    // 提取调色板
+                    byte[] palette = new byte[768];
+                    if (sharedPal == 0 || !hasSharedPalette) {
+                        long palOffset = nextOffset + 32 + length - 768; 
+                        if (palOffset > 0) {
+                            raf.seek(palOffset - 1);
+                            if (raf.readByte() == 0x0C) { 
+                                raf.read(palette); 
+                                System.arraycopy(palette, 0, sharedPalette, 0, 768);
+                                hasSharedPalette = true; 
+                            }
+                        }
+                    } else { System.arraycopy(sharedPalette, 0, palette, 0, 768); }
+
+                    // PCX RLE 解压缩
+                    raf.seek(nextOffset + 32 + 128); byte[] pixels = new byte[width * height]; int p = 0;
+                    while (p < pixels.length) {
+                        int b = raf.readUnsignedByte();
+                        if ((b & 0xC0) == 0xC0) {
+                            int count = b & 0x3F; int val = raf.readUnsignedByte();
+                            for (int i = 0; i < count && p < pixels.length; i++) pixels[p++] = (byte) val;
+                        } else { pixels[p++] = (byte) b; }
+                    }
+
+                    // 映射颜色 (索引0=透明)
+                    int[] colors = new int[width * height];
+                    for (int i = 0; i < pixels.length; i++) {
+                        int idx = pixels[i] & 0xFF;
+                        if (idx == 0) colors[i] = Color.TRANSPARENT;
+                        else colors[i] = Color.rgb(palette[idx * 3] & 0xFF, palette[idx * 3 + 1] & 0xFF, palette[idx * 3 + 2] & 0xFF);
+                    }
+                    return Bitmap.createBitmap(colors, width, height, Bitmap.Config.ARGB_8888);
                 }
                 nextOffset = nextSub; currentIndex++;
             }
-            return createTextBitmap("结束", "没有更多帧了");
+            if (isAvatar) return decodeSffImage(sffFile, 0, false); // 如果没9000组，拿第0帧凑数
+            return createTextBitmap("结束", "该角色仅有 " + totalImages + " 帧");
         } catch (Exception e) { 
-            return createTextBitmap("异常", e.getMessage()); 
+            return createTextBitmap("解压异常", e.getMessage() != null ? e.getMessage() : "未知错"); 
         } 
     }
 
@@ -1078,7 +1124,7 @@ public class DesktopSystemView extends Dialog {
         
         Button btnPrev = createButton("⏪ 上一帧", "#333333"); Button btnPlay = createButton("▶️ 播放", "#FF9800"); Button btnNext = createButton("⏭️ 下一帧", "#333333"); 
         Button btnExportPng = createButton("💾 导为PNG", "#4CAF50"); 
-        Button btnExportGif = createButton("🎞️ 导出GIF", "#9C27B0"); // 加回来的 GIF 按钮
+        Button btnExportGif = createButton("🎞️ 导出GIF", "#9C27B0");
 
         LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(0, -2, 1f); btnP.setMargins((int)(2*density), 0, (int)(2*density), 0);
 
