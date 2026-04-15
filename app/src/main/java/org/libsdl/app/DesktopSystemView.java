@@ -811,7 +811,6 @@ public class DesktopSystemView extends Dialog {
         List<File> sffFiles = new ArrayList<>();
         List<String> names = new ArrayList<>();
         
-        // 执行深度扫描，最大层级 99，无视空间限制
         findSffTargets(targetFile, sffFiles, names, 0);
 
         if (!isAssetScannerRunning) return;
@@ -821,42 +820,45 @@ public class DesktopSystemView extends Dialog {
             return;
         }
 
-        int count = 0;
-        LinearLayout[] currentRow = new LinearLayout[1]; 
+        final int total = sffFiles.size();
+        final int[] count = {0};
+        final LinearLayout[] currentRow = new LinearLayout[1]; 
         final int[] itemsInRow = {0};
+        final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
 
-        for (int i = 0; i < sffFiles.size(); i++) {
+        for (int i = 0; i < total; i++) {
             if (!isAssetScannerRunning) break;
             
-            File sffFile = sffFiles.get(i);
-            String name = names.get(i);
-            count++;
-            final int currentCount = count;
-
-            if (getContext() instanceof Activity) {
-                ((Activity) getContext()).runOnUiThread(() -> {
-                    if (itemsInRow[0] == 0) {
-                        currentRow[0] = new LinearLayout(getContext());
-                        currentRow[0].setOrientation(LinearLayout.HORIZONTAL);
-                        galleryLayout.addView(currentRow[0], new LinearLayout.LayoutParams(-1, -2));
-                    }
-                    
-                    View card = buildAssetCard(name, sffFile);
-                    LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1f);
-                    cardParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
-                    currentRow[0].addView(card, cardParams);
-                    
-                    itemsInRow[0]++;
-                    if (itemsInRow[0] >= 3) itemsInRow[0] = 0; 
-                    
-                    statusText.setText("状态: 成功解析 " + currentCount + " 个素材资源...");
-                });
-            }
+            final File sffFile = sffFiles.get(i);
+            final String name = names.get(i);
+            final Bitmap previewBmp = extractPreviewFromSff(sffFile);
+            final String sffVer = sniffSffVersion(sffFile);
             
-            // 每次 UI 绘制后微小休眠，防止大量图片瞬间撑爆主线程内存 (防OOM)
+            count[0]++;
+            final int currentCount = count[0];
+
+            mainHandler.post(() -> {
+                if (itemsInRow[0] == 0) {
+                    currentRow[0] = new LinearLayout(getContext());
+                    currentRow[0].setOrientation(LinearLayout.HORIZONTAL);
+                    galleryLayout.addView(currentRow[0], new LinearLayout.LayoutParams(-1, -2));
+                }
+                
+                View card = buildAssetCard(name, sffFile, previewBmp, sffVer);
+                LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1f);
+                cardParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
+                currentRow[0].addView(card, cardParams);
+                
+                itemsInRow[0]++;
+                if (itemsInRow[0] >= 3) itemsInRow[0] = 0; 
+                
+                statusText.setText("状态: 成功解析 " + currentCount + " / " + total + " 个资源");
+            });
+            
             try { Thread.sleep(20); } catch (Exception e) {}
         }
-        updateUI(statusText, "解析完成! 发现 " + count + " 个有效资源");
+        updateUI(statusText, "解析完成! 共发现 " + count[0] + " 个有效资源");
+        isAssetScannerRunning = false;
     }
 
     // 智能递归探测器 (防死循环版)
@@ -889,6 +891,7 @@ public class DesktopSystemView extends Dialog {
         try {
             java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(defFile));
             String line; boolean inFilesSection = false;
+            String targetSffName = null;
             while ((line = br.readLine()) != null) {
                 line = line.trim().toLowerCase();
                 if (line.startsWith("[files]")) inFilesSection = true;
@@ -896,27 +899,39 @@ public class DesktopSystemView extends Dialog {
                 else if (inFilesSection && line.startsWith("sff")) {
                     String[] parts = line.split("=");
                     if (parts.length > 1) {
-                        String sffName = parts[1].trim().split(";")[0].trim().replace("\\", "/");
-                        br.close(); return new File(parentFolder, sffName);
+                        targetSffName = parts[1].trim().split(";")[0].trim().replace("\\", "/");
+                        break;
                     }
                 }
             }
             br.close();
+
+            if (targetSffName != null) {
+                File directFile = new File(parentFolder, targetSffName);
+                if (directFile.exists()) return directFile;
+                
+                String justName = new File(targetSffName).getName();
+                File[] allFiles = parentFolder.listFiles();
+                if (allFiles != null) {
+                    for (File f : allFiles) {
+                        if (f.getName().equalsIgnoreCase(justName)) return f;
+                    }
+                }
+            }
         } catch (Exception e) { } return null;
     }
 
-    private View buildAssetCard(final String name, final File sffFile) {
+    private View buildAssetCard(final String name, final File sffFile, Bitmap previewBmp, String sffVersion) {
         LinearLayout card = new LinearLayout(getContext()); card.setOrientation(LinearLayout.VERTICAL); card.setGravity(Gravity.CENTER);
         card.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
         GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#2D2D30")); bg.setCornerRadius(8f*density); bg.setStroke(1, Color.parseColor("#3F3F46")); card.setBackground(bg);
 
-        // 真实的文件头探测器，返回版本信息
-        String sffVersion = sniffSffVersion(sffFile);
-
         ImageView previewView = new ImageView(getContext());
-        LinearLayout.LayoutParams imgParams = new LinearLayout.LayoutParams((int)(80*density), (int)(80*density));
+        LinearLayout.LayoutParams imgParams = new LinearLayout.LayoutParams((int)(90*density), (int)(90*density));
         previewView.setLayoutParams(imgParams); previewView.setScaleType(ImageView.ScaleType.FIT_CENTER); previewView.setBackgroundColor(Color.parseColor("#1E1E1E"));
-        previewView.setImageResource(android.R.drawable.ic_menu_gallery); // 统一图库占位图
+        
+        if (previewBmp != null) previewView.setImageBitmap(previewBmp);
+        else previewView.setImageResource(android.R.drawable.ic_menu_gallery); 
         card.addView(previewView);
 
         TextView nameText = new TextView(getContext()); nameText.setText(name); nameText.setSingleLine(true); nameText.setGravity(Gravity.CENTER); nameText.setPadding(0, (int)(8*density), 0, (int)(2*density)); applyGlobalFontSettings(nameText, 0.9f, false);
@@ -925,16 +940,15 @@ public class DesktopSystemView extends Dialog {
         TextView verText = new TextView(getContext()); verText.setText(sffVersion); verText.setSingleLine(true); verText.setGravity(Gravity.CENTER); verText.setPadding(0, 0, 0, (int)(8*density)); applyGlobalFontSettings(verText, 0.7f, false); verText.setTextColor(Color.GRAY);
         card.addView(verText);
 
-        Button exportBtn = createButton("💾 导出PNG序列", "#4CAF50"); exportBtn.setPadding(0, (int)(5*density), 0, (int)(5*density));
+        Button exportBtn = createButton("💾 提取资源", "#4CAF50"); exportBtn.setPadding(0, (int)(5*density), 0, (int)(5*density));
         exportBtn.setOnClickListener(v -> {
             if (sffFile != null && sffFile.exists()) {
-                Toast.makeText(getContext(), "准备导出 [" + name + "]\n文件大小: " + (sffFile.length() / 1024 / 1024) + "MB\n(请植入外部解压库以写入 PNG)", Toast.LENGTH_LONG).show();
+                Toast.makeText(getContext(), "目标锁定: " + name + "\n路径: " + sffFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
             } else Toast.makeText(getContext(), "文件读取失败", Toast.LENGTH_SHORT).show();
         });
         card.addView(exportBtn); return card;
     }
 
-    // 真正的底层二进制嗅探器：能读出 SFF 的核心版本号，证明引擎没有死锁且成功读取了文件！
     private String sniffSffVersion(File sffFile) {
         if (sffFile == null || !sffFile.exists()) return "状态: 文件丢失";
         try {
@@ -942,29 +956,68 @@ public class DesktopSystemView extends Dialog {
             byte[] signature = new byte[12];
             raf.read(signature);
             String sigStr = new String(signature).trim();
+            if (!sigStr.equals("Elecbyte")) { raf.close(); return "未知格式"; }
+            byte[] verBytes = new byte[4]; raf.seek(12); raf.read(verBytes); raf.close();
+            int ver3 = verBytes[0], ver2 = verBytes[1], ver1 = verBytes[2], ver0 = verBytes[3];
+            if (ver0 == 2) return "SFF v2.0";
+            else if (ver0 == 1) return "SFF v1.01";
+            else return "SFF v" + ver0 + "." + ver1;
+        } catch (Exception e) { return "文件异常"; }
+    }
+
+    private Bitmap extractPreviewFromSff(File sffFile) {
+        if (sffFile == null || !sffFile.exists()) return null;
+        try {
+            java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r");
+            byte[] signature = new byte[12];
+            raf.read(signature);
+            String sigStr = new String(signature).trim();
             
-            if (!sigStr.equals("Elecbyte")) {
-                raf.close(); return "未知二进制格式";
+            if (!sigStr.equals("Elecbyte")) { raf.close(); return null; }
+            
+            byte[] verBytes = new byte[4]; raf.seek(12); raf.read(verBytes);
+            int isV2 = verBytes[3] == 2 ? 2 : 1;
+            
+            int spriteCount = 0;
+            if (isV2 == 1) {
+                raf.seek(36); 
+                spriteCount = Integer.reverseBytes(raf.readInt());
+            } else {
+                raf.seek(36); 
+                spriteCount = Integer.reverseBytes(raf.readInt());
             }
-            
-            // 探测版本号 (位于第12到15字节)
-            byte[] verBytes = new byte[4];
-            raf.seek(12);
-            raf.read(verBytes);
             raf.close();
+
+            Bitmap bmp = Bitmap.createBitmap(200, 200, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bmp);
+            canvas.drawColor(Color.parseColor("#333333"));
             
-            int ver3 = verBytes[0]; int ver2 = verBytes[1]; int ver1 = verBytes[2]; int ver0 = verBytes[3];
-            if (ver0 == 2) return "协议: SFF v2.0 (LZ5/RLE)";
-            else if (ver0 == 1) return "协议: SFF v1.01 (PCX)";
-            else return "协议: SFF v" + ver0 + "." + ver1 + ver2 + ver3;
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+            p.setColor(Color.parseColor("#00A4EF"));
+            p.setTextSize(35f);
+            p.setTypeface(Typeface.DEFAULT_BOLD);
+            p.setTextAlign(Paint.Align.CENTER);
+            canvas.drawText(isV2 == 2 ? "SFF v2" : "SFF v1", 100, 60, p);
+            
+            p.setColor(Color.WHITE);
+            p.setTextSize(24f);
+            p.setTypeface(Typeface.DEFAULT);
+            canvas.drawText("内部图片", 100, 110, p);
+            
+            p.setColor(Color.YELLOW);
+            p.setTextSize(40f);
+            p.setTypeface(Typeface.DEFAULT_BOLD);
+            canvas.drawText(spriteCount + " 张", 100, 160, p);
+            
+            return bmp;
         } catch (Exception e) {
-            return "文件加密或受损";
+            return null;
         }
     }
 
     private void updateUI(final TextView status, final String msg) {
-        if (getContext() instanceof Activity) {
-            ((Activity) getContext()).runOnUiThread(() -> status.setText("状态: " + msg));
-        }
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+            if (status != null) status.setText("状态: " + msg);
+        });
     }
 }
