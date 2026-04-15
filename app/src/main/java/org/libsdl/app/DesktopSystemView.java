@@ -1161,6 +1161,12 @@ public class DesktopSystemView extends Dialog {
         return bmp;
     }
 
+    private void updateUI(final TextView status, final String msg) {
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+            if (status != null) status.setText("状态: " + msg);
+        });
+    }
+
     // ==========================================
     // 🎞️ 终极模块：带属性组下拉选择与导出的播放视窗
     // ==========================================
