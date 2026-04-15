@@ -60,11 +60,6 @@ public class DesktopSystemView extends Dialog {
 
     private Context mContext;
     private SharedPreferences prefs;
-    // ... 原本的代码继续往下 ...
-
-
-    private Context mContext;
-    private SharedPreferences prefs;
     private float density;
 
     // === 全局鼠标与触摸引擎 ===
