@@ -58,7 +58,6 @@ import java.util.List;
  */
 public class DesktopSystemView extends Dialog {
 
-    // 自动关联SFF并排重的变量与功能
     private HashMap<String, String> characterSffMap = new HashMap<>(); 
     private HashSet<String> boundSffFiles = new HashSet<>();           
     private ArrayList<String> standaloneSffFiles = new ArrayList<>();  
@@ -68,7 +67,6 @@ public class DesktopSystemView extends Dialog {
         File[] files = dir.listFiles();
         if (files == null) return;
 
-        // 优先检测 def 文件
         for (File f : files) {
             if (f.getName().toLowerCase().endsWith(".def")) {
                 try {
@@ -95,7 +93,6 @@ public class DesktopSystemView extends Dialog {
             }
         }
 
-        // 随后检测剩余孤立的 sff 文件
         for (File f : files) {
             if (f.getName().toLowerCase().endsWith(".sff")) {
                 if (!boundSffFiles.contains(f.getAbsolutePath())) {
@@ -106,7 +103,6 @@ public class DesktopSystemView extends Dialog {
     }
 
     public static DesktopSystemView instance;
-    // 补回全局 UI 更新工具
     private void updateUI(final TextView status, final String msg) {
         new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
             if (status != null) status.setText("状态: " + msg);
@@ -117,12 +113,10 @@ public class DesktopSystemView extends Dialog {
     private SharedPreferences prefs;
     private float density;
 
-    // === 全局鼠标与触摸引擎 ===
     private float mouseX = -1f, mouseY = -1f;
     private Path cursorPath;
     private Paint cursorPaintFill, cursorPaintStroke;
 
-    // === 桌面层级容器 ===
     private FrameLayout rootLayer;
     private FrameLayout desktopBgLayer;
     private FrameLayout desktopIconsLayer;
@@ -130,14 +124,12 @@ public class DesktopSystemView extends Dialog {
     private LinearLayout taskbar; 
     private LinearLayout taskbarAppsLayout;
 
-    // === 系统设置参数 ===
     public int bgAlpha = 180; 
     public int gridSizeBase = 100;
     public boolean showGrid = false;
     public String customDesktopBg = "";
     public String customWindowBg = "";
     
-    // === UI 与媒体引擎高阶参数 ===
     public int taskbarAlpha = 230; 
     public int bgMediaVolume = 50; 
     public int winMediaVolume = 50; 
@@ -149,7 +141,6 @@ public class DesktopSystemView extends Dialog {
     private MediaPlayer bgMediaPlayer = null;
     private List<MediaPlayer> winMediaPlayers = new ArrayList<>();
     
-    // === 字体定制引擎 ===
     public String fontPath = "";
     public Typeface customFont = null;
     public int fontColor = Color.WHITE;
@@ -166,7 +157,6 @@ public class DesktopSystemView extends Dialog {
         this.density = context.getResources().getDisplayMetrics().density;
     }
 
-    // 终极沉浸式状态栏/导航栏隐藏技术
     private void applyImmersiveMode(Window window) {
         if (window != null) {
             window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -368,9 +358,6 @@ public class DesktopSystemView extends Dialog {
         if (fontShadowEnabled) tv.setShadowLayer(4f, 2f, 2f, fontShadowColor); else tv.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT);
     }
 
-    // ==========================================
-    // 桌面图标与网格系统
-    // ==========================================
     private void setupDesktopIcons() {
         desktopIconsLayer.removeAllViews(); 
         createDesktopIcon("sys_settings", "⚙️", "系统控制台");
@@ -418,9 +405,6 @@ public class DesktopSystemView extends Dialog {
         });
     }
 
-    // ==========================================
-    // 窗口管理系统 (支持任务栏与拦截器)
-    // ==========================================
     private void openAppWindow(String windowTitle, View contentView, final Runnable onCloseInterceptor) {
         View existingWin = windowsLayer.findViewWithTag(windowTitle);
         if (existingWin != null) { existingWin.setVisibility(View.VISIBLE); existingWin.bringToFront(); return; }
@@ -500,9 +484,6 @@ public class DesktopSystemView extends Dialog {
         openAppWindow(windowTitle, contentView, null);
     }
 
-    // ==========================================
-    // 模态设置窗口引擎 (原生窗口挂载 & 快照回滚)
-    // ==========================================
     private void loadDesktopSettings() {
         bgAlpha = prefs.getInt("dt_bgAlpha", 180); gridSizeBase = prefs.getInt("dt_gridSize", 100); showGrid = prefs.getBoolean("dt_showGrid", false);
         customDesktopBg = prefs.getString("dt_customDeskBg", ""); customWindowBg = prefs.getString("dt_customWinBg", "");
@@ -520,7 +501,6 @@ public class DesktopSystemView extends Dialog {
     private void openSettingsInAppWindow() {
         final String title = "⚙ 系统控制台";
         
-        // 【快照备份】
         final int b_bgAlpha = bgAlpha; final int b_gridSizeBase = gridSizeBase; final boolean b_showGrid = showGrid;
         final String b_customDesktopBg = customDesktopBg; final String b_customWindowBg = customWindowBg;
         final int b_bgMediaVolume = bgMediaVolume; final int b_winMediaVolume = winMediaVolume; final int b_taskbarAlpha = taskbarAlpha;
@@ -539,14 +519,14 @@ public class DesktopSystemView extends Dialog {
             boolean changed = (bgAlpha!=b_bgAlpha || gridSizeBase!=b_gridSizeBase || showGrid!=b_showGrid || !customDesktopBg.equals(b_customDesktopBg) || !customWindowBg.equals(b_customWindowBg) || bgMediaVolume!=b_bgMediaVolume || winMediaVolume!=b_winMediaVolume || taskbarAlpha!=b_taskbarAlpha || mediaScaleMode!=b_mediaScaleMode || !fontPath.equals(b_fontPath) || fontColor!=b_fontColor || fontShadowEnabled!=b_fontShadowEnabled);
             if (changed) {
                 showWin10SavePrompt(
-                    () -> { // 保存
+                    () -> { 
                         prefs.edit().putInt("dt_bgAlpha", bgAlpha).putInt("dt_gridSize", gridSizeBase).putBoolean("dt_showGrid", showGrid).putString("dt_customDeskBg", customDesktopBg).putString("dt_customWinBg", customWindowBg).putInt("dt_bgMediaVol", bgMediaVolume).putInt("dt_winMediaVol", winMediaVolume).putInt("dt_taskbarAlpha", taskbarAlpha).putInt("dt_mediaScale", mediaScaleMode).putString("dt_fontPath", fontPath).putInt("dt_fontColor", fontColor).putFloat("dt_fontSize", fontSize).putBoolean("dt_fontShadow", fontShadowEnabled).putInt("dt_fontShadowC", fontShadowColor).apply();
                         savedVideoPositionDesk = 0; savedVideoPositionWin = 0;
                         reloadTypeface(); refreshDesktopBackground(); setupDesktopIcons();
                         Toast.makeText(getContext(), "✅ 设置已保存！", Toast.LENGTH_SHORT).show(); 
                         performClose.run();
                     },
-                    () -> { // 撤销恢复
+                    () -> { 
                         bgAlpha = b_bgAlpha; gridSizeBase = b_gridSizeBase; showGrid = b_showGrid; customDesktopBg = b_customDesktopBg; customWindowBg = b_customWindowBg; bgMediaVolume = b_bgMediaVolume; winMediaVolume = b_winMediaVolume; taskbarAlpha = b_taskbarAlpha; mediaScaleMode = b_mediaScaleMode; fontPath = b_fontPath; fontColor = b_fontColor; fontSize = b_fontSize; fontShadowEnabled = b_fontShadowEnabled; fontShadowColor = b_fontShadowColor;
                         if (taskbar != null) taskbar.setBackgroundColor(Color.argb(taskbarAlpha, 17, 17, 17)); updateMediaVolumes(); reloadTypeface(); refreshDesktopBackground(); setupDesktopIcons(); 
                         performClose.run();
@@ -661,8 +641,6 @@ public class DesktopSystemView extends Dialog {
 
     private void showWin10SavePrompt(Runnable onSave, Runnable onDiscard) {
         final Dialog pDialog = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
-        
-        // 极其暴力的黑客技术：隐藏焦点，绝对不让导航栏弹出来
         pDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
         applyImmersiveMode(pDialog.getWindow());
         
@@ -692,13 +670,8 @@ public class DesktopSystemView extends Dialog {
         pDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
     }
 
-    // ==========================================
-    // 原生文件系统引擎 (完美沉浸式防白条)
-    // ==========================================
     private void showWin10FilePicker(String winTitle, final int targetType, final TextView labelRef, final View hostViewToRefresh) {
         final Dialog pDialog = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
-        
-        // 极其暴力的黑客技术：隐藏焦点，绝对不让导航栏弹出来
         pDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
         applyImmersiveMode(pDialog.getWindow());
         
@@ -731,7 +704,6 @@ public class DesktopSystemView extends Dialog {
                     up.setOnClickListener(v -> { lastVisitedDir = lastVisitedDir.getParentFile(); this.run(); }); listLayout.addView(up);
                 }
 
-                // 专为素材工坊设计的：一键扫描当前文件夹全部内容
                 if (targetType == 4) {
                     Button scanDirBtn = createButton("✔️ 深度扫描并提取当前整个文件夹 (包含子目录)", "#4CAF50"); 
                     scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
@@ -790,13 +762,15 @@ public class DesktopSystemView extends Dialog {
     private TextView createTitle(String text) { TextView tv = new TextView(getContext()); tv.setText(text); applyGlobalFontSettings(tv, 1.3f, true); tv.setPadding(0, (int)(25*density), 0, (int)(10*density)); return tv; }
     private TextView createSubTitle(String text) { TextView tv = new TextView(getContext()); tv.setText(text); applyGlobalFontSettings(tv, 1.1f, false); tv.setPadding(0, (int)(15*density), 0, (int)(5*density)); return tv; }
     private EditText createInput(String hint, String text) { EditText et = new EditText(getContext()); et.setText(text); applyGlobalFontSettings(et, 1.0f, false); et.setHint(hint); et.setHintTextColor(Color.DKGRAY); GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#252526")); bg.setStroke(1, Color.GRAY); et.setBackground(bg); et.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density)); return et; }
+    
+    // 【全新现代深色扁平 UI 按钮】
     private Button createButton(String text, String colorHex) { 
         Button btn = new Button(getContext()); 
         btn.setText(text); 
         btn.setAllCaps(false); 
         android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable(); 
         bg.setColor(Color.parseColor(colorHex)); 
-        bg.setCornerRadius(0); // 纯正Win10直角
+        bg.setCornerRadius(0); // Win10 直角
         bg.setStroke((int)(1*density), Color.parseColor("#44FFFFFF"));
         btn.setBackground(bg); 
         applyGlobalFontSettings(btn, 1.0f, false); 
@@ -811,11 +785,7 @@ public class DesktopSystemView extends Dialog {
     }
 
     @Override public void onBackPressed() { } 
-    
-        // ==========================================
-    // 📦 模块化：通用素材提取工坊 (Asset Extractor)
-    // ==========================================
-    
+
     private LinearLayout currentGalleryLayout = null;
     private TextView currentStatusText = null;
     private volatile boolean isAssetScannerRunning = false;
@@ -871,7 +841,6 @@ public class DesktopSystemView extends Dialog {
         if (currentStatusText != null) currentStatusText.setText("状态: 正在深度扫描解析...");
         isAssetScannerRunning = true;
         
-        // 使用独立线程，加入 Try-Catch 终极防卡死
         new Thread(() -> {
             try {
                 runAssetScanner(targetFile, currentGalleryLayout, currentStatusText);
@@ -937,18 +906,15 @@ public class DesktopSystemView extends Dialog {
         isAssetScannerRunning = false;
     }
 
-    // 用于记录已经被 def 绑定过的 sff 绝对路径，防止二次重复显示
     private List<String> resolvedSffPaths = new ArrayList<>();
 
-    // 智能递归探测器 (防死循环 + 自动去重)
     private void findSffTargets(File f, List<File> sffFiles, List<String> names, int depth) {
-        if (depth == 0) resolvedSffPaths.clear(); // 每次全新扫描时清空去重池
+        if (depth == 0) resolvedSffPaths.clear(); 
         if (depth > 99 || !isAssetScannerRunning || f == null || !f.exists()) return; 
         
         if (f.isDirectory()) {
             File[] children = f.listFiles();
             if (children != null) {
-                // 优先扫描 def 文件，这样能先把绑定的 sff 注册进去重池
                 Arrays.sort(children, (f1, f2) -> {
                     boolean d1 = f1.getName().toLowerCase().endsWith(".def");
                     boolean d2 = f2.getName().toLowerCase().endsWith(".def");
@@ -963,10 +929,9 @@ public class DesktopSystemView extends Dialog {
                 if (sff != null && sff.exists() && !sffFiles.contains(sff)) {
                     sffFiles.add(sff);
                     names.add(f.getName().replace(".def", "").replace(".DEF", ""));
-                    resolvedSffPaths.add(sff.getAbsolutePath()); // 记录已被绑定的 SFF
+                    resolvedSffPaths.add(sff.getAbsolutePath()); 
                 }
             } else if (name.endsWith(".sff")) {
-                // 如果这个 SFF 已经被前面的 DEF 文件认领了，直接跳过它
                 if (!resolvedSffPaths.contains(f.getAbsolutePath()) && !sffFiles.contains(f)) {
                     sffFiles.add(f);
                     names.add(f.getName());
@@ -975,7 +940,6 @@ public class DesktopSystemView extends Dialog {
         }
     }
 
-    // 暴力多重编码嗅探引擎 (支持各种乱码 def 文件)
     private File parseDefForSff(File defFile, File parentFolder) {
         String[] charsets = {"UTF-8", "Shift_JIS", "GBK", "ISO-8859-1"};
         for (String charset : charsets) {
@@ -1034,7 +998,7 @@ public class DesktopSystemView extends Dialog {
         Button exportBtn = createButton("👁️ 打开查看器", "#0078D7"); exportBtn.setPadding(0, (int)(5*density), 0, (int)(5*density));
         exportBtn.setOnClickListener(v -> {
             if (sffFile != null && sffFile.exists()) {
-                showAssetViewerWindow(name, sffFile); // 开启终极查看器
+                showAssetViewerWindow(name, sffFile); 
             } else Toast.makeText(getContext(), "资源读取失败", Toast.LENGTH_SHORT).show();
         });
         card.addView(exportBtn); return card;
@@ -1056,26 +1020,6 @@ public class DesktopSystemView extends Dialog {
         } catch (Exception e) { return "文件异常"; }
     }
 
-    // ==========================================
-    // 💥 终极 SFF 解析器 (防崩溃/带GIF导出/多帧视窗)
-    // ==========================================
-
-        // 增加一个内部类来存储帧信息
-    // ==========================================
-    // 💥 终极 SFF 解析器与多属性视窗 (覆盖原有代码)
-    // ==========================================
-    // ==========================================
-    // 💥 终极 SFF 引擎：双保险极速解码 & 多属性视窗
-    // ==========================================
-    // ==========================================
-    // 💥 终极 SFF 引擎：精准偏移量 & 防崩溃纯Java软解沙箱
-    // ==========================================
-    // ==========================================
-    // 💥 终极 SFF 引擎：绝对修正版 & 全格式制霸引擎
-    // ==========================================
-    // ==========================================
-    // 💥 终极复合 SFF 解析引擎 (Smart Composite Engine)
-    // ==========================================
     public static class SffFrame {
         public int offset;
         public int length;
@@ -1084,17 +1028,15 @@ public class DesktopSystemView extends Dialog {
         public int width;
         public int height;
         public int format;
-        public int palIndex; // 专属调色板索引
+        public int palIndex; 
         public boolean sharedPal;
         public Bitmap cachedBmp;
         public boolean isV2;
     }
 
-    // 动态调色板矩阵：支持同时挂载多套配色
     private byte[][] v2Palettes = new byte[256][768];
     private byte[] globalSharedPalette = new byte[768];
 
-    // 🛠️ 核心工具：ZLIB 智能脱壳器
     private byte[] smartZlibUnwrap(byte[] input) {
         if (input.length > 2 && (input[0] == 0x78) && 
            (input[1] == (byte)0x9C || input[1] == (byte)0xDA || input[1] == (byte)0x01)) {
@@ -1136,7 +1078,6 @@ public class DesktopSystemView extends Dialog {
 
                 if (numSprites < 0 || numSprites > 90000) return frameList;
 
-                // 构建调色板矩阵
                 if (numPalettes > 0) {
                     for(int p=0; p<numPalettes && p<256; p++) {
                         raf.seek(palNodeOffset + p * 16 + 8);
@@ -1145,7 +1086,7 @@ public class DesktopSystemView extends Dialog {
                         if (pDataLength > 0 && pDataLength <= 4096) {
                             raf.seek(ldataOffset + pDataOffset);
                             byte[] v2palRaw = new byte[pDataLength]; raf.read(v2palRaw);
-                            byte[] cleanPal = smartZlibUnwrap(v2palRaw); // 调色板也可能被压缩！
+                            byte[] cleanPal = smartZlibUnwrap(v2palRaw); 
                             int colorsToRead = Math.min(256, cleanPal.length / 4);
                             for(int c=0; c<colorsToRead; c++) {
                                 v2Palettes[p][c*3]   = cleanPal[c*4];
@@ -1156,7 +1097,6 @@ public class DesktopSystemView extends Dialog {
                     }
                 }
 
-                // 扫描所有帧节点
                 for (int i = 0; i < numSprites; i++) {
                     raf.seek(spriteNodeOffset + i * 28);
                     short group = Short.reverseBytes(raf.readShort());
@@ -1181,7 +1121,6 @@ public class DesktopSystemView extends Dialog {
                     }
                 }
             } else {
-                // v1 格式兼容
                 raf.seek(24); int totalImages = Integer.reverseBytes(raf.readInt());
                 raf.seek(28); int nextOffset = Integer.reverseBytes(raf.readInt());
                 int currentIndex = 0;
@@ -1206,6 +1145,7 @@ public class DesktopSystemView extends Dialog {
         return frameList;
     }
 
+    // 【全新连接底层的完美解析器】
     private Bitmap decodeSingleFrame(File sffFile, SffFrame frame) {
         if (frame.cachedBmp != null) return frame.cachedBmp;
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
@@ -1253,31 +1193,6 @@ public class DesktopSystemView extends Dialog {
         }
         return null;
     }
-Palette, 0, 768); }
-                    }
-                } else { System.arraycopy(globalSharedPalette, 0, palette, 0, 768); }
-
-                raf.seek(frame.offset + 32 + 128); byte[] pixels = new byte[width * height]; int p = 0;
-                while (p < pixels.length) {
-                    int b = raf.readUnsignedByte();
-                    if ((b & 0xC0) == 0xC0) {
-                        int count = b & 0x3F; int val = raf.readUnsignedByte();
-                        for (int i = 0; i < count && p < pixels.length; i++) pixels[p++] = (byte) val;
-                    } else { pixels[p++] = (byte) b; }
-                }
-                int[] colors = new int[width * height];
-                for (int i = 0; i < pixels.length; i++) {
-                    int idx = pixels[i] & 0xFF;
-                    if (idx != 0) colors[i] = Color.rgb(palette[idx * 3] & 0xFF, palette[idx * 3 + 1] & 0xFF, palette[idx * 3 + 2] & 0xFF);
-                }
-                Bitmap finalBmp = Bitmap.createBitmap(colors, width, height, Bitmap.Config.ARGB_8888);
-                frame.cachedBmp = finalBmp; return finalBmp;
-            }
-        } catch (Throwable t) { 
-            t.printStackTrace(); 
-            return createTextBitmap("引擎超载", t.getMessage() != null ? t.getMessage() : "未知异常"); 
-        }
-    }
 
     private Bitmap extractPreviewFromSff(File sffFile) {
         List<SffFrame> frames = scanSffFrames(sffFile);
@@ -1295,9 +1210,7 @@ Palette, 0, 768); }
         return bmp;
     }
 
-    // ==========================================
-    // 🎞️ 高级视窗：带动态调试信息的播放器
-    // ==========================================
+    // 【全新现代深色系，附带全图总览视窗】
     private void showAssetViewerWindow(String charName, File sffFile) {
         final String winTitle = "🎨 检视: " + charName;
         final List<SffFrame> allFrames = scanSffFrames(sffFile);
@@ -1465,82 +1378,18 @@ Palette, 0, 768); }
         
         if (!groupList.isEmpty()) groupSpinner.setSelection(0);
     }
-.add(f); }
-                currentFrameIndex[0] = 0; updateFrameAction.run();
-            }
-            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
-        });
 
-        btnPrev.setOnClickListener(v -> { currentFrameIndex[0]--; updateFrameAction.run(); });
-        btnNext.setOnClickListener(v -> { currentFrameIndex[0]++; updateFrameAction.run(); });
-        btnPlay.setOnClickListener(v -> {
-            if (currentGroupFrames.isEmpty()) return;
-            isPlaying[0] = !isPlaying[0];
-            btnPlay.setText(isPlaying[0] ? "⏸️" : "▶️ 播放"); btnPlay.setBackgroundColor(isPlaying[0] ? Color.parseColor("#F44336") : Color.parseColor("#FF9800"));
-            if (isPlaying[0]) {
-                new Thread(() -> {
-                    while (isPlaying[0]) {
-                        currentFrameIndex[0]++; uiHandler.post(updateFrameAction);
-                        try { Thread.sleep(60); } catch (Exception e) {} 
-                    }
-                }).start();
-            }
-        });
-
-        btnExportPng.setOnClickListener(v -> {
-            if(currentGroupFrames.isEmpty()) return;
-            SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
-            new Thread(() -> {
-                Bitmap bmp = decodeSingleFrame(sffFile, f);
-                if (bmp != null) {
-                    try {
-                        File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports");
-                        if (!outDir.exists()) outDir.mkdirs();
-                        File outFile = new File(outDir, charName + "_G" + f.group + "_I" + f.item + ".png");
-                        java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
-                        bmp.compress(Bitmap.CompressFormat.PNG, 100, fos); fos.close();
-                        uiHandler.post(() -> Toast.makeText(getContext(), "✅ 已导出: " + outFile.getAbsolutePath(), Toast.LENGTH_LONG).show());
-                    } catch (Exception e) {}
-                }
-            }).start();
-        });
-
-        // 极限动态播放逻辑 (利用 Handler 高频回调实现一帧一帧切)
-        Handler playHandler = new Handler();
-        Runnable playRunnable = new Runnable() {
-            @Override
-            public void run() {
-                if (isPlaying[0] && !allFrames.isEmpty()) {
-                    btnNext.performClick(); 
-                    playHandler.postDelayed(this, 16); 
-                }
-            }
-        };
-
-        btnPlay.setOnClickListener(v -> {
-            isPlaying[0] = !isPlaying[0];
-            if (isPlaying[0]) {
-                btnPlay.setText("暂停");
-                playHandler.post(playRunnable);
-            } else {
-                btnPlay.setText("播放");
-                playHandler.removeCallbacksAndMessages(null);
-            }
-        });
-
-        controls.addView(btnPrev, btnP); 
-        controls.addView(btnPlay, btnP); 
-        controls.addView(btnNext, btnP); 
-        controls.addView(btnExportPng, btnP); 
-        root.addView(controls);
-        openAppWindow(winTitle, root, () -> {
-            isPlaying[0] = false; View win = windowsLayer.findViewWithTag(winTitle); if (win != null) windowsLayer.removeView(win);
-            View tbBtn = taskbarAppsLayout.findViewWithTag("tb_" + winTitle); if (tbBtn != null) taskbarAppsLayout.removeView(tbBtn);
-        });
-        
-        if (!groupList.isEmpty()) groupSpinner.setSelection(0);
+    // ===============================================
+    // 务必保留静态链接库块，否则引擎直接崩溃闪退
+    // ===============================================
+    static {
+        try {
+            System.loadLibrary("ikemen_sff_codec");
+        } catch (UnsatisfiedLinkError e) {
+            e.printStackTrace();
+        }
     }
-    
+
     public native int[] decodeSffV2C(byte[] data, int format, int width, int height, byte[] palette);
     public native int[] decodeSffV1C(byte[] data, int width, int height, byte[] palette);
 
