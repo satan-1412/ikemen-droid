@@ -1022,6 +1022,7 @@ public class DesktopSystemView extends Dialog {
         public int width;
         public int height;
         public int format;
+        public int colorDepth; // 🚨新增：支持 24/32 位真彩深度
         public int palIndex; 
         public boolean sharedPal;
         public Bitmap cachedBmp;
@@ -1102,7 +1103,7 @@ public class DesktopSystemView extends Dialog {
                     short height = Short.reverseBytes(raf.readShort());
                     raf.skipBytes(6);
                     byte format = raf.readByte();
-                    raf.skipBytes(1);
+                    byte depth = raf.readByte(); // 🚨读取真实的色彩深度 (8, 24, 32)
                     int dataOffset = Integer.reverseBytes(raf.readInt());
                     int dataLength = Integer.reverseBytes(raf.readInt());
                     short palIdx = Short.reverseBytes(raf.readShort());
@@ -1112,6 +1113,7 @@ public class DesktopSystemView extends Dialog {
                         SffFrame frame = new SffFrame();
                         frame.isV2 = true; frame.group = group; frame.item = item;
                         frame.width = width; frame.height = height; frame.format = format;
+                        frame.colorDepth = depth; // 🚨保存深度
                         frame.length = dataLength; frame.palIndex = palIdx;
                         frame.offset = ((flags & 1) != 0 ? tdataOffset : ldataOffset) + dataOffset;
                         frameList.add(frame);
@@ -1132,6 +1134,7 @@ public class DesktopSystemView extends Dialog {
 
                     if (length > 128) {
                         SffFrame frame = new SffFrame(); frame.isV2 = false;
+                        frame.colorDepth = 8; // V1 永远是 8 位调色板
                         frame.offset = nextOffset; frame.length = length;
                         frame.group = group; frame.item = item; frame.sharedPal = (sharedPal != 0);
                         frameList.add(frame);
@@ -1161,7 +1164,8 @@ public class DesktopSystemView extends Dialog {
                 byte[] targetPal = (frame.palIndex >= 0 && frame.palIndex < 256) ? v2Palettes[frame.palIndex] : v2Palettes[0];
                 if (targetPal != null) System.arraycopy(targetPal, 0, palData, 0, Math.min(targetPal.length, 768));
 
-                int[] pixels = decodeSffV2C(rawData, frame.format, frame.width, frame.height, palData);
+                // 🚨将 colorDepth 传入 C++，让底层知道怎么解压
+                int[] pixels = decodeSffV2C(rawData, frame.format, frame.width, frame.height, frame.colorDepth, palData);
                 if (pixels != null && pixels.length > 0) {
                     Bitmap bmp = Bitmap.createBitmap(pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888);
                     frame.cachedBmp = bmp; return bmp;
@@ -1384,6 +1388,6 @@ public class DesktopSystemView extends Dialog {
         }
     }
 
-    public native int[] decodeSffV2C(byte[] data, int format, int width, int height, byte[] palette);
+    public native int[] decodeSffV2C(byte[] data, int format, int width, int height, int colorDepth, byte[] palette);
     public native int[] decodeSffV1C(byte[] data, int width, int height, byte[] palette);
 }
