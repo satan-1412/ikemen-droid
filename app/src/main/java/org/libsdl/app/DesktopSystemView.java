@@ -997,6 +997,9 @@ public class DesktopSystemView extends Dialog {
     // ==========================================
     // 💥 终极 SFF 引擎：精准偏移量 & 防崩溃纯Java软解沙箱
     // ==========================================
+    // ==========================================
+    // 💥 终极 SFF 引擎：绝对修正版 & 全格式制霸引擎
+    // ==========================================
     public static class SffFrame {
         public int offset;
         public int length;
@@ -1020,11 +1023,13 @@ public class DesktopSystemView extends Dialog {
             byte[] sig = new byte[8]; raf.read(sig);
             if (!new String(sig, "US-ASCII").equals("Elecbyte")) return frameList;
 
-            raf.seek(12); byte[] ver = new byte[4]; raf.read(ver);
-            boolean isV2 = (ver[3] == 2 || ver[0] == 2); 
+            // 🚨 致命 Bug 修复：版本号永远在 Offset 8！不是 12！
+            raf.seek(8); 
+            byte[] ver = new byte[4]; raf.read(ver);
+            // 只要版本字节里包含 2，就是 v2.0 或 v2.01
+            boolean isV2 = (ver[0] == 2 || ver[1] == 2 || ver[2] == 2 || ver[3] == 2); 
 
             if (isV2) {
-                // 🚨 修正致命错误：绝对精准的 SFFv2 头部 32 偏移量 🚨
                 raf.seek(32); int spriteNodeOffset = Integer.reverseBytes(raf.readInt());
                 raf.seek(36); int numSprites = Integer.reverseBytes(raf.readInt());
                 raf.seek(40); int palNodeOffset = Integer.reverseBytes(raf.readInt());
@@ -1032,9 +1037,9 @@ public class DesktopSystemView extends Dialog {
                 raf.seek(48); int ldataOffset = Integer.reverseBytes(raf.readInt());
                 raf.seek(56); int tdataOffset = Integer.reverseBytes(raf.readInt());
 
-                // 防止损坏的文件导致内存炸裂死循环
                 if (numSprites < 0 || numSprites > 90000) return frameList;
 
+                // 读取 v2 调色板
                 if (numPalettes > 0) {
                     raf.seek(palNodeOffset + 8);
                     int palDataOffset = Integer.reverseBytes(raf.readInt());
@@ -1051,6 +1056,7 @@ public class DesktopSystemView extends Dialog {
                     }
                 }
 
+                // 遍历获取所有图像节点
                 for (int i = 0; i < numSprites; i++) {
                     raf.seek(spriteNodeOffset + i * 28);
                     short group = Short.reverseBytes(raf.readShort());
@@ -1065,7 +1071,7 @@ public class DesktopSystemView extends Dialog {
                     raf.skipBytes(2);
                     short flags = Short.reverseBytes(raf.readShort());
 
-                    if (dataLength > 0 && width > 0 && height > 0 && width < 4096 && height < 4096) {
+                    if (dataLength > 0) {
                         SffFrame frame = new SffFrame();
                         frame.isV2 = true;
                         frame.group = group; frame.item = item;
@@ -1076,6 +1082,7 @@ public class DesktopSystemView extends Dialog {
                     }
                 }
             } else {
+                // v1 格式解析
                 raf.seek(24); int totalImages = Integer.reverseBytes(raf.readInt());
                 raf.seek(28); int nextOffset = Integer.reverseBytes(raf.readInt());
                 int currentIndex = 0;
@@ -1111,55 +1118,71 @@ public class DesktopSystemView extends Dialog {
                 raf.seek(frame.offset);
                 raf.read(compressedData);
 
-                int[] pixels = new int[frame.width * frame.height];
-                
-                // 🔥 启用完全防弹的纯 Java 极速 LZ5 软解码器
-                if (frame.format == 4) { 
-                    int srcP = 4, dstP = 0, dstL = pixels.length;
-                    int[] tempPixels = new int[dstL];
-                    while(dstP < dstL && srcP < compressedData.length) {
-                        int ctrl = compressedData[srcP++] & 0xFF;
-                        for(int i=0; i<8 && dstP < dstL && srcP < compressedData.length; ++i) {
-                            if ((ctrl & (1<<i)) != 0) {
-                                if(srcP + 1 >= compressedData.length) break;
-                                int pos = (compressedData[srcP]&0xFF) | ((compressedData[srcP+1]&0xFF)<<8); srcP += 2;
-                                int offset = (pos >> 5) + 1; int count = (pos & 0x1F) + 3;
-                                if(count == 34) { if(srcP >= compressedData.length) break; count += compressedData[srcP++] & 0xFF; }
-                                for(int j=0; j<count && dstP < dstL; ++j) {
-                                    int copyIdx = dstP - offset;
-                                    tempPixels[dstP] = (copyIdx >= 0) ? tempPixels[copyIdx] : 0;
-                                    dstP++;
-                                }
-                            } else { tempPixels[dstP++] = compressedData[srcP++] & 0xFF; }
+                // 🌟 第一道防线：原生硬件解码 (针对 Ikemen 常见的 PNG 内嵌格式 Format 10/11/12)
+                Bitmap nativeBmp = android.graphics.BitmapFactory.decodeByteArray(compressedData, 0, compressedData.length);
+                if (nativeBmp != null) {
+                    frame.cachedBmp = nativeBmp; return nativeBmp;
+                }
+
+                int[] pixels = null;
+                // 🌟 第二道防线：尝试 C++ 极速引擎解码 (安全沙箱运行)
+                try {
+                    pixels = decodeSffV2C(compressedData, frame.format, frame.width, frame.height, globalSharedPalette);
+                } catch (Throwable t) {}
+
+                // 🌟 第三道防线：C++无响应时，启动纯 Java 像素级软解
+                if (pixels == null || pixels.length == 0) {
+                    pixels = new int[frame.width * frame.height];
+                    if (frame.format == 4) { // LZ5
+                        int srcP = 4, dstP = 0, dstL = pixels.length;
+                        int[] tempPixels = new int[dstL];
+                        while(dstP < dstL && srcP < compressedData.length) {
+                            int ctrl = compressedData[srcP++] & 0xFF;
+                            for(int i=0; i<8 && dstP < dstL && srcP < compressedData.length; ++i) {
+                                if ((ctrl & (1<<i)) != 0) {
+                                    if(srcP + 1 >= compressedData.length) break;
+                                    int pos = (compressedData[srcP]&0xFF) | ((compressedData[srcP+1]&0xFF)<<8); srcP += 2;
+                                    int offset = (pos >> 5) + 1; int count = (pos & 0x1F) + 3;
+                                    if(count == 34) { if(srcP >= compressedData.length) break; count += compressedData[srcP++] & 0xFF; }
+                                    for(int j=0; j<count && dstP < dstL; ++j) {
+                                        int copyIdx = dstP - offset;
+                                        tempPixels[dstP] = (copyIdx >= 0) ? tempPixels[copyIdx] : 0;
+                                        dstP++;
+                                    }
+                                } else { tempPixels[dstP++] = compressedData[srcP++] & 0xFF; }
+                            }
                         }
-                    }
-                    for(int i=0; i<dstL; i++) {
-                        int idx = tempPixels[i] & 0xFF;
-                        if(idx != 0) pixels[i] = 0xFF000000 | ((globalSharedPalette[idx*3]&0xFF)<<16) | ((globalSharedPalette[idx*3+1]&0xFF)<<8) | (globalSharedPalette[idx*3+2]&0xFF);
-                    }
-                } 
-                // 🔥 纯 Java 极速 RLE8 软解码器
-                else if (frame.format == 2 || frame.format == 3) { 
-                    int srcP = 4, dstP = 0, dstL = pixels.length;
-                    while(dstP < dstL && srcP < compressedData.length) {
-                        int ctrl = compressedData[srcP++] & 0xFF;
-                        if ((ctrl & 0xC0) == 0x40) {
-                            int count = ctrl & 0x3F;
-                            if(srcP >= compressedData.length) break;
-                            int color = compressedData[srcP++] & 0xFF;
-                            for(int i=0; i<count && dstP < dstL; i++) pixels[dstP++] = color;
-                        } else { pixels[dstP++] = ctrl; }
-                    }
-                    for(int i=0; i<dstL; i++) {
-                        int idx = pixels[i] & 0xFF;
-                        if(idx != 0) pixels[i] = 0xFF000000 | ((globalSharedPalette[idx*3]&0xFF)<<16) | ((globalSharedPalette[idx*3+1]&0xFF)<<8) | (globalSharedPalette[idx*3+2]&0xFF);
+                        for(int i=0; i<dstL; i++) {
+                            int idx = tempPixels[i] & 0xFF;
+                            if(idx != 0) pixels[i] = 0xFF000000 | ((globalSharedPalette[idx*3]&0xFF)<<16) | ((globalSharedPalette[idx*3+1]&0xFF)<<8) | (globalSharedPalette[idx*3+2]&0xFF);
+                        }
+                    } else if (frame.format == 2 || frame.format == 3) { // RLE8 / RLE5
+                        int srcP = 4, dstP = 0, dstL = pixels.length;
+                        while(dstP < dstL && srcP < compressedData.length) {
+                            int ctrl = compressedData[srcP++] & 0xFF;
+                            if ((ctrl & 0xC0) == 0x40) {
+                                int count = ctrl & 0x3F;
+                                if(srcP >= compressedData.length) break;
+                                int color = compressedData[srcP++] & 0xFF;
+                                for(int i=0; i<count && dstP < dstL; i++) pixels[dstP++] = color;
+                            } else { pixels[dstP++] = ctrl; }
+                        }
+                        for(int i=0; i<dstL; i++) {
+                            int idx = pixels[i] & 0xFF;
+                            if(idx != 0) pixels[i] = 0xFF000000 | ((globalSharedPalette[idx*3]&0xFF)<<16) | ((globalSharedPalette[idx*3+1]&0xFF)<<8) | (globalSharedPalette[idx*3+2]&0xFF);
+                        }
+                    } else if (frame.format == 0) { // RAW 未压缩格式
+                        for(int i=0; i<pixels.length && i<compressedData.length; i++) {
+                            int idx = compressedData[i] & 0xFF;
+                            if(idx != 0) pixels[i] = 0xFF000000 | ((globalSharedPalette[idx*3]&0xFF)<<16) | ((globalSharedPalette[idx*3+1]&0xFF)<<8) | (globalSharedPalette[idx*3+2]&0xFF);
+                        }
                     }
                 }
 
                 Bitmap bmp = Bitmap.createBitmap(pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888);
                 frame.cachedBmp = bmp; return bmp;
             } else {
-                // 原生 v1 完美解码保持不变
+                // v1 格式原生解码
                 raf.seek(frame.offset + 32); 
                 byte[] pcxHeader = new byte[128]; raf.read(pcxHeader);
                 int xmin = (pcxHeader[4] & 0xFF) | ((pcxHeader[5] & 0xFF) << 8); int ymin = (pcxHeader[6] & 0xFF) | ((pcxHeader[7] & 0xFF) << 8);
@@ -1193,9 +1216,8 @@ public class DesktopSystemView extends Dialog {
                 frame.cachedBmp = finalBmp; return finalBmp;
             }
         } catch (Throwable t) { 
-            // 🚨 终极沙箱保护：捕捉任何异常(含OOM)，强制返回错误图，保护主程序不闪退！
             t.printStackTrace(); 
-            return createTextBitmap("解压失败", "已安全拦截内存溢出"); 
+            return createTextBitmap("无法解析格式", "支持的通道已用尽"); 
         }
     }
 
@@ -1274,8 +1296,8 @@ public class DesktopSystemView extends Dialog {
                 final Bitmap bmp = decodeSingleFrame(sffFile, targetFrame);
                 uiHandler.post(() -> {
                     if (bmp != null) previewImg.setImageBitmap(bmp);
-                    infoText.setText(String.format("进度: %d/%d | 属性组: %d, %d | 尺寸: %dx%d", 
-                        currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.width, targetFrame.height));
+                    infoText.setText(String.format("进度: %d/%d | 属性组: %d, %d | 格式: %d", 
+                        currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.format));
                 });
             }).start();
         };
