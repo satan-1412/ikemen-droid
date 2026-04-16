@@ -46,12 +46,64 @@ import android.widget.Toast;
 import java.io.File;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.io.FileReader;
+import java.io.BufferedReader;
+import android.os.Handler;
 import java.util.List;
 
 /**
  * Ikemen GO 真·PC桌面系统引擎 (真视窗回归 / 终极沉浸模式 / 快照回滚)
  */
 public class DesktopSystemView extends Dialog {
+
+    // 自动关联SFF并排重的变量与功能
+    private HashMap<String, String> characterSffMap = new HashMap<>(); 
+    private HashSet<String> boundSffFiles = new HashSet<>();           
+    private ArrayList<String> standaloneSffFiles = new ArrayList<>();  
+
+    public void scanWorkspaceWithDefPriority(File dir) {
+        characterSffMap.clear(); boundSffFiles.clear(); standaloneSffFiles.clear();
+        File[] files = dir.listFiles();
+        if (files == null) return;
+
+        // 优先检测 def 文件
+        for (File f : files) {
+            if (f.getName().toLowerCase().endsWith(".def")) {
+                try {
+                    BufferedReader reader = new BufferedReader(new FileReader(f));
+                    String line, charName = f.getName().replace(".def", ""), sffPath = "";
+                    while ((line = reader.readLine()) != null) {
+                        line = line.trim().toLowerCase();
+                        if (line.startsWith("displayname") || line.startsWith("name")) {
+                            charName = line.split("=")[1].trim().replace("\"", "");
+                        }
+                        if (line.startsWith("sprite")) {
+                            sffPath = line.split("=")[1].trim();
+                        }
+                    }
+                    reader.close();
+                    if (!sffPath.isEmpty()) {
+                        File sffFile = new File(dir, sffPath);
+                        if (sffFile.exists()) {
+                            characterSffMap.put(charName, sffFile.getAbsolutePath());
+                            boundSffFiles.add(sffFile.getAbsolutePath());
+                        }
+                    }
+                } catch (Exception e) { e.printStackTrace(); }
+            }
+        }
+
+        // 随后检测剩余孤立的 sff 文件
+        for (File f : files) {
+            if (f.getName().toLowerCase().endsWith(".sff")) {
+                if (!boundSffFiles.contains(f.getAbsolutePath())) {
+                    standaloneSffFiles.add(f.getAbsolutePath());
+                }
+            }
+        }
+    }
 
     public static DesktopSystemView instance;
     // 补回全局 UI 更新工具
@@ -1364,7 +1416,34 @@ public class DesktopSystemView extends Dialog {
             }).start();
         });
 
-        controls.addView(btnPrev, btnP); controls.addView(btnPlay, btnP); controls.addView(btnNext, btnP); controls.addView(btnExportPng, btnP); root.addView(controls);
+        // 极限动态播放逻辑 (利用 Handler 高频回调实现一帧一帧切)
+        Handler playHandler = new Handler();
+        Runnable playRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (isPlaying[0] && !allFrames.isEmpty()) {
+                    btnNext.performClick(); 
+                    playHandler.postDelayed(this, 16); 
+                }
+            }
+        };
+
+        btnPlay.setOnClickListener(v -> {
+            isPlaying[0] = !isPlaying[0];
+            if (isPlaying[0]) {
+                btnPlay.setText("暂停");
+                playHandler.post(playRunnable);
+            } else {
+                btnPlay.setText("播放");
+                playHandler.removeCallbacksAndMessages(null);
+            }
+        });
+
+        controls.addView(btnPrev, btnP); 
+        controls.addView(btnPlay, btnP); 
+        controls.addView(btnNext, btnP); 
+        controls.addView(btnExportPng, btnP); 
+        root.addView(controls);
         openAppWindow(winTitle, root, () -> {
             isPlaying[0] = false; View win = windowsLayer.findViewWithTag(winTitle); if (win != null) windowsLayer.removeView(win);
             View tbBtn = taskbarAppsLayout.findViewWithTag("tb_" + winTitle); if (tbBtn != null) taskbarAppsLayout.removeView(tbBtn);
@@ -1372,4 +1451,8 @@ public class DesktopSystemView extends Dialog {
         
         if (!groupList.isEmpty()) groupSpinner.setSelection(0);
     }
+    
+    public native int[] decodeSffV2C(byte[] data, int format, int width, int height, byte[] palette);
+    public native int[] decodeSffV1C(byte[] data, int width, int height, byte[] palette);
+
 }
