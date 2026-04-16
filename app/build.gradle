@@ -19,6 +19,7 @@ android {
         namespace "org.libsdl.app"
     }
     compileSdkVersion 34
+    
     defaultConfig {
         if (buildAsApplication) {
             applicationId "org.ikemen_engine.ikemen_go"
@@ -28,49 +29,45 @@ android {
         targetSdkVersion 29
         versionCode 1
         versionName "1.0"
+        
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a'
         }
         resourceConfigurations += ["en", "de", "es", "fr", "ja", "pt", "zh"]
-//        externalNativeBuild {
-//            ndkBuild {
-//                arguments "APP_PLATFORM=android-19"
-//                abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
-//            }
-//            // cmake {
-//            //     arguments "-DANDROID_APP_PLATFORM=android-19", "-DANDROID_STL=c++_static"
-//            //     // abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
-//            //     abiFilters 'arm64-v8a'
-//            // }
-//        }
+        
+        // 👇 核心修复1：开启 C++ 底层编译参数
+        externalNativeBuild {
+            ndkBuild {
+                arguments "APP_PLATFORM=android-21"
+                abiFilters 'armeabi-v7a', 'arm64-v8a'
+            }
+        }
     }
+    
     sourceSets.main {
         assets.srcDirs = ['src/main/assets']
     }
+    
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-//    applicationVariants.all { variant ->
-//        tasks["merge${variant.name.capitalize()}Assets"]
-//            .dependsOn("externalNativeBuild${variant.name.capitalize()}")
-//    }
+
     if (!project.hasProperty('EXCLUDE_NATIVE_LIBS')) {
         sourceSets.main {
             jniLibs.srcDir 'libs'
         }
-//        externalNativeBuild {
-//            ndkBuild {
-//                path 'jni/Android.mk'
-//            }
-//            // cmake {
-//            //     path 'jni/CMakeLists.txt'
-//            // }
-//        }
-
+        
+        // 👇 核心修复2：解除封印，正式让安卓去读取并编译底层的 C++ 文件！
+        externalNativeBuild {
+            ndkBuild {
+                path 'jni/Android.mk'
+            }
+        }
     }
+    
     lint {
         abortOnError false
     }
