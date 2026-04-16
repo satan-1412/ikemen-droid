@@ -2,22 +2,18 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
-LOCAL_MODULE := main
+# 🚨 核心替换：将废弃的 main 模板替换为我们的真实 SFF 解析引擎
+LOCAL_MODULE := ikemen_sff_codec
 
-SDL_PATH := ../SDL
+# 🚨 核心替换：指向咱们的 C++ 性能怪兽文件
+LOCAL_SRC_FILES := sff_codec.cpp
 
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/$(SDL_PATH)/include
-
-# Add your application source files here...
-LOCAL_SRC_FILES := YourSourceHere.c
-
-LOCAL_SHARED_LIBRARIES := SDL2
-
-# 补充了原版中的底层库，并增加了 EGL 以保证更高版本 OpenGL 的上下文兼容性
-LOCAL_LDLIBS := -lGLESv1_CM -lGLESv2 -lOpenSLES -llog -landroid -lEGL
+# 补充基础运行库，剥离不需要源码编译的 SDL2（它已经是预编译好的了）
+LOCAL_LDLIBS := -lGLESv1_CM -lGLESv2 -lOpenSLES -llog -landroid -lEGL -lz
 
 # =========================================================
 # [极客优化核心区] 基于不同 CPU 架构的定制化编译参数
+# （已完美保留你的所有极限优化参数，直接作用于 SFF 解析！）
 # =========================================================
 
 # 1. 全局基础优化（所有架构共享）：
@@ -46,8 +42,6 @@ else ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
     # 【32位 (armeabi-v7a)】：极度求稳模式 (兼顾老设备与省电)
     # -----------------------------------------------------
     # -Os: 偏向优化应用体积。较小体积能提高老旧设备 CPU 的指令缓存命中率，减少卡顿和发热。
-    # 注: 针对 NDK r27d 及 minSdkVersion=21，系统已默认开启 NEON 与硬浮点，
-    # 故移除 -mfloat-abi=softfp 以防止与现代 NDK 预编译库产生 ABI 链接冲突。
     LOCAL_CFLAGS += -Os
     
     # 链接器求稳修复：Wl,--fix-cortex-a8 用于修复早期 32 位处理器的硬件级指令死锁 BUG
