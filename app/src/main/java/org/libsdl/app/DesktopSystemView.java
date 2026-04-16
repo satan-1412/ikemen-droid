@@ -44,17 +44,17 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileReader;
+import java.io.BufferedReader;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.io.FileReader;
-import java.io.BufferedReader;
-import android.os.Handler;
 import java.util.List;
+import android.os.Handler;
 
 /**
- * Ikemen GO 真·PC桌面系统引擎 (真视窗回归 / 终极沉浸模式 / 快照回滚)
+ * Ikemen GO 真·PC桌面系统引擎 (真视窗回归 / 终极沉浸模式 / 极致SFF解析)
  */
 public class DesktopSystemView extends Dialog {
 
@@ -585,12 +585,6 @@ public class DesktopSystemView extends Dialog {
         Button shadowToggle = createButton(fontShadowEnabled ? "✔️ 字体投影：开启" : "❌ 字体投影：关闭", "#333333");
         shadowToggle.setOnClickListener(v -> { fontShadowEnabled = !fontShadowEnabled; shadowToggle.setText(fontShadowEnabled ? "✔️ 字体投影：开启" : "❌ 字体投影：关闭"); }); layout.addView(shadowToggle);
 
-        layout.addView(createSubTitle("投影颜色代码 (Hex):"));
-        final EditText shadowColorInput = createInput("如: #000000", String.format("#%06X", (0xFFFFFF & fontShadowColor))); layout.addView(shadowColorInput);
-        shadowColorInput.addTextChangedListener(new TextWatcher() {
-            public void afterTextChanged(Editable s) { try{ fontShadowColor = Color.parseColor(s.toString()); }catch(Exception e){} } public void beforeTextChanged(CharSequence s, int x, int y, int z) {} public void onTextChanged(CharSequence s, int x, int y, int z) {}
-        });
-
         layout.addView(createTitle("🎬 动态媒体矩阵 (优先读取窗口声音)"));
         
         layout.addView(createSubTitle("桌面壁纸视频音量 (独立声道，静音绝不影响BGM):"));
@@ -763,7 +757,7 @@ public class DesktopSystemView extends Dialog {
     private TextView createSubTitle(String text) { TextView tv = new TextView(getContext()); tv.setText(text); applyGlobalFontSettings(tv, 1.1f, false); tv.setPadding(0, (int)(15*density), 0, (int)(5*density)); return tv; }
     private EditText createInput(String hint, String text) { EditText et = new EditText(getContext()); et.setText(text); applyGlobalFontSettings(et, 1.0f, false); et.setHint(hint); et.setHintTextColor(Color.DKGRAY); GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#252526")); bg.setStroke(1, Color.GRAY); et.setBackground(bg); et.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density)); return et; }
     
-    // 【全新现代深色扁平 UI 按钮】
+    // 【全新现代深色系扁平UI按钮】
     private Button createButton(String text, String colorHex) { 
         Button btn = new Button(getContext()); 
         btn.setText(text); 
@@ -1057,6 +1051,7 @@ public class DesktopSystemView extends Dialog {
         return input;
     }
 
+    // 🚨 终极偏移量修复：12字节开始，完美适配官方 V2 与 V1
     private List<SffFrame> scanSffFrames(File sffFile) {
         List<SffFrame> frameList = new ArrayList<>();
         if (sffFile == null || !sffFile.exists() || sffFile.length() < 128) return frameList;
@@ -1065,16 +1060,18 @@ public class DesktopSystemView extends Dialog {
             byte[] sig = new byte[8]; raf.read(sig);
             if (!new String(sig, "US-ASCII").equals("Elecbyte")) return frameList;
 
-            raf.seek(8); byte[] ver = new byte[4]; raf.read(ver);
+            // V2 的版本号是从第12字节开始的
+            raf.seek(12); byte[] ver = new byte[4]; raf.read(ver);
             boolean isV2 = (ver[0] == 2 || ver[1] == 2 || ver[2] == 2 || ver[3] == 2);
 
             if (isV2) {
-                raf.seek(32); int spriteNodeOffset = Integer.reverseBytes(raf.readInt());
-                raf.seek(36); int numSprites = Integer.reverseBytes(raf.readInt());
-                raf.seek(40); int palNodeOffset = Integer.reverseBytes(raf.readInt());
-                raf.seek(44); int numPalettes = Integer.reverseBytes(raf.readInt());
-                raf.seek(48); int ldataOffset = Integer.reverseBytes(raf.readInt());
-                raf.seek(56); int tdataOffset = Integer.reverseBytes(raf.readInt());
+                // V2 标准偏移量
+                raf.seek(36); int spriteNodeOffset = Integer.reverseBytes(raf.readInt());
+                raf.seek(40); int numSprites = Integer.reverseBytes(raf.readInt());
+                raf.seek(44); int palNodeOffset = Integer.reverseBytes(raf.readInt());
+                raf.seek(48); int numPalettes = Integer.reverseBytes(raf.readInt());
+                raf.seek(52); int ldataOffset = Integer.reverseBytes(raf.readInt());
+                raf.seek(60); int tdataOffset = Integer.reverseBytes(raf.readInt());
 
                 if (numSprites < 0 || numSprites > 90000) return frameList;
 
@@ -1121,8 +1118,9 @@ public class DesktopSystemView extends Dialog {
                     }
                 }
             } else {
-                raf.seek(24); int totalImages = Integer.reverseBytes(raf.readInt());
-                raf.seek(28); int nextOffset = Integer.reverseBytes(raf.readInt());
+                // V1 的图像总数在第20字节，首节点偏移在24字节
+                raf.seek(20); int totalImages = Integer.reverseBytes(raf.readInt());
+                raf.seek(24); int nextOffset = Integer.reverseBytes(raf.readInt());
                 int currentIndex = 0;
                 while (nextOffset > 0 && currentIndex < totalImages && currentIndex < 90000) {
                     raf.seek(nextOffset);
@@ -1145,7 +1143,7 @@ public class DesktopSystemView extends Dialog {
         return frameList;
     }
 
-    // 【全新连接底层的完美解析器】
+    // 🚨 彻底连通 C++ 底层解析
     private Bitmap decodeSingleFrame(File sffFile, SffFrame frame) {
         if (frame.cachedBmp != null) return frame.cachedBmp;
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
@@ -1210,7 +1208,6 @@ public class DesktopSystemView extends Dialog {
         return bmp;
     }
 
-    // 【全新现代深色系，附带全图总览视窗】
     private void showAssetViewerWindow(String charName, File sffFile) {
         final String winTitle = "🎨 检视: " + charName;
         final List<SffFrame> allFrames = scanSffFrames(sffFile);
@@ -1222,7 +1219,7 @@ public class DesktopSystemView extends Dialog {
         List<String> groupListDisplay = new ArrayList<>();
         List<Integer> groupList = new ArrayList<>();
         
-        // 核心修复：增加一个看全部图片的选项，地图就能看全了
+        // 【增加全局帧查看模式，完美解决地图无法完整显示】
         groupListDisplay.add("📂 所有动作帧 (顺序总览)");
         groupList.add(-999); 
         
@@ -1310,7 +1307,7 @@ public class DesktopSystemView extends Dialog {
                 int selectedGroup = groupList.get(position);
                 currentGroupFrames.clear();
                 if (selectedGroup == -999) {
-                    currentGroupFrames.addAll(allFrames); // 全局视窗
+                    currentGroupFrames.addAll(allFrames); 
                 } else {
                     for (SffFrame f : allFrames) { if (f.group == selectedGroup) currentGroupFrames.add(f); }
                 }
@@ -1379,9 +1376,6 @@ public class DesktopSystemView extends Dialog {
         if (!groupList.isEmpty()) groupSpinner.setSelection(0);
     }
 
-    // ===============================================
-    // 务必保留静态链接库块，否则引擎直接崩溃闪退
-    // ===============================================
     static {
         try {
             System.loadLibrary("ikemen_sff_codec");
@@ -1392,5 +1386,4 @@ public class DesktopSystemView extends Dialog {
 
     public native int[] decodeSffV2C(byte[] data, int format, int width, int height, byte[] palette);
     public native int[] decodeSffV1C(byte[] data, int width, int height, byte[] palette);
-
 }
