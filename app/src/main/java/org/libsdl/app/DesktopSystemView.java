@@ -61,7 +61,7 @@ public class DesktopSystemView extends Dialog {
 
     public static DesktopSystemView instance;
     
-    // 🚨 核心补回：用于异步更新 UI 文本的辅助函数，解决编译报错
+    // 🚨 把丢失的 updateUI 函数找回来了，消除编译错误
     private void updateUI(final TextView status, final String msg) {
         new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
             if (status != null) status.setText("状态: " + msg);
@@ -118,46 +118,6 @@ public class DesktopSystemView extends Dialog {
         this.mContext = context;
         this.prefs = context.getSharedPreferences("IkemenDesktopPrefs", Context.MODE_PRIVATE);
         this.density = context.getResources().getDisplayMetrics().density;
-    }
-
-    public void scanWorkspaceWithDefPriority(File dir) {
-        characterSffMap.clear(); boundSffFiles.clear(); standaloneSffFiles.clear();
-        File[] files = dir.listFiles();
-        if (files == null) return;
-
-        for (File f : files) {
-            if (f.getName().toLowerCase().endsWith(".def")) {
-                try {
-                    BufferedReader reader = new BufferedReader(new FileReader(f));
-                    String line, charName = f.getName().replace(".def", ""), sffPath = "";
-                    while ((line = reader.readLine()) != null) {
-                        line = line.trim().toLowerCase();
-                        if (line.startsWith("displayname") || line.startsWith("name")) {
-                            charName = line.split("=")[1].trim().replace("\"", "");
-                        }
-                        if (line.startsWith("sprite")) {
-                            sffPath = line.split("=")[1].trim();
-                        }
-                    }
-                    reader.close();
-                    if (!sffPath.isEmpty()) {
-                        File sffFile = new File(dir, sffPath);
-                        if (sffFile.exists()) {
-                            characterSffMap.put(charName, sffFile.getAbsolutePath());
-                            boundSffFiles.add(sffFile.getAbsolutePath());
-                        }
-                    }
-                } catch (Exception e) { e.printStackTrace(); }
-            }
-        }
-
-        for (File f : files) {
-            if (f.getName().toLowerCase().endsWith(".sff")) {
-                if (!boundSffFiles.contains(f.getAbsolutePath())) {
-                    standaloneSffFiles.add(f.getAbsolutePath());
-                }
-            }
-        }
     }
 
     private void applyImmersiveMode(Window window) {
@@ -904,7 +864,6 @@ public class DesktopSystemView extends Dialog {
 
     private List<String> resolvedSffPaths = new ArrayList<>();
 
-    // 🔥 核心查漏补缺：优先 def，没有 def 强行读取游离 sff
     private void findSffTargets(File f, List<File> sffFiles, List<String> names, int depth) {
         if (depth == 0) resolvedSffPaths.clear(); 
         if (depth > 99 || !isAssetScannerRunning || f == null || !f.exists()) return; 
@@ -912,7 +871,6 @@ public class DesktopSystemView extends Dialog {
         if (f.isDirectory()) {
             File[] children = f.listFiles();
             if (children != null) {
-                // 优先遍历 def
                 Arrays.sort(children, (f1, f2) -> {
                     boolean d1 = f1.getName().toLowerCase().endsWith(".def");
                     boolean d2 = f2.getName().toLowerCase().endsWith(".def");
@@ -926,7 +884,6 @@ public class DesktopSystemView extends Dialog {
                 File sff = parseDefForSff(f, f.getParentFile());
                 if (sff != null && sff.exists() && !sffFiles.contains(sff)) {
                     sffFiles.add(sff);
-                    // 尝试从 def 中提取更漂亮的名字 (如果没有则用文件名)
                     String parsedName = parseDefForDisplayName(f);
                     names.add(parsedName != null ? parsedName : f.getName().replace(".def", "").replace(".DEF", ""));
                     resolvedSffPaths.add(sff.getAbsolutePath()); 
@@ -1051,7 +1008,6 @@ public class DesktopSystemView extends Dialog {
         public boolean isV2;
     }
 
-    // 🚨 终极 RGBA 色表支持 (完美适配半透明 UI 与阴影)
     private byte[][] v2Palettes = new byte[256][1024]; 
     private byte[] globalSharedPalette = new byte[768];
 
@@ -1075,7 +1031,7 @@ public class DesktopSystemView extends Dialog {
         return input;
     }
 
-    // 🚨 极速帧解析沙箱：全面兼顾 V1 与 V2 协议
+    // 🚨 终极修正：修复 V1 缺失的 width 和 height，并重新抓取 PCX 文件头
     private List<SffFrame> scanSffFrames(File sffFile) {
         List<SffFrame> frameList = new ArrayList<>();
         if (sffFile == null || !sffFile.exists() || sffFile.length() < 128) return frameList;
@@ -1107,7 +1063,6 @@ public class DesktopSystemView extends Dialog {
                             byte[] v2palRaw = new byte[pDataLength]; raf.read(v2palRaw);
                             byte[] cleanPal = smartZlibUnwrap(v2palRaw); 
                             int colorsToRead = Math.min(256, cleanPal.length / 4);
-                            // 🔥 RGBA 4 字节完整拷贝，决不丢失 Alpha 透明通道
                             for(int c=0; c<colorsToRead; c++) {
                                 v2Palettes[p][c*4]   = cleanPal[c*4];
                                 v2Palettes[p][c*4+1] = cleanPal[c*4+1];
@@ -1146,7 +1101,7 @@ public class DesktopSystemView extends Dialog {
                 raf.seek(20); int totalImages = Integer.reverseBytes(raf.readInt());
                 raf.seek(24); int nextOffset = Integer.reverseBytes(raf.readInt());
                 int currentIndex = 0;
-                boolean foundGlobalPal = false; // 🚨 KFM 保底全局色表抓取锁
+                boolean foundGlobalPal = false;
                 while (nextOffset > 0 && currentIndex < totalImages && currentIndex < 90000) {
                     raf.seek(nextOffset);
                     int nextSub = Integer.reverseBytes(raf.readInt());
@@ -1156,13 +1111,23 @@ public class DesktopSystemView extends Dialog {
                     short linked = Short.reverseBytes(raf.readShort()); byte sharedPal = raf.readByte();
 
                     if (length > 128) {
+                        // 🚨 核心补位：强行读取 PCX 内置真实宽高
+                        raf.seek(nextOffset + 32 + 4);
+                        int xmin = Short.reverseBytes(raf.readShort()) & 0xFFFF;
+                        int ymin = Short.reverseBytes(raf.readShort()) & 0xFFFF;
+                        int xmax = Short.reverseBytes(raf.readShort()) & 0xFFFF;
+                        int ymax = Short.reverseBytes(raf.readShort()) & 0xFFFF;
+                        int pcxWidth = xmax - xmin + 1;
+                        int pcxHeight = ymax - ymin + 1;
+
                         SffFrame frame = new SffFrame(); frame.isV2 = false;
                         frame.colorDepth = 8; 
                         frame.offset = nextOffset; frame.length = length;
                         frame.group = group; frame.item = item; frame.sharedPal = (sharedPal != 0);
+                        frame.width = pcxWidth;  // 填补致命空白
+                        frame.height = pcxHeight; // 填补致命空白
                         frameList.add(frame);
 
-                        // 🚨 终极 KFM 色表抓取：只要碰到一个大于 768 字节的图像，直接从尾部抠取默认色表！
                         if (!foundGlobalPal && length >= 768) {
                             long palOffset = nextOffset + 32 + length - 768; 
                             if (palOffset > 0 && palOffset <= raf.length()) {
@@ -1183,28 +1148,35 @@ public class DesktopSystemView extends Dialog {
         return frameList;
     }
 
-    // 🚨 终极渲染器桥梁：单图 PNG 免疫解码 & 底层 C++ 分发
     private Bitmap decodeSingleFrame(File sffFile, SffFrame frame) {
         if (frame.cachedBmp != null) return frame.cachedBmp;
+        // 防崩溃
+        if (frame.width <= 0 || frame.height <= 0) return createTextBitmap("解析异常", "无效尺寸");
+
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
-            
             byte[] rawData = new byte[frame.length];
             raf.seek(frame.offset + (frame.isV2 ? 0 : 32)); 
             raf.read(rawData);
 
             if (frame.isV2) {
-                // 🚨 免疫级 PNG 解析：Format 10,11,12 纯 PNG 单图
+                // 🚨 终极防污扫描：过滤头部垃圾字节找回纯净 PNG
                 if (frame.format >= 10 && frame.format <= 12) {
+                    int pngStart = 0;
+                    for (int j = 0; j < Math.min(16, rawData.length - 4); j++) {
+                        if (rawData[j] == (byte)137 && rawData[j+1] == 80 && rawData[j+2] == 78 && rawData[j+3] == 71) {
+                            pngStart = j; break; // 找到了纯净的 \x89PNG 签名！
+                        }
+                    }
                     BitmapFactory.Options opts = new BitmapFactory.Options();
                     opts.inMutable = true; 
-                    opts.inPreferredConfig = Bitmap.Config.ARGB_8888; // 强行拉满 32位 
-                    Bitmap pngBmp = BitmapFactory.decodeByteArray(rawData, 0, rawData.length, opts);
+                    opts.inPreferredConfig = Bitmap.Config.ARGB_8888; 
+                    Bitmap pngBmp = BitmapFactory.decodeByteArray(rawData, pngStart, rawData.length - pngStart, opts);
                     if (pngBmp != null) { 
                         frame.cachedBmp = pngBmp; 
                         return pngBmp; 
                     } else {
-                        android.util.Log.e("IkemenSff", "PNG强解析失败! 尺寸:" + rawData.length + " Group:" + frame.group);
-                        return createTextBitmap("PNG出错", "系统拒绝");
+                        android.util.Log.e("IkemenSff", "PNG强解析依然失败! 偏移:" + pngStart);
+                        return createTextBitmap("PNG出错", "无法渲染");
                     }
                 }
 
@@ -1235,12 +1207,11 @@ public class DesktopSystemView extends Dialog {
             }
         } catch (Throwable t) { 
             t.printStackTrace(); 
-            return createTextBitmap("解析异常", "请检查文件是否损坏"); 
+            return createTextBitmap("解析异常", "出现闪退保护"); 
         }
         return null;
     }
 
-    // 🚨 头像级智能提取：优先 9000,1 (大立绘) -> 9000,0 (小头像) -> 第 0 帧保底
     private Bitmap extractPreviewFromSff(File sffFile) {
         List<SffFrame> frames = scanSffFrames(sffFile);
         if (frames.isEmpty()) return createTextBitmap(sffFile.getName(), "文件损坏或格式受限");
