@@ -1029,7 +1029,7 @@ public class DesktopSystemView extends Dialog {
         public boolean isV2;
     }
 
-    private byte[][] v2Palettes = new byte[256][768];
+    private byte[][] v2Palettes = new byte[256][1024]; // 🚨扩容至1024支持Alpha
     private byte[] globalSharedPalette = new byte[768];
 
     private byte[] smartZlibUnwrap(byte[] input) {
@@ -1087,9 +1087,10 @@ public class DesktopSystemView extends Dialog {
                             byte[] cleanPal = smartZlibUnwrap(v2palRaw); 
                             int colorsToRead = Math.min(256, cleanPal.length / 4);
                             for(int c=0; c<colorsToRead; c++) {
-                                v2Palettes[p][c*3]   = cleanPal[c*4];
-                                v2Palettes[p][c*3+1] = cleanPal[c*4+1];
-                                v2Palettes[p][c*3+2] = cleanPal[c*4+2];
+ v2Palettes[p][c*4]   = cleanPal[c*4];
+                            v2Palettes[p][c*4+1] = cleanPal[c*4+1];
+                            v2Palettes[p][c*4+2] = cleanPal[c*4+2];
+                            v2Palettes[p][c*4+3] = cleanPal[c*4+3]; // 🚨保留透明通道
                             }
                         }
                     }
@@ -1124,6 +1125,7 @@ public class DesktopSystemView extends Dialog {
                 raf.seek(20); int totalImages = Integer.reverseBytes(raf.readInt());
                 raf.seek(24); int nextOffset = Integer.reverseBytes(raf.readInt());
                 int currentIndex = 0;
+                boolean foundGlobalPal = false; // 🚨新增：用于抓取KFM等角色的默认色表
                 while (nextOffset > 0 && currentIndex < totalImages && currentIndex < 90000) {
                     raf.seek(nextOffset);
                     int nextSub = Integer.reverseBytes(raf.readInt());
@@ -1138,6 +1140,20 @@ public class DesktopSystemView extends Dialog {
                         frame.offset = nextOffset; frame.length = length;
                         frame.group = group; frame.item = item; frame.sharedPal = (sharedPal != 0);
                         frameList.add(frame);
+
+                        // 🚨核心修复：提前提取SFFv1公共色表，防止KFM彻底黑屏！
+                        if (sharedPal == 0 && !foundGlobalPal) {
+                            long palOffset = nextOffset + 32 + length - 768; 
+                            if (palOffset > 0 && palOffset <= raf.length()) {
+                                long oldPos = raf.getFilePointer();
+                                raf.seek(palOffset - 1);
+                                if (raf.readByte() == 0x0C) { 
+                                    raf.read(globalSharedPalette); 
+                                    foundGlobalPal = true;
+                                }
+                                raf.seek(oldPos);
+                            }
+                        }
                     }
                     nextOffset = nextSub; currentIndex++;
                 }
@@ -1160,9 +1176,9 @@ public class DesktopSystemView extends Dialog {
                     if (pngBmp != null) { frame.cachedBmp = pngBmp; return pngBmp; }
                 }
 
-                byte[] palData = new byte[768];
+                byte[] palData = new byte[1024]; // 🚨改用1024接收RGBA色表
                 byte[] targetPal = (frame.palIndex >= 0 && frame.palIndex < 256) ? v2Palettes[frame.palIndex] : v2Palettes[0];
-                if (targetPal != null) System.arraycopy(targetPal, 0, palData, 0, Math.min(targetPal.length, 768));
+                if (targetPal != null) System.arraycopy(targetPal, 0, palData, 0, Math.min(targetPal.length, 1024));
 
                 // 🚨将 colorDepth 传入 C++，让底层知道怎么解压
                 int[] pixels = decodeSffV2C(rawData, frame.format, frame.width, frame.height, frame.colorDepth, palData);
