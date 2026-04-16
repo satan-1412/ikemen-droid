@@ -113,9 +113,6 @@ public class DesktopSystemView extends Dialog {
         });
     }
 
-    // 💥【新增】直接声明 C++ 底层的高速解码引擎接口
-    public native int[] decodeSffV2C(byte[] data, int format, int width, int height, byte[] palette);
-
     private Context mContext;
     private SharedPreferences prefs;
     private float density;
