@@ -60,6 +60,14 @@ import android.os.Handler;
 public class DesktopSystemView extends Dialog {
 
     public static DesktopSystemView instance;
+    
+    // 🚨 核心补回：用于异步更新 UI 文本的辅助函数，解决编译报错
+    private void updateUI(final TextView status, final String msg) {
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+            if (status != null) status.setText("状态: " + msg);
+        });
+    }
+
     private Context mContext;
     private SharedPreferences prefs;
     private float density;
@@ -101,11 +109,55 @@ public class DesktopSystemView extends Dialog {
 
     private static File lastVisitedDir = Environment.getExternalStorageDirectory();
 
+    private HashMap<String, String> characterSffMap = new HashMap<>(); 
+    private HashSet<String> boundSffFiles = new HashSet<>();           
+    private ArrayList<String> standaloneSffFiles = new ArrayList<>();  
+
     public DesktopSystemView(Context context) {
         super(context, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
         this.mContext = context;
         this.prefs = context.getSharedPreferences("IkemenDesktopPrefs", Context.MODE_PRIVATE);
         this.density = context.getResources().getDisplayMetrics().density;
+    }
+
+    public void scanWorkspaceWithDefPriority(File dir) {
+        characterSffMap.clear(); boundSffFiles.clear(); standaloneSffFiles.clear();
+        File[] files = dir.listFiles();
+        if (files == null) return;
+
+        for (File f : files) {
+            if (f.getName().toLowerCase().endsWith(".def")) {
+                try {
+                    BufferedReader reader = new BufferedReader(new FileReader(f));
+                    String line, charName = f.getName().replace(".def", ""), sffPath = "";
+                    while ((line = reader.readLine()) != null) {
+                        line = line.trim().toLowerCase();
+                        if (line.startsWith("displayname") || line.startsWith("name")) {
+                            charName = line.split("=")[1].trim().replace("\"", "");
+                        }
+                        if (line.startsWith("sprite")) {
+                            sffPath = line.split("=")[1].trim();
+                        }
+                    }
+                    reader.close();
+                    if (!sffPath.isEmpty()) {
+                        File sffFile = new File(dir, sffPath);
+                        if (sffFile.exists()) {
+                            characterSffMap.put(charName, sffFile.getAbsolutePath());
+                            boundSffFiles.add(sffFile.getAbsolutePath());
+                        }
+                    }
+                } catch (Exception e) { e.printStackTrace(); }
+            }
+        }
+
+        for (File f : files) {
+            if (f.getName().toLowerCase().endsWith(".sff")) {
+                if (!boundSffFiles.contains(f.getAbsolutePath())) {
+                    standaloneSffFiles.add(f.getAbsolutePath());
+                }
+            }
+        }
     }
 
     private void applyImmersiveMode(Window window) {
