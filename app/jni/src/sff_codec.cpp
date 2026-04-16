@@ -1,11 +1,36 @@
 #include <jni.h>
 #include <cstdlib>
+#include <cstring>
 #include <android/log.h>
 
 #define LOG_TAG "IkemenSffEngine"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// 【极限优化1】使用 inline 强制内联展开，使用 __restrict 告诉编译器指针绝对不会重叠，从而开启 CPU 疯狂向量化 (SIMD)
+// ========================================================
+// 结构体定义区
+// ========================================================
+#pragma pack(push, 1)
+struct SffV2Header {
+    char signature[12];
+    uint8_t ver0, ver1, ver2, ver3;
+    uint32_t reserved;
+    uint32_t reserved2;
+    uint8_t compat_ver0, compat_ver1, compat_ver2, compat_ver3;
+    uint32_t reserved3, reserved4;
+    uint32_t offsetFirstSpriteNode; 
+    uint32_t totalSprites;
+    uint32_t offsetPaletteNode;
+    uint32_t totalPalettes;
+    uint32_t ldataOffset, ldataLength;
+    uint32_t tdataOffset, tdataLength;
+};
+#pragma pack(pop)
+
+// ========================================================
+// 核心解码算法区
+// ========================================================
+
+// SFFv2: LZ5 暴力解压
 inline void lz5_decompress_hardcore(const uint8_t* __restrict src, uint8_t* __restrict dst, int dst_len) {
     int src_ptr = 4; // 跳过前4字节长度
     int dst_ptr = 0;
@@ -18,7 +43,6 @@ inline void lz5_decompress_hardcore(const uint8_t* __restrict src, uint8_t* __re
                 int count = (pos & 0x1F) + 3;
                 if (count == 34) count += src[src_ptr++];
                 
-                // 注意：这里绝对不能用 memcpy，因为 LZ 算法的字典复制存在内存重叠
                 for (int j = 0; j < count; ++j) {
                     dst[dst_ptr] = dst[dst_ptr - offset];
                     dst_ptr++;
@@ -30,46 +54,119 @@ inline void lz5_decompress_hardcore(const uint8_t* __restrict src, uint8_t* __re
     }
 }
 
+// SFFv1: PCX 格式极速解码 (v1的图像全是PCX)
+inline void pcx_decompress_hardcore(const uint8_t* __restrict src, int src_len, uint8_t* __restrict dst, int dst_len) {
+    int src_ptr = 128; // 强行跳过 128 字节的 PCX 文件头
+    int dst_ptr = 0;
+    while (src_ptr < src_len && dst_ptr < dst_len) {
+        uint8_t byte = src[src_ptr++];
+        if ((byte & 0xC0) == 0xC0) { // PCX 的 RLE 标志位
+            int count = byte & 0x3F;
+            uint8_t color = src[src_ptr++];
+            for (int i = 0; i < count && dst_ptr < dst_len; ++i) {
+                dst[dst_ptr++] = color;
+            }
+        } else {
+            dst[dst_ptr++] = byte;
+        }
+    }
+}
+
+// ========================================================
+// JNI 接口区
+// ========================================================
+
+// 【新增】SFFv1 专属解码接口
 extern "C" JNIEXPORT jintArray JNICALL
-Java_org_libsdl_app_DesktopSystemView_decodeSffV2C(JNIEnv* env, jobject thiz, jbyteArray data, jint format, jint width, jint height, jbyteArray palette) {
-    // 获取源数据指针
+Java_org_libsdl_app_DesktopSystemView_decodeSffV1C(JNIEnv* env, jobject thiz, jbyteArray data, jint width, jint height, jbyteArray palette) {
+    jsize src_len = env->GetArrayLength(data);
     jbyte* src_buf = env->GetByteArrayElements(data, NULL);
     int dst_len = width * height;
 
-    // 【极限优化2】放弃 C++ 的 std::vector，直接用 C 语言底层的 malloc 在堆区强行划一块内存，没有任何初始化开销
     uint8_t* pixels = (uint8_t*)malloc(dst_len);
-
-    if (format == 4) { // LZ5 压缩
-        lz5_decompress_hardcore((uint8_t*)src_buf, pixels, dst_len);
-    }
-
-    // 获取调色板指针
-    jbyte* pal_buf = env->GetByteArrayElements(palette, NULL);
     
-    // 创建返回给 Java 的数组
-    jintArray result = env->NewIntArray(dst_len);
+    // 调起 PCX 解码
+    pcx_decompress_hardcore((uint8_t*)src_buf, src_len, pixels, dst_len);
 
-    // 【极限优化3】使用 Critical 获取 Java 数组的直接内存指针！这会短暂挂起 Java 垃圾回收器(GC)，实现零拷贝直接写入，速度提升数倍！
+    jbyte* pal_buf = env->GetByteArrayElements(palette, NULL);
+    jintArray result = env->NewIntArray(dst_len);
     jint* out_pixels = (jint*)env->GetPrimitiveArrayCritical(result, 0);
 
     for (int i = 0; i < dst_len; ++i) {
         int idx = pixels[i] & 0xFF;
         if (idx == 0) {
-            out_pixels[i] = 0; // 0 索引永远是透明色
+            out_pixels[i] = 0; // 透明色
         } else {
-            int pal_idx = idx * 3;
-            // 位运算拼接 ARGB (Alpha直接拉满0xFF)
-            out_pixels[i] = (0xFF << 24) | ((pal_buf[pal_idx] & 0xFF) << 16) | ((pal_buf[pal_idx + 1] & 0xFF) << 8) | (pal_buf[pal_idx + 2] & 0xFF);
+            int p_idx = idx * 3; // v1 调色板通常是 RGB (没有 Alpha 通道，3字节一组)
+            int r = pal_buf[p_idx] & 0xFF;
+            int g = pal_buf[p_idx + 1] & 0xFF;
+            int b = pal_buf[p_idx + 2] & 0xFF;
+            out_pixels[i] = (0xFF << 24) | (r << 16) | (g << 8) | b;
         }
     }
 
-    // 释放 Critical 锁，恢复系统正常运行
     env->ReleasePrimitiveArrayCritical(result, out_pixels, 0);
-
-    // 擦屁股：释放内存，防闪退
-    free(pixels);
-    env->ReleaseByteArrayElements(data, src_buf, JNI_ABORT);
     env->ReleaseByteArrayElements(palette, pal_buf, JNI_ABORT);
+    env->ReleaseByteArrayElements(data, src_buf, JNI_ABORT);
+    free(pixels);
+
+    return result;
+}
+
+// SFFv2 / v2.01 综合解码接口
+extern "C" JNIEXPORT jintArray JNICALL
+Java_org_libsdl_app_DesktopSystemView_decodeSffV2C(JNIEnv* env, jobject thiz, jbyteArray data, jint format, jint width, jint height, jbyteArray palette) {
+    jbyte* src_buf = env->GetByteArrayElements(data, NULL);
+    int dst_len = width * height;
+
+    uint8_t* pixels = (uint8_t*)malloc(dst_len);
+
+    if (format == 4) { // LZ5
+        lz5_decompress_hardcore((uint8_t*)src_buf, pixels, dst_len);
+    } else if (format == 0) { // RAW
+        memcpy(pixels, src_buf, dst_len);
+    } else if (format == 2) { // RLE8
+        int src_ptr = 4; 
+        int dst_ptr = 0;
+        while (dst_ptr < dst_len) {
+            uint8_t byte = src_buf[src_ptr++];
+            if ((byte & 0xC0) == 0x40) { 
+                int count = byte & 0x3F;
+                uint8_t color = src_buf[src_ptr++];
+                for (int i = 0; i < count && dst_ptr < dst_len; ++i) {
+                    pixels[dst_ptr++] = color;
+                }
+            } else {
+                pixels[dst_ptr++] = byte;
+            }
+        }
+    } else if (format == 10) { // PNG
+        memcpy(pixels, src_buf, dst_len);
+    } else {
+        memset(pixels, 0, dst_len);
+    }
+
+    jbyte* pal_buf = env->GetByteArrayElements(palette, NULL);
+    jintArray result = env->NewIntArray(dst_len);
+    jint* out_pixels = (jint*)env->GetPrimitiveArrayCritical(result, 0);
+
+    for (int i = 0; i < dst_len; ++i) {
+        int idx = pixels[i] & 0xFF;
+        if (idx == 0) {
+            out_pixels[i] = 0;
+        } else {
+            int p_idx = idx * 4; // v2 调色板是 RGBA (4字节一组)
+            int r = pal_buf[p_idx] & 0xFF;
+            int g = pal_buf[p_idx + 1] & 0xFF;
+            int b = pal_buf[p_idx + 2] & 0xFF;
+            out_pixels[i] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+        }
+    }
+
+    env->ReleasePrimitiveArrayCritical(result, out_pixels, 0);
+    env->ReleaseByteArrayElements(palette, pal_buf, JNI_ABORT);
+    env->ReleaseByteArrayElements(data, src_buf, JNI_ABORT);
+    free(pixels);
 
     return result;
 }
