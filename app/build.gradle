@@ -63,7 +63,7 @@ android {
         // 👇 核心修复2：解除封印，正式让安卓去读取并编译底层的 C++ 文件！
         externalNativeBuild {
             ndkBuild {
-                path 'jni/Android.mk'
+                path 'jni/src/Android.mk'
             }
         }
     }
