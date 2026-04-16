@@ -1000,6 +1000,9 @@ public class DesktopSystemView extends Dialog {
     // ==========================================
     // 💥 终极 SFF 引擎：绝对修正版 & 全格式制霸引擎
     // ==========================================
+    // ==========================================
+    // 💥 终极复合 SFF 解析引擎 (Smart Composite Engine)
+    // ==========================================
     public static class SffFrame {
         public int offset;
         public int length;
@@ -1008,12 +1011,36 @@ public class DesktopSystemView extends Dialog {
         public int width;
         public int height;
         public int format;
+        public int palIndex; // 专属调色板索引
         public boolean sharedPal;
         public Bitmap cachedBmp;
         public boolean isV2;
     }
 
+    // 动态调色板矩阵：支持同时挂载多套配色
+    private byte[][] v2Palettes = new byte[256][768];
     private byte[] globalSharedPalette = new byte[768];
+
+    // 🛠️ 核心工具：ZLIB 智能脱壳器
+    private byte[] smartZlibUnwrap(byte[] input) {
+        if (input.length > 2 && (input[0] == 0x78) && 
+           (input[1] == (byte)0x9C || input[1] == (byte)0xDA || input[1] == (byte)0x01)) {
+            try {
+                java.util.zip.Inflater inflater = new java.util.zip.Inflater();
+                inflater.setInput(input);
+                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream(input.length * 2);
+                byte[] buf = new byte[16384];
+                while (!inflater.finished()) {
+                    int count = inflater.inflate(buf);
+                    if (count == 0) break;
+                    bos.write(buf, 0, count);
+                }
+                inflater.end();
+                return bos.toByteArray();
+            } catch (Exception e) { return input; }
+        }
+        return input;
+    }
 
     private List<SffFrame> scanSffFrames(File sffFile) {
         List<SffFrame> frameList = new ArrayList<>();
@@ -1023,11 +1050,8 @@ public class DesktopSystemView extends Dialog {
             byte[] sig = new byte[8]; raf.read(sig);
             if (!new String(sig, "US-ASCII").equals("Elecbyte")) return frameList;
 
-            // 🚨 致命 Bug 修复：版本号永远在 Offset 8！不是 12！
-            raf.seek(8); 
-            byte[] ver = new byte[4]; raf.read(ver);
-            // 只要版本字节里包含 2，就是 v2.0 或 v2.01
-            boolean isV2 = (ver[0] == 2 || ver[1] == 2 || ver[2] == 2 || ver[3] == 2); 
+            raf.seek(8); byte[] ver = new byte[4]; raf.read(ver);
+            boolean isV2 = (ver[0] == 2 || ver[1] == 2 || ver[2] == 2 || ver[3] == 2);
 
             if (isV2) {
                 raf.seek(32); int spriteNodeOffset = Integer.reverseBytes(raf.readInt());
@@ -1039,24 +1063,27 @@ public class DesktopSystemView extends Dialog {
 
                 if (numSprites < 0 || numSprites > 90000) return frameList;
 
-                // 读取 v2 调色板
+                // 构建调色板矩阵
                 if (numPalettes > 0) {
-                    raf.seek(palNodeOffset + 8);
-                    int palDataOffset = Integer.reverseBytes(raf.readInt());
-                    int palDataLength = Integer.reverseBytes(raf.readInt());
-                    if (palDataLength > 0 && palDataLength <= 4096) {
-                        raf.seek(ldataOffset + palDataOffset);
-                        byte[] v2pal = new byte[palDataLength]; raf.read(v2pal);
-                        int colorsToRead = Math.min(256, palDataLength / 4);
-                        for(int c=0; c<colorsToRead; c++) {
-                            globalSharedPalette[c*3]   = v2pal[c*4];
-                            globalSharedPalette[c*3+1] = v2pal[c*4+1];
-                            globalSharedPalette[c*3+2] = v2pal[c*4+2];
+                    for(int p=0; p<numPalettes && p<256; p++) {
+                        raf.seek(palNodeOffset + p * 16 + 8);
+                        int pDataOffset = Integer.reverseBytes(raf.readInt());
+                        int pDataLength = Integer.reverseBytes(raf.readInt());
+                        if (pDataLength > 0 && pDataLength <= 4096) {
+                            raf.seek(ldataOffset + pDataOffset);
+                            byte[] v2palRaw = new byte[pDataLength]; raf.read(v2palRaw);
+                            byte[] cleanPal = smartZlibUnwrap(v2palRaw); // 调色板也可能被压缩！
+                            int colorsToRead = Math.min(256, cleanPal.length / 4);
+                            for(int c=0; c<colorsToRead; c++) {
+                                v2Palettes[p][c*3]   = cleanPal[c*4];
+                                v2Palettes[p][c*3+1] = cleanPal[c*4+1];
+                                v2Palettes[p][c*3+2] = cleanPal[c*4+2];
+                            }
                         }
                     }
                 }
 
-                // 遍历获取所有图像节点
+                // 扫描所有帧节点
                 for (int i = 0; i < numSprites; i++) {
                     raf.seek(spriteNodeOffset + i * 28);
                     short group = Short.reverseBytes(raf.readShort());
@@ -1068,26 +1095,24 @@ public class DesktopSystemView extends Dialog {
                     raf.skipBytes(1);
                     int dataOffset = Integer.reverseBytes(raf.readInt());
                     int dataLength = Integer.reverseBytes(raf.readInt());
-                    raf.skipBytes(2);
+                    short palIdx = Short.reverseBytes(raf.readShort());
                     short flags = Short.reverseBytes(raf.readShort());
 
-                    if (dataLength > 0) {
+                    if (dataLength > 0 && width > 0 && height > 0) {
                         SffFrame frame = new SffFrame();
-                        frame.isV2 = true;
-                        frame.group = group; frame.item = item;
-                        frame.width = width; frame.height = height;
-                        frame.format = format; frame.length = dataLength;
+                        frame.isV2 = true; frame.group = group; frame.item = item;
+                        frame.width = width; frame.height = height; frame.format = format;
+                        frame.length = dataLength; frame.palIndex = palIdx;
                         frame.offset = ((flags & 1) != 0 ? tdataOffset : ldataOffset) + dataOffset;
                         frameList.add(frame);
                     }
                 }
             } else {
-                // v1 格式解析
+                // v1 格式兼容
                 raf.seek(24); int totalImages = Integer.reverseBytes(raf.readInt());
                 raf.seek(28); int nextOffset = Integer.reverseBytes(raf.readInt());
                 int currentIndex = 0;
-                if (totalImages > 90000) totalImages = 90000;
-                while (nextOffset > 0 && currentIndex < totalImages) {
+                while (nextOffset > 0 && currentIndex < totalImages && currentIndex < 90000) {
                     raf.seek(nextOffset);
                     int nextSub = Integer.reverseBytes(raf.readInt());
                     int length = Integer.reverseBytes(raf.readInt());
@@ -1096,11 +1121,9 @@ public class DesktopSystemView extends Dialog {
                     short linked = Short.reverseBytes(raf.readShort()); byte sharedPal = raf.readByte();
 
                     if (length > 128) {
-                        SffFrame frame = new SffFrame();
-                        frame.isV2 = false;
+                        SffFrame frame = new SffFrame(); frame.isV2 = false;
                         frame.offset = nextOffset; frame.length = length;
-                        frame.group = group; frame.item = item;
-                        frame.sharedPal = (sharedPal != 0);
+                        frame.group = group; frame.item = item; frame.sharedPal = (sharedPal != 0);
                         frameList.add(frame);
                     }
                     nextOffset = nextSub; currentIndex++;
@@ -1114,77 +1137,69 @@ public class DesktopSystemView extends Dialog {
         if (frame.cachedBmp != null) return frame.cachedBmp;
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
             if (frame.isV2) {
-                byte[] compressedData = new byte[frame.length];
-                raf.seek(frame.offset);
-                raf.read(compressedData);
+                byte[] rawData = new byte[frame.length];
+                raf.seek(frame.offset); raf.read(rawData);
 
-                // 🌟 第一道防线：原生硬件解码 (针对 Ikemen 常见的 PNG 内嵌格式 Format 10/11/12)
-                Bitmap nativeBmp = android.graphics.BitmapFactory.decodeByteArray(compressedData, 0, compressedData.length);
-                if (nativeBmp != null) {
-                    frame.cachedBmp = nativeBmp; return nativeBmp;
+                // ⚡ 漏斗 1：智能脱壳
+                byte[] decodedData = smartZlibUnwrap(rawData);
+
+                // ⚡ 漏斗 2：PNG 硬解直通车 (Format 10, 11, 12)
+                if (frame.format >= 10 && frame.format <= 12) {
+                    Bitmap pngBmp = android.graphics.BitmapFactory.decodeByteArray(decodedData, 0, decodedData.length);
+                    if (pngBmp != null) { frame.cachedBmp = pngBmp; return pngBmp; }
                 }
 
-                int[] pixels = null;
-                // 🌟 第二道防线：尝试 C++ 极速引擎解码 (安全沙箱运行)
-                try {
-                    pixels = decodeSffV2C(compressedData, frame.format, frame.width, frame.height, globalSharedPalette);
-                } catch (Throwable t) {}
+                // ⚡ 漏斗 3：全格式矩阵软解
+                int[] pixels = new int[frame.width * frame.height];
+                byte[] targetPal = (frame.palIndex >= 0 && frame.palIndex < 256) ? v2Palettes[frame.palIndex] : v2Palettes[0];
 
-                // 🌟 第三道防线：C++无响应时，启动纯 Java 像素级软解
-                if (pixels == null || pixels.length == 0) {
-                    pixels = new int[frame.width * frame.height];
-                    if (frame.format == 4) { // LZ5
-                        int srcP = 4, dstP = 0, dstL = pixels.length;
-                        int[] tempPixels = new int[dstL];
-                        while(dstP < dstL && srcP < compressedData.length) {
-                            int ctrl = compressedData[srcP++] & 0xFF;
-                            for(int i=0; i<8 && dstP < dstL && srcP < compressedData.length; ++i) {
-                                if ((ctrl & (1<<i)) != 0) {
-                                    if(srcP + 1 >= compressedData.length) break;
-                                    int pos = (compressedData[srcP]&0xFF) | ((compressedData[srcP+1]&0xFF)<<8); srcP += 2;
-                                    int offset = (pos >> 5) + 1; int count = (pos & 0x1F) + 3;
-                                    if(count == 34) { if(srcP >= compressedData.length) break; count += compressedData[srcP++] & 0xFF; }
-                                    for(int j=0; j<count && dstP < dstL; ++j) {
-                                        int copyIdx = dstP - offset;
-                                        tempPixels[dstP] = (copyIdx >= 0) ? tempPixels[copyIdx] : 0;
-                                        dstP++;
-                                    }
-                                } else { tempPixels[dstP++] = compressedData[srcP++] & 0xFF; }
-                            }
+                if (frame.format == 4) { // 究极 LZ5 解码器
+                    int srcP = 4, dstP = 0, dstL = pixels.length;
+                    int[] temp = new int[dstL];
+                    while (srcP < decodedData.length && dstP < dstL) {
+                        int ctrl = decodedData[srcP++] & 0xFF;
+                        for (int i = 0; i < 8 && dstP < dstL && srcP < decodedData.length; ++i) {
+                            if ((ctrl & (1 << i)) != 0) { 
+                                if (srcP + 1 >= decodedData.length) break;
+                                int pos = (decodedData[srcP]&0xFF) | ((decodedData[srcP+1]&0xFF)<<8); srcP+=2;
+                                int offset = (pos >> 5) + 1; int count = (pos & 0x1F) + 3;
+                                if (count == 34) { if (srcP >= decodedData.length) break; count += decodedData[srcP++] & 0xFF; }
+                                for (int j = 0; j < count && dstP < dstL; ++j) {
+                                    int copyIdx = dstP - offset; temp[dstP++] = (copyIdx >= 0) ? temp[copyIdx] : 0;
+                                }
+                            } else { temp[dstP++] = decodedData[srcP++] & 0xFF; }
                         }
-                        for(int i=0; i<dstL; i++) {
-                            int idx = tempPixels[i] & 0xFF;
-                            if(idx != 0) pixels[i] = 0xFF000000 | ((globalSharedPalette[idx*3]&0xFF)<<16) | ((globalSharedPalette[idx*3+1]&0xFF)<<8) | (globalSharedPalette[idx*3+2]&0xFF);
-                        }
-                    } else if (frame.format == 2 || frame.format == 3) { // RLE8 / RLE5
-                        int srcP = 4, dstP = 0, dstL = pixels.length;
-                        while(dstP < dstL && srcP < compressedData.length) {
-                            int ctrl = compressedData[srcP++] & 0xFF;
-                            if ((ctrl & 0xC0) == 0x40) {
-                                int count = ctrl & 0x3F;
-                                if(srcP >= compressedData.length) break;
-                                int color = compressedData[srcP++] & 0xFF;
-                                for(int i=0; i<count && dstP < dstL; i++) pixels[dstP++] = color;
-                            } else { pixels[dstP++] = ctrl; }
-                        }
-                        for(int i=0; i<dstL; i++) {
-                            int idx = pixels[i] & 0xFF;
-                            if(idx != 0) pixels[i] = 0xFF000000 | ((globalSharedPalette[idx*3]&0xFF)<<16) | ((globalSharedPalette[idx*3+1]&0xFF)<<8) | (globalSharedPalette[idx*3+2]&0xFF);
-                        }
-                    } else if (frame.format == 0) { // RAW 未压缩格式
-                        for(int i=0; i<pixels.length && i<compressedData.length; i++) {
-                            int idx = compressedData[i] & 0xFF;
-                            if(idx != 0) pixels[i] = 0xFF000000 | ((globalSharedPalette[idx*3]&0xFF)<<16) | ((globalSharedPalette[idx*3+1]&0xFF)<<8) | (globalSharedPalette[idx*3+2]&0xFF);
-                        }
+                    }
+                    for (int i = 0; i < dstL; i++) {
+                        int idx = temp[i] & 0xFF;
+                        pixels[i] = (idx == 0) ? 0 : 0xFF000000 | ((targetPal[idx*3]&0xFF)<<16) | ((targetPal[idx*3+1]&0xFF)<<8) | (targetPal[idx*3+2]&0xFF);
+                    }
+                } else if (frame.format == 2 || frame.format == 3) { // RLE
+                    int srcP = 4, dstP = 0, dstL = pixels.length;
+                    while (dstP < dstL && srcP < decodedData.length) {
+                        int ctrl = decodedData[srcP++] & 0xFF;
+                        if ((ctrl & 0xC0) == 0x40) {
+                            int count = ctrl & 0x3F; if(srcP >= decodedData.length) break;
+                            int color = decodedData[srcP++] & 0xFF;
+                            for (int i=0; i<count && dstP<dstL; i++) pixels[dstP++] = color;
+                        } else { pixels[dstP++] = ctrl; }
+                    }
+                    for (int i=0; i<dstL; i++) {
+                        int idx = pixels[i] & 0xFF;
+                        pixels[i] = (idx == 0) ? 0 : 0xFF000000 | ((targetPal[idx*3]&0xFF)<<16) | ((targetPal[idx*3+1]&0xFF)<<8) | (targetPal[idx*3+2]&0xFF);
+                    }
+                } else if (frame.format == 0) { // RAW
+                    for (int i=0; i<dstL && i<decodedData.length; i++) {
+                        int idx = decodedData[i] & 0xFF;
+                        pixels[i] = (idx == 0) ? 0 : 0xFF000000 | ((targetPal[idx*3]&0xFF)<<16) | ((targetPal[idx*3+1]&0xFF)<<8) | (targetPal[idx*3+2]&0xFF);
                     }
                 }
 
                 Bitmap bmp = Bitmap.createBitmap(pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888);
                 frame.cachedBmp = bmp; return bmp;
             } else {
-                // v1 格式原生解码
-                raf.seek(frame.offset + 32); 
-                byte[] pcxHeader = new byte[128]; raf.read(pcxHeader);
+                // v1 格式原生完美解码保持不变
+                raf.seek(frame.offset + 32); byte[] pcxHeader = new byte[128]; raf.read(pcxHeader);
                 int xmin = (pcxHeader[4] & 0xFF) | ((pcxHeader[5] & 0xFF) << 8); int ymin = (pcxHeader[6] & 0xFF) | ((pcxHeader[7] & 0xFF) << 8);
                 int xmax = (pcxHeader[8] & 0xFF) | ((pcxHeader[9] & 0xFF) << 8); int ymax = (pcxHeader[10] & 0xFF) | ((pcxHeader[11] & 0xFF) << 8);
                 int width = xmax - xmin + 1; int height = ymax - ymin + 1;
@@ -1217,13 +1232,13 @@ public class DesktopSystemView extends Dialog {
             }
         } catch (Throwable t) { 
             t.printStackTrace(); 
-            return createTextBitmap("无法解析格式", "支持的通道已用尽"); 
+            return createTextBitmap("引擎超载", t.getMessage() != null ? t.getMessage() : "未知异常"); 
         }
     }
 
     private Bitmap extractPreviewFromSff(File sffFile) {
         List<SffFrame> frames = scanSffFrames(sffFile);
-        if (frames.isEmpty()) return createTextBitmap(sffFile.getName(), "解析失败或无内容");
+        if (frames.isEmpty()) return createTextBitmap(sffFile.getName(), "文件损坏或格式受限");
         for (SffFrame f : frames) { if (f.group == 9000) return decodeSingleFrame(sffFile, f); }
         return decodeSingleFrame(sffFile, frames.get(0));
     }
@@ -1237,14 +1252,8 @@ public class DesktopSystemView extends Dialog {
         return bmp;
     }
 
-    private void updateUI(final TextView status, final String msg) {
-        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
-            if (status != null) status.setText("状态: " + msg);
-        });
-    }
-
     // ==========================================
-    // 🎞️ 终极模块：带属性组下拉选择与导出的播放视窗
+    // 🎞️ 高级视窗：带动态调试信息的播放器
     // ==========================================
     private void showAssetViewerWindow(String charName, File sffFile) {
         final String winTitle = "🎨 检视: " + charName;
@@ -1261,13 +1270,14 @@ public class DesktopSystemView extends Dialog {
         final boolean[] isPlaying = {false}; 
 
         LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL);
-        TextView groupLabel = new TextView(getContext()); groupLabel.setText(" 切换动作组 (Group): "); applyGlobalFontSettings(groupLabel, 1.0f, false); topBar.addView(groupLabel);
+        TextView groupLabel = new TextView(getContext()); groupLabel.setText(" 动作组: "); applyGlobalFontSettings(groupLabel, 1.0f, false); topBar.addView(groupLabel);
         
         Spinner groupSpinner = new Spinner(getContext());
         ArrayAdapter<Integer> adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, groupList);
         groupSpinner.setAdapter(adapter); topBar.addView(groupSpinner); root.addView(topBar);
 
-        TextView infoText = new TextView(getContext()); infoText.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density)); applyGlobalFontSettings(infoText, 0.9f, false); root.addView(infoText);
+        // 调试信息屏：这能让我们清楚看到引擎当前用的是什么格式和算法！
+        TextView infoText = new TextView(getContext()); infoText.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density)); applyGlobalFontSettings(infoText, 0.85f, false); infoText.setTextColor(Color.parseColor("#00FF00")); root.addView(infoText);
 
         FrameLayout canvasFrame = new FrameLayout(getContext());
         LinearLayout.LayoutParams canvasParams = new LinearLayout.LayoutParams(-1, 0, 1f); canvasParams.setMargins((int)(10*density), 0, (int)(10*density), 0); canvasFrame.setLayoutParams(canvasParams);
@@ -1281,7 +1291,7 @@ public class DesktopSystemView extends Dialog {
         canvasFrame.addView(previewImg, new FrameLayout.LayoutParams(-1, -1)); root.addView(canvasFrame);
 
         LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER); controls.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
-        Button btnPrev = createButton("⏪ 帧", "#333333"); Button btnPlay = createButton("▶️ 播放", "#FF9800"); Button btnNext = createButton("⏭️ 帧", "#333333"); 
+        Button btnPrev = createButton("⏪", "#333333"); Button btnPlay = createButton("▶️ 播放", "#FF9800"); Button btnNext = createButton("⏭️", "#333333"); 
         Button btnExportPng = createButton("💾 存PNG", "#4CAF50"); 
         LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(0, -2, 1f); btnP.setMargins((int)(2*density), 0, (int)(2*density), 0);
         
@@ -1296,8 +1306,9 @@ public class DesktopSystemView extends Dialog {
                 final Bitmap bmp = decodeSingleFrame(sffFile, targetFrame);
                 uiHandler.post(() -> {
                     if (bmp != null) previewImg.setImageBitmap(bmp);
-                    infoText.setText(String.format("进度: %d/%d | 属性组: %d, %d | 格式: %d", 
-                        currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.format));
+                    // 显示核心解密日志
+                    infoText.setText(String.format("帧: %d/%d | 组: %d,%d | 格式: %d | 调色板: %d | 尺寸: %dx%d", 
+                        currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.format, targetFrame.palIndex, targetFrame.width, targetFrame.height));
                 });
             }).start();
         };
@@ -1317,7 +1328,7 @@ public class DesktopSystemView extends Dialog {
         btnPlay.setOnClickListener(v -> {
             if (currentGroupFrames.isEmpty()) return;
             isPlaying[0] = !isPlaying[0];
-            btnPlay.setText(isPlaying[0] ? "⏸️ 暂停" : "▶️ 播放"); btnPlay.setBackgroundColor(isPlaying[0] ? Color.parseColor("#F44336") : Color.parseColor("#FF9800"));
+            btnPlay.setText(isPlaying[0] ? "⏸️" : "▶️ 播放"); btnPlay.setBackgroundColor(isPlaying[0] ? Color.parseColor("#F44336") : Color.parseColor("#FF9800"));
             if (isPlaying[0]) {
                 new Thread(() -> {
                     while (isPlaying[0]) {
@@ -1341,7 +1352,7 @@ public class DesktopSystemView extends Dialog {
                         java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
                         bmp.compress(Bitmap.CompressFormat.PNG, 100, fos); fos.close();
                         uiHandler.post(() -> Toast.makeText(getContext(), "✅ 已导出: " + outFile.getAbsolutePath(), Toast.LENGTH_LONG).show());
-                    } catch (Exception e) { e.printStackTrace(); }
+                    } catch (Exception e) {}
                 }
             }).start();
         });
@@ -1355,4 +1366,3 @@ public class DesktopSystemView extends Dialog {
         if (!groupList.isEmpty()) groupSpinner.setSelection(0);
     }
 }
-
