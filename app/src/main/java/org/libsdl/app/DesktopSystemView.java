@@ -1154,9 +1154,9 @@ public class DesktopSystemView extends Dialog {
                 byte[] rawData = new byte[frame.length];
                 raf.seek(frame.offset); raf.read(rawData);
 
+                // 🚨核心修复：Format 10-12 是纯 PNG 原件，绝对不能用 ZLIB 强制脱壳，否则会破坏 PNG 文件头导致黑屏！
                 if (frame.format >= 10 && frame.format <= 12) {
-                    byte[] decodedData = smartZlibUnwrap(rawData); 
-                    Bitmap pngBmp = android.graphics.BitmapFactory.decodeByteArray(decodedData, 0, decodedData.length);
+                    Bitmap pngBmp = android.graphics.BitmapFactory.decodeByteArray(rawData, 0, rawData.length);
                     if (pngBmp != null) { frame.cachedBmp = pngBmp; return pngBmp; }
                 }
 
