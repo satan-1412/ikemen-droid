@@ -56,7 +56,7 @@ inline void rle5_decompress_hardcore(const uint8_t* __restrict src, int src_len,
     }
 }
 
-// RLE8 解压沙箱
+// RLE8 解压沙箱 (完美修复版)
 inline void rle8_decompress_hardcore(const uint8_t* __restrict src, int src_len, uint8_t* __restrict dst, int dst_len) {
     int src_ptr = 4; 
     int dst_ptr = 0;
@@ -64,6 +64,11 @@ inline void rle8_decompress_hardcore(const uint8_t* __restrict src, int src_len,
         uint8_t byte = src[src_ptr++];
         if ((byte & 0xC0) == 0x40) { 
             int count = byte & 0x3F;
+            // 🚨 核心修复：RLE8 格式如果低6位为0，必须再读取下一字节作为长度，否则大量图像撕裂
+            if (count == 0) {
+                if (src_ptr >= src_len) break;
+                count = src[src_ptr++];
+            }
             if (src_ptr >= src_len) break;
             uint8_t color = src[src_ptr++];
             for (int i = 0; i < count && dst_ptr < dst_len; ++i) {
@@ -124,15 +129,14 @@ Java_org_libsdl_app_DesktopSystemView_decodeSffV2C(JNIEnv* env, jobject thiz, jb
             out_pixels[i] = (0xFF << 24) | (r << 16) | (g << 8) | b;
         } else {
             int idx = pixels[i] & 0xFF;
-            if (idx == 0) {
-                out_pixels[i] = 0; 
-            } else {
-                int p_idx = idx * 3;
-                int r = pal_buf[p_idx] & 0xFF;
-                int g = pal_buf[p_idx + 1] & 0xFF;
-                int b = pal_buf[p_idx + 2] & 0xFF;
-                out_pixels[i] = (0xFF << 24) | (r << 16) | (g << 8) | b;
-            }
+            int p_idx = idx * 4; // 🚨 V2 色表现在是4字节 (RGBA)
+            int r = pal_buf[p_idx] & 0xFF;
+            int g = pal_buf[p_idx + 1] & 0xFF;
+            int b = pal_buf[p_idx + 2] & 0xFF;
+            int a = pal_buf[p_idx + 3] & 0xFF; // 🚨 读取真实的Alpha透明度，完美修复 UI 黑框
+            
+            // SFFv2：透明度完全由色表的Alpha通道决定，动态支持半透明UI
+            out_pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
         }
     }
 
