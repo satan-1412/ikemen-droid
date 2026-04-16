@@ -54,6 +54,12 @@ import java.util.List;
 public class DesktopSystemView extends Dialog {
 
     public static DesktopSystemView instance;
+    // 补回全局 UI 更新工具
+    private void updateUI(final TextView status, final String msg) {
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+            if (status != null) status.setText("状态: " + msg);
+        });
+    }
 
     // 💥【新增】直接声明 C++ 底层的高速解码引擎接口
     public native int[] decodeSffV2C(byte[] data, int format, int width, int height, byte[] palette);
@@ -1188,8 +1194,9 @@ public class DesktopSystemView extends Dialog {
                         int idx = pixels[i] & 0xFF;
                         pixels[i] = (idx == 0) ? 0 : 0xFF000000 | ((targetPal[idx*3]&0xFF)<<16) | ((targetPal[idx*3+1]&0xFF)<<8) | (targetPal[idx*3+2]&0xFF);
                     }
-                } else if (frame.format == 0) { // RAW
-                    for (int i=0; i<dstL && i<decodedData.length; i++) {
+} else if (frame.format == 0) { // RAW
+    for (int i=0; i<pixels.length && i<decodedData.length; i++) {
+
                         int idx = decodedData[i] & 0xFF;
                         pixels[i] = (idx == 0) ? 0 : 0xFF000000 | ((targetPal[idx*3]&0xFF)<<16) | ((targetPal[idx*3+1]&0xFF)<<8) | (targetPal[idx*3+2]&0xFF);
                     }
