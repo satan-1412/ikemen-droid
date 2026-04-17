@@ -1,74 +1,98 @@
-# 📱 I.K.E.M.E.N-Droid-Pro (Enhanced Edition)
+# 📱 I.K.E.M.E.N-Droid-Pro
 
-![Build Status](https://img.shields.io/badge/Build-Success-brightgreen)
 ![Platform](https://img.shields.io/badge/Platform-Android%205.0+-3DDC84?logo=android)
 ![Arch](https://img.shields.io/badge/Arch-32bit%20%2F%2064bit-blue)
-![Roadmap](https://img.shields.io/badge/Roadmap-Desktop%20%26%20FF%20Lite-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-> **EN:** A professional-grade, high-performance reconstruction of the Ikemen-Go Android engine. Born from the frustration of mobile limitations, this Pro version aims to bridge the gap between PC-level customizability and mobile portability.
->
-> **CN:** 这是一个专业级、高性能的 Ikemen-Go 安卓引擎重构版本。诞生于对移动端诸多限制的痛点，本 Pro 版致力于打破系统壁垒，让安卓端拥有媲美 PC 级的自定义自由度与流畅体验。
+*(Scroll down for the Chinese version / 中文版请向下滚动)*
 
 ---
 
-## 🥊 Upstream vs Pro: 解决痛点与技术跨越
+##  English Version
 
-The original Android port provided a solid foundation, but left many creators and players frustrated. Here is how **Ikemen-Droid-Pro** solves these legacy issues:
-原版安卓端提供了优秀的基础框架，但在实际游玩与修改中存在诸多痛点。以下是本 **Pro 版** 带来的核心变革：
+A heavily modified and enhanced fork of the original Ikemen-Go Android port. We have completely rewritten the UI and input systems from scratch, significantly outperforming the original version in terms of mobile experience and performance.
 
-| Feature (特性) | Original Upstream (官方原版痛点) | Ikemen-Droid-Pro (核心优化) |
-| :--- | :--- | :--- |
-| **Input Latency<br>(输入延迟)** | 🛑 Rigid XML UI (`ControllerOverlay`), prone to touch delays and hard to customize. <br>*(老旧的 XML 布局，触控存在粘滞感，且难以调整按键位置。)* | 🚀 **Dynamic Java View:** Direct keyboard simulation via custom Java architecture. Zero-delay inputs. <br>*(弃用 XML，采用动态 Java 视图直接模拟键盘指令，实现电竞级零延迟。)* |
-| **Controllers<br>(手柄适配)** | 🛑 Relies heavily on third-party screen mapping apps. <br>*(极度依赖第三方屏幕映射软件，体验割裂。)* | 🚀 **Native Gamepad:** Built-in logic for physical HID controllers and gamepads. <br>*(原生集成物理手柄与控制器识别逻辑，即插即玩。)* |
-| **Modpacks<br>(大型整合包)** | 🛑 Limited file reading scope; crashes easily on massive complete builds. <br>*(文件读取限制多，加载数百个角色的大型整合包极易闪退。)* | 🚀 **Advanced I/O:** Optimized `AssetExtractor` for direct and stable loading of massive external modpacks. <br>*(优化文件 IO 与解包逻辑，稳定直读外置超大整合包。)* |
-| **Architecture<br>(架构兼容)** | 🛑 Primarily targets modern 64-bit devices. <br>*(偏向于现代高版本 64位 设备，旧机型易被淘汰。)* | 🚀 **Universal Arch:** Full support for both **32-bit (armeabi-v7a)** and **64-bit (arm64-v8a)**, Android 5.0+. <br>*(兼顾情怀，完美支持 32位 与 64位 架构，最低支持安卓 5.0。)* |
+### ✨ Original vs. Pro Version (Advantages)
 
----
+* **Input & Control System:**
+  * *Original:* Uses a legacy, static XML-based (`ControllerOverlay`) layout resulting in high touch latency and stiff controls.
+  * *Pro Version:* **Completely Original Java UI Architecture**. Implemented a custom `DynamicGamepadView` that directly simulates underlying keyboard inputs. This provides zero-delay, smooth touch responsiveness, and a vastly superior control feel.
+* **External Controller Support:**
+  * *Original:* Lacks proper native support for external gamepads.
+  * *Pro Version:* **Native Gamepad Integration**. Added comprehensive, native mapping logic for external physical HID controllers and gamepads.
+* **Large Modpack Compatibility:**
+  * *Original:* Prone to crashing and instability when loading large custom MUGEN/Ikemen builds due to unoptimized file reading.
+  * *Pro Version:* **Optimized File I/O**. Completely reworked the `AssetExtractor` and file path logic, ensuring highly stable loading of massive custom builds and modpacks directly from external storage.
+* **Broad Architecture Support:** Maintains comprehensive support for both **32-bit (armeabi-v7a)** and **64-bit (arm64-v8a)**, keeping older devices alive with a minimum requirement of Android 5.0.
 
-## 🚀 Future Roadmap: Desktop Mode & Built-in Tools (开发路线图)
+### 🚀 Development Roadmap
 
-We are not just making a game player; we are building an engine workstation for Android. 
-我们不仅仅是在做一个游戏播放器，更是在打造一个移动端的引擎工作站。
+* **[WIP] Desktop System View:** Currently working on a built-in desktop-style UI layout to make file management and character selection easier within the app.
+* **[Planned] Lightweight Tool (ff):** Planning to recreate a simple, lightweight mobile tool for basic parameter tweaking and engine debugging.
 
-* 🖥️ **Desktop System UI (桌面模式视图) - [WIP / 预研中]**
-  * *EN:* A revolutionary desktop-style UI running inside the engine, designed to manage files, tweak settings, and browse characters without leaving the app.
-  * *CN:* 引擎内嵌的革命性桌面风格 UI，让你无需切出应用即可管理文件、调整配置。
-* 🛠️ **Fighter Factory Lite (简易版 FF 调试工具) - [Concept / 概念预告]**
-  * *EN:* Attempting to recreate a simplified version of the legendary "Fighter Factory" directly on Android. Expect basic tools for editing `.cns`, checking hitboxes, and managing sprite palettes on the go.
-  * *CN:* **重磅预告：** 尝试在移动端复刻一个简易版的“梦工厂” (Fighter Factory)。未来你将有望直接在手机上修改 `.cns` 代码、查看 Hitbox 碰撞框以及调试基础素材！
+### 📦 Instructions for building (debug)
 
----
+**Requirements:** Android Studio, Android NDK r27d.
 
-## 🛠️ Build Instructions / 构建指南
+1. Build the main I.K.E.M.E.N-Go engine for Android using Android NDK r27d. Point the environment variable `ANDROID_NDK_HOME` to your NDK location before running `build/build.sh android` on Linux or macOS (Windows builds currently not supported).
+2. Place all the lib `.so` files from the `lib/` folder and `build/libmain.so` into `src/main/jniLibs/arm64-v8a/` (and `armeabi-v7a/` for 32-bit).
+3. Place game assets in `src/main/assets` exactly as defined in `src/main/assets/manifest.txt`. 
+4. Open a terminal to the root of this project in Android Studio.
+5. Run `./gradlew clean assembleDebug`
+6. The output APK will be in `app/build/outputs/apk/debug/app-debug.apk`.
 
-### Requirements / 环境
-* Android Studio
-* Android NDK r27d
+### ⚖️ LICENSE NOTICE & Credits
 
-### Steps / 编译步骤
-1.  **[EN]** Build the core engine using `build/build.sh android` on Linux/macOS (set `ANDROID_NDK_HOME`).
-    **[CN]** 在 Linux/macOS 环境下运行 `build/build.sh android` 编译核心（需提前配置 `ANDROID_NDK_HOME`）。
-2.  **[EN]** Place all generated lib `.so` files into `src/main/jniLibs/arm64-v8a/` (and `armeabi-v7a/` for 32-bit).
-    **[CN]** 将生成的 `.so` 库文件分类放入 `src/main/jniLibs/arm64-v8a/` 与 `armeabi-v7a/` 目录中。
-3.  **[EN]** Put game assets in `src/main/assets` and generate a matching `manifest.txt`.
-    **[CN]** 将整合包资源放入 `src/main/assets` 并生成对应的 `manifest.txt` 文件。
-4.  **[EN]** Run `./gradlew clean assembleDebug` via terminal.
-    **[CN]** 执行 `./gradlew clean assembleDebug` 开始打包。
-5.  **[EN]** Output APK will be located at `app/build/outputs/apk/debug/`.
-    **[CN]** 获取你专属的 Pro 版 APK 位于 `app/build/outputs/apk/debug/`。
+This project is a modified fork of I.K.E.M.E.N-Go.
+
+* **Engine Core Logic:** (C) 2026 Jesuszilla, (C) 2026 Sohil876.
+* **New UI & Input System:** This version features a **completely original UI architecture** and input mapping system developed specifically for this Pro fork, entirely replacing and deprecating the legacy Android port components.
+
+The original license is included in `LICENSE.txt`.
+
+<br><br>
 
 ---
+---
 
-## ⚖️ License & Credits / 版权与致谢
+##  中文版
 
-This fork respects and retains the core open-source logic from the upstream repository. 
-本项目严格遵守并保留上游原版仓库的开源协议与核心代码版权。
+本项目基于原版 Ikemen-Go 安卓端进行了深度重构与增强。我们从零开始彻底重写了 UI 与输入系统，在移动端操作体验、外设兼容性以及大型整合包的支持上全面超越原版。
 
-**Original I.K.E.M.E.N-Go specific logic copyrights:**
-* (C) 2026 Jesuszilla & Sohil876
+### ✨ 原版与 Pro 版优势对比
 
-**Pro Version Revisions & Additions:**
-* Modifications to Input Architecture (Java Overhaul), File IO, and UI logic are maintained by this fork.
+* **按键与输入系统：**
+  * *原版：* 采用老旧的静态 XML (`ControllerOverlay`) 布局，触控延迟高，手感僵硬。
+  * *Pro 版：* **完全自主开发的 Java UI 架构**。引入了自定义的 `DynamicGamepadView` 视图，通过底层直接模拟键盘输入，实现了零延迟、极致顺滑的触控反馈，大幅提升了格斗游戏的手感。
+* **外设控制支持：**
+  * *原版：* 缺乏完善的原生手柄支持。
+  * *Pro 版：* **原生手柄支持**。完美接入并重写了外部物理手柄（HID 控制器）的底层映射逻辑，即插即用。
+* **大型整合包兼容性：**
+  * *原版：* 在读取大型完整整合包时，极易因内存溢出或 I/O 效率低下导致闪退。
+  * *Pro 版：* **极致优化的 I/O 逻辑**。重构了 `AssetExtractor` 与文件路径读取逻辑，现已支持从外置存储极其稳定地直读超大型游戏整合包。
+* **兼顾老旧机型：** 在完美支持 **64位 (arm64-v8a)** 的同时，保留了对 **32位 (armeabi-v7a)** 架构的支持，系统最低要求仅为 Android 5.0。
 
-*Special thanks to the original Android port translators (Lasombra Demon, MotorRoach, Vans, dionednd) and the entire Ikemen-Engine community.*
+### 🚀 开发计划
+
+* **[开发中] 引擎桌面模式：** 正在尝试为引擎编写一个内嵌的桌面风格 UI 视图，旨在方便玩家直接在应用内管理文件和选择内容。
+* **[计划中] 轻量级调试工具 (ff)：** 打算在后期尝试复刻一个简易、轻型的手机端工具，方便进行一些基础的参数修改和日常调试。
+
+### 📦 编译与构建指南
+
+**环境要求：** Android Studio，Android NDK r27d。
+
+1. 在 Linux 或 macOS 下，使用 Android NDK r27d 编译核心引擎。运行 `build/build.sh android` 前需配置好 `ANDROID_NDK_HOME` 环境变量（暂不支持 Windows 构建）。
+2. 将生成的 `.so` 库文件分类放入 `src/main/jniLibs/arm64-v8a/` 与 `armeabi-v7a/` 目录中。
+3. 按照 `src/main/assets/manifest.txt` 中的定义，将游戏资源文件放入 `src/main/assets`。
+4. 在 Android Studio 的终端中定位到项目根目录。
+5. 执行打包命令：`./gradlew clean assembleDebug`
+6. 编译生成的 APK 位于：`app/build/outputs/apk/debug/app-debug.apk`。
+
+### ⚖️ 版权与致谢声明
+
+本项目为 I.K.E.M.E.N-Go 的修改分支：
+
+* **引擎核心逻辑版权：** (C) 2026 Jesuszilla, (C) 2026 Sohil876。
+* **全新 UI 与输入系统：** 本项目采用了**完全自主开发的 UI 架构**与输入映射系统，已彻底弃用并替换了原版安卓移植的所有相关前端组件。
+
+原始核心引擎许可协议详见 `LICENSE.txt`。
