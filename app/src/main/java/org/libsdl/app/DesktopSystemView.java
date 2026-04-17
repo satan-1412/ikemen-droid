@@ -54,9 +54,6 @@ import java.util.HashSet;
 import java.util.List;
 import android.os.Handler;
 
-/**
- * Ikemen GO 真·PC桌面系统引擎 (真视窗回归 / 终极沉浸模式 / 极致SFF解析)
- */
 public class DesktopSystemView extends Dialog {
 
     public static DesktopSystemView instance;
@@ -107,10 +104,6 @@ public class DesktopSystemView extends Dialog {
     public int fontShadowColor = Color.BLACK;
 
     private static File lastVisitedDir = Environment.getExternalStorageDirectory();
-
-    private HashMap<String, String> characterSffMap = new HashMap<>(); 
-    private HashSet<String> boundSffFiles = new HashSet<>();           
-    private ArrayList<String> standaloneSffFiles = new ArrayList<>();  
 
     public DesktopSystemView(Context context) {
         super(context, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
@@ -210,12 +203,13 @@ public class DesktopSystemView extends Dialog {
         });
         taskbar.addView(startBtn);
 
+        // 🔥 彻底解放底层滚动拦截，实现德芙般丝滑的任务栏
         HorizontalScrollView taskbarScroll = new HorizontalScrollView(getContext());
         taskbarScroll.setHorizontalScrollBarEnabled(false);
         taskbarAppsLayout = new LinearLayout(getContext());
         taskbarAppsLayout.setOrientation(LinearLayout.HORIZONTAL);
         taskbarAppsLayout.setGravity(Gravity.CENTER_VERTICAL);
-        taskbarAppsLayout.setPadding((int)(15*density), 0, 0, 0);
+        taskbarAppsLayout.setPadding((int)(15*density), 0, (int)(20*density), 0);
         taskbarScroll.addView(taskbarAppsLayout, new ViewGroup.LayoutParams(-2, -1));
         taskbar.addView(taskbarScroll, new LinearLayout.LayoutParams(0, -1, 1f));
 
@@ -367,6 +361,36 @@ public class DesktopSystemView extends Dialog {
         });
     }
 
+    // 🔥 右键菜单：为任务栏构建专属沉浸式关闭菜单
+    private void showContextMenu(View anchor, String title, Runnable onClose) {
+        Dialog menuDialog = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar);
+        menuDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        
+        LinearLayout menu = new LinearLayout(getContext());
+        menu.setOrientation(LinearLayout.VERTICAL);
+        menu.setBackgroundColor(Color.parseColor("#2D2D30"));
+        GradientDrawable border = new GradientDrawable();
+        border.setColor(Color.parseColor("#2D2D30"));
+        border.setStroke((int)(1*density), Color.parseColor("#3F3F46"));
+        menu.setBackground(border);
+        menu.setPadding((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
+        
+        Button btnClose = createButton("❌ 强制关闭", "#E81123");
+        btnClose.setOnClickListener(v -> { onClose.run(); menuDialog.dismiss(); });
+        menu.addView(btnClose);
+        
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, -2);
+        int[] loc = new int[2]; anchor.getLocationOnScreen(loc);
+        params.leftMargin = loc[0]; 
+        params.topMargin = Math.max(0, loc[1] - (int)(60*density));
+        
+        FrameLayout root = new FrameLayout(getContext());
+        root.addView(menu, params);
+        root.setOnClickListener(v -> menuDialog.dismiss());
+        menuDialog.setContentView(root); 
+        menuDialog.show();
+    }
+
     private void openAppWindow(String windowTitle, View contentView, final Runnable onCloseInterceptor) {
         View existingWin = windowsLayer.findViewWithTag(windowTitle);
         if (existingWin != null) { existingWin.setVisibility(View.VISIBLE); existingWin.bringToFront(); return; }
@@ -386,34 +410,30 @@ public class DesktopSystemView extends Dialog {
         LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL);
         TextView btnMin = new TextView(getContext()); btnMin.setText(" ─ "); applyGlobalFontSettings(btnMin, 1.0f, true); btnMin.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density)); btnMin.setOnClickListener(v -> windowFrame.setVisibility(View.GONE)); controls.addView(btnMin);
 
-        // 🔥 新增：全屏与窗口还原按钮逻辑
+        // 🔥 修复自适应全屏：保留按键且避开下方任务栏
         final TextView btnMax = new TextView(getContext());
         btnMax.setText(" □ "); applyGlobalFontSettings(btnMax, 1.0f, true); btnMax.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density));
         final boolean[] isMaximized = {false};
-        final int[] savedBounds = new int[4]; // 记录 x, y, width, height
+        final int[] savedBounds = new int[4]; 
         
         btnMax.setOnClickListener(v -> {
             if (isMaximized[0]) {
-                // 还原
                 FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(savedBounds[2], savedBounds[3]);
-                windowFrame.setLayoutParams(lp);
-                windowFrame.setX(savedBounds[0]);
-                windowFrame.setY(savedBounds[1]);
-                btnMax.setText(" □ ");
-                isMaximized[0] = false;
+                windowFrame.setLayoutParams(lp); windowFrame.setX(savedBounds[0]); windowFrame.setY(savedBounds[1]);
+                btnMax.setText(" □ "); isMaximized[0] = false;
             } else {
-                // 最大化
-                savedBounds[0] = (int) windowFrame.getX();
-                savedBounds[1] = (int) windowFrame.getY();
-                savedBounds[2] = windowFrame.getWidth();
-                savedBounds[3] = windowFrame.getHeight();
+                savedBounds[0] = (int) windowFrame.getX(); savedBounds[1] = (int) windowFrame.getY();
+                savedBounds[2] = windowFrame.getWidth(); savedBounds[3] = windowFrame.getHeight();
                 
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -1);
-                windowFrame.setLayoutParams(lp);
-                windowFrame.setX(0);
-                windowFrame.setY(0);
-                btnMax.setText(" ❐ ");
-                isMaximized[0] = true;
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, 
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                );
+                lp.bottomMargin = (int)(50 * density); // 避开任务栏
+                windowFrame.setLayoutParams(lp); 
+                windowFrame.setX(0); windowFrame.setY(0); 
+                windowFrame.bringToFront();
+                btnMax.setText(" ❐ "); isMaximized[0] = true;
             }
         });
         controls.addView(btnMax);
@@ -434,7 +454,7 @@ public class DesktopSystemView extends Dialog {
         titleBar.setOnTouchListener(new View.OnTouchListener() {
             float dX, dY;
             @Override public boolean onTouch(View v, MotionEvent event) {
-                if (isMaximized[0]) return true; // 全屏状态禁止拖动
+                if (isMaximized[0]) return true; // 全屏禁用拖拽
                 if (event.getAction() == MotionEvent.ACTION_DOWN) { dX = windowFrame.getX() - mouseX; dY = windowFrame.getY() - mouseY; windowFrame.bringToFront(); } 
                 else if (event.getAction() == MotionEvent.ACTION_MOVE) { windowFrame.setX(mouseX + dX); windowFrame.setY(mouseY + dY); } return true;
             }
@@ -448,57 +468,27 @@ public class DesktopSystemView extends Dialog {
         GradientDrawable tbBg = new GradientDrawable(); tbBg.setColor(Color.parseColor("#22FFFFFF")); taskBtn.setBackground(tbBg);
         LinearLayout.LayoutParams tbParams = new LinearLayout.LayoutParams(-2, -1); tbParams.setMargins(0,0,(int)(5*density),0);
         
-        TextView tbText = new TextView(getContext()); tbText.setText("▤ " + windowTitle.split(" ")[0]); applyGlobalFontSettings(tbText, 1.1f, false); taskBtn.addView(tbText);
+        // 🔥 修复任务栏短名称过滤算法
+        String shortName = windowTitle.replace("🎨 检视: ", "").replace("📦 ", "").trim();
+        if (shortName.length() > 8) shortName = shortName.substring(0, 8) + "..";
+        TextView tbText = new TextView(getContext()); tbText.setText("▤ " + shortName); applyGlobalFontSettings(tbText, 1.1f, false); taskBtn.addView(tbText);
         
-        // 🔥 修复：任务栏拖动致命 BUG，重构为 TranslationX 相对位移算法，避免测量死锁崩溃
-        taskBtn.setOnTouchListener(new View.OnTouchListener() {
-            float startX; boolean isDragging = false;
-            @Override public boolean onTouch(View v, MotionEvent event) {
-                switch(event.getAction()) {
-                    case MotionEvent.ACTION_DOWN: 
-                        startX = event.getRawX(); 
-                        isDragging = false; 
-                        v.setBackgroundColor(Color.parseColor("#44FFFFFF")); 
-                        v.bringToFront(); 
-                        return true;
-                    case MotionEvent.ACTION_MOVE: 
-                        float dx = event.getRawX() - startX; 
-                        if (Math.abs(dx) > 10) isDragging = true; 
-                        if (isDragging) v.setTranslationX(dx); 
-                        return true;
-                    case MotionEvent.ACTION_UP:
-                    case MotionEvent.ACTION_CANCEL:
-                        v.setBackground(tbBg);
-                        if (isDragging) {
-                            float currentVisualX = v.getLeft() + v.getTranslationX() + v.getWidth() / 2f;
-                            int newIndex = -1;
-                            for (int i = 0; i < taskbarAppsLayout.getChildCount(); i++) {
-                                View child = taskbarAppsLayout.getChildAt(i);
-                                if (child == v) continue;
-                                float childCenter = child.getLeft() + child.getWidth() / 2f;
-                                if (currentVisualX < childCenter) {
-                                    newIndex = i;
-                                    break;
-                                }
-                            }
-                            
-                            taskbarAppsLayout.removeView(v);
-                            v.setTranslationX(0); // 清除绝对位移
-                            
-                            if (newIndex == -1 || newIndex >= taskbarAppsLayout.getChildCount()) {
-                                taskbarAppsLayout.addView(v, tbParams);
-                            } else {
-                                taskbarAppsLayout.addView(v, newIndex, tbParams);
-                            }
-                        } else { 
-                            if (windowFrame.getVisibility() == View.VISIBLE) windowFrame.setVisibility(View.GONE); 
-                            else { windowFrame.setVisibility(View.VISIBLE); windowFrame.bringToFront(); } 
-                        }
-                        return true;
-                } 
-                return false;
-            }
+        // 🔥 移除滑动拦截死区，恢复纯净的 Click 显隐与 LongClick 右键
+        taskBtn.setOnClickListener(v -> {
+            if (windowFrame.getVisibility() == View.VISIBLE) {
+                if (windowFrame.getZ() == windowsLayer.getChildCount()) windowFrame.setVisibility(View.GONE);
+                else windowFrame.bringToFront();
+            } else { windowFrame.setVisibility(View.VISIBLE); windowFrame.bringToFront(); }
         });
+        
+        taskBtn.setOnLongClickListener(v -> {
+            showContextMenu(v, shortName, () -> {
+                if (onCloseInterceptor != null) onCloseInterceptor.run();
+                else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); }
+            });
+            return true;
+        });
+        
         taskbarAppsLayout.addView(taskBtn, tbParams);
 
         int w = (int) (rootLayer.getWidth() * 0.70f); int h = (int) (rootLayer.getHeight() * 0.80f);
@@ -525,7 +515,6 @@ public class DesktopSystemView extends Dialog {
 
     private void openSettingsInAppWindow() {
         final String title = "⚙ 系统控制台";
-        
         final int b_bgAlpha = bgAlpha; final int b_gridSizeBase = gridSizeBase; final boolean b_showGrid = showGrid;
         final String b_customDesktopBg = customDesktopBg; final String b_customWindowBg = customWindowBg;
         final int b_bgMediaVolume = bgMediaVolume; final int b_winMediaVolume = winMediaVolume; final int b_taskbarAlpha = taskbarAlpha;
@@ -534,10 +523,8 @@ public class DesktopSystemView extends Dialog {
         final boolean b_fontShadowEnabled = fontShadowEnabled; final int b_fontShadowColor = fontShadowColor;
 
         Runnable performClose = () -> {
-            View win = windowsLayer.findViewWithTag(title);
-            if (win != null) windowsLayer.removeView(win);
-            View tbBtn = taskbarAppsLayout.findViewWithTag("tb_" + title);
-            if (tbBtn != null) taskbarAppsLayout.removeView(tbBtn);
+            View win = windowsLayer.findViewWithTag(title); if (win != null) windowsLayer.removeView(win);
+            View tbBtn = taskbarAppsLayout.findViewWithTag("tb_" + title); if (tbBtn != null) taskbarAppsLayout.removeView(tbBtn);
         };
 
         Runnable checkAndPromptClose = () -> {
@@ -557,9 +544,7 @@ public class DesktopSystemView extends Dialog {
                         performClose.run();
                     }
                 );
-            } else {
-                performClose.run();
-            }
+            } else performClose.run();
         };
 
         View content = buildSettingsContent(performClose);
@@ -1048,10 +1033,9 @@ public class DesktopSystemView extends Dialog {
             String sigStr = new String(signature).trim();
             if (!sigStr.equals("Elecbyte")) { raf.close(); return "未知格式"; }
             byte[] verBytes = new byte[4]; raf.seek(12); raf.read(verBytes); raf.close();
-            int ver3 = verBytes[0], ver2 = verBytes[1], ver1 = verBytes[2], ver0 = verBytes[3];
-            if (ver0 == 2) return "SFF v2.0";
-            else if (ver0 == 1) return "SFF v1.01";
-            else return "SFF v" + ver0 + "." + ver1;
+            if (verBytes[3] == 2 && verBytes[2] == 0) return "SFF v2.0";
+            else if (verBytes[3] == 1) return "SFF v1.01";
+            else return "SFF v" + verBytes[3] + "." + verBytes[2];
         } catch (Exception e) { return "文件异常"; }
     }
 
@@ -1102,7 +1086,7 @@ public class DesktopSystemView extends Dialog {
             if (!new String(sig, "US-ASCII").equals("Elecbyte")) return frameList;
 
             raf.seek(12); byte[] ver = new byte[4]; raf.read(ver);
-            boolean isV2 = (ver[0] == 2 || ver[1] == 2 || ver[2] == 2 || ver[3] == 2);
+            boolean isV2 = (ver[3] == 2 && ver[2] == 0); 
 
             if (isV2) {
                 raf.seek(36); int spriteNodeOffset = Integer.reverseBytes(raf.readInt());
@@ -1210,7 +1194,6 @@ public class DesktopSystemView extends Dialog {
 
     private Bitmap decodeSingleFrame(File sffFile, SffFrame frame) {
         if (frame.cachedBmp != null) return frame.cachedBmp;
-        // 防崩溃
         if (frame.width <= 0 || frame.height <= 0) return createTextBitmap("解析异常", "无效尺寸");
 
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
@@ -1219,7 +1202,7 @@ public class DesktopSystemView extends Dialog {
             raf.read(rawData);
 
             if (frame.isV2) {
-                // 🔥 独家修复：拦截 PNG 数据流，并强行注入 SFF 调色板 (解决 8位PNG 丢失 PLTE 黑屏)
+                // 🔥 终极防崩溃验证机制：先判断 PNG 结构，避免系统组件直接抛出致命异常
                 if (frame.format >= 10 && frame.format <= 12) {
                     int pngStart = 0;
                     for (int j = 0; j < Math.min(16, rawData.length - 4); j++) {
@@ -1232,61 +1215,57 @@ public class DesktopSystemView extends Dialog {
                     int finalStart = pngStart;
                     int finalLen = rawData.length - pngStart;
 
-                    if (frame.format == 10) {
-                        try {
-                            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-                            // 1. 写入标准的 8字节 PNG 签名 + 25字节 IHDR 头
-                            bos.write(rawData, pngStart, 33); 
-                            
-                            // 2. 注入 PLTE 调色板区块 (768字节)
-                            bos.write(new byte[]{0, 0, 3, 0}); 
-                            bos.write(new byte[]{'P', 'L', 'T', 'E'});
-                            byte[] palData = new byte[768];
-                            byte[] targetPal = (frame.palIndex >= 0 && frame.palIndex < 256) ? v2Palettes[frame.palIndex] : v2Palettes[0];
-                            if (targetPal == null) targetPal = new byte[1024];
-                            for (int p = 0; p < 256; p++) {
-                                palData[p*3] = targetPal[p*4];
-                                palData[p*3+1] = targetPal[p*4+1];
-                                palData[p*3+2] = targetPal[p*4+2];
+                    // 判断是否具备安全的调色板注入条件，防止乱入导致图片毁损
+                    if (frame.format == 10 && rawData.length >= pngStart + 33) {
+                        boolean hasPlte = false;
+                        for (int i = pngStart; i < rawData.length - 4; i++) {
+                            if (rawData[i] == 'P' && rawData[i+1] == 'L' && rawData[i+2] == 'T' && rawData[i+3] == 'E') {
+                                hasPlte = true; break;
                             }
-                            bos.write(palData);
-                            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
-                            crc.update(new byte[]{'P', 'L', 'T', 'E'});
-                            crc.update(palData);
-                            int crcVal = (int) crc.getValue();
-                            bos.write(new byte[]{(byte)(crcVal>>>24), (byte)(crcVal>>>16), (byte)(crcVal>>>8), (byte)crcVal});
-                            
-                            // 3. 注入 tRNS 透明区块 (强行指定 0 号索引绝对透明)
-                            bos.write(new byte[]{0, 0, 0, 1}); 
-                            bos.write(new byte[]{'t', 'R', 'N', 'S'});
-                            bos.write(new byte[]{0});
-                            crc.reset();
-                            crc.update(new byte[]{'t', 'R', 'N', 'S'});
-                            crc.update(new byte[]{0});
-                            crcVal = (int) crc.getValue();
-                            bos.write(new byte[]{(byte)(crcVal>>>24), (byte)(crcVal>>>16), (byte)(crcVal>>>8), (byte)crcVal});
-                            
-                            // 4. 拼接剩余的图像数据流 (IDAT 等)
-                            bos.write(rawData, pngStart + 33, rawData.length - pngStart - 33);
-                            finalPngData = bos.toByteArray();
-                            finalStart = 0;
-                            finalLen = finalPngData.length;
-                        } catch (Exception e) { 
-                            e.printStackTrace(); 
+                        }
+                        
+                        // 只为确实缺少 PLTE 的 8-bit PNG (Color Type == 3) 注入缺失区块
+                        boolean isIndexed = (rawData[pngStart + 25] == 3);
+
+                        if (isIndexed && !hasPlte) {
+                            try {
+                                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                                bos.write(rawData, pngStart, 33); 
+                                
+                                bos.write(new byte[]{0, 0, 3, 0}); 
+                                bos.write(new byte[]{'P', 'L', 'T', 'E'});
+                                byte[] palData = new byte[768];
+                                byte[] targetPal = (frame.palIndex >= 0 && frame.palIndex < 256) ? v2Palettes[frame.palIndex] : v2Palettes[0];
+                                if (targetPal == null) targetPal = new byte[1024];
+                                for (int p = 0; p < 256; p++) {
+                                    palData[p*3] = targetPal[p*4];
+                                    palData[p*3+1] = targetPal[p*4+1];
+                                    palData[p*3+2] = targetPal[p*4+2];
+                                }
+                                bos.write(palData);
+                                java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+                                crc.update(new byte[]{'P', 'L', 'T', 'E'}); crc.update(palData);
+                                int crcVal = (int) crc.getValue();
+                                bos.write(new byte[]{(byte)(crcVal>>>24), (byte)(crcVal>>>16), (byte)(crcVal>>>8), (byte)crcVal});
+                                
+                                bos.write(new byte[]{0, 0, 0, 1}); bos.write(new byte[]{'t', 'R', 'N', 'S'}); bos.write(new byte[]{0});
+                                crc.reset(); crc.update(new byte[]{'t', 'R', 'N', 'S'}); crc.update(new byte[]{0});
+                                crcVal = (int) crc.getValue();
+                                bos.write(new byte[]{(byte)(crcVal>>>24), (byte)(crcVal>>>16), (byte)(crcVal>>>8), (byte)crcVal});
+                                
+                                bos.write(rawData, pngStart + 33, rawData.length - pngStart - 33);
+                                finalPngData = bos.toByteArray();
+                                finalStart = 0;
+                                finalLen = finalPngData.length;
+                            } catch (Exception e) { }
                         }
                     }
 
                     BitmapFactory.Options opts = new BitmapFactory.Options();
                     opts.inMutable = true; 
-                    opts.inPreferredConfig = Bitmap.Config.ARGB_8888; 
                     Bitmap pngBmp = BitmapFactory.decodeByteArray(finalPngData, finalStart, finalLen, opts);
-                    if (pngBmp != null) { 
-                        frame.cachedBmp = pngBmp; 
-                        return pngBmp; 
-                    } else {
-                        android.util.Log.e("IkemenSff", "PNG强解析依然失败! 偏移:" + pngStart);
-                        return createTextBitmap("PNG出错", "无法渲染");
-                    }
+                    if (pngBmp != null) { frame.cachedBmp = pngBmp; return pngBmp; }
+                    return createTextBitmap("PNG解析失败", "格式不兼容");
                 }
 
                 byte[] palData = new byte[1024]; 
