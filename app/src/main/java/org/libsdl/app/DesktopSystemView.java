@@ -61,7 +61,6 @@ public class DesktopSystemView extends Dialog {
 
     public static DesktopSystemView instance;
     
-    // 🚨 把丢失的 updateUI 函数找回来了，消除编译错误
     private void updateUI(final TextView status, final String msg) {
         new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
             if (status != null) status.setText("状态: " + msg);
@@ -387,6 +386,38 @@ public class DesktopSystemView extends Dialog {
         LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL);
         TextView btnMin = new TextView(getContext()); btnMin.setText(" ─ "); applyGlobalFontSettings(btnMin, 1.0f, true); btnMin.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density)); btnMin.setOnClickListener(v -> windowFrame.setVisibility(View.GONE)); controls.addView(btnMin);
 
+        // 🔥 新增：全屏与窗口还原按钮逻辑
+        final TextView btnMax = new TextView(getContext());
+        btnMax.setText(" □ "); applyGlobalFontSettings(btnMax, 1.0f, true); btnMax.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density));
+        final boolean[] isMaximized = {false};
+        final int[] savedBounds = new int[4]; // 记录 x, y, width, height
+        
+        btnMax.setOnClickListener(v -> {
+            if (isMaximized[0]) {
+                // 还原
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(savedBounds[2], savedBounds[3]);
+                windowFrame.setLayoutParams(lp);
+                windowFrame.setX(savedBounds[0]);
+                windowFrame.setY(savedBounds[1]);
+                btnMax.setText(" □ ");
+                isMaximized[0] = false;
+            } else {
+                // 最大化
+                savedBounds[0] = (int) windowFrame.getX();
+                savedBounds[1] = (int) windowFrame.getY();
+                savedBounds[2] = windowFrame.getWidth();
+                savedBounds[3] = windowFrame.getHeight();
+                
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -1);
+                windowFrame.setLayoutParams(lp);
+                windowFrame.setX(0);
+                windowFrame.setY(0);
+                btnMax.setText(" ❐ ");
+                isMaximized[0] = true;
+            }
+        });
+        controls.addView(btnMax);
+
         final LinearLayout taskBtn = new LinearLayout(getContext()); taskBtn.setTag("tb_" + windowTitle);
         
         TextView btnClose = new TextView(getContext()); btnClose.setText(" ✕ "); applyGlobalFontSettings(btnClose, 1.0f, true); btnClose.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(5*density));
@@ -403,6 +434,7 @@ public class DesktopSystemView extends Dialog {
         titleBar.setOnTouchListener(new View.OnTouchListener() {
             float dX, dY;
             @Override public boolean onTouch(View v, MotionEvent event) {
+                if (isMaximized[0]) return true; // 全屏状态禁止拖动
                 if (event.getAction() == MotionEvent.ACTION_DOWN) { dX = windowFrame.getX() - mouseX; dY = windowFrame.getY() - mouseY; windowFrame.bringToFront(); } 
                 else if (event.getAction() == MotionEvent.ACTION_MOVE) { windowFrame.setX(mouseX + dX); windowFrame.setY(mouseY + dY); } return true;
             }
@@ -418,23 +450,53 @@ public class DesktopSystemView extends Dialog {
         
         TextView tbText = new TextView(getContext()); tbText.setText("▤ " + windowTitle.split(" ")[0]); applyGlobalFontSettings(tbText, 1.1f, false); taskBtn.addView(tbText);
         
+        // 🔥 修复：任务栏拖动致命 BUG，重构为 TranslationX 相对位移算法，避免测量死锁崩溃
         taskBtn.setOnTouchListener(new View.OnTouchListener() {
-            float startX, originalX; boolean isDragging = false;
+            float startX; boolean isDragging = false;
             @Override public boolean onTouch(View v, MotionEvent event) {
                 switch(event.getAction()) {
-                    case MotionEvent.ACTION_DOWN: startX = event.getRawX(); originalX = v.getX(); isDragging = false; v.setBackgroundColor(Color.parseColor("#44FFFFFF")); v.bringToFront(); return true;
-                    case MotionEvent.ACTION_MOVE: float dx = event.getRawX() - startX; if (Math.abs(dx) > 10) isDragging = true; if (isDragging) v.setX(originalX + dx); return true;
+                    case MotionEvent.ACTION_DOWN: 
+                        startX = event.getRawX(); 
+                        isDragging = false; 
+                        v.setBackgroundColor(Color.parseColor("#44FFFFFF")); 
+                        v.bringToFront(); 
+                        return true;
+                    case MotionEvent.ACTION_MOVE: 
+                        float dx = event.getRawX() - startX; 
+                        if (Math.abs(dx) > 10) isDragging = true; 
+                        if (isDragging) v.setTranslationX(dx); 
+                        return true;
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
                         v.setBackground(tbBg);
                         if (isDragging) {
-                            int newIndex = -1; float currentCenter = v.getX() + v.getWidth()/2f;
-                            for (int i=0; i<taskbarAppsLayout.getChildCount(); i++) { View child = taskbarAppsLayout.getChildAt(i); if (child != v && currentCenter < child.getX() + child.getWidth()/2f) { newIndex = i; break; } }
-                            taskbarAppsLayout.removeView(v); if (newIndex == -1) taskbarAppsLayout.addView(v, tbParams); else taskbarAppsLayout.addView(v, newIndex, tbParams);
-                            for (int i=0; i<taskbarAppsLayout.getChildCount(); i++) taskbarAppsLayout.getChildAt(i).setTranslationX(0);
-                        } else { if (windowFrame.getVisibility() == View.VISIBLE) windowFrame.setVisibility(View.GONE); else { windowFrame.setVisibility(View.VISIBLE); windowFrame.bringToFront(); } }
+                            float currentVisualX = v.getLeft() + v.getTranslationX() + v.getWidth() / 2f;
+                            int newIndex = -1;
+                            for (int i = 0; i < taskbarAppsLayout.getChildCount(); i++) {
+                                View child = taskbarAppsLayout.getChildAt(i);
+                                if (child == v) continue;
+                                float childCenter = child.getLeft() + child.getWidth() / 2f;
+                                if (currentVisualX < childCenter) {
+                                    newIndex = i;
+                                    break;
+                                }
+                            }
+                            
+                            taskbarAppsLayout.removeView(v);
+                            v.setTranslationX(0); // 清除绝对位移
+                            
+                            if (newIndex == -1 || newIndex >= taskbarAppsLayout.getChildCount()) {
+                                taskbarAppsLayout.addView(v, tbParams);
+                            } else {
+                                taskbarAppsLayout.addView(v, newIndex, tbParams);
+                            }
+                        } else { 
+                            if (windowFrame.getVisibility() == View.VISIBLE) windowFrame.setVisibility(View.GONE); 
+                            else { windowFrame.setVisibility(View.VISIBLE); windowFrame.bringToFront(); } 
+                        }
                         return true;
-                } return false;
+                } 
+                return false;
             }
         });
         taskbarAppsLayout.addView(taskBtn, tbParams);
@@ -1031,7 +1093,6 @@ public class DesktopSystemView extends Dialog {
         return input;
     }
 
-    // 🚨 终极修正：修复 V1 缺失的 width 和 height，并重新抓取 PCX 文件头
     private List<SffFrame> scanSffFrames(File sffFile) {
         List<SffFrame> frameList = new ArrayList<>();
         if (sffFile == null || !sffFile.exists() || sffFile.length() < 128) return frameList;
@@ -1111,7 +1172,6 @@ public class DesktopSystemView extends Dialog {
                     short linked = Short.reverseBytes(raf.readShort()); byte sharedPal = raf.readByte();
 
                     if (length > 128) {
-                        // 🚨 核心补位：强行读取 PCX 内置真实宽高
                         raf.seek(nextOffset + 32 + 4);
                         int xmin = Short.reverseBytes(raf.readShort()) & 0xFFFF;
                         int ymin = Short.reverseBytes(raf.readShort()) & 0xFFFF;
@@ -1124,8 +1184,8 @@ public class DesktopSystemView extends Dialog {
                         frame.colorDepth = 8; 
                         frame.offset = nextOffset; frame.length = length;
                         frame.group = group; frame.item = item; frame.sharedPal = (sharedPal != 0);
-                        frame.width = pcxWidth;  // 填补致命空白
-                        frame.height = pcxHeight; // 填补致命空白
+                        frame.width = pcxWidth; 
+                        frame.height = pcxHeight; 
                         frameList.add(frame);
 
                         if (!foundGlobalPal && length >= 768) {
@@ -1159,18 +1219,67 @@ public class DesktopSystemView extends Dialog {
             raf.read(rawData);
 
             if (frame.isV2) {
-                // 🚨 终极防污扫描：过滤头部垃圾字节找回纯净 PNG
+                // 🔥 独家修复：拦截 PNG 数据流，并强行注入 SFF 调色板 (解决 8位PNG 丢失 PLTE 黑屏)
                 if (frame.format >= 10 && frame.format <= 12) {
                     int pngStart = 0;
                     for (int j = 0; j < Math.min(16, rawData.length - 4); j++) {
                         if (rawData[j] == (byte)137 && rawData[j+1] == 80 && rawData[j+2] == 78 && rawData[j+3] == 71) {
-                            pngStart = j; break; // 找到了纯净的 \x89PNG 签名！
+                            pngStart = j; break; 
                         }
                     }
+                    
+                    byte[] finalPngData = rawData;
+                    int finalStart = pngStart;
+                    int finalLen = rawData.length - pngStart;
+
+                    if (frame.format == 10) {
+                        try {
+                            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                            // 1. 写入标准的 8字节 PNG 签名 + 25字节 IHDR 头
+                            bos.write(rawData, pngStart, 33); 
+                            
+                            // 2. 注入 PLTE 调色板区块 (768字节)
+                            bos.write(new byte[]{0, 0, 3, 0}); 
+                            bos.write(new byte[]{'P', 'L', 'T', 'E'});
+                            byte[] palData = new byte[768];
+                            byte[] targetPal = (frame.palIndex >= 0 && frame.palIndex < 256) ? v2Palettes[frame.palIndex] : v2Palettes[0];
+                            if (targetPal == null) targetPal = new byte[1024];
+                            for (int p = 0; p < 256; p++) {
+                                palData[p*3] = targetPal[p*4];
+                                palData[p*3+1] = targetPal[p*4+1];
+                                palData[p*3+2] = targetPal[p*4+2];
+                            }
+                            bos.write(palData);
+                            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+                            crc.update(new byte[]{'P', 'L', 'T', 'E'});
+                            crc.update(palData);
+                            int crcVal = (int) crc.getValue();
+                            bos.write(new byte[]{(byte)(crcVal>>>24), (byte)(crcVal>>>16), (byte)(crcVal>>>8), (byte)crcVal});
+                            
+                            // 3. 注入 tRNS 透明区块 (强行指定 0 号索引绝对透明)
+                            bos.write(new byte[]{0, 0, 0, 1}); 
+                            bos.write(new byte[]{'t', 'R', 'N', 'S'});
+                            bos.write(new byte[]{0});
+                            crc.reset();
+                            crc.update(new byte[]{'t', 'R', 'N', 'S'});
+                            crc.update(new byte[]{0});
+                            crcVal = (int) crc.getValue();
+                            bos.write(new byte[]{(byte)(crcVal>>>24), (byte)(crcVal>>>16), (byte)(crcVal>>>8), (byte)crcVal});
+                            
+                            // 4. 拼接剩余的图像数据流 (IDAT 等)
+                            bos.write(rawData, pngStart + 33, rawData.length - pngStart - 33);
+                            finalPngData = bos.toByteArray();
+                            finalStart = 0;
+                            finalLen = finalPngData.length;
+                        } catch (Exception e) { 
+                            e.printStackTrace(); 
+                        }
+                    }
+
                     BitmapFactory.Options opts = new BitmapFactory.Options();
                     opts.inMutable = true; 
                     opts.inPreferredConfig = Bitmap.Config.ARGB_8888; 
-                    Bitmap pngBmp = BitmapFactory.decodeByteArray(rawData, pngStart, rawData.length - pngStart, opts);
+                    Bitmap pngBmp = BitmapFactory.decodeByteArray(finalPngData, finalStart, finalLen, opts);
                     if (pngBmp != null) { 
                         frame.cachedBmp = pngBmp; 
                         return pngBmp; 
