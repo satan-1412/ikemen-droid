@@ -468,10 +468,11 @@ public class DesktopSystemView extends Dialog {
         GradientDrawable tbBg = new GradientDrawable(); tbBg.setColor(Color.parseColor("#22FFFFFF")); taskBtn.setBackground(tbBg);
         LinearLayout.LayoutParams tbParams = new LinearLayout.LayoutParams(-2, -1); tbParams.setMargins(0,0,(int)(5*density),0);
         
-        // 🔥 修复任务栏短名称过滤算法
-        String shortName = windowTitle.replace("🎨 检视: ", "").replace("📦 ", "").trim();
-        if (shortName.length() > 8) shortName = shortName.substring(0, 8) + "..";
-        TextView tbText = new TextView(getContext()); tbText.setText("▤ " + shortName); applyGlobalFontSettings(tbText, 1.1f, false); taskBtn.addView(tbText);
+        // 🔥 修复任务栏短名称过滤算法 (解决 Lambda 编译 final 报错)
+        String rawName = windowTitle.replace("🎨 检视: ", "").replace("📦 ", "").trim();
+        final String finalShortName = rawName.length() > 8 ? rawName.substring(0, 8) + ".." : rawName;
+        
+        TextView tbText = new TextView(getContext()); tbText.setText("▤ " + finalShortName); applyGlobalFontSettings(tbText, 1.1f, false); taskBtn.addView(tbText);
         
         // 🔥 移除滑动拦截死区，恢复纯净的 Click 显隐与 LongClick 右键
         taskBtn.setOnClickListener(v -> {
@@ -482,7 +483,7 @@ public class DesktopSystemView extends Dialog {
         });
         
         taskBtn.setOnLongClickListener(v -> {
-            showContextMenu(v, shortName, () -> {
+            showContextMenu(v, finalShortName, () -> {
                 if (onCloseInterceptor != null) onCloseInterceptor.run();
                 else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); }
             });
