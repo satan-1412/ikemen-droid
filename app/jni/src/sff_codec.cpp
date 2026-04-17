@@ -7,7 +7,7 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 // ==============================================================================
-// 🚨 算法 1：LZ5 解压引擎 (终极修复 SFFv2 官方魔改 11-bit 偏移量)
+// 🚨 算法 1：LZ5 解压引擎 (100% 还原 Elecbyte 官方位移逻辑)
 // ==============================================================================
 inline void lz5_decompress_hardcore(const uint8_t* __restrict src, int src_len, uint8_t* __restrict dst, int dst_len) {
     int src_ptr = 4; 
@@ -15,17 +15,17 @@ inline void lz5_decompress_hardcore(const uint8_t* __restrict src, int src_len, 
     while (dst_ptr < dst_len && src_ptr < src_len) {
         uint8_t ctrl = src[src_ptr++];
         for (int i = 0; i < 8 && dst_ptr < dst_len && src_ptr < src_len; ++i) {
-            if (ctrl & (1 << i)) {
+            if ((ctrl & (1 << i)) == 0) { // 0 代表直接拷贝
+                dst[dst_ptr++] = src[src_ptr++];
+            } else { // 1 代表 LZ 字典回溯
                 if (src_ptr + 1 >= src_len) break;
-                uint8_t b0 = src[src_ptr];
-                uint8_t b1 = src[src_ptr + 1];
+                uint16_t val = src[src_ptr] | (src[src_ptr + 1] << 8);
                 src_ptr += 2;
                 
-                // 🔥 绝密纠正：Elecbyte 官方真实掩码是 0xE0 和 0x1F，且字典偏移必须 +1
-                int offset = (b0 | ((b1 & 0xE0) << 3)) + 1;
-                int count = (b1 & 0x1F) + 3;
+                int offset = (val >> 5) + 1;
+                int count = (val & 0x1F) + 3;
                 
-                if (count == 34) { // 当 5位长度拉满 (31+3) 时，读取额外长度
+                if (count == 34) {
                     int c;
                     do {
                         if (src_ptr >= src_len) break;
@@ -33,13 +33,10 @@ inline void lz5_decompress_hardcore(const uint8_t* __restrict src, int src_len, 
                         count += c;
                     } while (c == 255);
                 }
-                
                 for (int j = 0; j < count && dst_ptr < dst_len; ++j) {
                     int copy_idx = dst_ptr - offset;
                     dst[dst_ptr++] = (copy_idx >= 0) ? dst[copy_idx] : 0;
                 }
-            } else {
-                dst[dst_ptr++] = src[src_ptr++];
             }
         }
     }
@@ -66,14 +63,14 @@ inline void rle5_decompress_hardcore(const uint8_t* __restrict src, int src_len,
 }
 
 // ==============================================================================
-// 🚨 算法 3：RLE8 解压引擎 (Format 2)
+// 🚨 算法 3：RLE8 解压引擎 (移除画蛇添足的 0x80 透明判定，恢复纯净官方算法)
 // ==============================================================================
 inline void rle8_decompress_hardcore(const uint8_t* __restrict src, int src_len, uint8_t* __restrict dst, int dst_len) {
     int src_ptr = 4; 
     int dst_ptr = 0;
     while (dst_ptr < dst_len && src_ptr < src_len) {
         uint8_t byte = src[src_ptr++];
-        if ((byte & 0xC0) == 0x40) { 
+        if ((byte & 0xC0) == 0x40) { // 01xxxxxx 代表行程长度
             int count = byte & 0x3F;
             if (count == 0) {
                 if (src_ptr >= src_len) break;
@@ -82,14 +79,7 @@ inline void rle8_decompress_hardcore(const uint8_t* __restrict src, int src_len,
             if (src_ptr >= src_len) break;
             uint8_t color = src[src_ptr++];
             for (int i = 0; i < count && dst_ptr < dst_len; ++i) dst[dst_ptr++] = color;
-        } else if ((byte & 0xC0) == 0x80) { 
-            int count = byte & 0x3F;
-            if (count == 0) {
-                if (src_ptr >= src_len) break;
-                count = src[src_ptr++] + 64;
-            }
-            for (int i = 0; i < count && dst_ptr < dst_len; ++i) dst[dst_ptr++] = 0;
-        } else {
+        } else { // 其余所有字节全部为正常像素颜色 (包含透明)
             dst[dst_ptr++] = byte; 
         }
     }
@@ -151,30 +141,19 @@ Java_org_libsdl_app_DesktopSystemView_decodeSffV2C(JNIEnv* env, jobject thiz, jb
     jintArray result = env->NewIntArray(dst_len);
     jint* out_pixels = (jint*)env->GetPrimitiveArrayCritical(result, 0);
 
-    // 🔥 终极防撕裂：计算图像 Pitch（防止奇数宽度的图像在内存中因 4字节补齐导致错位）
-    int pitch_bytes = width * bytes_per_pixel;
-    if (expected_len > (uint32_t)(width * height * bytes_per_pixel) && height > 0) {
-        pitch_bytes = expected_len / height;
-    }
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            int src_idx = y * pitch_bytes + x * bytes_per_pixel;
-            int dst_idx = y * width + x;
-            
-            if (colorDepth == 32) {
-                int r = pixels[src_idx] & 0xFF; int g = pixels[src_idx + 1] & 0xFF; int b = pixels[src_idx + 2] & 0xFF; int a = pixels[src_idx + 3] & 0xFF;
-                out_pixels[dst_idx] = (a << 24) | (r << 16) | (g << 8) | b;
-            } else if (colorDepth == 24) {
-                int r = pixels[src_idx] & 0xFF; int g = pixels[src_idx + 1] & 0xFF; int b = pixels[src_idx + 2] & 0xFF;
-                out_pixels[dst_idx] = (0xFF << 24) | (r << 16) | (g << 8) | b;
-            } else {
-                int idx = pixels[src_idx] & 0xFF;
-                int p_idx = idx * 4; 
-                int r = pal_buf[p_idx] & 0xFF; int g = pal_buf[p_idx + 1] & 0xFF; int b = pal_buf[p_idx + 2] & 0xFF; int a = pal_buf[p_idx + 3] & 0xFF;
-                if (idx == 0) a = 0; else if (a == 0) a = 255; // 保底透明修复
-                out_pixels[dst_idx] = (a << 24) | (r << 16) | (g << 8) | b;
-            }
+    for (int i = 0; i < dst_len; ++i) {
+        if (colorDepth == 32) {
+            int r = pixels[i * 4] & 0xFF; int g = pixels[i * 4 + 1] & 0xFF; int b = pixels[i * 4 + 2] & 0xFF; int a = pixels[i * 4 + 3] & 0xFF;
+            out_pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
+        } else if (colorDepth == 24) {
+            int r = pixels[i * 3] & 0xFF; int g = pixels[i * 3 + 1] & 0xFF; int b = pixels[i * 3 + 2] & 0xFF;
+            out_pixels[i] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+        } else {
+            int idx = pixels[i] & 0xFF;
+            int p_idx = idx * 4; 
+            int r = pal_buf[p_idx] & 0xFF; int g = pal_buf[p_idx + 1] & 0xFF; int b = pal_buf[p_idx + 2] & 0xFF; int a = pal_buf[p_idx + 3] & 0xFF;
+            if (idx == 0) a = 0; else if (a == 0) a = 255; 
+            out_pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
         }
     }
 
