@@ -133,7 +133,8 @@ Java_org_libsdl_app_DesktopSystemView_decodeSffV2C(JNIEnv* env, jobject thiz, jb
     else if (format == 3) rle5_decompress_hardcore((uint8_t*)src_buf, src_len, pixels, alloc_len);
     else if (format == 2) rle8_decompress_hardcore((uint8_t*)src_buf, src_len, pixels, alloc_len);
     else if (format == 0) {
-        if (src_len >= 4) memcpy(pixels, src_buf + 4, (src_len - 4 < alloc_len) ? (src_len - 4) : alloc_len);
+        // 🔥 修复点：Format 0 绝对不能跳过前 4 个字节，它没有解压长度头！
+        memcpy(pixels, src_buf, (src_len < alloc_len) ? src_len : alloc_len);
     }
 
     jbyte* pal_buf = env->GetByteArrayElements(palette, NULL);
