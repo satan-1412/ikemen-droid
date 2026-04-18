@@ -104,7 +104,6 @@ public class DesktopSystemView extends Dialog {
     public int fontShadowColor = Color.BLACK;
 
     private static File lastVisitedDir = Environment.getExternalStorageDirectory();
-
     private byte[] loadedActPalette = null;
 
     public DesktopSystemView(Context context) {
@@ -1107,33 +1106,39 @@ public class DesktopSystemView extends Dialog {
         public boolean sharedPal;
         public Bitmap cachedBmp;
         public boolean isV2;
+        // 🔥 新增：用于彻底解决 SFF 的 Linked 链接帧问题！
+        public int linkedSpriteIndex = -1; 
     }
 
     private byte[][] v2Palettes = new byte[256][1024]; 
     private byte[] globalSharedPalette = new byte[768];
 
-    // 🔥 修复黑科技 1：强力防断流的 Zlib 解压，修复调色板被异常截断导致的颜色错位！
+    // 🔥 重制版 Zlib 强力解压流：再也不会因为错误的 length 判定导致调色板黑屏了！
     private byte[] smartZlibUnwrap(byte[] input) {
-        if (input.length == 1024 || input.length == 768) return input;
-        if (input.length > 2 && (input[0] == 0x78)) {
-            try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(input);
-                 java.util.zip.InflaterInputStream iis = new java.util.zip.InflaterInputStream(bis)) {
-                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream(1024);
-                byte[] buf = new byte[2048];
-                int len;
-                while ((len = iis.read(buf)) > 0) { bos.write(buf, 0, len); }
-                byte[] res = bos.toByteArray();
-                return res.length > 0 ? res : input;
-            } catch (Exception e) { return input; }
-        }
-        return input;
+        if (input == null || input.length == 0) return input;
+        try {
+            java.util.zip.Inflater inflater = new java.util.zip.Inflater();
+            inflater.setInput(input);
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream(1024);
+            byte[] buf = new byte[1024];
+            while (!inflater.finished()) {
+                int count = inflater.inflate(buf);
+                if (count == 0) {
+                    if (inflater.needsInput() || inflater.needsDictionary()) break;
+                }
+                bos.write(buf, 0, count);
+            }
+            inflater.end();
+            byte[] res = bos.toByteArray();
+            if (res.length >= 16) return res; 
+        } catch (Exception e) {}
+        return input; 
     }
 
     private List<SffFrame> scanSffFrames(File sffFile) {
         List<SffFrame> frameList = new ArrayList<>();
         if (sffFile == null || !sffFile.exists() || sffFile.length() < 128) return frameList;
 
-        // 🔥 修复黑科技 2：底层调色板灰度兜底，防止纯黑图
         for (int i=0; i<256; i++) {
             for (int c=0; c<256; c++) {
                 v2Palettes[i][c*4] = (byte)c; 
@@ -1143,7 +1148,6 @@ public class DesktopSystemView extends Dialog {
             }
         }
 
-        // 🔥 修复黑科技 3：解决 V2 格式丢失外部 .act 调色板映射导致全变黑影的致命问题！
         if (loadedActPalette != null) {
             System.arraycopy(loadedActPalette, 0, globalSharedPalette, 0, 768);
             for (int p=0; p<256; p++) {
@@ -1154,7 +1158,7 @@ public class DesktopSystemView extends Dialog {
                     v2Palettes[p][c*4+3] = (byte)255;
                 }
             }
-            loadedActPalette = null; // 用完即抛防污染
+            loadedActPalette = null; 
         }
 
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
@@ -1207,7 +1211,10 @@ public class DesktopSystemView extends Dialog {
                     short item = Short.reverseBytes(raf.readShort());
                     short width = Short.reverseBytes(raf.readShort());
                     short height = Short.reverseBytes(raf.readShort());
-                    raf.skipBytes(6);
+                    raf.skipBytes(4); // 跳过 axis_x, axis_y
+                    
+                    // 🔥 链接帧重构核心：SFF 的数据重用机制
+                    short linked = Short.reverseBytes(raf.readShort());
                     byte format = raf.readByte();
                     byte depth = raf.readByte(); 
                     int dataOffset = Integer.reverseBytes(raf.readInt());
@@ -1215,15 +1222,22 @@ public class DesktopSystemView extends Dialog {
                     short palIdx = Short.reverseBytes(raf.readShort());
                     short flags = Short.reverseBytes(raf.readShort());
 
-                    if (dataLength > 0 && width > 0 && height > 0) {
-                        SffFrame frame = new SffFrame();
-                        frame.isV2 = true; frame.group = group; frame.item = item;
-                        frame.width = width; frame.height = height; frame.format = format;
-                        frame.colorDepth = depth; 
-                        frame.length = dataLength; frame.palIndex = palIdx;
+                    SffFrame frame = new SffFrame();
+                    frame.isV2 = true; frame.group = group; frame.item = item;
+                    frame.width = width; frame.height = height; frame.format = format;
+                    frame.colorDepth = depth; frame.palIndex = palIdx;
+                    
+                    if (linked != 0) {
+                        frame.offset = -1; // 标记这是一个链接镜像
+                        frame.length = 0;
+                        frame.linkedSpriteIndex = dataOffset; // 对于 linked 帧，dataOffset 是目标图的索引
+                    } else if (dataLength > 0 && width > 0 && height > 0) {
                         frame.offset = ((flags & 1) != 0 ? tdataOffset : ldataOffset) + dataOffset;
-                        frameList.add(frame);
+                        frame.length = dataLength;
+                    } else {
+                        continue; 
                     }
+                    frameList.add(frame);
                 }
             } else {
                 raf.seek(20); int totalImages = Integer.reverseBytes(raf.readInt());
@@ -1237,23 +1251,29 @@ public class DesktopSystemView extends Dialog {
                     int length = Integer.reverseBytes(raf.readInt());
                     short x = Short.reverseBytes(raf.readShort()); short y = Short.reverseBytes(raf.readShort());
                     short group = Short.reverseBytes(raf.readShort()); short item = Short.reverseBytes(raf.readShort());
+                    
+                    // V1 也有 linked！
                     short linked = Short.reverseBytes(raf.readShort()); byte sharedPal = raf.readByte();
 
-                    if (length > 128) {
+                    SffFrame frame = new SffFrame(); frame.isV2 = false;
+                    frame.colorDepth = 8; 
+                    frame.group = group; frame.item = item; frame.sharedPal = (sharedPal != 0);
+                    
+                    if (linked != 0) {
+                        frame.offset = -1;
+                        frame.length = 0;
+                        frame.linkedSpriteIndex = linked;
+                        frameList.add(frame);
+                    } else if (length > 128) {
                         raf.seek(nextOffset + 32 + 4);
                         int xmin = Short.reverseBytes(raf.readShort()) & 0xFFFF;
                         int ymin = Short.reverseBytes(raf.readShort()) & 0xFFFF;
                         int xmax = Short.reverseBytes(raf.readShort()) & 0xFFFF;
                         int ymax = Short.reverseBytes(raf.readShort()) & 0xFFFF;
-                        int pcxWidth = xmax - xmin + 1;
-                        int pcxHeight = ymax - ymin + 1;
-
-                        SffFrame frame = new SffFrame(); frame.isV2 = false;
-                        frame.colorDepth = 8; 
+                        
+                        frame.width = xmax - xmin + 1; 
+                        frame.height = ymax - ymin + 1; 
                         frame.offset = nextOffset; frame.length = length;
-                        frame.group = group; frame.item = item; frame.sharedPal = (sharedPal != 0);
-                        frame.width = pcxWidth; 
-                        frame.height = pcxHeight; 
                         frameList.add(frame);
 
                         if (!foundGlobalPal && length >= 768) {
@@ -1272,13 +1292,35 @@ public class DesktopSystemView extends Dialog {
                     nextOffset = nextSub; currentIndex++;
                 }
             }
+            
+            // 🔥 后期装配：将所有被标记为 Linked 的影子帧，全部指向实体数据！
+            for (SffFrame f : frameList) {
+                if (f.offset == -1) {
+                    SffFrame target = f;
+                    int guard = 0;
+                    // MUGEN 的 Linked 可能会嵌套套娃，这里加上死循环保护
+                    while (target.offset == -1 && target.linkedSpriteIndex >= 0 && target.linkedSpriteIndex < frameList.size() && guard < 100) {
+                        target = frameList.get(target.linkedSpriteIndex);
+                        guard++;
+                    }
+                    if (target.offset != -1) {
+                        f.offset = target.offset;
+                        f.length = target.length;
+                        f.format = target.format;
+                        f.colorDepth = target.colorDepth;
+                        if (f.width <= 0) f.width = target.width;
+                        if (f.height <= 0) f.height = target.height;
+                    }
+                }
+            }
+            
         } catch (Throwable t) { t.printStackTrace(); }
         return frameList;
     }
 
     private Bitmap decodeSingleFrame(File sffFile, SffFrame frame) {
         if (frame.cachedBmp != null) return frame.cachedBmp;
-        if (frame.width <= 0 || frame.height <= 0) return createTextBitmap("解析异常", "无效尺寸");
+        if (frame.offset < 0 || frame.width <= 0 || frame.height <= 0 || frame.length <= 0) return createTextBitmap("空帧", "或未链接");
 
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
             byte[] rawData = new byte[frame.length];
@@ -1469,7 +1511,6 @@ public class DesktopSystemView extends Dialog {
         canvasFrame.addView(previewImg, new FrameLayout.LayoutParams(-1, -1)); 
         root.addView(canvasFrame);
 
-        // 🔥 新增黑科技 4：完美的 1~60 FPS 播放速度滑块组件
         LinearLayout speedLayout = new LinearLayout(getContext());
         speedLayout.setOrientation(LinearLayout.HORIZONTAL);
         speedLayout.setGravity(Gravity.CENTER_VERTICAL);
@@ -1549,7 +1590,7 @@ public class DesktopSystemView extends Dialog {
                 if (isPlaying[0] && !currentGroupFrames.isEmpty()) {
                     currentFrameIndex[0]++;
                     updateFrameAction.run();
-                    playHandler.postDelayed(this, currentDelay[0]); // 采用动态速度
+                    playHandler.postDelayed(this, currentDelay[0]); 
                 }
             }
         };
@@ -1593,7 +1634,6 @@ public class DesktopSystemView extends Dialog {
         openAppWindow(winTitle, root, () -> {
             isPlaying[0] = false; 
             playHandler.removeCallbacksAndMessages(null); 
-            // 🔥 新增黑科技 5：强制防内存泄漏回收！关闭窗口时释放上千帧的 Bitmap！
             for (SffFrame f : allFrames) {
                 if (f.cachedBmp != null) { f.cachedBmp.recycle(); f.cachedBmp = null; }
             }
