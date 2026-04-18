@@ -105,6 +105,9 @@ public class DesktopSystemView extends Dialog {
 
     private static File lastVisitedDir = Environment.getExternalStorageDirectory();
 
+    // 🔥 修复点 2：存储加载的外部 .act 调色板
+    private byte[] loadedActPalette = null;
+
     public DesktopSystemView(Context context) {
         super(context, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
         this.mContext = context;
@@ -360,7 +363,6 @@ public class DesktopSystemView extends Dialog {
         });
     }
 
-    // 🔥 全新右键菜单：脱离系统 Dialog，绑定在 rootLayer 上，绝不会唤醒 Android 底部导航栏与状态栏！
     private void showContextMenu(View anchor, String title, Runnable onClose) {
         FrameLayout menuOverlay = new FrameLayout(getContext());
         menuOverlay.setClickable(true);
@@ -405,7 +407,6 @@ public class DesktopSystemView extends Dialog {
         final LinearLayout titleBar = new LinearLayout(getContext()); titleBar.setOrientation(LinearLayout.HORIZONTAL); titleBar.setGravity(Gravity.CENTER_VERTICAL); titleBar.setBackgroundColor(Color.parseColor("#F22D2D30")); 
         TextView title = new TextView(getContext()); title.setText("  " + windowTitle); applyGlobalFontSettings(title, 1.2f, true); titleBar.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        // 🔥 将控件装入独立块，防止被标题挤出屏幕外
         LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL);
         TextView btnMin = new TextView(getContext()); btnMin.setText(" ─ "); applyGlobalFontSettings(btnMin, 1.0f, true); btnMin.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density)); btnMin.setOnClickListener(v -> windowFrame.setVisibility(View.GONE)); controls.addView(btnMin);
 
@@ -447,7 +448,7 @@ public class DesktopSystemView extends Dialog {
             if (onCloseInterceptor != null) onCloseInterceptor.run();
             else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); }
         });
-        controls.addView(btnClose); titleBar.addView(controls, new LinearLayout.LayoutParams(-2, -2)); // 修复控制栏居右
+        controls.addView(btnClose); titleBar.addView(controls, new LinearLayout.LayoutParams(-2, -2)); 
 
         titleBar.setOnTouchListener(new View.OnTouchListener() {
             float dX, dY;
@@ -470,7 +471,7 @@ public class DesktopSystemView extends Dialog {
         final String finalShortName = rawName.length() > 8 ? rawName.substring(0, 8) + ".." : rawName;
         TextView tbText = new TextView(getContext()); tbText.setText("▤ " + finalShortName); applyGlobalFontSettings(tbText, 1.1f, false); taskBtn.addView(tbText);
         
-        // 🔥 丝滑任务栏拖动逻辑：解除死锁，松手自动排序
+        // 🔥 修复点 1：丝滑任务栏拖动逻辑：利用 post 解除底层遍历死锁
         taskBtn.setOnTouchListener(new View.OnTouchListener() {
             float startX; float initialTranslation; boolean isDragging = false;
             @Override public boolean onTouch(View v, MotionEvent event) {
@@ -495,10 +496,15 @@ public class DesktopSystemView extends Dialog {
                                 View child = taskbarAppsLayout.getChildAt(i);
                                 if (child != v && currentCenter < child.getX() + child.getWidth() / 2f) { newIndex = i; break; }
                             }
-                            taskbarAppsLayout.removeView(v); v.setTranslationX(0); taskbarAppsLayout.addView(v, newIndex);
+                            final int targetIndex = newIndex;
+                            taskbarAppsLayout.post(() -> {
+                                taskbarAppsLayout.removeView(v);
+                                v.setTranslationX(0);
+                                taskbarAppsLayout.addView(v, targetIndex);
+                            });
                             return true;
                         }
-                        return false; // 非拖动则触发长按或点击
+                        return false; 
                 } return false;
             }
         });
@@ -520,9 +526,8 @@ public class DesktopSystemView extends Dialog {
         
         taskbarAppsLayout.addView(taskBtn, tbParams);
 
-        // 🔥 修复窗口居中计算：使用左上角偏移计算绝对初始定位
         int w = (int) (rootLayer.getWidth() * 0.70f); int h = (int) (rootLayer.getHeight() * 0.80f);
-        if (w == 0) w = 800; if (h == 0) h = 600; // 防备未测量状态
+        if (w == 0) w = 800; if (h == 0) h = 600; 
         FrameLayout.LayoutParams frameParams = new FrameLayout.LayoutParams(w, h);
         windowFrame.setLayoutParams(frameParams);
         
@@ -813,7 +818,7 @@ public class DesktopSystemView extends Dialog {
         btn.setAllCaps(false); 
         android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable(); 
         bg.setColor(Color.parseColor(colorHex)); 
-        bg.setCornerRadius(0); // Win10 直角
+        bg.setCornerRadius(0); 
         bg.setStroke((int)(1*density), Color.parseColor("#44FFFFFF"));
         btn.setBackground(bg); 
         applyGlobalFontSettings(btn, 1.0f, false); 
@@ -1014,7 +1019,21 @@ public class DesktopSystemView extends Dialog {
                         String[] parts = line.split("=");
                         if (parts.length > 1) {
                             targetSffName = parts[1].trim().split(";")[0].trim().replace("\\", "/");
-                            break;
+                            // 不要在此处 break，继续寻找 pal1
+                        }
+                    }
+                    // 🔥 修复点 2：在此顺路加载外部 act 调色板
+                    else if (inFilesSection && line.startsWith("pal1")) {
+                        String[] actParts = line.split("=");
+                        if (actParts.length > 1) {
+                            String actName = actParts[1].trim().split(";")[0].trim().replace("\\", "/");
+                            File actFile = new File(parentFolder, actName);
+                            if (actFile.exists()) {
+                                try (java.io.FileInputStream fis = new java.io.FileInputStream(actFile)) {
+                                    loadedActPalette = new byte[768];
+                                    fis.read(loadedActPalette);
+                                } catch (Exception e) {}
+                            }
                         }
                     }
                 }
@@ -1138,12 +1157,20 @@ public class DesktopSystemView extends Dialog {
 
                 if (numSprites < 0 || numSprites > 90000) return frameList;
 
+                // 🔥 修复点 3: V2 连结调色板修复
                 if (numPalettes > 0) {
                     for(int p=0; p<numPalettes && p<256; p++) {
-                        raf.seek(palNodeOffset + p * 16 + 8);
+                        raf.seek(palNodeOffset + p * 16 + 6);
+                        short linked = Short.reverseBytes(raf.readShort());
                         int pDataOffset = Integer.reverseBytes(raf.readInt());
                         int pDataLength = Integer.reverseBytes(raf.readInt());
-                        if (pDataLength > 0 && pDataLength <= 4096) {
+                        
+                        if (linked != 0) {
+                            if (pDataOffset >= 0 && pDataOffset < p) {
+                                System.arraycopy(v2Palettes[pDataOffset], 0, v2Palettes[p], 0, 1024);
+                            }
+                        } 
+                        else if (pDataLength > 0 && pDataLength <= 4096) {
                             raf.seek(ldataOffset + pDataOffset);
                             byte[] v2palRaw = new byte[pDataLength]; raf.read(v2palRaw);
                             byte[] cleanPal = smartZlibUnwrap(v2palRaw); 
@@ -1187,6 +1214,14 @@ public class DesktopSystemView extends Dialog {
                 raf.seek(24); int nextOffset = Integer.reverseBytes(raf.readInt());
                 int currentIndex = 0;
                 boolean foundGlobalPal = false;
+                
+                // 🔥 修复点 3: 外部 .act 调色板注入覆盖 V1
+                if (loadedActPalette != null) {
+                    System.arraycopy(loadedActPalette, 0, globalSharedPalette, 0, 768);
+                    foundGlobalPal = true;
+                    loadedActPalette = null; // 用完即抛，防止污染下一个文件
+                }
+
                 while (nextOffset > 0 && currentIndex < totalImages && currentIndex < 90000) {
                     raf.seek(nextOffset);
                     int nextSub = Integer.reverseBytes(raf.readInt());
@@ -1242,10 +1277,8 @@ public class DesktopSystemView extends Dialog {
             raf.read(rawData);
 
             if (frame.isV2) {
-                // 🔥 终极防崩溃 PNG 解析器：动态定位头文件，跳过安卓严苛的校验
                 if (frame.format >= 10 && frame.format <= 12) {
                     int pngStart = -1;
-                    // 在前 128 字节内广泛寻找 PNG 签名 (防止未知填充)
                     for (int j = 0; j < Math.min(128, rawData.length - 8); j++) {
                         if (rawData[j] == (byte)137 && rawData[j+1] == 80 && rawData[j+2] == 78 && rawData[j+3] == 71) {
                             pngStart = j; break; 
@@ -1257,7 +1290,6 @@ public class DesktopSystemView extends Dialog {
                         int finalStart = pngStart;
                         int finalLen = rawData.length - pngStart;
 
-                        // 只在缺失调色板时，进行精准无损注入
                         if (frame.format == 10 && rawData.length >= pngStart + 33) {
                             boolean hasPlte = false;
                             for (int i = pngStart; i < rawData.length - 4; i++) {
@@ -1289,6 +1321,15 @@ public class DesktopSystemView extends Dialog {
                                     int crcVal = (int) crc.getValue();
                                     bos.write(new byte[]{(byte)(crcVal>>>24), (byte)(crcVal>>>16), (byte)(crcVal>>>8), (byte)crcVal});
                                     
+                                    // 🔥 修复点 4: 注入 tRNS 块，支持索引透明
+                                    bos.write(new byte[]{0, 0, 0, 1});
+                                    bos.write(new byte[]{'t', 'R', 'N', 'S'});
+                                    bos.write(new byte[]{0}); 
+                                    java.util.zip.CRC32 crcTrns = new java.util.zip.CRC32();
+                                    crcTrns.update(new byte[]{'t', 'R', 'N', 'S', 0});
+                                    int trnsCrc = (int) crcTrns.getValue();
+                                    bos.write(new byte[]{(byte)(trnsCrc>>>24), (byte)(trnsCrc>>>16), (byte)(trnsCrc>>>8), (byte)trnsCrc});
+
                                     bos.write(rawData, pngStart + 33, rawData.length - pngStart - 33);
                                     finalPngData = bos.toByteArray();
                                     finalStart = 0;
@@ -1297,7 +1338,6 @@ public class DesktopSystemView extends Dialog {
                             }
                         }
 
-                        // 移除所有的 BitmapFactory.Options，让安卓底层自行决定最佳渲染方案，防止报错
                         Bitmap pngBmp = BitmapFactory.decodeByteArray(finalPngData, finalStart, finalLen);
                         if (pngBmp != null) { frame.cachedBmp = pngBmp; return pngBmp; }
                     }
