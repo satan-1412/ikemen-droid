@@ -7,35 +7,38 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 // ==============================================================================
-// 🚨 算法 1：LZ5 解压引擎 (100% 还原 Elecbyte 官方位移逻辑)
+// 🚨 算法 1：LZ5 解压引擎 (修复 14-bit MUGEN 专属偏移量错位导致雪花屏的问题)
 // ==============================================================================
 inline void lz5_decompress_hardcore(const uint8_t* __restrict src, int src_len, uint8_t* __restrict dst, int dst_len) {
-    int src_ptr = 4; 
+    int src_ptr = 4; // 跳过 4 字节的解压长度头
     int dst_ptr = 0;
     while (dst_ptr < dst_len && src_ptr < src_len) {
         uint8_t ctrl = src[src_ptr++];
         for (int i = 0; i < 8 && dst_ptr < dst_len && src_ptr < src_len; ++i) {
             if ((ctrl & (1 << i)) == 0) { // 0 代表直接拷贝
                 dst[dst_ptr++] = src[src_ptr++];
-            } else { // 1 代表 LZ 字典回溯
+            } else { // 1 代表 LZ5 字典回溯 (Elecbyte 的 14-bit 奇葩结构)
                 if (src_ptr + 1 >= src_len) break;
-                uint16_t val = src[src_ptr] | (src[src_ptr + 1] << 8);
-                src_ptr += 2;
+                uint8_t d0 = src[src_ptr++];
+                uint8_t d1 = src[src_ptr++];
                 
-                int offset = (val >> 5) + 1;
-                int count = (val & 0x1F) + 3;
+                // 正确的 MUGEN LZ5 偏移与长度计算
+                int offset = ((d1 & 0x3F) << 8) | d0; 
+                int count = (d1 >> 6) + 3;
                 
-                if (count == 34) {
-                    int c;
+                if (count == 6) {
+                    uint8_t c;
                     do {
                         if (src_ptr >= src_len) break;
                         c = src[src_ptr++];
                         count += c;
                     } while (c == 255);
                 }
+                
+                int copy_idx = dst_ptr - offset - 1; 
                 for (int j = 0; j < count && dst_ptr < dst_len; ++j) {
-                    int copy_idx = dst_ptr - offset;
-                    dst[dst_ptr++] = (copy_idx >= 0) ? dst[copy_idx] : 0;
+                    dst[dst_ptr++] = (copy_idx >= 0 && copy_idx < dst_len) ? dst[copy_idx] : 0;
+                    copy_idx++; // 必须自增，支持行程长度的循环覆盖
                 }
             }
         }
@@ -50,8 +53,8 @@ inline void rle5_decompress_hardcore(const uint8_t* __restrict src, int src_len,
     int dst_ptr = 0;
     while(src_ptr < src_len && dst_ptr < dst_len) {
         uint8_t ctrl = src[src_ptr++];
-        uint16_t color = ctrl & 0x1F; 
-        uint16_t count = ctrl >> 5;   
+        uint8_t color = ctrl & 0x1F; 
+        int count = ctrl >> 5;   
         if (count == 0) {
             if (src_ptr >= src_len) break;
             count = src[src_ptr++] + 8;
@@ -63,15 +66,15 @@ inline void rle5_decompress_hardcore(const uint8_t* __restrict src, int src_len,
 }
 
 // ==============================================================================
-// 🚨 算法 3：RLE8 解压引擎 (移除画蛇添足的 0x80 透明判定，恢复纯净官方算法)
+// 🚨 算法 3：RLE8 解压引擎 (修复 0x80 透明段导致像素整体错位移形的问题)
 // ==============================================================================
 inline void rle8_decompress_hardcore(const uint8_t* __restrict src, int src_len, uint8_t* __restrict dst, int dst_len) {
     int src_ptr = 4; 
     int dst_ptr = 0;
     while (dst_ptr < dst_len && src_ptr < src_len) {
-        uint8_t byte = src[src_ptr++];
-        if ((byte & 0xC0) == 0x40) { // 01xxxxxx 代表行程长度
-            int count = byte & 0x3F;
+        uint8_t b = src[src_ptr++];
+        if ((b & 0xC0) == 0x40) { // 01xxxxxx 代表颜色行程
+            int count = b & 0x3F;
             if (count == 0) {
                 if (src_ptr >= src_len) break;
                 count = src[src_ptr++] + 64; 
@@ -79,8 +82,15 @@ inline void rle8_decompress_hardcore(const uint8_t* __restrict src, int src_len,
             if (src_ptr >= src_len) break;
             uint8_t color = src[src_ptr++];
             for (int i = 0; i < count && dst_ptr < dst_len; ++i) dst[dst_ptr++] = color;
-        } else { // 其余所有字节全部为正常像素颜色 (包含透明)
-            dst[dst_ptr++] = byte; 
+        } else if ((b & 0xC0) == 0x80) { // 10xxxxxx ⚠️ 绝对不能删！这是 RLE8 专属的透明像素快速跳跃！
+            int count = b & 0x3F;
+            if (count == 0) {
+                if (src_ptr >= src_len) break;
+                count = src[src_ptr++] + 64; 
+            }
+            for (int i = 0; i < count && dst_ptr < dst_len; ++i) dst[dst_ptr++] = 0; 
+        } else { // 其余全为单点像素
+            dst[dst_ptr++] = b; 
         }
     }
 }
@@ -132,10 +142,7 @@ Java_org_libsdl_app_DesktopSystemView_decodeSffV2C(JNIEnv* env, jobject thiz, jb
     if (format == 4) lz5_decompress_hardcore((uint8_t*)src_buf, src_len, pixels, alloc_len);
     else if (format == 3) rle5_decompress_hardcore((uint8_t*)src_buf, src_len, pixels, alloc_len);
     else if (format == 2) rle8_decompress_hardcore((uint8_t*)src_buf, src_len, pixels, alloc_len);
-    else if (format == 0) {
-        // 🔥 修复点：Format 0 绝对不能跳过前 4 个字节，它没有解压长度头！
-        memcpy(pixels, src_buf, (src_len < alloc_len) ? src_len : alloc_len);
-    }
+    else if (format == 0) memcpy(pixels, src_buf, (src_len < alloc_len) ? src_len : alloc_len);
 
     jbyte* pal_buf = env->GetByteArrayElements(palette, NULL);
     int dst_len = width * height;
