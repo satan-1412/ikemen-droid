@@ -105,7 +105,6 @@ public class DesktopSystemView extends Dialog {
 
     private static File lastVisitedDir = Environment.getExternalStorageDirectory();
 
-    // 🔥 修复点 2：存储加载的外部 .act 调色板
     private byte[] loadedActPalette = null;
 
     public DesktopSystemView(Context context) {
@@ -427,7 +426,7 @@ public class DesktopSystemView extends Dialog {
                 savedBounds[2] = windowFrame.getWidth(); savedBounds[3] = windowFrame.getHeight();
                 
                 FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -1);
-                lp.bottomMargin = (int)(50 * density); // 完美避开任务栏
+                lp.bottomMargin = (int)(50 * density); 
                 windowFrame.setLayoutParams(lp); 
                 windowFrame.setX(0); 
                 windowFrame.setY(0); 
@@ -471,7 +470,6 @@ public class DesktopSystemView extends Dialog {
         final String finalShortName = rawName.length() > 8 ? rawName.substring(0, 8) + ".." : rawName;
         TextView tbText = new TextView(getContext()); tbText.setText("▤ " + finalShortName); applyGlobalFontSettings(tbText, 1.1f, false); taskBtn.addView(tbText);
         
-        // 🔥 修复点 1：丝滑任务栏拖动逻辑：利用 post 解除底层遍历死锁
         taskBtn.setOnTouchListener(new View.OnTouchListener() {
             float startX; float initialTranslation; boolean isDragging = false;
             @Override public boolean onTouch(View v, MotionEvent event) {
@@ -1019,10 +1017,8 @@ public class DesktopSystemView extends Dialog {
                         String[] parts = line.split("=");
                         if (parts.length > 1) {
                             targetSffName = parts[1].trim().split(";")[0].trim().replace("\\", "/");
-                            // 不要在此处 break，继续寻找 pal1
                         }
                     }
-                    // 🔥 修复点 2：在此顺路加载外部 act 调色板
                     else if (inFilesSection && line.startsWith("pal1")) {
                         String[] actParts = line.split("=");
                         if (actParts.length > 1) {
@@ -1116,21 +1112,18 @@ public class DesktopSystemView extends Dialog {
     private byte[][] v2Palettes = new byte[256][1024]; 
     private byte[] globalSharedPalette = new byte[768];
 
+    // 🔥 修复黑科技 1：强力防断流的 Zlib 解压，修复调色板被异常截断导致的颜色错位！
     private byte[] smartZlibUnwrap(byte[] input) {
-        if (input.length > 2 && (input[0] == 0x78) && 
-           (input[1] == (byte)0x9C || input[1] == (byte)0xDA || input[1] == (byte)0x01)) {
-            try {
-                java.util.zip.Inflater inflater = new java.util.zip.Inflater();
-                inflater.setInput(input);
-                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream(input.length * 2);
-                byte[] buf = new byte[16384];
-                while (!inflater.finished()) {
-                    int count = inflater.inflate(buf);
-                    if (count == 0) break;
-                    bos.write(buf, 0, count);
-                }
-                inflater.end();
-                return bos.toByteArray();
+        if (input.length == 1024 || input.length == 768) return input;
+        if (input.length > 2 && (input[0] == 0x78)) {
+            try (java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(input);
+                 java.util.zip.InflaterInputStream iis = new java.util.zip.InflaterInputStream(bis)) {
+                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream(1024);
+                byte[] buf = new byte[2048];
+                int len;
+                while ((len = iis.read(buf)) > 0) { bos.write(buf, 0, len); }
+                byte[] res = bos.toByteArray();
+                return res.length > 0 ? res : input;
             } catch (Exception e) { return input; }
         }
         return input;
@@ -1139,6 +1132,30 @@ public class DesktopSystemView extends Dialog {
     private List<SffFrame> scanSffFrames(File sffFile) {
         List<SffFrame> frameList = new ArrayList<>();
         if (sffFile == null || !sffFile.exists() || sffFile.length() < 128) return frameList;
+
+        // 🔥 修复黑科技 2：底层调色板灰度兜底，防止纯黑图
+        for (int i=0; i<256; i++) {
+            for (int c=0; c<256; c++) {
+                v2Palettes[i][c*4] = (byte)c; 
+                v2Palettes[i][c*4+1] = (byte)c;
+                v2Palettes[i][c*4+2] = (byte)c;
+                v2Palettes[i][c*4+3] = (byte)255;
+            }
+        }
+
+        // 🔥 修复黑科技 3：解决 V2 格式丢失外部 .act 调色板映射导致全变黑影的致命问题！
+        if (loadedActPalette != null) {
+            System.arraycopy(loadedActPalette, 0, globalSharedPalette, 0, 768);
+            for (int p=0; p<256; p++) {
+                for (int c=0; c<256; c++) {
+                    v2Palettes[p][c*4] = loadedActPalette[c*3];
+                    v2Palettes[p][c*4+1] = loadedActPalette[c*3+1];
+                    v2Palettes[p][c*4+2] = loadedActPalette[c*3+2];
+                    v2Palettes[p][c*4+3] = (byte)255;
+                }
+            }
+            loadedActPalette = null; // 用完即抛防污染
+        }
 
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
             byte[] sig = new byte[8]; raf.read(sig);
@@ -1157,7 +1174,6 @@ public class DesktopSystemView extends Dialog {
 
                 if (numSprites < 0 || numSprites > 90000) return frameList;
 
-                // 🔥 修复点 3: V2 连结调色板修复
                 if (numPalettes > 0) {
                     for(int p=0; p<numPalettes && p<256; p++) {
                         raf.seek(palNodeOffset + p * 16 + 6);
@@ -1214,13 +1230,6 @@ public class DesktopSystemView extends Dialog {
                 raf.seek(24); int nextOffset = Integer.reverseBytes(raf.readInt());
                 int currentIndex = 0;
                 boolean foundGlobalPal = false;
-                
-                // 🔥 修复点 3: 外部 .act 调色板注入覆盖 V1
-                if (loadedActPalette != null) {
-                    System.arraycopy(loadedActPalette, 0, globalSharedPalette, 0, 768);
-                    foundGlobalPal = true;
-                    loadedActPalette = null; // 用完即抛，防止污染下一个文件
-                }
 
                 while (nextOffset > 0 && currentIndex < totalImages && currentIndex < 90000) {
                     raf.seek(nextOffset);
@@ -1321,7 +1330,6 @@ public class DesktopSystemView extends Dialog {
                                     int crcVal = (int) crc.getValue();
                                     bos.write(new byte[]{(byte)(crcVal>>>24), (byte)(crcVal>>>16), (byte)(crcVal>>>8), (byte)crcVal});
                                     
-                                    // 🔥 修复点 4: 注入 tRNS 块，支持索引透明
                                     bos.write(new byte[]{0, 0, 0, 1});
                                     bos.write(new byte[]{'t', 'R', 'N', 'S'});
                                     bos.write(new byte[]{0}); 
@@ -1461,6 +1469,35 @@ public class DesktopSystemView extends Dialog {
         canvasFrame.addView(previewImg, new FrameLayout.LayoutParams(-1, -1)); 
         root.addView(canvasFrame);
 
+        // 🔥 新增黑科技 4：完美的 1~60 FPS 播放速度滑块组件
+        LinearLayout speedLayout = new LinearLayout(getContext());
+        speedLayout.setOrientation(LinearLayout.HORIZONTAL);
+        speedLayout.setGravity(Gravity.CENTER_VERTICAL);
+        speedLayout.setPadding((int)(15*density), 0, (int)(15*density), (int)(10*density));
+
+        TextView speedLabel = new TextView(getContext());
+        speedLabel.setText("⏱️ 播放速度: 60 FPS");
+        applyGlobalFontSettings(speedLabel, 0.9f, true);
+        speedLabel.setTextColor(Color.parseColor("#0078D7"));
+
+        SeekBar speedBar = new SeekBar(getContext());
+        speedBar.setMax(59); 
+        speedBar.setProgress(59);
+        final int[] currentDelay = {16};
+        speedBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean b) {
+                int fps = p + 1;
+                speedLabel.setText("⏱️ 播放速度: " + fps + " FPS");
+                currentDelay[0] = 1000 / fps;
+            }
+            public void onStartTrackingTouch(SeekBar s){}
+            public void onStopTrackingTouch(SeekBar s){}
+        });
+
+        speedLayout.addView(speedLabel);
+        speedLayout.addView(speedBar, new LinearLayout.LayoutParams(0, -2, 1f));
+        root.addView(speedLayout);
+
         LinearLayout controls = new LinearLayout(getContext()); 
         controls.setOrientation(LinearLayout.HORIZONTAL); 
         controls.setGravity(Gravity.CENTER); 
@@ -1512,7 +1549,7 @@ public class DesktopSystemView extends Dialog {
                 if (isPlaying[0] && !currentGroupFrames.isEmpty()) {
                     currentFrameIndex[0]++;
                     updateFrameAction.run();
-                    playHandler.postDelayed(this, 16); 
+                    playHandler.postDelayed(this, currentDelay[0]); // 采用动态速度
                 }
             }
         };
@@ -1556,6 +1593,10 @@ public class DesktopSystemView extends Dialog {
         openAppWindow(winTitle, root, () -> {
             isPlaying[0] = false; 
             playHandler.removeCallbacksAndMessages(null); 
+            // 🔥 新增黑科技 5：强制防内存泄漏回收！关闭窗口时释放上千帧的 Bitmap！
+            for (SffFrame f : allFrames) {
+                if (f.cachedBmp != null) { f.cachedBmp.recycle(); f.cachedBmp = null; }
+            }
             View win = windowsLayer.findViewWithTag(winTitle); 
             if (win != null) windowsLayer.removeView(win);
             View tbBtn = taskbarAppsLayout.findViewWithTag("tb_" + winTitle); 
