@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <android/log.h>
 
-#define LOG_TAG "IkemenSffEngine"
+#define LOG_TAG "IkemenEngine"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 // ==============================================================================
@@ -16,14 +16,13 @@ inline void lz5_decompress_hardcore(const uint8_t* __restrict src, int src_len, 
     while (dst_ptr < dst_len && src_ptr < src_len) {
         uint8_t ctrl = src[src_ptr++];
         for (int i = 0; i < 8 && dst_ptr < dst_len && src_ptr < src_len; ++i) {
-            if ((ctrl & (1 << i)) == 0) { // 0 代表直接拷贝 1 字节
+            if ((ctrl & (1 << i)) == 0) { 
                 dst[dst_ptr++] = src[src_ptr++];
-            } else { // 1 代表 LZ 字典回溯
+            } else { 
                 if (src_ptr + 1 >= src_len) break;
                 uint8_t d0 = src[src_ptr++];
                 uint8_t d1 = src[src_ptr++];
                 
-                // MUGEN 专属的 14-bit 偏移量计算
                 int offset = ((d1 & 0x3F) << 8) | d0; 
                 int count = (d1 >> 6) + 3;
                 
@@ -36,10 +35,8 @@ inline void lz5_decompress_hardcore(const uint8_t* __restrict src, int src_len, 
                     } while (c == 255);
                 }
                 
-                // 必须减 1，Elecbyte 的指针是相对向后的
                 int copy_idx = dst_ptr - offset - 1; 
                 for (int j = 0; j < count && dst_ptr < dst_len; ++j) {
-                    // 支持重叠区的自我拷贝 (RLE 特性)
                     dst[dst_ptr++] = (copy_idx >= 0 && copy_idx < dst_len) ? dst[copy_idx] : 0;
                     copy_idx++; 
                 }
@@ -78,7 +75,6 @@ inline void rle8_decompress_hardcore(const uint8_t* __restrict src, int src_len,
         uint8_t b = src[src_ptr++];
         
         if ((b & 0xC0) == 0x40) { 
-            // 01xxxxxx：颜色行程 (Color Run)
             int count = b & 0x3F;
             if (count == 0) {
                 if (src_ptr >= src_len) break;
@@ -89,18 +85,14 @@ inline void rle8_decompress_hardcore(const uint8_t* __restrict src, int src_len,
             for (int i = 0; i < count && dst_ptr < dst_len; ++i) dst[dst_ptr++] = color;
             
         } else if ((b & 0xC0) == 0x80) { 
-            // 10xxxxxx：空白跳跃 (Blank Run) 
-            // ⚠️ 极其关键！MUGEN 里 0x80-0xBF 代表的是连续的透明像素！如果当成颜色画，会导致后续全盘错位！
             int count = b & 0x3F;
             if (count == 0) {
                 if (src_ptr >= src_len) break;
                 count = src[src_ptr++] + 64; 
             }
-            // 填入 0 (MUGEN 中索引 0 永远代表绝对透明)
             for (int i = 0; i < count && dst_ptr < dst_len; ++i) dst[dst_ptr++] = 0; 
             
         } else { 
-            // 00xxxxxx 或 11xxxxxx：代表单点真实像素 (包括 0x00-0x3F 和 0xC0-0xFF)
             dst[dst_ptr++] = b; 
         }
     }
@@ -133,6 +125,63 @@ inline void pcx_decompress_hardcore(const uint8_t* __restrict src, int src_len, 
     }
 }
 
+// ==============================================================================
+// 🎵 算法 5：SND 文件闪电扫描器 (全链表解析，极速定点音频数据)
+// ==============================================================================
+extern "C" JNIEXPORT jintArray JNICALL
+Java_org_libsdl_app_DesktopSystemView_scanSndC(JNIEnv* env, jobject thiz, jbyteArray data) {
+    jsize src_len = env->GetArrayLength(data);
+    jbyte* src_buf = env->GetByteArrayElements(data, NULL);
+
+    // 长度保护和 "ElecbyteSnd" 魔法签名校验
+    if (src_len < 24 || memcmp(src_buf, "ElecbyteSnd", 11) != 0) {
+        env->ReleaseByteArrayElements(data, src_buf, JNI_ABORT);
+        return env->NewIntArray(0);
+    }
+
+    uint32_t num_sounds = ((uint8_t)src_buf[16]) | (((uint8_t)src_buf[17]) << 8) | (((uint8_t)src_buf[18]) << 16) | (((uint8_t)src_buf[19]) << 24);
+    uint32_t first_offset = ((uint8_t)src_buf[20]) | (((uint8_t)src_buf[21]) << 8) | (((uint8_t)src_buf[22]) << 16) | (((uint8_t)src_buf[23]) << 24);
+
+    // 第一遍：死循环防护与有效链表节点统计
+    int count = 0;
+    uint32_t tmp_offset = first_offset;
+    while (tmp_offset > 0 && tmp_offset + 16 <= (uint32_t)src_len && count < 99999) {
+        uint32_t next_offset = ((uint8_t)src_buf[tmp_offset]) | (((uint8_t)src_buf[tmp_offset+1]) << 8) | (((uint8_t)src_buf[tmp_offset+2]) << 16) | (((uint8_t)src_buf[tmp_offset+3]) << 24);
+        count++;
+        if (next_offset == 0 || next_offset == tmp_offset) break;
+        tmp_offset = next_offset;
+    }
+
+    // [Group, Item, 数据起始Offset, 音频Length] -> 每个文件 4 个 int
+    jintArray result = env->NewIntArray(count * 4);
+    jint* out_data = (jint*)env->GetPrimitiveArrayCritical(result, 0);
+
+    // 第二遍：精准摘取
+    uint32_t current_offset = first_offset;
+    for (int i = 0; i < count; ++i) {
+        if (current_offset <= 0 || current_offset + 16 > (uint32_t)src_len) break;
+
+        uint32_t next_offset = ((uint8_t)src_buf[current_offset]) | (((uint8_t)src_buf[current_offset+1]) << 8) | (((uint8_t)src_buf[current_offset+2]) << 16) | (((uint8_t)src_buf[current_offset+3]) << 24);
+        uint32_t length      = ((uint8_t)src_buf[current_offset+4]) | (((uint8_t)src_buf[current_offset+5]) << 8) | (((uint8_t)src_buf[current_offset+6]) << 16) | (((uint8_t)src_buf[current_offset+7]) << 24);
+        
+        // MUGEN 的 Group 和 Item 有时为负数，必须强制转换为 signed 32-bit int
+        int group = (int)(((uint8_t)src_buf[current_offset+8]) | (((uint8_t)src_buf[current_offset+9]) << 8) | (((uint8_t)src_buf[current_offset+10]) << 16) | (((uint8_t)src_buf[current_offset+11]) << 24));
+        int item  = (int)(((uint8_t)src_buf[current_offset+12]) | (((uint8_t)src_buf[current_offset+13]) << 8) | (((uint8_t)src_buf[current_offset+14]) << 16) | (((uint8_t)src_buf[current_offset+15]) << 24));
+
+        out_data[i * 4 + 0] = group;
+        out_data[i * 4 + 1] = item;
+        out_data[i * 4 + 2] = current_offset + 16; // 跨过 16 字节的 Sub-header，直达 WAV 裸数据
+        out_data[i * 4 + 3] = length;              
+
+        if (next_offset == 0 || next_offset == current_offset) break;
+        current_offset = next_offset;
+    }
+
+    env->ReleasePrimitiveArrayCritical(result, out_data, 0);
+    env->ReleaseByteArrayElements(data, src_buf, JNI_ABORT);
+    return result;
+}
+
 extern "C" JNIEXPORT jintArray JNICALL
 Java_org_libsdl_app_DesktopSystemView_decodeSffV2C(JNIEnv* env, jobject thiz, jbyteArray data, jint format, jint width, jint height, jint colorDepth, jbyteArray palette) {
     jsize src_len = env->GetArrayLength(data);
@@ -160,7 +209,7 @@ Java_org_libsdl_app_DesktopSystemView_decodeSffV2C(JNIEnv* env, jobject thiz, jb
     }
 
     jbyte* pal_buf = env->GetByteArrayElements(palette, NULL);
-    int pal_len = env->GetArrayLength(palette); // 安全边界检测
+    int pal_len = env->GetArrayLength(palette); 
     int dst_len = width * height;
     
     jintArray result = env->NewIntArray(dst_len);
@@ -183,13 +232,12 @@ Java_org_libsdl_app_DesktopSystemView_decodeSffV2C(JNIEnv* env, jobject thiz, jb
             int idx = pixels[i] & 0xFF;
             int p_idx = idx * 4; 
             
-            // 安全防闪退：确保不越界读取野鸡素材损坏的调色板
             if (p_idx + 3 < pal_len) {
                 int r = pal_buf[p_idx] & 0xFF; int g = pal_buf[p_idx + 1] & 0xFF; int b = pal_buf[p_idx + 2] & 0xFF; int a = pal_buf[p_idx + 3] & 0xFF;
                 if (idx == 0) a = 0; else if (a == 0) a = 255; 
                 out_pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
             } else {
-                out_pixels[i] = (idx == 0) ? 0 : 0xFF00FF00; // 越界补绿色，防止崩溃
+                out_pixels[i] = (idx == 0) ? 0 : 0xFF00FF00; 
             }
         }
     }
@@ -232,7 +280,7 @@ Java_org_libsdl_app_DesktopSystemView_decodeSffV1C(JNIEnv* env, jobject thiz, jb
                 int r = pal_buf[p_idx] & 0xFF; int g = pal_buf[p_idx + 1] & 0xFF; int b = pal_buf[p_idx + 2] & 0xFF;
                 out_pixels[i] = (0xFF << 24) | (r << 16) | (g << 8) | b;
             } else {
-                out_pixels[i] = 0xFF00FF00; // 越界补全
+                out_pixels[i] = 0xFF00FF00; 
             }
         }
     }
