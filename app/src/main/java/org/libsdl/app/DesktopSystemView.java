@@ -11,6 +11,7 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PointF;
 import android.graphics.SurfaceTexture;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -880,7 +881,7 @@ public class DesktopSystemView extends Dialog {
         return root;
     }
 
-    // 🔥 全新架构：协议级文件检核模型
+    // 🔥 协议级检核模型
     private static class ValidAsset {
         String name; File sff; Bitmap preview; String version; byte[] actData;
         ValidAsset(String n, File s, Bitmap p, String v, byte[] a) { name=n; sff=s; preview=p; version=v; actData=a; }
@@ -904,7 +905,7 @@ public class DesktopSystemView extends Dialog {
     private void runAssetScanner(File targetFile, final LinearLayout galleryLayout, final TextView statusText) {
         List<File> sffFiles = new ArrayList<>();
         List<String> names = new ArrayList<>();
-        List<byte[]> acts = new ArrayList<>(); // 精准存放专属 ACT
+        List<byte[]> acts = new ArrayList<>(); 
         
         updateUI(statusText, "📡 阶段 1/3: 递归扫描目录与协议匹配...");
         findSffTargets(targetFile, sffFiles, names, acts, 0);
@@ -916,7 +917,7 @@ public class DesktopSystemView extends Dialog {
             return;
         }
 
-        updateUI(statusText, "⚙️ 阶段 2/3: 深度解析与预检核 (过滤乱码)...");
+        updateUI(statusText, "⚙️ 阶段 2/3: 深度解析与沙盒预检 (过滤乱码和黑屏)...");
         final int total = sffFiles.size();
         final List<ValidAsset> validAssets = new ArrayList<>();
         final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
@@ -928,23 +929,22 @@ public class DesktopSystemView extends Dialog {
             final String name = names.get(i);
             final byte[] actForThisFile = acts.get(i);
             
-            // 🔥 在这帧生成期间，我们为其注入专属的协议级 ACT 调色板
             Bitmap previewBmp = extractPreviewFromSff(sffFile, actForThisFile);
             final String sffVer = sniffSffVersion(sffFile);
             
-            // 🚨 预检核过滤：只有在成功生成了真实 Bitmap (而不是那张写着解析异常的兜底图) 时，才视作有效资产！
+            // 🚨 检核门槛：只要返回了合法位图，且不是兜底的 300x300 报错图，才视为解析成功
             if (previewBmp != null && previewBmp.getWidth() != 300) {
                 validAssets.add(new ValidAsset(name, sffFile, previewBmp, sffVer, actForThisFile));
             }
 
             final int currentCount = i + 1;
-            mainHandler.post(() -> statusText.setText(String.format("⚙️ 阶段 2/3: 预检中 %d / %d (已筛选 %d 个有效)", currentCount, total, validAssets.size())));
+            mainHandler.post(() -> statusText.setText(String.format("⚙️ 阶段 2/3: 沙盒预检 %d / %d (已保护并挂载 %d 个有效)", currentCount, total, validAssets.size())));
             
             try { Thread.sleep(10); } catch (Exception e) {}
         }
         
         if (!isAssetScannerRunning) return;
-        updateUI(statusText, "🖥️ 阶段 3/3: 预检完毕，正在渲染界面...");
+        updateUI(statusText, "🖥️ 阶段 3/3: 预检完毕，正在渲染安全界面...");
 
         mainHandler.post(() -> {
             LinearLayout currentRow = null;
@@ -957,7 +957,6 @@ public class DesktopSystemView extends Dialog {
                     galleryLayout.addView(currentRow, new LinearLayout.LayoutParams(-1, -2));
                 }
                 
-                // 将专属的 ACT 数据传递给 UI 卡片
                 View card = buildAssetCard(va.name, va.sff, va.preview, va.version, va.actData);
                 LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1f);
                 cardParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
@@ -966,14 +965,14 @@ public class DesktopSystemView extends Dialog {
                 itemsInRow++;
                 if (itemsInRow >= 3) itemsInRow = 0; 
             }
-            statusText.setText("✅ 解析完成! 成功通过协议级预检并挂载 " + validAssets.size() + " 个优质资源");
+            statusText.setText("✅ 解析完成! 成功通过沙盒试解，挂载了 " + validAssets.size() + " 个无损资源");
         });
         isAssetScannerRunning = false;
     }
 
     private List<String> resolvedSffPaths = new ArrayList<>();
 
-    // 🔥 改进版：精确收集 Def 匹配的专属 Act，防止张冠李戴
+    // 🔥 协议嗅探：精准定点寻找 .act 调色板
     private void findSffTargets(File f, List<File> sffFiles, List<String> names, List<byte[]> acts, int depth) {
         if (depth == 0) resolvedSffPaths.clear(); 
         if (depth > 99 || !isAssetScannerRunning || f == null || !f.exists()) return; 
@@ -991,20 +990,30 @@ public class DesktopSystemView extends Dialog {
         } else {
             String name = f.getName().toLowerCase();
             if (name.endsWith(".def")) {
-                byte[][] extractedAct = new byte[1][]; // 用容器把 ACT 偷运出来
+                byte[][] extractedAct = new byte[1][]; 
                 File sff = parseDefForSffAndAct(f, f.getParentFile(), extractedAct);
                 if (sff != null && sff.exists() && !sffFiles.contains(sff)) {
                     sffFiles.add(sff);
                     String parsedName = parseDefForDisplayName(f);
                     names.add(parsedName != null ? parsedName : f.getName().replace(".def", "").replace(".DEF", ""));
-                    acts.add(extractedAct[0]); // 绑定专属的调色板
+                    acts.add(extractedAct[0]); 
                     resolvedSffPaths.add(sff.getAbsolutePath()); 
                 }
             } else if (name.endsWith(".sff")) {
                 if (!resolvedSffPaths.contains(f.getAbsolutePath()) && !sffFiles.contains(f)) {
                     sffFiles.add(f);
                     names.add(f.getName());
-                    acts.add(null); // 没有外部 act，使用内部默认
+                    
+                    // 智能降级探测：如果没有 .def，去同级目录找同名的 .act 文件！
+                    byte[] localAct = null;
+                    File actFile = new File(f.getParentFile(), f.getName().replace(".sff", ".act").replace(".SFF", ".act"));
+                    if (actFile.exists()) {
+                        try (java.io.FileInputStream fis = new java.io.FileInputStream(actFile)) {
+                            localAct = new byte[768];
+                            fis.read(localAct);
+                        } catch (Exception e) { localAct = null; }
+                    }
+                    acts.add(localAct);
                 }
             }
         }
@@ -1026,7 +1035,6 @@ public class DesktopSystemView extends Dialog {
         return null;
     }
 
-    // 🔥 解析 Def，不仅拿 SFF，还要把关联的 Act 抓出来
     private File parseDefForSffAndAct(File defFile, File parentFolder, byte[][] outAct) {
         String[] charsets = {"UTF-8", "Shift_JIS", "GBK", "ISO-8859-1"};
         for (String charset : charsets) {
@@ -1097,7 +1105,7 @@ public class DesktopSystemView extends Dialog {
         Button exportBtn = createButton("👁️ 打开查看器", "#0078D7"); exportBtn.setPadding(0, (int)(5*density), 0, (int)(5*density));
         exportBtn.setOnClickListener(v -> {
             if (sffFile != null && sffFile.exists()) {
-                showAssetViewerWindow(name, sffFile, actData); // 强制带入专属 ACT
+                showAssetViewerWindow(name, sffFile, actData); 
             } else Toast.makeText(getContext(), "资源读取失败", Toast.LENGTH_SHORT).show();
         });
         card.addView(exportBtn); return card;
@@ -1134,7 +1142,6 @@ public class DesktopSystemView extends Dialog {
         public int linkedSpriteIndex = -1; 
     }
 
-    // 不再使用共享全局污染变量，改为每次解析时局部化调色板
     private byte[] smartZlibUnwrap(byte[] input) {
         if (input == null || input.length == 0) return input;
         try {
@@ -1156,12 +1163,10 @@ public class DesktopSystemView extends Dialog {
         return input; 
     }
 
-    // 🔥 带有严格作用域的扫流函数
     private List<SffFrame> scanSffFrames(File sffFile, byte[] actData, byte[][] outV2Palettes, byte[] outGlobalSharedPalette) {
         List<SffFrame> frameList = new ArrayList<>();
         if (sffFile == null || !sffFile.exists() || sffFile.length() < 128) return frameList;
 
-        // V2 灰度兜底
         for (int i=0; i<256; i++) {
             for (int c=0; c<256; c++) {
                 outV2Palettes[i][c*4] = (byte)c; 
@@ -1171,7 +1176,6 @@ public class DesktopSystemView extends Dialog {
             }
         }
 
-        // 注入属于这个 SFF 的协议专属 ACT 调色板
         if (actData != null && actData.length == 768) {
             System.arraycopy(actData, 0, outGlobalSharedPalette, 0, 768);
             for (int p=0; p<256; p++) {
@@ -1217,7 +1221,6 @@ public class DesktopSystemView extends Dialog {
                             raf.seek(ldataOffset + pDataOffset);
                             byte[] v2palRaw = new byte[pDataLength]; raf.read(v2palRaw);
                             
-                            // 🔥 调色板容错处理：MUGEN V2 很多时候是不压缩的 RAW (1024)
                             if (pDataLength == 1024) {
                                 for(int c=0; c<256; c++) {
                                     outV2Palettes[p][c*4]   = v2palRaw[c*4];
@@ -1273,7 +1276,6 @@ public class DesktopSystemView extends Dialog {
                     frameList.add(frame);
                 }
                 
-                // V2 后期装配链接帧
                 for (SffFrame f : frameList) {
                     if (f.linkedSpriteIndex >= 0) {
                         SffFrame target = f;
@@ -1298,7 +1300,6 @@ public class DesktopSystemView extends Dialog {
                 int currentIndex = 0;
                 boolean foundGlobalPal = false;
 
-                // 🔥 修复点：V1 的 Linked 并非索引，而是无缝继承上一个成功实体的属性 (解决 MJJsparkleedit 问题)
                 int lastValidOffset = -1;
                 int lastValidLength = -1;
                 int lastValidWidth = -1;
@@ -1317,7 +1318,6 @@ public class DesktopSystemView extends Dialog {
                     frame.group = group; frame.item = item; frame.sharedPal = (sharedPal != 0);
                     
                     if (linked != 0) {
-                        // V1 Linked = 直接复用上一帧的裸数据！
                         frame.offset = lastValidOffset;
                         frame.length = lastValidLength;
                         frame.width = lastValidWidth;
@@ -1335,7 +1335,6 @@ public class DesktopSystemView extends Dialog {
                         frame.offset = nextOffset; frame.length = length;
                         frameList.add(frame);
 
-                        // 更新指针，以便后续的链接帧复用
                         lastValidOffset = frame.offset;
                         lastValidLength = frame.length;
                         lastValidWidth = frame.width;
@@ -1363,7 +1362,7 @@ public class DesktopSystemView extends Dialog {
 
     private Bitmap decodeSingleFrame(File sffFile, SffFrame frame, byte[][] v2Palettes, byte[] globalSharedPalette) {
         if (frame.cachedBmp != null) return frame.cachedBmp;
-        if (frame.offset < 0 || frame.width <= 0 || frame.height <= 0 || frame.length <= 0) return null; // 预检核：静默返回 NULL
+        if (frame.offset < 0 || frame.width <= 0 || frame.height <= 0 || frame.length <= 0) return null; 
 
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
             byte[] rawData = new byte[frame.length];
@@ -1434,7 +1433,7 @@ public class DesktopSystemView extends Dialog {
                         Bitmap pngBmp = BitmapFactory.decodeByteArray(finalPngData, finalStart, finalLen);
                         if (pngBmp != null) { frame.cachedBmp = pngBmp; return pngBmp; }
                     }
-                    return null; // 返回 NULL 配合预检核
+                    return null; 
                 }
 
                 byte[] palData = new byte[1024]; 
@@ -1463,7 +1462,7 @@ public class DesktopSystemView extends Dialog {
                 }
             }
         } catch (Throwable t) { 
-            return null; // 彻底阻断闪退，交给预检核判定 
+            return null; 
         }
         return null;
     }
@@ -1505,10 +1504,22 @@ public class DesktopSystemView extends Dialog {
         return bmp;
     }
 
+    // 数学辅助函数，用于双指缩放计算
+    private float spacing(MotionEvent event) {
+        float x = event.getX(0) - event.getX(1);
+        float y = event.getY(0) - event.getY(1);
+        return (float) Math.sqrt(x * x + y * y);
+    }
+    
+    private void midPoint(PointF point, MotionEvent event) {
+        float x = event.getX(0) + event.getX(1);
+        float y = event.getY(0) + event.getY(1);
+        point.set(x / 2, y / 2);
+    }
+
     private void showAssetViewerWindow(String charName, File sffFile, byte[] actData) {
         final String winTitle = "🎨 检视: " + charName;
         
-        // 隔离出自己的专属调色板池
         final byte[][] scopeV2Palettes = new byte[256][1024]; 
         final byte[] scopeGlobalPalette = new byte[768];
         
@@ -1568,10 +1579,58 @@ public class DesktopSystemView extends Dialog {
         canvasBorder.setStroke((int)(1*density), Color.parseColor("#3F3F46"));
         canvasFrame.setBackground(new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{tileBg, canvasBorder}));
 
-        ImageView previewImg = new ImageView(getContext()); 
-        previewImg.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        // 🔥 双指放缩与自由拖拽引擎挂载点
+        final ImageView previewImg = new ImageView(getContext()); 
+        previewImg.setScaleType(ImageView.ScaleType.MATRIX); // 锁定矩阵渲染模式！
         canvasFrame.addView(previewImg, new FrameLayout.LayoutParams(-1, -1)); 
         root.addView(canvasFrame);
+
+        final Matrix imageMatrix = new Matrix();
+        final Matrix savedMatrix = new Matrix();
+        final int[] touchMode = {0}; // 0=无, 1=拖拽, 2=双指缩放
+        final PointF startPoint = new PointF();
+        final PointF midPoint = new PointF();
+        final float[] oldDist = {1f};
+        
+        // 首次加载图像时的初始化居中标记
+        final boolean[] isMatrixInitialized = {false};
+
+        canvasFrame.setOnTouchListener((v, event) -> {
+            switch (event.getAction() & MotionEvent.ACTION_MASK) {
+                case MotionEvent.ACTION_DOWN:
+                    savedMatrix.set(imageMatrix);
+                    startPoint.set(event.getX(), event.getY());
+                    touchMode[0] = 1;
+                    break;
+                case MotionEvent.ACTION_POINTER_DOWN:
+                    oldDist[0] = spacing(event);
+                    if (oldDist[0] > 10f) {
+                        savedMatrix.set(imageMatrix);
+                        midPoint(midPoint, event);
+                        touchMode[0] = 2;
+                    }
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_POINTER_UP:
+                    touchMode[0] = 0;
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    if (touchMode[0] == 1) { // 单指拖拽
+                        imageMatrix.set(savedMatrix);
+                        imageMatrix.postTranslate(event.getX() - startPoint.x, event.getY() - startPoint.y);
+                    } else if (touchMode[0] == 2) { // 双指缩放
+                        float newDist = spacing(event);
+                        if (newDist > 10f) {
+                            imageMatrix.set(savedMatrix);
+                            float scale = newDist / oldDist[0];
+                            imageMatrix.postScale(scale, scale, midPoint.x, midPoint.y);
+                        }
+                    }
+                    break;
+            }
+            previewImg.setImageMatrix(imageMatrix);
+            return true;
+        });
 
         LinearLayout speedLayout = new LinearLayout(getContext());
         speedLayout.setOrientation(LinearLayout.HORIZONTAL);
@@ -1624,12 +1683,29 @@ public class DesktopSystemView extends Dialog {
             new Thread(() -> {
                 final Bitmap bmp = decodeSingleFrame(sffFile, targetFrame, scopeV2Palettes, scopeGlobalPalette);
                 uiHandler.post(() -> {
-                    if (bmp != null) previewImg.setImageBitmap(bmp);
+                    if (bmp != null) {
+                        previewImg.setImageBitmap(bmp);
+                        
+                        // 初次加载时，自动居中并适配大小（后续播放时不再重置矩阵！）
+                        if (!isMatrixInitialized[0] && canvasFrame.getWidth() > 0) {
+                            float scale = Math.min((float)canvasFrame.getWidth() / bmp.getWidth(), (float)canvasFrame.getHeight() / bmp.getHeight());
+                            if (scale > 1.5f) scale = 1.5f; // 防止过小素材被拉得太模糊
+                            float dx = (canvasFrame.getWidth() - bmp.getWidth() * scale) / 2f;
+                            float dy = (canvasFrame.getHeight() - bmp.getHeight() * scale) / 2f;
+                            imageMatrix.setScale(scale, scale);
+                            imageMatrix.postTranslate(dx, dy);
+                            previewImg.setImageMatrix(imageMatrix);
+                            isMatrixInitialized[0] = true;
+                        }
+                    }
                     infoText.setText(String.format("帧: %d / %d | 动作组: %d | 索引: %d | 格式: %d | 尺寸: %dx%d", 
                         currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.format, targetFrame.width, targetFrame.height));
                 });
             }).start();
         };
+
+        // 视图测量完毕后再更新第一帧，确保初始居中计算正确
+        canvasFrame.post(updateFrameAction);
 
         groupSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
