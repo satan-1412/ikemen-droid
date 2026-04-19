@@ -1322,7 +1322,15 @@ public class DesktopSystemView extends Dialog {
         for (SffFrame f : frames) { Bitmap bmp = decodeSingleFrame(sffFile, f, v2Palettes, globalSharedPalette); if (bmp != null) return bmp; }
         return createTextBitmap(sffFile.getName(), "全帧解析受阻");
     }
-
+    
+    private Bitmap createTextBitmap(String title, String sub) {
+        Bitmap bmp = Bitmap.createBitmap(300, 300, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp); canvas.drawColor(Color.parseColor("#333333"));
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG); p.setColor(Color.parseColor("#00A4EF")); p.setTextSize(35f); p.setTypeface(Typeface.DEFAULT_BOLD); p.setTextAlign(Paint.Align.CENTER);
+        canvas.drawText(title.length() > 10 ? title.substring(0,10)+".." : title, 150, 120, p);
+        p.setColor(Color.WHITE); p.setTextSize(20f); canvas.drawText(sub, 150, 180, p);
+        return bmp;
+    }
     private float spacing(MotionEvent event) { float x = event.getX(0) - event.getX(1); float y = event.getY(0) - event.getY(1); return (float) Math.sqrt(x * x + y * y); }
     private void midPoint(PointF point, MotionEvent event) { float x = event.getX(0) + event.getX(1); float y = event.getY(0) + event.getY(1); point.set(x / 2, y / 2); }
 
