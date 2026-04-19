@@ -35,13 +35,7 @@ android {
         }
         resourceConfigurations += ["en", "de", "es", "fr", "ja", "pt", "zh"]
         
-        // 👇 核心修复1：开启 C++ 底层编译参数
-        externalNativeBuild {
-            ndkBuild {
-                arguments "APP_PLATFORM=android-21"
-                abiFilters 'armeabi-v7a', 'arm64-v8a'
-            }
-        }
+        // （已安全移除 C++ 底层 ndkBuild 编译参数）
     }
     
     sourceSets.main {
@@ -60,12 +54,7 @@ android {
             jniLibs.srcDir 'libs'
         }
         
-        // 👇 核心修复2：解除封印，正式让安卓去读取并编译底层的 C++ 文件！
-        externalNativeBuild {
-            ndkBuild {
-                path 'jni/src/Android.mk'
-            }
-        }
+        // （已安全移除 Android.mk 封印解除代码，全面转向 Go）
     }
     
     lint {
@@ -86,5 +75,6 @@ android {
 }
 
 dependencies {
-    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // 👇 核心修改：让安卓能够读取我们未来用 Go 生成的 .aar 模块包
+    implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')
 }
