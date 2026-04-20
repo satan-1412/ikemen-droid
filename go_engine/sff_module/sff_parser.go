@@ -12,10 +12,6 @@ import (
 	"os"
 )
 
-// ==========================================
-// 🛠️ 基础结构定义
-// ==========================================
-
 type SffHeader struct {
 	Version                  [4]byte
 	FirstSpriteHeaderOffset  uint32
@@ -31,13 +27,10 @@ func (sh *SffHeader) Read(r io.Reader, lofs *uint32, tofs *uint32) error {
 		return err
 	}
 	if string(buf[:n]) != "ElecbyteSpr\x00" {
-		return fmt.Errorf("unrecognized SFF file, invalid header")
+		return fmt.Errorf("unrecognized SFF file")
 	}
 
-	read := func(x interface{}) error {
-		return binary.Read(r, binary.LittleEndian, x)
-	}
-
+	read := func(x interface{}) error { return binary.Read(r, binary.LittleEndian, x) }
 	read(&sh.Version[3])
 	read(&sh.Version[2])
 	read(&sh.Version[1])
@@ -83,41 +76,10 @@ type Sprite struct {
 	IsRaw           bool
 	DataOffset      uint32
 	DataSize        uint32
-	PalOffset       int64 // 专用于 SFFv1 的共享调色板偏移追踪
+	PalOffset       int64
 }
 
-func newSprite() *Sprite {
-	return &Sprite{palidx: -1}
-}
-
-// ==========================================
-// 🎨 ACT 外部调色板读取机制 (备用)
-// ==========================================
-func ReadActPalette(filename string) ([]uint32, error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	pal := make([]uint32, 256)
-	var rgb [3]byte
-	for i := 255; i >= 0; i-- {
-		if err := binary.Read(f, binary.LittleEndian, &rgb); err != nil {
-			break
-		}
-		var alpha byte = 255
-		if i == 0 {
-			alpha = 0
-		}
-		pal[i] = uint32(alpha)<<24 | uint32(rgb[0])<<16 | uint32(rgb[1])<<8 | uint32(rgb[2])
-	}
-	return pal, nil
-}
-
-// ==========================================
-// 🧩 核心解压算法 (支持 SFF 所有压缩协议)
-// ==========================================
+func newSprite() *Sprite { return &Sprite{palidx: -1} }
 
 func (s *Sprite) RlePcxDecode(rle []byte) (p []byte) {
 	if len(rle) == 0 || s.rle <= 0 {
@@ -125,7 +87,6 @@ func (s *Sprite) RlePcxDecode(rle []byte) (p []byte) {
 	}
 	p = make([]byte, int(s.Size[0])*int(s.Size[1]))
 	i, j, k, w := 0, 0, 0, int(s.Size[0])
-
 	for j < len(p) {
 		n, d := 1, rle[i]
 		if i < len(rle)-1 {
@@ -322,11 +283,8 @@ func ReadPalette(f io.ReadSeeker, offset int64, size uint32, version2 bool) ([]u
 	for i := 0; i < len(pal); i++ {
 		var rgba [4]byte
 		if i < rawCount {
-			if err := binary.Read(f, binary.LittleEndian, rgba[:]); err != nil {
-				return nil, err
-			}
+			binary.Read(f, binary.LittleEndian, rgba[:])
 		}
-		// V2 某些版本需要继承文件头定义的 Alpha 策略
 		if !version2 {
 			if i == 0 {
 				rgba[3] = 0
@@ -339,11 +297,6 @@ func ReadPalette(f io.ReadSeeker, offset int64, size uint32, version2 bool) ([]u
 	return pal, nil
 }
 
-// ==========================================
-// 🔍 封装对外的读取与提取方法
-// ==========================================
-
-// ParseSffHeader: 极速读取 SFF 版本号
 func ParseSffHeader(filename string) (string, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -368,7 +321,6 @@ type SffFrameInfo struct {
 	Y      int16
 }
 
-// ExtractAllFrames: 获取 SFF 中所有帧的数据（修复 SFFv1 无法读取宽高的问题，并增加了轴心坐标返回）
 func ExtractAllFrames(filename string) ([]SffFrameInfo, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -383,9 +335,7 @@ func ExtractAllFrames(filename string) ([]SffFrameInfo, error) {
 	}
 
 	frames := make([]SffFrameInfo, 0, h.NumberOfSprites)
-	read := func(x interface{}) error {
-		return binary.Read(f, binary.LittleEndian, x)
-	}
+	read := func(x interface{}) error { return binary.Read(f, binary.LittleEndian, x) }
 
 	shofs := int64(h.FirstSpriteHeaderOffset)
 	for i := 0; i < int(h.NumberOfSprites); i++ {
@@ -404,7 +354,7 @@ func ExtractAllFrames(filename string) ([]SffFrameInfo, error) {
 
 			if size > 0 {
 				currentPos, _ := f.Seek(0, io.SeekCurrent)
-				f.Seek(shofs+32+4, io.SeekStart) // 定位到 PCX Header xmin
+				f.Seek(shofs+32+4, io.SeekStart)
 				var xmin, ymin, xmax, ymax uint16
 				read(&xmin)
 				read(&ymin)
@@ -429,7 +379,6 @@ func ExtractAllFrames(filename string) ([]SffFrameInfo, error) {
 	return frames, nil
 }
 
-// ExtractFrameAsPng: 终极提纯法，完全复刻 Ikemen GO 提取图像策略
 func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]byte, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -441,15 +390,11 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 	var lofs, tofs uint32
 	h.Read(f, &lofs, &tofs)
 
-	read := func(x interface{}) error {
-		return binary.Read(f, binary.LittleEndian, x)
-	}
-
+	read := func(x interface{}) error { return binary.Read(f, binary.LittleEndian, x) }
 	sprites := make([]*Sprite, 0, h.NumberOfSprites)
 	shofs := int64(h.FirstSpriteHeaderOffset)
 	var lastPalOffset int64 = -1
 
-	// 第一步：精准映射所有的偏移量与调色板关联（解析头部表）
 	for i := 0; i < int(h.NumberOfSprites); i++ {
 		spr := newSprite()
 		f.Seek(shofs, 0)
@@ -457,7 +402,6 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 		if h.Version[0] == 1 {
 			var xofs uint32
 			var ps byte
-
 			read(&xofs)
 			read(&spr.DataSize)
 			read(&spr.Offset)
@@ -467,8 +411,6 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 			read(&ps)
 
 			spr.DataOffset = uint32(shofs + 32)
-
-			// 完美还原 SFFv1 调色板继承逻辑
 			if spr.DataSize > 0 {
 				if ps == 0 {
 					blockEnd := int64(spr.DataOffset + spr.DataSize)
@@ -493,7 +435,7 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 					spr.PalOffset = palOffset
 					lastPalOffset = palOffset
 				} else {
-					spr.PalOffset = lastPalOffset // 共享调色板
+					spr.PalOffset = lastPalOffset
 				}
 			}
 			shofs = int64(xofs)
@@ -513,7 +455,7 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 			var tmp uint16
 			read(&tmp)
 			spr.palidx = int(tmp)
-			read(&tmp) // flags
+			read(&tmp)
 			if tmp&1 == 0 {
 				xofs += lofs
 			} else {
@@ -537,7 +479,6 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 		return nil, fmt.Errorf("frame not found")
 	}
 
-	// 第二步：防死循环的“连体婴”递归数据解析 (还原 shareCopy)
 	visited := make(map[uint16]bool)
 	currIdx := uint16(0xFFFF)
 	for i, s := range sprites {
@@ -549,7 +490,7 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 
 	for target.DataSize == 0 && target.IndexOfPrevious < uint16(len(sprites)) {
 		if visited[currIdx] {
-			return nil, fmt.Errorf("circular link detected")
+			break
 		}
 		visited[currIdx] = true
 		currIdx = target.IndexOfPrevious
@@ -562,7 +503,6 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 		target.palidx = sourceSpr.palidx
 		target.PalOffset = sourceSpr.PalOffset
 		target.IsRaw = sourceSpr.IsRaw
-		// 注意：连体婴不覆盖 Offset，保留自身坐标，与引擎逻辑一致
 		if h.Version[0] == 1 {
 			target.Size = sourceSpr.Size
 		}
@@ -572,7 +512,6 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 		return nil, fmt.Errorf("empty linked frame data")
 	}
 
-	// 第三步：依据不同协议读取图片与调色板
 	if h.Version[0] == 1 {
 		f.Seek(int64(target.DataOffset), 0)
 		var dummy uint16
@@ -603,13 +542,11 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 		px := make([]byte, rleSize)
 		f.Seek(pcxDataStart, 0)
 		f.Read(px)
-
 		target.PxlData = target.RlePcxDecode(px)
 
-		// 获取正确关联的调色板
 		if target.PalOffset > 0 {
 			pal := make([]uint32, 256)
-			f.Seek(target.PalOffset+1, 0) // 跳过 0x0C 标识
+			f.Seek(target.PalOffset+1, 0)
 			var rgb [3]byte
 			for c := 0; c < 256; c++ {
 				f.Read(rgb[:])
@@ -623,7 +560,6 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 		}
 
 	} else {
-		// SFFv2 的各种神奇格式解析
 		f.Seek(int64(target.DataOffset), 0)
 		format := -target.rle
 
@@ -657,8 +593,7 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 				f.Seek(int64(target.DataOffset)+4, 0)
 				img, err := png.Decode(f)
 				if err == nil {
-					if format == 10 { 
-						// Format 10: 索引级 PNG（引擎不认为它是 Raw，需结合外部 Palette 重新上色）
+					if format == 10 {
 						if pi, ok := img.(*image.Paletted); ok {
 							target.PxlData = pi.Pix
 							target.Size[0] = uint16(pi.Rect.Dx())
@@ -670,8 +605,7 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 							target.Size[1] = uint16(gray.Rect.Dy())
 							target.IsRaw = false
 						}
-					} else { 
-						// Format 11/12: 真正的带色彩信息 PNG，原样输出
+					} else {
 						target.IsRaw = true
 						buf := new(bytes.Buffer)
 						png.Encode(buf, img)
@@ -681,7 +615,6 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 			}
 		}
 
-		// 解析 SFFv2 调色板 (带递归链接解析支持 plSize == 0 的互借)
 		if !target.IsRaw && len(target.Pal) == 0 {
 			palidx := target.palidx
 			for {
@@ -704,20 +637,19 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 		}
 	}
 
-	// 第四步：输出最终字节流
 	if target.IsRaw && len(target.PxlData) > 0 {
 		if target.PxlData[0] == 0x89 {
-			return target.PxlData, nil // 已经是处理好的 PNG 字节流
+			return target.PxlData, nil
 		}
-		// Format 0 depth 24/32 无头文件真彩色
-		img := image.NewRGBA(image.Rect(0, 0, int(target.Size[0]), int(target.Size[1])))
-		copy(img.Pix, target.PxlData)
-		buf := new(bytes.Buffer)
-		png.Encode(buf, img)
-		return buf.Bytes(), nil
+		if target.Size[0] > 0 && target.Size[1] > 0 && len(target.PxlData) >= int(target.Size[0]*target.Size[1]*4) {
+			img := image.NewRGBA(image.Rect(0, 0, int(target.Size[0]), int(target.Size[1])))
+			copy(img.Pix, target.PxlData)
+			buf := new(bytes.Buffer)
+			png.Encode(buf, img)
+			return buf.Bytes(), nil
+		}
 	}
 
-	// 色号表与调色板合并上色，生成标准 PNG
 	if target.Size[0] > 0 && target.Size[1] > 0 && len(target.PxlData) > 0 {
 		img := image.NewRGBA(image.Rect(0, 0, int(target.Size[0]), int(target.Size[1])))
 		for y := 0; y < int(target.Size[1]); y++ {
@@ -744,25 +676,17 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 	return nil, fmt.Errorf("empty frame data")
 }
 
-// ==========================================
-// 🛠️ 独家底层写入机制：真正实现 SFF 图像替换
-// ==========================================
-
-// ReplaceFrameWithPng 真实替换 SFF 二进制封包中指定的图像数据
 func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, pngPath string) error {
-	// 1. 读取用于替换的 PNG 文件
 	pngData, err := os.ReadFile(pngPath)
 	if err != nil {
 		return fmt.Errorf("读取PNG失败: %v", err)
 	}
 
-	// 解析 PNG 检查是否有效，顺便获取宽和高
 	imgConfig, _, err := image.DecodeConfig(bytes.NewReader(pngData))
 	if err != nil {
 		return fmt.Errorf("无效的PNG格式: %v", err)
 	}
 
-	// 2. 以【读写追加模式】打开目标 SFF 文件
 	f, err := os.OpenFile(sffPath, os.O_RDWR, 0644)
 	if err != nil {
 		return fmt.Errorf("无法打开SFF文件: %v", err)
@@ -775,45 +699,37 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, pn
 		return fmt.Errorf("读取SFF头部失败: %v", err)
 	}
 
-	// 3. 核心限制拦截：SFFv1 在物理层不支持存储原生 PNG，强制提示升级！
 	if h.Version[0] == 1 {
 		return errors.New("SFFv1 仅支持调色板索引模式(PCX-RLE)，无法直接混入现代真彩色PNG！请先将素材转换为 SFFv2 格式")
 	}
 
-	// 4. 遍历查找并实施封包替换（仅限 SFFv2）
 	shofs := int64(h.FirstSpriteHeaderOffset)
 	for i := 0; i < int(h.NumberOfSprites); i++ {
 		f.Seek(shofs, io.SeekStart)
-		
+
 		var group, number uint16
 		binary.Read(f, binary.LittleEndian, &group)
 		binary.Read(f, binary.LittleEndian, &number)
 
-		// 找到目标动作帧！
 		if int32(group) == targetGroup && int32(number) == targetItem {
-			// A. 计算文件末尾的偏移量，准备把新图片“嫁接”在整个文件的最尾部
 			fileInfo, _ := f.Stat()
 			appendOffset := fileInfo.Size()
 
-			// B. 移动到文件末尾，写死 PNG 字节流
 			f.Seek(0, io.SeekEnd)
+			f.Write([]byte{0, 0, 0, 0}) // 🚨 核心修复：填充4字节占位符，防止 IkemenGO 吃掉 PNG 头部
 			_, err = f.Write(pngData)
 			if err != nil {
 				return fmt.Errorf("写入PNG数据失败: %v", err)
 			}
 
-			// C. 回溯修改原本的 SFF 帧头部，修改指针让引擎读新图片
-			// 修改宽、高
 			f.Seek(shofs+4, io.SeekStart)
 			binary.Write(f, binary.LittleEndian, uint16(imgConfig.Width))
 			binary.Write(f, binary.LittleEndian, uint16(imgConfig.Height))
-			
-			// 强制将读取格式设为 Format 11 (RGBA PNG 原生直读模式) / 色深 32
+
 			f.Seek(shofs+14, io.SeekStart)
-			binary.Write(f, binary.LittleEndian, byte(11)) // Format 11
-			binary.Write(f, binary.LittleEndian, byte(32)) // Depth 32
-			
-			// 获取 SFFv2 当前读取这帧的 flags（决定寻址用 lofs 还是 tofs）
+			binary.Write(f, binary.LittleEndian, byte(11))
+			binary.Write(f, binary.LittleEndian, byte(32))
+
 			f.Seek(shofs+26, io.SeekStart)
 			var flags uint16
 			binary.Read(f, binary.LittleEndian, &flags)
@@ -825,14 +741,13 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, pn
 				finalOffset = uint32(appendOffset) - tofs
 			}
 
-			// 覆写 DataOffset(重置寻址指针) 和 DataSize(重置尺寸大小)
 			f.Seek(shofs+16, io.SeekStart)
 			binary.Write(f, binary.LittleEndian, finalOffset)
-			binary.Write(f, binary.LittleEndian, uint32(len(pngData)))
+			binary.Write(f, binary.LittleEndian, uint32(len(pngData)+4)) // 包含填充大小
 
-			return nil // 替换成功，完美落幕！
+			return nil
 		}
-		shofs += 28 // SFFv2 头部固定长度 28
+		shofs += 28
 	}
 
 	return fmt.Errorf("在 SFF 文件中未找到 Group:%d Item:%d", targetGroup, targetItem)
