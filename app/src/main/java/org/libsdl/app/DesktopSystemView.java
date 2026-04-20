@@ -1,6 +1,7 @@
 package org.libsdl.app;
 
 import android.animation.ObjectAnimator;
+import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -25,6 +26,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.text.Editable;
+import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -367,7 +369,7 @@ public class DesktopSystemView extends Dialog {
         createDesktopIcon("sys_settings", "⚙️", "系统控制台");
         createDesktopIcon("asset_extractor", "🖼️", "SFF查看器"); 
         createDesktopIcon("snd_extractor", "🎵", "SND查看器"); 
-        createDesktopIcon("gif_extractor", "🎞️", "GIF拆解器"); 
+        createDesktopIcon("gif_extractor", "🎞️", "GIF处理所"); 
     }
 
     private void createDesktopIcon(final String id, String iconStr, String name) {
@@ -553,7 +555,7 @@ public class DesktopSystemView extends Dialog {
                     () -> { 
                         prefs.edit().putInt("dt_bgAlpha", bgAlpha).putInt("dt_gridSize", gridSizeBase).putBoolean("dt_showGrid", showGrid).putString("dt_customDeskBg", customDesktopBg).putString("dt_customWinBg", customWindowBg).putInt("dt_bgMediaVol", bgMediaVolume).putInt("dt_winMediaVol", winMediaVolume).putInt("dt_taskbarAlpha", taskbarAlpha).putInt("dt_mediaScale", mediaScaleMode).putString("dt_fontPath", fontPath).putInt("dt_fontColor", fontColor).putFloat("dt_fontSize", fontSize).putBoolean("dt_fontShadow", fontShadowEnabled).putInt("dt_fontShadowC", fontShadowColor).apply();
                         savedVideoPositionDesk = 0; savedVideoPositionWin = 0;
-                        reloadTypeface(); refreshDesktopBackground(); setupDesktopIcons(); performClose.run();
+                        reloadTypeface(); refreshDesktopBackground(); setupDesktopIcons(); Toast.makeText(getContext(), "✅ 设置已保存！", Toast.LENGTH_SHORT).show(); performClose.run();
                     },
                     () -> { 
                         bgAlpha = b_bgAlpha; gridSizeBase = b_gridSizeBase; showGrid = b_showGrid; customDesktopBg = b_customDesktopBg; customWindowBg = b_customWindowBg; bgMediaVolume = b_bgMediaVolume; winMediaVolume = b_winMediaVolume; taskbarAlpha = b_taskbarAlpha; mediaScaleMode = b_mediaScaleMode; fontPath = b_fontPath; fontColor = b_fontColor; fontSize = b_fontSize; fontShadowEnabled = b_fontShadowEnabled; fontShadowColor = b_fontShadowColor;
@@ -799,15 +801,22 @@ public class DesktopSystemView extends Dialog {
                 new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                     LinearLayout currentRow = null; int itemsInRow = 0;
                     for (GoEngineBridge.SffInfo va : validAssets) {
-                        if (itemsInRow == 0) { currentRow = new LinearLayout(getContext()); currentRow.setOrientation(LinearLayout.HORIZONTAL); currentGalleryLayout.addView(currentRow, new LinearLayout.LayoutParams(-1, -2)); }
+                        if (itemsInRow == 0) { 
+                            currentRow = new LinearLayout(getContext()); 
+                            currentRow.setOrientation(LinearLayout.HORIZONTAL); 
+                            currentGalleryLayout.addView(currentRow, new LinearLayout.LayoutParams(-1, -2)); 
+                        }
+                        
+                        final LinearLayout finalRow = currentRow; // <--- 关键修复点：捕捉 final 引用供多线程安全使用
                         
                         // 提取缩略图
                         new Thread(() -> {
                             final Bitmap bmp = GoEngineBridge.decodeSffFrame(va.filePath, va.firstGroup, va.firstItem);
                             new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                                 View card = buildAssetCard(va.name, va.filePath, bmp, va.version);
-                                LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1f); cardParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
-                                currentRow.addView(card, cardParams); 
+                                LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1f); 
+                                cardParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
+                                finalRow.addView(card, cardParams); 
                             });
                         }).start();
                         itemsInRow++; if (itemsInRow >= 3) itemsInRow = 0; 
@@ -1087,6 +1096,7 @@ public class DesktopSystemView extends Dialog {
                         } catch (Exception e) {}
                     });
                     
+                    // 👇 新增：完美的音频替换触发器
                     Button btnReplace = createButton("🔄 替换", "#4CAF50");
                     btnReplace.setOnClickListener(v -> {
                         showWin10FilePicker("选择替换用的音频文件", 8, null, null, selectedFile -> {
