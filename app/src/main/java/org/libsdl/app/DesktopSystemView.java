@@ -51,10 +51,11 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.BufferedReader;
+import java.io.InputStream;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -75,6 +76,8 @@ public class DesktopSystemView extends Dialog {
             if (status != null) status.setText(msg);
         });
     }
+
+    public interface OnFileSelectedListener { void onFileSelected(File file); }
 
     private Context mContext;
     private SharedPreferences prefs;
@@ -206,8 +209,7 @@ public class DesktopSystemView extends Dialog {
         startBtn.setPadding((int)(10*density), (int)(8*density), (int)(15*density), (int)(8*density));
         
         TextView btnIcon = new TextView(getContext()); btnIcon.setText("⊞"); btnIcon.setTextColor(Color.parseColor("#00A4EF")); btnIcon.setTextSize(20f);
-        TextView btnText = new TextView(getContext()); btnText.setText(" 进入游戏"); 
-        applyGlobalFontSettings(btnText, 1.2f, true); 
+        TextView btnText = new TextView(getContext()); btnText.setText(" 进入游戏"); applyGlobalFontSettings(btnText, 1.2f, true); 
         startBtn.addView(btnIcon); startBtn.addView(btnText);
         
         startBtn.setOnTouchListener((v, event) -> {
@@ -230,7 +232,6 @@ public class DesktopSystemView extends Dialog {
         taskbar.addView(taskbarScroll, new LinearLayout.LayoutParams(0, -1, 1f));
 
         setContentView(rootLayer);
-        
         rootLayer.post(() -> setupDesktopIcons());
     }
 
@@ -241,20 +242,14 @@ public class DesktopSystemView extends Dialog {
         Matrix scaleMatrix = new Matrix(); scaleMatrix.setScale(density * 0.4f, density * 0.4f); cursorPath.transform(scaleMatrix);
     }
 
-    // ======================================================================================
-    // 💡 新增：无限深度递归遍历核心算法
-    // ======================================================================================
     private void findFilesRecursively(File dir, List<File> resultList, String targetExtension) {
         if (dir == null || !dir.exists() || !dir.canRead()) return;
         File[] files = dir.listFiles();
         if (files == null) return;
         
         for (File f : files) {
-            if (f.isDirectory()) {
-                findFilesRecursively(f, resultList, targetExtension); // 深度递归
-            } else if (f.getName().toLowerCase().endsWith(targetExtension)) {
-                resultList.add(f);
-            }
+            if (f.isDirectory()) { findFilesRecursively(f, resultList, targetExtension); } 
+            else if (f.getName().toLowerCase().endsWith(targetExtension)) { resultList.add(f); }
         }
     }
 
@@ -280,20 +275,17 @@ public class DesktopSystemView extends Dialog {
     private View createMediaBackground(String uriString, int alpha, final boolean isDesktopBg) {
         if (uriString == null || uriString.trim().isEmpty()) return null;
         File f = new File(uriString); if (!f.exists()) return null;
-        Uri uri = Uri.parse("file://" + uriString);
-        String p = uriString.toLowerCase();
+        Uri uri = Uri.parse("file://" + uriString); String p = uriString.toLowerCase();
         boolean isVideo = p.endsWith(".mp4") || p.endsWith(".avi") || p.endsWith(".mkv") || p.endsWith(".webm");
         boolean isGif = p.endsWith(".gif");
 
         FrameLayout mediaContainer = new FrameLayout(mContext); mediaContainer.setAlpha(alpha / 255f);
 
         if (isVideo) {
-            final TextureView tv = new TextureView(mContext);
-            mediaContainer.addView(tv, new FrameLayout.LayoutParams(-1, -1));
+            final TextureView tv = new TextureView(mContext); mediaContainer.addView(tv, new FrameLayout.LayoutParams(-1, -1));
             tv.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
                 private MediaPlayer mp;
-                @Override
-                public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+                @Override public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
                     try {
                         mp = new MediaPlayer(); mp.setDataSource(mContext, uri); mp.setSurface(new Surface(surface)); mp.setLooping(true);
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) mp.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build());
@@ -307,8 +299,7 @@ public class DesktopSystemView extends Dialog {
                                 else lp = new FrameLayout.LayoutParams(-1, -1);
                                 tv.setLayoutParams(lp);
                             }
-                            if (isDesktopBg) { bgMediaPlayer = m; if (savedVideoPositionDesk > 0) m.seekTo(savedVideoPositionDesk); } 
-                            else { winMediaPlayers.add(m); if (savedVideoPositionWin > 0) m.seekTo(savedVideoPositionWin); }
+                            if (isDesktopBg) { bgMediaPlayer = m; if (savedVideoPositionDesk > 0) m.seekTo(savedVideoPositionDesk); } else { winMediaPlayers.add(m); if (savedVideoPositionWin > 0) m.seekTo(savedVideoPositionWin); }
                             updateMediaVolumes(); m.start();
                         });
                     } catch (Exception e) {}
@@ -316,8 +307,7 @@ public class DesktopSystemView extends Dialog {
                 @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {}
                 @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
                     if (mp != null) { 
-                        if (isDesktopBg) { savedVideoPositionDesk = mp.getCurrentPosition(); bgMediaPlayer = null; } 
-                        else { savedVideoPositionWin = mp.getCurrentPosition(); winMediaPlayers.remove(mp); }
+                        if (isDesktopBg) { savedVideoPositionDesk = mp.getCurrentPosition(); bgMediaPlayer = null; } else { savedVideoPositionWin = mp.getCurrentPosition(); winMediaPlayers.remove(mp); }
                         mp.release(); mp = null; updateMediaVolumes();
                     } return true;
                 }
@@ -348,24 +338,16 @@ public class DesktopSystemView extends Dialog {
         if (fontShadowEnabled) tv.setShadowLayer(4f, 2f, 2f, fontShadowColor); else tv.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT);
     }
 
-    // ======================================================================================
-    // 🧲 防重叠引擎
-    // ======================================================================================
     private boolean isGridOccupied(int col, int row, float actualGrid, View excludeView) {
         for (int i = 0; i < desktopIconsLayer.getChildCount(); i++) {
-            View child = desktopIconsLayer.getChildAt(i);
-            if (child == excludeView) continue;
-            int cc = Math.round(child.getX() / actualGrid);
-            int cr = Math.round(child.getY() / actualGrid);
-            if (cc == col && cr == row) return true;
-        }
-        return false;
+            View child = desktopIconsLayer.getChildAt(i); if (child == excludeView) continue;
+            if (Math.round(child.getX() / actualGrid) == col && Math.round(child.getY() / actualGrid) == row) return true;
+        } return false;
     }
 
     private Point findAvailableGrid(float targetX, float targetY, float actualGrid, View excludeView) {
         int maxCol = Math.max(1, (int) (rootLayer.getWidth() / actualGrid));
         int maxRow = Math.max(1, (int) ((rootLayer.getHeight() - 50*density) / actualGrid)); 
-        
         int startCol = Math.max(0, Math.min(maxCol - 1, Math.round(targetX / actualGrid)));
         int startRow = Math.max(0, Math.min(maxRow - 1, Math.round(targetY / actualGrid)));
 
@@ -375,16 +357,12 @@ public class DesktopSystemView extends Dialog {
         queue.add(new Point(startCol, startRow)); visited.add(startCol + "," + startRow);
         int[][] dirs = {{0,1}, {1,0}, {0,-1}, {-1,0}, {1,1}, {-1,-1}, {1,-1}, {-1,1}};
         while (!queue.isEmpty()) {
-            Point p = queue.poll();
-            if (!isGridOccupied(p.x, p.y, actualGrid, excludeView)) return p; 
+            Point p = queue.poll(); if (!isGridOccupied(p.x, p.y, actualGrid, excludeView)) return p; 
             for (int[] d : dirs) {
                 int nc = p.x + d[0]; int nr = p.y + d[1];
-                if (nc >= 0 && nc < maxCol && nr >= 0 && nr < maxRow && !visited.contains(nc + "," + nr)) {
-                    visited.add(nc + "," + nr); queue.add(new Point(nc, nr));
-                }
+                if (nc >= 0 && nc < maxCol && nr >= 0 && nr < maxRow && !visited.contains(nc + "," + nr)) { visited.add(nc + "," + nr); queue.add(new Point(nc, nr)); }
             }
-        }
-        return new Point(startCol, startRow); 
+        } return new Point(startCol, startRow); 
     }
 
     private void setupDesktopIcons() {
@@ -405,20 +383,15 @@ public class DesktopSystemView extends Dialog {
         
         TextView nameView = new TextView(getContext()); nameView.setText(name); applyGlobalFontSettings(nameView, 1.0f, false); nameView.setSingleLine(true);
         iconLayout.addView(nameView, new LinearLayout.LayoutParams(-2, -2)); iconLayout.setLayoutParams(new FrameLayout.LayoutParams((int)iconSize, (int)iconSize));
-        
         desktopIconsLayer.addView(iconLayout);
 
-        float savedX = prefs.getFloat("icon_x_" + id, actualGrid * 0.2f); 
-        float savedY = prefs.getFloat("icon_y_" + id, actualGrid * 0.2f);
+        float savedX = prefs.getFloat("icon_x_" + id, actualGrid * 0.2f); float savedY = prefs.getFloat("icon_y_" + id, actualGrid * 0.2f);
         Point safePoint = findAvailableGrid(savedX, savedY, actualGrid, iconLayout);
-        float safeFinalX = safePoint.x * actualGrid + (actualGrid - iconSize)/2f;
-        float safeFinalY = safePoint.y * actualGrid + (actualGrid - iconSize)/2f;
-        iconLayout.setX(safeFinalX); iconLayout.setY(safeFinalY);
+        iconLayout.setX(safePoint.x * actualGrid + (actualGrid - iconSize)/2f); iconLayout.setY(safePoint.y * actualGrid + (actualGrid - iconSize)/2f);
 
         iconLayout.setOnTouchListener(new View.OnTouchListener() {
             private float startRawX, startRawY, offsetX, offsetY; private boolean isDragging = false; private long lastClickTime = 0;
-            @Override
-            public boolean onTouch(View view, MotionEvent event) {
+            @Override public boolean onTouch(View view, MotionEvent event) {
                 if (event.getAction() == MotionEvent.ACTION_DOWN) {
                     startRawX = event.getRawX(); startRawY = event.getRawY(); offsetX = view.getX() - mouseX; offsetY = view.getY() - mouseY; isDragging = false; view.setBackgroundColor(Color.parseColor("#44FFFFFF"));
                 } else if (event.getAction() == MotionEvent.ACTION_MOVE) {
@@ -428,20 +401,14 @@ public class DesktopSystemView extends Dialog {
                     view.setBackgroundColor(Color.TRANSPARENT);
                     if (isDragging) {
                         Point safeP = findAvailableGrid(view.getX(), view.getY(), actualGrid, view);
-                        float finalX = safeP.x * actualGrid + (actualGrid - iconSize)/2f; 
-                        float finalY = safeP.y * actualGrid + (actualGrid - iconSize)/2f;
-                        
+                        float finalX = safeP.x * actualGrid + (actualGrid - iconSize)/2f; float finalY = safeP.y * actualGrid + (actualGrid - iconSize)/2f;
                         ObjectAnimator animX = ObjectAnimator.ofFloat(view, "x", view.getX(), finalX); ObjectAnimator animY = ObjectAnimator.ofFloat(view, "y", view.getY(), finalY);
                         animX.setDuration(200); animY.setDuration(200); animX.setInterpolator(new DecelerateInterpolator()); animY.setInterpolator(new DecelerateInterpolator());
-                        animX.start(); animY.start();
-                        prefs.edit().putFloat("icon_x_" + id, finalX).putFloat("icon_y_" + id, finalY).apply();
+                        animX.start(); animY.start(); prefs.edit().putFloat("icon_x_" + id, finalX).putFloat("icon_y_" + id, finalY).apply();
                     } else {
                         long clickTime = System.currentTimeMillis();
                         if (clickTime - lastClickTime < 600) { 
-                            if (id.equals("sys_settings")) openSettingsInAppWindow(); 
-                            else if (id.equals("asset_extractor")) openAppWindow("🖼️ SFF查看器", buildSffExtractorContent(), null);
-                            else if (id.equals("snd_extractor")) openAppWindow("🎵 SND查看器", buildSndExtractorContent(), null);
-                            else if (id.equals("gif_extractor")) openAppWindow("🎞️ GIF拆解器", buildGifExtractorContent(), null);
+                            if (id.equals("sys_settings")) openSettingsInAppWindow(); else if (id.equals("asset_extractor")) openAppWindow("🖼️ SFF查看器", buildSffExtractorContent(), null); else if (id.equals("snd_extractor")) openAppWindow("🎵 SND查看器", buildSndExtractorContent(), null); else if (id.equals("gif_extractor")) openAppWindow("🎞️ GIF拆解器", buildGifExtractorContent(), null);
                             lastClickTime = 0; 
                         } else lastClickTime = clickTime;
                     }
@@ -470,7 +437,6 @@ public class DesktopSystemView extends Dialog {
         if (existingWin != null) { existingWin.setVisibility(View.VISIBLE); existingWin.bringToFront(); return; }
 
         final FrameLayout windowFrame = new FrameLayout(getContext()); windowFrame.setTag(windowTitle); windowFrame.setClickable(true); 
-        
         View winMediaBg = createMediaBackground(customWindowBg, 255, false);
         if (winMediaBg != null) windowFrame.addView(winMediaBg, new FrameLayout.LayoutParams(-1, -1));
         else { GradientDrawable winBg = new GradientDrawable(); winBg.setColor(Color.parseColor("#FA1E1E1E")); winBg.setStroke(2, Color.parseColor("#3F3F46")); windowFrame.setBackground(winBg); }
@@ -486,7 +452,6 @@ public class DesktopSystemView extends Dialog {
 
         final TextView btnMax = new TextView(getContext()); btnMax.setText(" □ "); applyGlobalFontSettings(btnMax, 1.0f, true); btnMax.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density));
         final boolean[] isMaximized = {false}; final int[] savedBounds = new int[4]; 
-        
         btnMax.setOnClickListener(v -> {
             if (isMaximized[0]) { FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(savedBounds[2], savedBounds[3]); windowFrame.setLayoutParams(lp); windowFrame.setX(savedBounds[0]); windowFrame.setY(savedBounds[1]); btnMax.setText(" □ "); isMaximized[0] = false;
             } else {
@@ -494,15 +459,12 @@ public class DesktopSystemView extends Dialog {
                 FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -1); lp.bottomMargin = (int)(50 * density); 
                 windowFrame.setLayoutParams(lp); windowFrame.setX(0); windowFrame.setY(0); windowFrame.bringToFront(); btnMax.setText(" ❐ "); isMaximized[0] = true;
             }
-        });
-        controls.addView(btnMax);
+        }); controls.addView(btnMax);
 
         final LinearLayout taskBtn = new LinearLayout(getContext()); taskBtn.setTag("tb_" + windowTitle);
         TextView btnClose = new TextView(getContext()); btnClose.setText(" ✕ "); applyGlobalFontSettings(btnClose, 1.0f, true); btnClose.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(5*density));
         btnClose.setOnTouchListener((v, e) -> { if(e.getAction()==MotionEvent.ACTION_DOWN) v.setBackgroundColor(Color.parseColor("#E81123")); else if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL) v.setBackgroundColor(Color.TRANSPARENT); return false; });
-        btnClose.setOnClickListener(v -> {
-            if (onCloseInterceptor != null) onCloseInterceptor.run(); else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); }
-        });
+        btnClose.setOnClickListener(v -> { if (onCloseInterceptor != null) onCloseInterceptor.run(); else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); } });
         controls.addView(btnClose); titleBar.addView(controls, new LinearLayout.LayoutParams(-2, -2)); 
 
         titleBar.setOnTouchListener(new View.OnTouchListener() {
@@ -532,14 +494,12 @@ public class DesktopSystemView extends Dialog {
                 switch(event.getAction()) {
                     case MotionEvent.ACTION_DOWN: startX = event.getRawX(); initialTranslation = v.getTranslationX(); isDragging = false; v.setBackgroundColor(Color.parseColor("#44FFFFFF")); return false; 
                     case MotionEvent.ACTION_MOVE: 
-                        float dx = event.getRawX() - startX; 
-                        if (Math.abs(dx) > 10 * density) { isDragging = true; v.getParent().requestDisallowInterceptTouchEvent(true); }
+                        float dx = event.getRawX() - startX; if (Math.abs(dx) > 10 * density) { isDragging = true; v.getParent().requestDisallowInterceptTouchEvent(true); }
                         if (isDragging) { v.setTranslationX(initialTranslation + dx); v.bringToFront(); } return true;
                     case MotionEvent.ACTION_UP: case MotionEvent.ACTION_CANCEL:
                         v.setBackground(tbBg);
                         if (isDragging) {
-                            float currentCenter = v.getX() + v.getTranslationX() + v.getWidth() / 2f;
-                            int newIndex = taskbarAppsLayout.getChildCount() - 1;
+                            float currentCenter = v.getX() + v.getTranslationX() + v.getWidth() / 2f; int newIndex = taskbarAppsLayout.getChildCount() - 1;
                             for (int i = 0; i < taskbarAppsLayout.getChildCount(); i++) { View child = taskbarAppsLayout.getChildAt(i); if (child != v && currentCenter < child.getX() + child.getWidth() / 2f) { newIndex = i; break; } }
                             final int targetIndex = newIndex; taskbarAppsLayout.post(() -> { taskbarAppsLayout.removeView(v); v.setTranslationX(0); taskbarAppsLayout.addView(v, targetIndex); });
                             return true;
@@ -554,21 +514,12 @@ public class DesktopSystemView extends Dialog {
             } else { windowFrame.setVisibility(View.VISIBLE); windowFrame.bringToFront(); }
         });
         
-        taskBtn.setOnLongClickListener(v -> {
-            showContextMenu(v, finalShortName, () -> {
-                if (onCloseInterceptor != null) onCloseInterceptor.run(); else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); }
-            }); return true;
-        });
-        
+        taskBtn.setOnLongClickListener(v -> { showContextMenu(v, finalShortName, () -> { if (onCloseInterceptor != null) onCloseInterceptor.run(); else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); } }); return true; });
         taskbarAppsLayout.addView(taskBtn, tbParams);
 
-        int w = (int) (rootLayer.getWidth() * 0.70f); int h = (int) (rootLayer.getHeight() * 0.80f);
-        if (w == 0) w = 800; if (h == 0) h = 600; 
-        FrameLayout.LayoutParams frameParams = new FrameLayout.LayoutParams(w, h);
-        windowFrame.setLayoutParams(frameParams);
-        windowFrame.post(() -> {
-            if (!isMaximized[0]) { windowFrame.setX((rootLayer.getWidth() - windowFrame.getWidth()) / 2f); windowFrame.setY((rootLayer.getHeight() - windowFrame.getHeight()) / 2f); }
-        }); windowsLayer.addView(windowFrame);
+        int w = (int) (rootLayer.getWidth() * 0.70f); int h = (int) (rootLayer.getHeight() * 0.80f); if (w == 0) w = 800; if (h == 0) h = 600; 
+        FrameLayout.LayoutParams frameParams = new FrameLayout.LayoutParams(w, h); windowFrame.setLayoutParams(frameParams);
+        windowFrame.post(() -> { if (!isMaximized[0]) { windowFrame.setX((rootLayer.getWidth() - windowFrame.getWidth()) / 2f); windowFrame.setY((rootLayer.getHeight() - windowFrame.getHeight()) / 2f); } }); windowsLayer.addView(windowFrame);
     }
 
     private void loadDesktopSettings() {
@@ -615,8 +566,7 @@ public class DesktopSystemView extends Dialog {
             } else performClose.run();
         };
 
-        View content = buildSettingsContent(performClose);
-        openAppWindow(title, content, checkAndPromptClose);
+        View content = buildSettingsContent(performClose); openAppWindow(title, content, checkAndPromptClose);
     }
 
     private View buildSettingsContent(Runnable closeAction) {
@@ -639,7 +589,7 @@ public class DesktopSystemView extends Dialog {
 
         layout.addView(createTitle("🅰️ 全局字体定制引擎"));
         final TextView fontLabel = createSubTitle("字体状态: " + (fontPath.isEmpty()?"系统默认":"已加载外部资源")); layout.addView(fontLabel);
-        Button pickFont = createButton("📂 浏览本地选取字体文件 (.ttf/.otf)", "#444444"); pickFont.setOnClickListener(v -> showWin10FilePicker("选择字体文件", 3, fontLabel, scroll)); layout.addView(pickFont);
+        Button pickFont = createButton("📂 浏览本地选取字体文件 (.ttf/.otf)", "#444444"); pickFont.setOnClickListener(v -> showWin10FilePicker("选择字体文件", 3, fontLabel, scroll, null)); layout.addView(pickFont);
 
         layout.addView(createSubTitle("字体字号大小:"));
         SeekBar sizeBar = new SeekBar(getContext()); sizeBar.setMax(30); sizeBar.setProgress((int)fontSize);
@@ -653,12 +603,10 @@ public class DesktopSystemView extends Dialog {
         shadowToggle.setOnClickListener(v -> { fontShadowEnabled = !fontShadowEnabled; shadowToggle.setText(fontShadowEnabled ? "✔️ 字体投影：开启" : "❌ 字体投影：关闭"); }); layout.addView(shadowToggle);
 
         layout.addView(createTitle("🎬 动态媒体矩阵 (优先读取窗口声音)"));
-        layout.addView(createSubTitle("桌面壁纸视频音量:"));
-        SeekBar bgVolBar = new SeekBar(getContext()); bgVolBar.setMax(100); bgVolBar.setProgress(bgMediaVolume);
+        layout.addView(createSubTitle("桌面壁纸视频音量:")); SeekBar bgVolBar = new SeekBar(getContext()); bgVolBar.setMax(100); bgVolBar.setProgress(bgMediaVolume);
         bgVolBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() { public void onProgressChanged(SeekBar s, int p, boolean b) { bgMediaVolume = p; updateMediaVolumes(); } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){} }); layout.addView(bgVolBar);
 
-        layout.addView(createSubTitle("窗口壁纸视频音量:"));
-        SeekBar winVolBar = new SeekBar(getContext()); winVolBar.setMax(100); winVolBar.setProgress(winMediaVolume);
+        layout.addView(createSubTitle("窗口壁纸视频音量:")); SeekBar winVolBar = new SeekBar(getContext()); winVolBar.setMax(100); winVolBar.setProgress(winMediaVolume);
         winVolBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() { public void onProgressChanged(SeekBar s, int p, boolean b) { winMediaVolume = p; updateMediaVolumes(); } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){} }); layout.addView(winVolBar);
 
         layout.addView(createSubTitle("多媒体渲染模式:")); Spinner scaleSpinner = new Spinner(getContext());
@@ -666,18 +614,16 @@ public class DesktopSystemView extends Dialog {
         scaleSpinner.setAdapter(scaleAdapter); scaleSpinner.setSelection(mediaScaleMode); layout.addView(scaleSpinner);
 
         final TextView deskBgLabel = createSubTitle("桌面壁纸: " + (customDesktopBg.isEmpty()?"未配置":"已应用")); layout.addView(deskBgLabel);
-        Button pickDesk = createButton("📂 浏览本地选取桌面动态壁纸", "#444444"); pickDesk.setOnClickListener(v -> showWin10FilePicker("选择桌面动态壁纸", 1, deskBgLabel, scroll)); layout.addView(pickDesk);
+        Button pickDesk = createButton("📂 浏览本地选取桌面动态壁纸", "#444444"); pickDesk.setOnClickListener(v -> showWin10FilePicker("选择桌面动态壁纸", 1, deskBgLabel, scroll, null)); layout.addView(pickDesk);
 
         final TextView winBgLabel = createSubTitle("窗口壁纸: " + (customWindowBg.isEmpty()?"未配置":"已应用")); layout.addView(winBgLabel);
-        Button pickWin = createButton("📂 浏览本地选取窗口动态壁纸", "#444444"); pickWin.setOnClickListener(v -> showWin10FilePicker("选择窗口动态壁纸", 2, winBgLabel, scroll)); layout.addView(pickWin);
+        Button pickWin = createButton("📂 浏览本地选取窗口动态壁纸", "#444444"); pickWin.setOnClickListener(v -> showWin10FilePicker("选择窗口动态壁纸", 2, winBgLabel, scroll, null)); layout.addView(pickWin);
 
-        Button saveBtn = createButton("💾 保存设置并应用", "#0078D7");
-        LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(-1, -2); btnP.setMargins(0, (int)(30*density), 0, 0); saveBtn.setLayoutParams(btnP);
+        Button saveBtn = createButton("💾 保存设置并应用", "#0078D7"); LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(-1, -2); btnP.setMargins(0, (int)(30*density), 0, 0); saveBtn.setLayoutParams(btnP);
         saveBtn.setOnClickListener(v -> {
             prefs.edit().putInt("dt_bgAlpha", bgAlpha).putInt("dt_gridSize", gridSizeBase).putBoolean("dt_showGrid", showGrid).putString("dt_customDeskBg", customDesktopBg).putString("dt_customWinBg", customWindowBg).putInt("dt_bgMediaVol", bgMediaVolume).putInt("dt_winMediaVol", winMediaVolume).putInt("dt_taskbarAlpha", taskbarAlpha).apply();
             savedVideoPositionDesk = 0; savedVideoPositionWin = 0; refreshDesktopBackground(); setupDesktopIcons(); Toast.makeText(getContext(), "✅ 设置已保存！", Toast.LENGTH_SHORT).show(); closeAction.run();
         }); layout.addView(saveBtn);
-
         scroll.addView(layout); return scroll;
     }
 
@@ -704,7 +650,7 @@ public class DesktopSystemView extends Dialog {
         pDialog.setContentView(overlay); pDialog.show(); pDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
     }
 
-    private void showWin10FilePicker(String winTitle, final int targetType, final TextView labelRef, final View hostViewToRefresh) {
+    private void showWin10FilePicker(String winTitle, final int targetType, final TextView labelRef, final View hostViewToRefresh, final OnFileSelectedListener listener) {
         final Dialog pDialog = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen); pDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE); applyImmersiveMode(pDialog.getWindow());
         FrameLayout overlay = new FrameLayout(getContext()); overlay.setBackgroundColor(Color.argb(90, 0,0,0));
         LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#1E1E1E"));
@@ -770,7 +716,18 @@ public class DesktopSystemView extends Dialog {
                                     if (absPath.toLowerCase().endsWith(".gif")) { startGifScanner(f); pDialog.dismiss(); }
                                     else Toast.makeText(getContext(), "❌ 请选择 .gif 动画文件", Toast.LENGTH_SHORT).show();
                                 }
-                                else if (targetType == 1) { customDesktopBg = absPath; labelRef.setText("桌面壁纸: " + f.getName()); refreshDesktopBackground(); pDialog.dismiss(); }
+                                else if (targetType == 7) { 
+                                    if (absPath.toLowerCase().endsWith(".png")) { if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); }
+                                    else Toast.makeText(getContext(), "❌ 必须选择 .png 图像文件用于替换", Toast.LENGTH_SHORT).show();
+                                }
+                                else if (targetType == 8) { 
+                                    if (absPath.toLowerCase().endsWith(".wav") || absPath.toLowerCase().endsWith(".ogg") || absPath.toLowerCase().endsWith(".mp3")) { if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); }
+                                    else Toast.makeText(getContext(), "❌ 请选择音频文件用于替换", Toast.LENGTH_SHORT).show();
+                                }
+                                else if (targetType == 1 || targetType == 2) { 
+                                    if(targetType == 1) customDesktopBg = absPath; else customWindowBg = absPath;
+                                    if(labelRef != null) labelRef.setText("壁纸: " + f.getName()); refreshDesktopBackground(); pDialog.dismiss(); 
+                                }
                                 if (hostViewToRefresh != null) hostViewToRefresh.invalidate();
                             }
                         });
@@ -799,7 +756,7 @@ public class DesktopSystemView extends Dialog {
     @Override public void onBackPressed() { } 
 
     // ======================================================================================
-    // 🎨 模块 1：SFF 检视工坊 (无限深度递归扫描 + 修复替换UI)
+    // 🎨 模块 1：SFF 检视工坊 (支持无限深度扫描 + SFF轴心补全 + SFF图像替换)
     // ======================================================================================
     private LinearLayout currentGalleryLayout = null;
     private TextView currentStatusText = null;
@@ -815,7 +772,7 @@ public class DesktopSystemView extends Dialog {
         ScrollView scroll = new ScrollView(getContext()); LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, -1); scrollParams.setMargins(0, (int)(15*density), 0, 0); scroll.setLayoutParams(scrollParams);
         final LinearLayout galleryLayout = new LinearLayout(getContext()); galleryLayout.setOrientation(LinearLayout.VERTICAL); scroll.addView(galleryLayout); root.addView(scroll);
 
-        scanBtn.setOnClickListener(v -> { if (isAssetScannerRunning) return; currentGalleryLayout = galleryLayout; currentStatusText = statusText; showWin10FilePicker("选择目录或 .def/.sff 素材文件", 4, null, null); });
+        scanBtn.setOnClickListener(v -> { if (isAssetScannerRunning) return; currentGalleryLayout = galleryLayout; currentStatusText = statusText; showWin10FilePicker("选择目录或 .def/.sff 素材文件", 4, null, null, null); });
         return root;
     }
 
@@ -826,17 +783,12 @@ public class DesktopSystemView extends Dialog {
             try { 
                 updateUI(currentStatusText, "📡 阶段 1/3: 正在无限深度检索本地文件...");
                 List<File> targetFiles = new ArrayList<>();
-                if (targetFile.isDirectory()) {
-                    findFilesRecursively(targetFile, targetFiles, ".sff");
-                } else {
-                    targetFiles.add(targetFile);
-                }
+                if (targetFile.isDirectory()) { findFilesRecursively(targetFile, targetFiles, ".sff"); } 
+                else { targetFiles.add(targetFile); }
 
                 updateUI(currentStatusText, "📡 阶段 2/3: 触发底层 Go 引擎...");
                 List<GoEngineBridge.SffInfo> validAssets = new ArrayList<>();
-                for (File f : targetFiles) {
-                    validAssets.addAll(GoEngineBridge.scanSff(f.getAbsolutePath()));
-                }
+                for (File f : targetFiles) { validAssets.addAll(GoEngineBridge.scanSff(f.getAbsolutePath())); }
                 
                 if(validAssets == null || validAssets.isEmpty()) { updateUI(currentStatusText, "⚠️ 未找到有效的 SFF 素材"); return; }
                 
@@ -847,8 +799,7 @@ public class DesktopSystemView extends Dialog {
                         if (itemsInRow == 0) { currentRow = new LinearLayout(getContext()); currentRow.setOrientation(LinearLayout.HORIZONTAL); currentGalleryLayout.addView(currentRow, new LinearLayout.LayoutParams(-1, -2)); }
                         View card = buildAssetCard(va.name, va.filePath, va.preview, va.version);
                         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1f); cardParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
-                        currentRow.addView(card, cardParams);
-                        itemsInRow++; if (itemsInRow >= 3) itemsInRow = 0; 
+                        currentRow.addView(card, cardParams); itemsInRow++; if (itemsInRow >= 3) itemsInRow = 0; 
                     }
                     currentStatusText.setText("✅ 解析完成! 成功挂载 " + validAssets.size() + " 个无损资源");
                 });
@@ -918,11 +869,7 @@ public class DesktopSystemView extends Dialog {
 
         LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER); controls.setPadding((int)(15*density), 0, (int)(15*density), (int)(15*density));
         Button btnPrev = createButton("⏪", "#3F3F46"); Button btnPlay = createButton("▶️ 播放", "#0078D7"); Button btnNext = createButton("⏭️", "#3F3F46"); Button btnSpeed = createButton("⚙️ 调速", "#3F3F46"); Button btnExportPng = createButton("💾 导出", "#3F3F46"); 
-        
-        // 👇 添加替换按钮UI预留
         Button btnReplace = createButton("🔄 替换", "#4CAF50");
-        btnReplace.setOnClickListener(v -> Toast.makeText(getContext(), "等待 Go 引擎介入支持 SFF 二进制重组封包...", Toast.LENGTH_LONG).show());
-        
         LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(0, -2, 1f); btnP.setMargins((int)(2*density), 0, (int)(2*density), 0);
         
         final int[] currentDelay = {16}; 
@@ -936,31 +883,49 @@ public class DesktopSystemView extends Dialog {
         });
 
         final android.os.Handler uiHandler = new android.os.Handler(android.os.Looper.getMainLooper());
-        Runnable updateFrameAction = () -> {
-            if (currentGroupFrames.isEmpty()) return;
-            if (currentFrameIndex[0] < 0) currentFrameIndex[0] = currentGroupFrames.size() - 1;
-            if (currentFrameIndex[0] >= currentGroupFrames.size()) currentFrameIndex[0] = 0;
-            final GoEngineBridge.SffFrame targetFrame = currentGroupFrames.get(currentFrameIndex[0]);
-            new Thread(() -> {
-                try {
-                    final Bitmap bmp = GoEngineBridge.decodeSffFrame(sffPath, targetFrame.group, targetFrame.item);
-                    uiHandler.post(() -> {
-                        if (bmp != null) {
-                            previewImg.setImageBitmap(bmp);
-                            if (!isMatrixInitialized[0] && canvasFrame.getWidth() > 0) {
-                                float scale = Math.min((float)canvasFrame.getWidth() / bmp.getWidth(), (float)canvasFrame.getHeight() / bmp.getHeight());
-                                if (scale > 1.5f) scale = 1.5f; float dx = (canvasFrame.getWidth() - bmp.getWidth() * scale) / 2f; float dy = (canvasFrame.getHeight() - bmp.getHeight() * scale) / 2f;
-                                imageMatrix.setScale(scale, scale); imageMatrix.postTranslate(dx, dy); previewImg.setImageMatrix(imageMatrix); isMatrixInitialized[0] = true;
-                            }
-                        } else {
-                            // 针对缺少 palette 导致的解析失败，临时清空画面
-                            previewImg.setImageBitmap(null);
-                        }
-                        infoText.setText(String.format("帧: %d / %d | 动作: %d | 索引: %d | 尺寸: %dx%d", currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.width, targetFrame.height));
-                    });
-                } catch(Exception e){}
-            }).start();
+        Runnable updateFrameAction = new Runnable() {
+            @Override public void run() {
+                if (currentGroupFrames.isEmpty()) return;
+                if (currentFrameIndex[0] < 0) currentFrameIndex[0] = currentGroupFrames.size() - 1;
+                if (currentFrameIndex[0] >= currentGroupFrames.size()) currentFrameIndex[0] = 0;
+                final GoEngineBridge.SffFrame targetFrame = currentGroupFrames.get(currentFrameIndex[0]);
+                new Thread(() -> {
+                    try {
+                        final Bitmap bmp = GoEngineBridge.decodeSffFrame(sffPath, targetFrame.group, targetFrame.item);
+                        uiHandler.post(() -> {
+                            if (bmp != null) {
+                                previewImg.setImageBitmap(bmp);
+                                if (!isMatrixInitialized[0] && canvasFrame.getWidth() > 0) {
+                                    float scale = Math.min((float)canvasFrame.getWidth() / bmp.getWidth(), (float)canvasFrame.getHeight() / bmp.getHeight());
+                                    if (scale > 1.5f) scale = 1.5f; float dx = (canvasFrame.getWidth() - bmp.getWidth() * scale) / 2f; float dy = (canvasFrame.getHeight() - bmp.getHeight() * scale) / 2f;
+                                    imageMatrix.setScale(scale, scale); imageMatrix.postTranslate(dx, dy); previewImg.setImageMatrix(imageMatrix); isMatrixInitialized[0] = true;
+                                }
+                            } else { previewImg.setImageBitmap(null); }
+                            infoText.setText(String.format("帧: %d / %d | 动作: %d | 索引: %d | 尺寸: %dx%d | 轴心: %d, %d", currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.width, targetFrame.height, targetFrame.x, targetFrame.y));
+                        });
+                    } catch(Exception e){}
+                }).start();
+            }
         };
+
+        // 👇 新增：完美的 PNG 替换功能
+        btnReplace.setOnClickListener(v -> {
+            if (currentGroupFrames.isEmpty()) return;
+            final GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
+            showWin10FilePicker("选择替换用的 PNG 图像", 7, null, null, selectedFile -> {
+                new Thread(() -> {
+                    boolean success = GoEngineBridge.replaceSffFrame(sffPath, f.group, f.item, selectedFile.getAbsolutePath());
+                    uiHandler.post(() -> {
+                        if (success) {
+                            Toast.makeText(getContext(), "✅ " + f.group + "-" + f.item + " 帧已成功替换为新 PNG！", Toast.LENGTH_SHORT).show();
+                            updateFrameAction.run(); // 强制刷新渲染器
+                        } else {
+                            Toast.makeText(getContext(), "❌ 替换失败：请检查文件格式或引擎底层实现", Toast.LENGTH_LONG).show();
+                        }
+                    });
+                }).start();
+            });
+        });
 
         canvasFrame.post(updateFrameAction);
 
@@ -1013,7 +978,7 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ======================================================================================
-    // 🎵 模块 2：SND 音频检视工坊 (无限深度递归扫描修复)
+    // 🎵 模块 2：SND 音频检视工坊 (支持 SND 音频完美替换)
     // ======================================================================================
     private View buildSndExtractorContent() {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
@@ -1026,7 +991,7 @@ public class DesktopSystemView extends Dialog {
         final LinearLayout listLayout = new LinearLayout(getContext()); listLayout.setOrientation(LinearLayout.VERTICAL); scroll.addView(listLayout); root.addView(scroll);
 
         scanBtn.setOnClickListener(v -> {
-            currentGalleryLayout = listLayout; currentStatusText = statusText; showWin10FilePicker("选择 .snd 音频包", 5, null, null);
+            currentGalleryLayout = listLayout; currentStatusText = statusText; showWin10FilePicker("选择 .snd 音频包", 5, null, null, null);
         });
         return root;
     }
@@ -1036,12 +1001,7 @@ public class DesktopSystemView extends Dialog {
         new Thread(() -> {
             try {
                 List<File> validFiles = new ArrayList<>();
-                if (sndFile.isDirectory()) {
-                    findFilesRecursively(sndFile, validFiles, ".snd"); // 深度扫描
-                } else {
-                    validFiles.add(sndFile);
-                }
-                
+                if (sndFile.isDirectory()) { findFilesRecursively(sndFile, validFiles, ".snd"); } else { validFiles.add(sndFile); }
                 if (validFiles.isEmpty()) { updateUI(currentStatusText, "❌ 未找到SND文件"); return; }
                 
                 new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
@@ -1113,8 +1073,20 @@ public class DesktopSystemView extends Dialog {
                         } catch (Exception e) {}
                     });
                     
+                    // 👇 新增：完美的音频替换触发器
                     Button btnReplace = createButton("🔄 替换", "#4CAF50");
-                    btnReplace.setOnClickListener(v -> Toast.makeText(getContext(), "等待 Go 引擎支持 SND 二进制重组封包", Toast.LENGTH_SHORT).show());
+                    btnReplace.setOnClickListener(v -> {
+                        showWin10FilePicker("选择替换用的音频文件", 8, null, null, selectedFile -> {
+                            new Thread(() -> {
+                                boolean success = GoEngineBridge.replaceSndAudio(sndPath, n.group, n.item, selectedFile.getAbsolutePath());
+                                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                                    if (success) { Toast.makeText(getContext(), "✅ " + n.group + "-" + n.item + " 音频已成功替换！", Toast.LENGTH_SHORT).show(); } 
+                                    else { Toast.makeText(getContext(), "❌ 音频替换失败", Toast.LENGTH_SHORT).show(); }
+                                });
+                            }).start();
+                        });
+                    });
+
                     row.addView(btnPlay); row.addView(btnExport, btnParams); row.addView(btnReplace, btnParams); listLayout.addView(row, rowParams);
                 }
             }
@@ -1133,7 +1105,7 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ======================================================================================
-    // 🎞️ 模块 3：原生 GIF 拆解器 (👇 修复 3：新增无限扫描 + 精确控制导出帧数)
+    // 🎞️ 模块 3：原生 GIF 拆解器 (👇 重构修复了：无法获取帧、只输出第一帧、白屏等顽固缺陷)
     // ======================================================================================
     private View buildGifExtractorContent() {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
@@ -1146,7 +1118,7 @@ public class DesktopSystemView extends Dialog {
         final LinearLayout galleryLayout = new LinearLayout(getContext()); galleryLayout.setOrientation(LinearLayout.VERTICAL); scroll.addView(galleryLayout); root.addView(scroll);
         
         scanBtn.setOnClickListener(v -> {
-            currentGalleryLayout = galleryLayout; currentStatusText = statusText; showWin10FilePicker("选择目录或 .gif 文件", 6, null, null);
+            currentGalleryLayout = galleryLayout; currentStatusText = statusText; showWin10FilePicker("选择目录或 .gif 文件", 6, null, null, null);
         });
         return root;
     }
@@ -1155,11 +1127,7 @@ public class DesktopSystemView extends Dialog {
         if (currentGalleryLayout != null) currentGalleryLayout.removeAllViews(); currentStatusText.setText("正在无限深度扫描本地目录...");
         new Thread(() -> {
             List<File> validGifs = new ArrayList<>();
-            if (targetFile.isDirectory()) {
-                findFilesRecursively(targetFile, validGifs, ".gif");
-            } else {
-                validGifs.add(targetFile);
-            }
+            if (targetFile.isDirectory()) { findFilesRecursively(targetFile, validGifs, ".gif"); } else { validGifs.add(targetFile); }
             
             new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                 if (validGifs.isEmpty()) { currentStatusText.setText("❌ 未在当前目录找到 GIF 动图"); return; }
@@ -1171,7 +1139,6 @@ public class DesktopSystemView extends Dialog {
                     LinearLayout card = new LinearLayout(getContext()); card.setOrientation(LinearLayout.VERTICAL); card.setGravity(Gravity.CENTER); card.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
                     GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#2D2D30")); bg.setCornerRadius(8f*density); bg.setStroke(1, Color.parseColor("#3F3F46")); card.setBackground(bg);
                     
-                    // 利用 WebView 加载轻量级 GIF 预览
                     WebView previewWv = new WebView(mContext); previewWv.getSettings().setAllowFileAccess(true); previewWv.setBackgroundColor(Color.parseColor("#1E1E1E"));
                     previewWv.loadDataWithBaseURL("", "<html style='margin:0;padding:0;'><body style='margin:0;padding:0;background-color:#1E1E1E;display:flex;justify-content:center;align-items:center;'><img src='file://" + f.getAbsolutePath() + "' style='max-width:100%;max-height:100%;object-fit:contain;' /></body></html>", "text/html", "utf-8", null);
                     card.addView(previewWv, new LinearLayout.LayoutParams((int)(120*density), (int)(120*density)));
@@ -1210,9 +1177,7 @@ public class DesktopSystemView extends Dialog {
         LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); btnRow.setGravity(Gravity.RIGHT); btnRow.setPadding((int)(10*density), 0, (int)(10*density), (int)(15*density));
         Button bSave = createButton("🚀 开始拆解", "#9C27B0"); 
         bSave.setOnClickListener(v -> {
-            pDialog.dismiss(); 
-            int frames = 25;
-            try { frames = Integer.parseInt(inputFrames.getText().toString()); } catch (Exception e) {}
+            pDialog.dismiss(); int frames = 25; try { frames = Integer.parseInt(inputFrames.getText().toString()); } catch (Exception e) {}
             startGifDisassemblerExec(gifFile, frames);
         });
         Button bDiscard = createButton("❌ 取消", "#333333"); bDiscard.setOnClickListener(v -> pDialog.dismiss());
@@ -1224,28 +1189,31 @@ public class DesktopSystemView extends Dialog {
     }
 
     private void startGifDisassemblerExec(File gifFile, int targetFrames) {
-        currentStatusText.setText("状态: 正在等分时间轴强制剥离 " + targetFrames + " 帧...");
+        currentStatusText.setText("状态: 正在强制剥离缓存提取 " + targetFrames + " 帧...");
         final android.os.Handler uiHandler = new android.os.Handler(android.os.Looper.getMainLooper());
         new Thread(() -> {
             try {
-                Movie movie = Movie.decodeFile(gifFile.getAbsolutePath());
-                if (movie == null || movie.width() <= 0) { uiHandler.post(() -> currentStatusText.setText("❌ 无法解码 GIF")); return; }
+                // 👇 核心修复 1：使用输入流并标记强制重置缓存，防止 Movie 指针死锁
+                InputStream is = new BufferedInputStream(new FileInputStream(gifFile));
+                is.mark((int) gifFile.length() + 1024);
+                Movie movie = Movie.decodeStream(is);
                 
-                File outDir = new File(Environment.getExternalStorageDirectory(), "ik_PNG");
-                if (!outDir.exists()) outDir.mkdirs();
-                File subDir = new File(outDir, gifFile.getName().replace(".gif", ""));
-                if (!subDir.exists()) subDir.mkdirs();
+                if (movie == null || movie.width() <= 0) { uiHandler.post(() -> currentStatusText.setText("❌ 无法解码该格式的 GIF")); return; }
+                
+                File outDir = new File(Environment.getExternalStorageDirectory(), "ik_PNG"); if (!outDir.exists()) outDir.mkdirs();
+                File subDir = new File(outDir, gifFile.getName().replace(".gif", "")); if (!subDir.exists()) subDir.mkdirs();
 
                 int duration = movie.duration();
-                if(duration == 0) duration = targetFrames * 40; 
+                // 👇 核心修复 2：如果 Movie 读取不到时长（duration == 0 常见 Bug），强制分配安全时间轴，防死循环
+                if (duration <= 0) duration = targetFrames * 100; 
                 int stepTime = duration / Math.max(1, targetFrames);
                 
                 for(int i = 0; i < targetFrames; i++) {
                     Bitmap frame = Bitmap.createBitmap(movie.width(), movie.height(), Bitmap.Config.ARGB_8888);
                     Canvas c = new Canvas(frame);
                     
-                    // 修复：必须清理画布并强制设定精确时间轴
-                    frame.eraseColor(Color.TRANSPARENT);
+                    // 👇 核心修复 3：完全清空画布缓冲区，避免因为 PorterDuff 重叠导致的像素拖尾
+                    c.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
                     movie.setTime(i * stepTime);
                     movie.draw(c, 0, 0);
                     
@@ -1257,19 +1225,18 @@ public class DesktopSystemView extends Dialog {
                     final int curr = i + 1;
                     uiHandler.post(() -> currentStatusText.setText("状态: 正在拆解 " + curr + " / " + targetFrames));
                 }
+                is.close();
                 uiHandler.post(() -> Toast.makeText(getContext(), "✅ 拆解成功！完美截取 " + targetFrames + " 帧！保存至: " + subDir.getAbsolutePath(), Toast.LENGTH_LONG).show());
-            } catch (Exception e) {
-                uiHandler.post(() -> currentStatusText.setText("拆解异常: " + e.getMessage()));
-            }
+            } catch (Exception e) { uiHandler.post(() -> currentStatusText.setText("拆解异常: " + e.getMessage())); }
         }).start();
     }
 
     // ======================================================================================
-    // 🌉 模块 4：Go 引擎底层抽象桥接 (安全防崩溃升级)
+    // 🌉 模块 4：Go 引擎底层抽象桥接 (支持替换指令通道)
     // ======================================================================================
     public static class GoEngineBridge {
         public static class SffInfo { public String name; public String filePath; public Bitmap preview; public String version; }
-        public static class SffFrame { public int group; public int item; public int width; public int height; }
+        public static class SffFrame { public int group; public int item; public int width; public int height; public int x; public int y; } // 补全X和Y
         public static class SndNode { public int group; public int item; }
 
         public static List<SffInfo> scanSff(String targetPath) {
@@ -1297,6 +1264,7 @@ public class DesktopSystemView extends Dialog {
                     org.json.JSONObject obj = array.getJSONObject(i);
                     SffFrame f = new SffFrame();
                     f.group = obj.getInt("group"); f.item = obj.getInt("item"); f.width = obj.getInt("width"); f.height = obj.getInt("height");
+                    f.x = obj.optInt("x", 0); f.y = obj.optInt("y", 0); // 取出轴心
                     list.add(f);
                 }
             } catch (Exception e) {} return list;
@@ -1324,6 +1292,15 @@ public class DesktopSystemView extends Dialog {
 
         public static byte[] extractSndAudio(String targetPath, int group, int item) {
             try { return Api.extractSndAudio(targetPath, group, item); } catch (Exception e) { return null; }
+        }
+
+        // 👇 新增的素材通道接口（要求你 Go 里面的 Api.java 也有此封装，它会将文件重组后替换）
+        public static boolean replaceSffFrame(String sffPath, int group, int item, String targetPngPath) {
+            try { return Api.replaceSffFrame(sffPath, group, item, targetPngPath); } catch (Exception e) { return false; }
+        }
+
+        public static boolean replaceSndAudio(String sndPath, int group, int item, String targetWavPath) {
+            try { return Api.replaceSndAudio(sndPath, group, item, targetWavPath); } catch (Exception e) { return false; }
         }
     }
 }
