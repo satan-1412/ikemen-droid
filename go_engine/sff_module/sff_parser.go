@@ -3,6 +3,7 @@ package sff_module
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -741,4 +742,98 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 	}
 
 	return nil, fmt.Errorf("empty frame data")
+}
+
+// ==========================================
+// 🛠️ 独家底层写入机制：真正实现 SFF 图像替换
+// ==========================================
+
+// ReplaceFrameWithPng 真实替换 SFF 二进制封包中指定的图像数据
+func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, pngPath string) error {
+	// 1. 读取用于替换的 PNG 文件
+	pngData, err := os.ReadFile(pngPath)
+	if err != nil {
+		return fmt.Errorf("读取PNG失败: %v", err)
+	}
+
+	// 解析 PNG 检查是否有效，顺便获取宽和高
+	imgConfig, _, err := image.DecodeConfig(bytes.NewReader(pngData))
+	if err != nil {
+		return fmt.Errorf("无效的PNG格式: %v", err)
+	}
+
+	// 2. 以【读写追加模式】打开目标 SFF 文件
+	f, err := os.OpenFile(sffPath, os.O_RDWR, 0644)
+	if err != nil {
+		return fmt.Errorf("无法打开SFF文件: %v", err)
+	}
+	defer f.Close()
+
+	var h SffHeader
+	var lofs, tofs uint32
+	if err := h.Read(f, &lofs, &tofs); err != nil {
+		return fmt.Errorf("读取SFF头部失败: %v", err)
+	}
+
+	// 3. 核心限制拦截：SFFv1 在物理层不支持存储原生 PNG，强制提示升级！
+	if h.Version[0] == 1 {
+		return errors.New("SFFv1 仅支持调色板索引模式(PCX-RLE)，无法直接混入现代真彩色PNG！请先将素材转换为 SFFv2 格式")
+	}
+
+	// 4. 遍历查找并实施封包替换（仅限 SFFv2）
+	shofs := int64(h.FirstSpriteHeaderOffset)
+	for i := 0; i < int(h.NumberOfSprites); i++ {
+		f.Seek(shofs, io.SeekStart)
+		
+		var group, number uint16
+		binary.Read(f, binary.LittleEndian, &group)
+		binary.Read(f, binary.LittleEndian, &number)
+
+		// 找到目标动作帧！
+		if int32(group) == targetGroup && int32(number) == targetItem {
+			// A. 计算文件末尾的偏移量，准备把新图片“嫁接”在整个文件的最尾部
+			fileInfo, _ := f.Stat()
+			appendOffset := fileInfo.Size()
+
+			// B. 移动到文件末尾，写死 PNG 字节流
+			f.Seek(0, io.SeekEnd)
+			_, err = f.Write(pngData)
+			if err != nil {
+				return fmt.Errorf("写入PNG数据失败: %v", err)
+			}
+
+			// C. 回溯修改原本的 SFF 帧头部，修改指针让引擎读新图片
+			// 修改宽、高
+			f.Seek(shofs+4, io.SeekStart)
+			binary.Write(f, binary.LittleEndian, uint16(imgConfig.Width))
+			binary.Write(f, binary.LittleEndian, uint16(imgConfig.Height))
+			
+			// 强制将读取格式设为 Format 11 (RGBA PNG 原生直读模式) / 色深 32
+			f.Seek(shofs+14, io.SeekStart)
+			binary.Write(f, binary.LittleEndian, byte(11)) // Format 11
+			binary.Write(f, binary.LittleEndian, byte(32)) // Depth 32
+			
+			// 获取 SFFv2 当前读取这帧的 flags（决定寻址用 lofs 还是 tofs）
+			f.Seek(shofs+26, io.SeekStart)
+			var flags uint16
+			binary.Read(f, binary.LittleEndian, &flags)
+
+			var finalOffset uint32
+			if flags&1 == 0 {
+				finalOffset = uint32(appendOffset) - lofs
+			} else {
+				finalOffset = uint32(appendOffset) - tofs
+			}
+
+			// 覆写 DataOffset(重置寻址指针) 和 DataSize(重置尺寸大小)
+			f.Seek(shofs+16, io.SeekStart)
+			binary.Write(f, binary.LittleEndian, finalOffset)
+			binary.Write(f, binary.LittleEndian, uint32(len(pngData)))
+
+			return nil // 替换成功，完美落幕！
+		}
+		shofs += 28 // SFFv2 头部固定长度 28
+	}
+
+	return fmt.Errorf("在 SFF 文件中未找到 Group:%d Item:%d", targetGroup, targetItem)
 }
