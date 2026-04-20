@@ -44,6 +44,7 @@ func (sh *SffHeader) Read(r io.Reader, lofs *uint32, tofs *uint32) error {
 
 	var dummy uint32
 	read(&dummy)
+	_ = dummy // 消除 Go 编译器的未使用警告
 
 	switch sh.Version[0] {
 	case 1:
@@ -51,9 +52,11 @@ func (sh *SffHeader) Read(r io.Reader, lofs *uint32, tofs *uint32) error {
 		read(&sh.NumberOfSprites)
 		read(&sh.FirstSpriteHeaderOffset)
 		read(&dummy)
+		_ = dummy
 	case 2:
 		for i := 0; i < 4; i++ {
 			read(&dummy)
+			_ = dummy
 		}
 		read(&sh.FirstSpriteHeaderOffset)
 		read(&sh.NumberOfSprites)
@@ -61,6 +64,7 @@ func (sh *SffHeader) Read(r io.Reader, lofs *uint32, tofs *uint32) error {
 		read(&sh.NumberOfPalettes)
 		read(lofs)
 		read(&dummy)
+		_ = dummy
 		read(tofs)
 	default:
 		return fmt.Errorf("Unrecognized SFF version")
@@ -451,10 +455,12 @@ func ExtractAllFrames(filename string) ([]SffFrameInfo, error) {
 		if h.Version[0] == 1 {
 			read(&xofs)
 			read(&size)
+			_ = size // 消除未使用警告
 			f.Seek(4, 1) // 跳过 offset
 			read(&group)
 			read(&number)
 			read(&dummy16) // link
+			_ = dummy16 // 消除未使用警告
 			frames = append(frames, SffFrameInfo{Group: int32(group), Item: int32(number), Width: 0, Height: 0})
 			shofs = int64(xofs)
 		} else {
@@ -565,18 +571,23 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 
 	// 读取真实图像数据
 	if h.Version[0] == 1 {
-		var ps byte
 		f.Seek(int64(target.DataOffset), 0)
 		var dummy uint16
 		read(&dummy)
+		_ = dummy // 消除未使用警告
+		
 		var encoding, bpp byte
 		read(&encoding)
 		read(&bpp)
+		_ = bpp // 消除未使用警告
+		
 		var rect [4]uint16
 		read(&rect)
+		
 		f.Seek(int64(target.DataOffset)+66, 0)
 		var bpl uint16
 		read(&bpl)
+		
 		target.Size[0] = rect[2] - rect[0] + 1
 		target.Size[1] = rect[3] - rect[1] + 1
 		if encoding == 1 {
@@ -658,8 +669,12 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 			f.Seek(int64(h.FirstPaletteHeaderOffset)+int64(target.palidx*16), 0)
 			var gn_ [3]uint16
 			read(&gn_)
+			_ = gn_ // 消除未使用警告
+			
 			var link uint16
 			read(&link)
+			_ = link // 消除未使用警告
+			
 			var pofs, plSize uint32
 			read(&pofs)
 			read(&plSize)
