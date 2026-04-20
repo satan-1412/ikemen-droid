@@ -108,35 +108,52 @@ func (pl *PaletteList) Get(i int) []uint32 {
 }
 
 type Sprite struct {
-	Pal      []uint32
-	Group    uint16
-	Number   uint16
-	Size     [2]uint16
-	Offset   [2]int16
-	palidx   int
-	rle      int
-	coldepth byte
-	PxlData  []byte // 提纯后的核心：纯净的像素数据
-	IsRaw    bool   // 是否已经是真实的 RGBA 数据
+	Pal             []uint32
+	Group           uint16
+	Number          uint16
+	Size            [2]uint16
+	Offset          [2]int16
+	IndexOfPrevious uint16 // 连体婴索引机制
+	palidx          int
+	rle             int
+	coldepth        byte
+	PxlData         []byte
+	IsRaw           bool
+	DataOffset      uint32
+	DataSize        uint32
 }
 
 func newSprite() *Sprite {
 	return &Sprite{palidx: -1}
 }
 
-func (s *Sprite) shareCopy(src *Sprite) {
-	s.Pal = src.Pal
-	s.Size = src.Size
-	if s.palidx < 0 {
-		s.palidx = src.palidx
+// ==========================================
+// 🎨 ACT 外部调色板读取机制 (备用)
+// ==========================================
+func ReadActPalette(filename string) ([]uint32, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
 	}
-	s.coldepth = src.coldepth
-	s.PxlData = src.PxlData
-	s.IsRaw = src.IsRaw
+	defer f.Close()
+
+	pal := make([]uint32, 256)
+	var rgb [3]byte
+	for i := 255; i >= 0; i-- {
+		if err := binary.Read(f, binary.LittleEndian, &rgb); err != nil {
+			break
+		}
+		var alpha byte = 255
+		if i == 0 {
+			alpha = 0
+		}
+		pal[i] = uint32(alpha)<<24 | uint32(rgb[0])<<16 | uint32(rgb[1])<<8 | uint32(rgb[2])
+	}
+	return pal, nil
 }
 
 // ==========================================
-// 🧩 核心解压算法 (直接从官方提纯，一字未改其逻辑)
+// 🧩 核心解压算法 (直接从官方提纯，完全展开排版)
 // ==========================================
 
 func (s *Sprite) RlePcxDecode(rle []byte) (p []byte) {
@@ -144,9 +161,14 @@ func (s *Sprite) RlePcxDecode(rle []byte) (p []byte) {
 		return rle
 	}
 	p = make([]byte, int(s.Size[0])*int(s.Size[1]))
-	i, j, k, w := 0, 0, 0, int(s.Size[0])
+	i := 0
+	j := 0
+	k := 0
+	w := int(s.Size[0])
+
 	for j < len(p) {
-		n, d := 1, rle[i]
+		n := 1
+		d := rle[i]
 		if i < len(rle)-1 {
 			i++
 		}
@@ -178,9 +200,12 @@ func (s *Sprite) Rle8Decode(rle []byte) (p []byte) {
 		return rle
 	}
 	p = make([]byte, int(s.Size[0])*int(s.Size[1]))
-	i, j := 0, 0
+	i := 0
+	j := 0
+
 	for j < len(p) {
-		n, d := 1, rle[i]
+		n := 1
+		d := rle[i]
 		if i < len(rle)-1 {
 			i++
 		}
@@ -206,7 +231,9 @@ func (s *Sprite) Rle5Decode(rle []byte) (p []byte) {
 		return rle
 	}
 	p = make([]byte, int(s.Size[0])*int(s.Size[1]))
-	i, j := 0, 0
+	i := 0
+	j := 0
+
 	for j < len(p) {
 		rl := int(rle[i])
 		if i < len(rle)-1 {
@@ -250,8 +277,15 @@ func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
 		return rle
 	}
 	p = make([]byte, int(s.Size[0])*int(s.Size[1]))
-	i, j, n := 0, 0, 0
-	ct, cts, rb, rbc := rle[i], uint(0), byte(0), uint(0)
+	i := 0
+	j := 0
+	n := 0
+
+	ct := rle[i]
+	cts := uint(0)
+	rb := byte(0)
+	rbc := uint(0)
+
 	if i < len(rle)-1 {
 		i++
 	}
@@ -281,7 +315,8 @@ func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
 					}
 				} else {
 					d = int(rb) + 1
-					rb, rbc = 0, 0
+					rb = 0
+					rbc = 0
 				}
 			}
 			for {
@@ -313,7 +348,8 @@ func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
 		}
 		cts++
 		if cts >= 8 {
-			ct, cts = rle[i], 0
+			ct = rle[i]
+			cts = 0
 			if i < len(rle)-1 {
 				i++
 			}
@@ -385,7 +421,7 @@ type SffFrameInfo struct {
 	Height int32
 }
 
-// ExtractAllFrames 遍历文件并返回所有帧的基本信息（不提取图像）
+// ExtractAllFrames 遍历文件并返回所有帧的基本信息
 func ExtractAllFrames(filename string) ([]SffFrameInfo, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -400,7 +436,9 @@ func ExtractAllFrames(filename string) ([]SffFrameInfo, error) {
 	}
 
 	frames := make([]SffFrameInfo, 0)
-	read := func(x interface{}) error { return binary.Read(f, binary.LittleEndian, x) }
+	read := func(x interface{}) error { 
+		return binary.Read(f, binary.LittleEndian, x) 
+	}
 
 	shofs := int64(h.FirstSpriteHeaderOffset)
 	for i := 0; i < int(h.NumberOfSprites); i++ {
@@ -432,7 +470,6 @@ func ExtractAllFrames(filename string) ([]SffFrameInfo, error) {
 }
 
 // ExtractFrameAsPng 将指定的动作组解压并映射调色板，直接输出 PNG 字节流
-// 这里的实现包含了原版 SFF v1 和 v2 最核心的读取逻辑，剔除了所有垃圾
 func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]byte, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -444,41 +481,43 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 	var lofs, tofs uint32
 	h.Read(f, &lofs, &tofs)
 
-	read := func(x interface{}) error { return binary.Read(f, binary.LittleEndian, x) }
+	read := func(x interface{}) error { 
+		return binary.Read(f, binary.LittleEndian, x) 
+	}
 
-	// SFF 解析是一个复杂的遍历过程，这里我们找到目标帧并解压
 	shofs := int64(h.FirstSpriteHeaderOffset)
 	pl := &PaletteList{}
 	pl.init()
 
-	var s *Sprite
-	var found bool
+	sprites := make([]*Sprite, h.NumberOfSprites)
 
+	// 第一次遍历：加载所有元数据，解决连体婴指针依赖
 	for i := 0; i < int(h.NumberOfSprites); i++ {
 		f.Seek(shofs, 0)
 		spr := newSprite()
-		var xofs, size uint32
-		var indexOfPrevious uint16
+		var xofs uint32
 
 		if h.Version[0] == 1 {
 			read(&xofs)
-			read(&size)
+			read(&spr.DataSize)
 			read(&spr.Offset)
 			read(&spr.Group)
 			read(&spr.Number)
-			read(&indexOfPrevious)
+			read(&spr.IndexOfPrevious)
+			spr.DataOffset = xofs
+			shofs = int64(xofs)
 		} else {
 			read(&spr.Group)
 			read(&spr.Number)
 			read(&spr.Size)
 			read(&spr.Offset)
-			read(&indexOfPrevious)
+			read(&spr.IndexOfPrevious)
 			var format byte
 			read(&format)
 			spr.rle = -int(format)
 			read(&spr.coldepth)
 			read(&xofs)
-			read(&size)
+			read(&spr.DataSize)
 			var tmp uint16
 			read(&tmp)
 			spr.palidx = int(tmp)
@@ -488,137 +527,161 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 			} else {
 				xofs += tofs
 			}
-		}
-
-		if int32(spr.Group) == targetGroup && int32(spr.Number) == targetItem {
-			s = spr
-			found = true
-			
-			if size > 0 {
-				if h.Version[0] == 1 {
-					var ps byte
-					f.Seek(shofs+32, 0)
-					read(&ps)
-					
-					f.Seek(int64(xofs), 0)
-					var dummy uint16
-					read(&dummy)
-					var encoding, bpp byte
-					read(&encoding)
-					read(&bpp)
-					var rect [4]uint16
-					read(&rect)
-					f.Seek(int64(xofs)+66, 0)
-					var bpl uint16
-					read(&bpl)
-					s.Size[0] = rect[2] - rect[0] + 1
-					s.Size[1] = rect[3] - rect[1] + 1
-					if encoding == 1 {
-						s.rle = int(bpl)
-					} else {
-						s.rle = 0
-					}
-
-					pcxDataStart := int64(xofs) + 128
-					paletteOffset := int64(xofs) + int64(size) - 769 // 简化的 PCX 调色板定位
-					rleSize := paletteOffset - pcxDataStart
-					if rleSize < 0 { rleSize = 0 }
-
-					px := make([]byte, rleSize)
-					f.Seek(pcxDataStart, 0)
-					read(px)
-
-					var pal []uint32
-					s.palidx, pal = pl.NewPal()
-					f.Seek(paletteOffset+1, 0)
-					var rgb [3]byte
-					for c := range pal {
-						read(&rgb)
-						var alpha byte = 255
-						if c == 0 { alpha = 0 }
-						pal[c] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
-					}
-					s.PxlData = s.RlePcxDecode(px)
-					s.Pal = pal
-
-				} else {
-					f.Seek(int64(xofs), 0)
-					px := make([]uint8, size)
-					read(px)
-					if s.rle == 0 {
-						if s.coldepth == 8 {
-							s.PxlData = px
-						} else {
-							s.IsRaw = true
-							s.PxlData = px
-						}
-					} else {
-						format := -s.rle
-						f.Seek(int64(xofs)+4, 0)
-						if 2 <= format && format <= 4 {
-							if size < 4 { size = 4 }
-							px = make([]byte, size-4)
-							read(px)
-						}
-						switch format {
-						case 2: s.PxlData = s.Rle8Decode(px)
-						case 3: s.PxlData = s.Rle5Decode(px)
-						case 4: s.PxlData = s.Lz5Decode(px)
-						case 10, 11, 12:
-							// 真正的 PNG 解压可以直接通过 Go 原生库
-							f.Seek(int64(xofs)+4, 0)
-							img, err := png.Decode(f)
-							if err == nil {
-								s.IsRaw = true
-								buf := new(bytes.Buffer)
-								png.Encode(buf, img)
-								s.PxlData = buf.Bytes()
-							}
-						}
-					}
-					// 读取 v2 调色板
-					if !s.IsRaw {
-						f.Seek(int64(h.FirstPaletteHeaderOffset)+int64(s.palidx*16), 0)
-						var gn_ [3]uint16
-						read(&gn_)
-						var link uint16
-						read(&link)
-						var pofs, plSize uint32
-						read(&pofs)
-						read(&plSize)
-						s.Pal, _ = ReadPalette(f, int64(lofs+pofs), plSize, h.Version[2] != 0)
-					}
-				}
-			}
-			break
-		}
-
-		if h.Version[0] == 1 {
-			shofs = int64(xofs)
-		} else {
+			spr.DataOffset = xofs
 			shofs += 28
+		}
+		sprites[i] = spr
+	}
+
+	// 查找目标帧
+	var target *Sprite
+	for _, spr := range sprites {
+		if int32(spr.Group) == targetGroup && int32(spr.Number) == targetItem {
+			target = spr
+			break
 		}
 	}
 
-	if !found || s == nil {
+	if target == nil {
 		return nil, fmt.Errorf("Frame not found")
 	}
 
+	// 🚨 核心修复：连体婴数据重定向
+	if target.DataSize == 0 && target.IndexOfPrevious < uint16(len(sprites)) {
+		sourceSpr := sprites[target.IndexOfPrevious]
+		target.DataOffset = sourceSpr.DataOffset
+		target.DataSize = sourceSpr.DataSize
+		target.rle = sourceSpr.rle
+		target.coldepth = sourceSpr.coldepth
+		target.palidx = sourceSpr.palidx
+		if h.Version[0] == 1 {
+			target.Size = sourceSpr.Size
+		}
+	}
+
+	if target.DataSize == 0 {
+		return nil, fmt.Errorf("Empty linked frame data")
+	}
+
+	// 读取真实图像数据
+	if h.Version[0] == 1 {
+		var ps byte
+		f.Seek(int64(target.DataOffset), 0)
+		var dummy uint16
+		read(&dummy)
+		var encoding, bpp byte
+		read(&encoding)
+		read(&bpp)
+		var rect [4]uint16
+		read(&rect)
+		f.Seek(int64(target.DataOffset)+66, 0)
+		var bpl uint16
+		read(&bpl)
+		target.Size[0] = rect[2] - rect[0] + 1
+		target.Size[1] = rect[3] - rect[1] + 1
+		if encoding == 1 {
+			target.rle = int(bpl)
+		} else {
+			target.rle = 0
+		}
+
+		pcxDataStart := int64(target.DataOffset) + 128
+		paletteOffset := int64(target.DataOffset) + int64(target.DataSize) - 769 
+		rleSize := paletteOffset - pcxDataStart
+		if rleSize < 0 { 
+			rleSize = 0 
+		}
+
+		px := make([]byte, rleSize)
+		f.Seek(pcxDataStart, 0)
+		f.Read(px)
+
+		var pal []uint32
+		target.palidx, pal = pl.NewPal()
+		f.Seek(paletteOffset+1, 0)
+		var rgb [3]byte
+		for c := range pal {
+			f.Read(rgb[:])
+			var alpha byte = 255
+			if c == 0 { 
+				alpha = 0 
+			}
+			pal[c] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
+		}
+		target.PxlData = target.RlePcxDecode(px)
+		target.Pal = pal
+
+	} else {
+		f.Seek(int64(target.DataOffset), 0)
+		px := make([]uint8, target.DataSize)
+		f.Read(px)
+
+		if target.rle == 0 {
+			if target.coldepth == 8 {
+				target.PxlData = px
+			} else {
+				target.IsRaw = true
+				target.PxlData = px
+			}
+		} else {
+			format := -target.rle
+			f.Seek(int64(target.DataOffset)+4, 0)
+			if 2 <= format && format <= 4 {
+				size := target.DataSize
+				if size < 4 { 
+					size = 4 
+				}
+				px = make([]byte, size-4)
+				f.Read(px)
+			}
+			switch format {
+			case 2: 
+				target.PxlData = target.Rle8Decode(px)
+			case 3: 
+				target.PxlData = target.Rle5Decode(px)
+			case 4: 
+				target.PxlData = target.Lz5Decode(px)
+			case 10, 11, 12:
+				f.Seek(int64(target.DataOffset)+4, 0)
+				img, err := png.Decode(f)
+				if err == nil {
+					target.IsRaw = true
+					buf := new(bytes.Buffer)
+					png.Encode(buf, img)
+					target.PxlData = buf.Bytes()
+				}
+			}
+		}
+
+		// 读取 v2 调色板
+		if !target.IsRaw {
+			f.Seek(int64(h.FirstPaletteHeaderOffset)+int64(target.palidx*16), 0)
+			var gn_ [3]uint16
+			read(&gn_)
+			var link uint16
+			read(&link)
+			var pofs, plSize uint32
+			read(&pofs)
+			read(&plSize)
+			target.Pal, _ = ReadPalette(f, int64(lofs+pofs), plSize, h.Version[2] != 0)
+		}
+	}
+
 	// 如果已经是标准 PNG，直接返回
-	if s.IsRaw && len(s.PxlData) > 0 && s.PxlData[0] == 0x89 {
-		return s.PxlData, nil
+	if target.IsRaw && len(target.PxlData) > 0 && target.PxlData[0] == 0x89 {
+		return target.PxlData, nil
 	}
 
 	// 将 8 位色像素数据 + 调色板映射，生成最终的 PNG 图像
-	if s.Size[0] > 0 && s.Size[1] > 0 && len(s.PxlData) > 0 {
-		img := image.NewRGBA(image.Rect(0, 0, int(s.Size[0]), int(s.Size[1])))
-		for y := 0; y < int(s.Size[1]); y++ {
-			for x := 0; x < int(s.Size[0]); x++ {
-				idx := y*int(s.Size[0]) + x
-				if idx < len(s.PxlData) {
-					colorIdx := s.PxlData[idx]
-					if int(colorIdx) < len(s.Pal) {
-						c32 := s.Pal[colorIdx]
+	if target.Size[0] > 0 && target.Size[1] > 0 && len(target.PxlData) > 0 {
+		img := image.NewRGBA(image.Rect(0, 0, int(target.Size[0]), int(target.Size[1])))
+		for y := 0; y < int(target.Size[1]); y++ {
+			for x := 0; x < int(target.Size[0]); x++ {
+				idx := y*int(target.Size[0]) + x
+				if idx < len(target.PxlData) {
+					colorIdx := target.PxlData[idx]
+					if int(colorIdx) < len(target.Pal) {
+						c32 := target.Pal[colorIdx]
 						r := uint8(c32 & 0xFF)
 						g := uint8((c32 >> 8) & 0xFF)
 						b := uint8((c32 >> 16) & 0xFF)
