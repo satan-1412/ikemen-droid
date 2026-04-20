@@ -8,10 +8,18 @@ import (
 	"os"
 )
 
+// ==========================================
+// 🛠️ 基础结构定义
+// ==========================================
+
 type SndNodeInfo struct {
 	Group int32
 	Item  int32
 }
+
+// ==========================================
+// 🎵 核心解包算法 (纯净剥离版，完全展开)
+// ==========================================
 
 func ExtractAllNodes(filename string) ([]SndNodeInfo, error) {
 	f, err := os.Open(filename)
@@ -41,6 +49,9 @@ func ExtractAllNodes(filename string) ([]SndNodeInfo, error) {
 	nodes := make([]SndNodeInfo, 0, numberOfSounds)
 
 	for i := uint32(0); i < numberOfSounds; i++ {
+		if subHeaderOffset == 0 {
+			break
+		}
 		f.Seek(int64(subHeaderOffset), 0)
 		var nextSubHeaderOffset, subFileLength uint32
 		var num [2]int32
@@ -50,10 +61,6 @@ func ExtractAllNodes(filename string) ([]SndNodeInfo, error) {
 		binary.Read(f, binary.LittleEndian, &num)
 
 		nodes = append(nodes, SndNodeInfo{Group: num[0], Item: num[1]})
-
-		if nextSubHeaderOffset == 0 {
-			break
-		}
 		subHeaderOffset = nextSubHeaderOffset
 	}
 	return nodes, nil
@@ -78,6 +85,9 @@ func ExtractWav(filename string, targetGroup int32, targetItem int32) ([]byte, e
 	binary.Read(f, binary.LittleEndian, &subHeaderOffset)
 
 	for i := uint32(0); i < numberOfSounds; i++ {
+		if subHeaderOffset == 0 {
+			break
+		}
 		f.Seek(int64(subHeaderOffset), 0)
 		var nextSubHeaderOffset, subFileLength uint32
 		var num [2]int32
@@ -91,20 +101,24 @@ func ExtractWav(filename string, targetGroup int32, targetItem int32) ([]byte, e
 			f.Read(wavData)
 			return wavData, nil
 		}
-
-		if nextSubHeaderOffset == 0 {
-			break
-		}
 		subHeaderOffset = nextSubHeaderOffset
 	}
-
 	return nil, fmt.Errorf("sound %d,%d not found", targetGroup, targetItem)
 }
+
+// ==========================================
+// 🛠️ 独家底层写入机制：真正实现 SND 音频替换
+// ==========================================
 
 func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, wavPath string) error {
 	wavData, err := os.ReadFile(wavPath)
 	if err != nil {
-		return fmt.Errorf("无法读取目标WAV文件: %v", err)
+		return fmt.Errorf("无法读取目标音频文件: %v", err)
+	}
+
+	// 基础检测：简单拦截非 WAV 格式 (保护原生播放器不崩溃)
+	if len(wavData) < 4 || string(wavData[:4]) != "RIFF" {
+		return fmt.Errorf("目前底层引擎仅严格支持原生 PCM WAV 格式替换，请转换格式")
 	}
 
 	f, err := os.OpenFile(sndPath, os.O_RDWR, 0644)
@@ -144,10 +158,10 @@ func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, wa
 			appendOffset := fileInfo.Size()
 
 			f.Seek(0, io.SeekEnd)
-			binary.Write(f, binary.LittleEndian, nextSubHeaderOffset)
-			binary.Write(f, binary.LittleEndian, uint32(len(wavData)))
-			binary.Write(f, binary.LittleEndian, num[0])
-			binary.Write(f, binary.LittleEndian, num[1])
+			binary.Write(f, binary.LittleEndian, nextSubHeaderOffset) 
+			binary.Write(f, binary.LittleEndian, uint32(len(wavData))) 
+			binary.Write(f, binary.LittleEndian, num[0])               
+			binary.Write(f, binary.LittleEndian, num[1])               
 
 			_, err = f.Write(wavData)
 			if err != nil {
@@ -157,9 +171,8 @@ func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, wa
 			f.Seek(ptrToCurrentNode, io.SeekStart)
 			binary.Write(f, binary.LittleEndian, uint32(appendOffset))
 
-			return nil
+			return nil 
 		}
-
 		ptrToCurrentNode = int64(subHeaderOffset)
 		subHeaderOffset = nextSubHeaderOffset
 	}
