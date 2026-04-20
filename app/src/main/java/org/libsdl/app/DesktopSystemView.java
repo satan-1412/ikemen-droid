@@ -15,6 +15,7 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Point;
 import android.graphics.PointF;
+import android.graphics.PorterDuff;
 import android.graphics.SurfaceTexture;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -25,6 +26,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.text.Editable;
+import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -237,6 +239,23 @@ public class DesktopSystemView extends Dialog {
         cursorPaintStroke = new Paint(Paint.ANTI_ALIAS_FLAG); cursorPaintStroke.setColor(Color.BLACK); cursorPaintStroke.setStyle(Paint.Style.STROKE); cursorPaintStroke.setStrokeWidth(1.5f * density);
         cursorPath = new Path(); cursorPath.moveTo(0, 0); cursorPath.lineTo(0, 35); cursorPath.lineTo(9, 26); cursorPath.lineTo(16, 42); cursorPath.lineTo(22, 38); cursorPath.lineTo(15, 22); cursorPath.lineTo(26, 22); cursorPath.close();
         Matrix scaleMatrix = new Matrix(); scaleMatrix.setScale(density * 0.4f, density * 0.4f); cursorPath.transform(scaleMatrix);
+    }
+
+    // ======================================================================================
+    // 💡 新增：无限深度递归遍历核心算法
+    // ======================================================================================
+    private void findFilesRecursively(File dir, List<File> resultList, String targetExtension) {
+        if (dir == null || !dir.exists() || !dir.canRead()) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        
+        for (File f : files) {
+            if (f.isDirectory()) {
+                findFilesRecursively(f, resultList, targetExtension); // 深度递归
+            } else if (f.getName().toLowerCase().endsWith(targetExtension)) {
+                resultList.add(f);
+            }
+        }
     }
 
     public void updateMediaVolumes() {
@@ -716,13 +735,13 @@ public class DesktopSystemView extends Dialog {
                 }
 
                 if (targetType == 4) {
-                    Button scanDirBtn = createButton("✔️ 扫描并提取本文件夹的 SFF 素材", "#4CAF50"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                    Button scanDirBtn = createButton("✔️ 深度扫描并提取本文件夹的 SFF 素材", "#4CAF50"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { startAssetScanner(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
                 } else if (targetType == 5) { 
-                    Button scanDirBtn = createButton("✔️ 扫描并提取本文件夹的 SND 音频", "#FF9800"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                    Button scanDirBtn = createButton("✔️ 深度扫描并提取本文件夹的 SND 音频", "#FF9800"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { startSndScanner(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
                 } else if (targetType == 6) {
-                    Button scanDirBtn = createButton("✔️ 扫描并提取本文件夹的 GIF 动图", "#9C27B0"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                    Button scanDirBtn = createButton("✔️ 深度扫描并提取本文件夹的 GIF 动图", "#9C27B0"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { startGifScanner(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
                 }
                 
@@ -780,7 +799,7 @@ public class DesktopSystemView extends Dialog {
     @Override public void onBackPressed() { } 
 
     // ======================================================================================
-    // 🎨 模块 1：SFF 检视工坊 (异步防闪退修复 + 文件夹智能扫描)
+    // 🎨 模块 1：SFF 检视工坊 (无限深度递归扫描 + 修复替换UI)
     // ======================================================================================
     private LinearLayout currentGalleryLayout = null;
     private TextView currentStatusText = null;
@@ -802,22 +821,21 @@ public class DesktopSystemView extends Dialog {
 
     private void startAssetScanner(File targetFile) {
         if (currentGalleryLayout != null) currentGalleryLayout.removeAllViews(); isAssetScannerRunning = true;
-        // 👇 修复 1：异步扫描，并且支持智能遍历文件夹
+        
         new Thread(() -> {
             try { 
-                updateUI(currentStatusText, "📡 阶段 1/3: 触发底层 Go 引擎...");
-                List<GoEngineBridge.SffInfo> validAssets = new ArrayList<>();
+                updateUI(currentStatusText, "📡 阶段 1/3: 正在无限深度检索本地文件...");
+                List<File> targetFiles = new ArrayList<>();
                 if (targetFile.isDirectory()) {
-                    File[] files = targetFile.listFiles();
-                    if (files != null) {
-                        for (File f : files) {
-                            if (f.getName().toLowerCase().endsWith(".sff")) {
-                                validAssets.addAll(GoEngineBridge.scanSff(f.getAbsolutePath()));
-                            }
-                        }
-                    }
+                    findFilesRecursively(targetFile, targetFiles, ".sff");
                 } else {
-                    validAssets.addAll(GoEngineBridge.scanSff(targetFile.getAbsolutePath()));
+                    targetFiles.add(targetFile);
+                }
+
+                updateUI(currentStatusText, "📡 阶段 2/3: 触发底层 Go 引擎...");
+                List<GoEngineBridge.SffInfo> validAssets = new ArrayList<>();
+                for (File f : targetFiles) {
+                    validAssets.addAll(GoEngineBridge.scanSff(f.getAbsolutePath()));
                 }
                 
                 if(validAssets == null || validAssets.isEmpty()) { updateUI(currentStatusText, "⚠️ 未找到有效的 SFF 素材"); return; }
@@ -849,7 +867,6 @@ public class DesktopSystemView extends Dialog {
         TextView verText = new TextView(getContext()); verText.setText(sffVersion); verText.setSingleLine(true); verText.setGravity(Gravity.CENTER); verText.setPadding(0, 0, 0, (int)(8*density)); applyGlobalFontSettings(verText, 0.7f, false); verText.setTextColor(Color.GRAY); card.addView(verText);
         
         Button exportBtn = createButton("👁️ 打开查看器", "#0078D7"); exportBtn.setPadding(0, (int)(5*density), 0, (int)(5*density));
-        // 👇 修复 2：防止主线程堵塞导致闪退！开新线程获取所有帧
         exportBtn.setOnClickListener(v -> {
             Toast.makeText(getContext(), "正在解析所有帧结构，请稍候...", Toast.LENGTH_SHORT).show();
             new Thread(() -> {
@@ -901,6 +918,11 @@ public class DesktopSystemView extends Dialog {
 
         LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER); controls.setPadding((int)(15*density), 0, (int)(15*density), (int)(15*density));
         Button btnPrev = createButton("⏪", "#3F3F46"); Button btnPlay = createButton("▶️ 播放", "#0078D7"); Button btnNext = createButton("⏭️", "#3F3F46"); Button btnSpeed = createButton("⚙️ 调速", "#3F3F46"); Button btnExportPng = createButton("💾 导出", "#3F3F46"); 
+        
+        // 👇 添加替换按钮UI预留
+        Button btnReplace = createButton("🔄 替换", "#4CAF50");
+        btnReplace.setOnClickListener(v -> Toast.makeText(getContext(), "等待 Go 引擎介入支持 SFF 二进制重组封包...", Toast.LENGTH_LONG).show());
+        
         LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(0, -2, 1f); btnP.setMargins((int)(2*density), 0, (int)(2*density), 0);
         
         final int[] currentDelay = {16}; 
@@ -930,6 +952,9 @@ public class DesktopSystemView extends Dialog {
                                 if (scale > 1.5f) scale = 1.5f; float dx = (canvasFrame.getWidth() - bmp.getWidth() * scale) / 2f; float dy = (canvasFrame.getHeight() - bmp.getHeight() * scale) / 2f;
                                 imageMatrix.setScale(scale, scale); imageMatrix.postTranslate(dx, dy); previewImg.setImageMatrix(imageMatrix); isMatrixInitialized[0] = true;
                             }
+                        } else {
+                            // 针对缺少 palette 导致的解析失败，临时清空画面
+                            previewImg.setImageBitmap(null);
                         }
                         infoText.setText(String.format("帧: %d / %d | 动作: %d | 索引: %d | 尺寸: %dx%d", currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.width, targetFrame.height));
                     });
@@ -971,11 +996,13 @@ public class DesktopSystemView extends Dialog {
                         bmp.compress(Bitmap.CompressFormat.PNG, 100, fos); fos.close();
                         uiHandler.post(() -> Toast.makeText(getContext(), "✅ 已导出: " + outFile.getAbsolutePath(), Toast.LENGTH_LONG).show());
                     } catch (Exception e) {}
+                } else {
+                    uiHandler.post(() -> Toast.makeText(getContext(), "❌ 导出失败：解析异常或缺少调色板", Toast.LENGTH_LONG).show());
                 }
             }).start();
         });
 
-        controls.addView(btnPrev, btnP); controls.addView(btnPlay, btnP); controls.addView(btnNext, btnP); controls.addView(btnSpeed, btnP); controls.addView(btnExportPng, btnP); 
+        controls.addView(btnPrev, btnP); controls.addView(btnPlay, btnP); controls.addView(btnNext, btnP); controls.addView(btnSpeed, btnP); controls.addView(btnExportPng, btnP); controls.addView(btnReplace, btnP);
         root.addView(controls);
         
         openAppWindow(winTitle, root, () -> {
@@ -986,7 +1013,7 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ======================================================================================
-    // 🎵 模块 2：SND 音频检视工坊 (异步文件夹遍历修复)
+    // 🎵 模块 2：SND 音频检视工坊 (无限深度递归扫描修复)
     // ======================================================================================
     private View buildSndExtractorContent() {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
@@ -1010,8 +1037,7 @@ public class DesktopSystemView extends Dialog {
             try {
                 List<File> validFiles = new ArrayList<>();
                 if (sndFile.isDirectory()) {
-                    File[] files = sndFile.listFiles();
-                    if (files != null) for (File f : files) if (f.getName().toLowerCase().endsWith(".snd")) validFiles.add(f);
+                    findFilesRecursively(sndFile, validFiles, ".snd"); // 深度扫描
                 } else {
                     validFiles.add(sndFile);
                 }
@@ -1107,7 +1133,7 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ======================================================================================
-    // 🎞️ 模块 3：原生 GIF 拆解器 (👇 修复 3：新增带预览和选择分解的界面)
+    // 🎞️ 模块 3：原生 GIF 拆解器 (👇 修复 3：新增无限扫描 + 精确控制导出帧数)
     // ======================================================================================
     private View buildGifExtractorContent() {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
@@ -1126,12 +1152,11 @@ public class DesktopSystemView extends Dialog {
     }
 
     private void startGifScanner(File targetFile) {
-        if (currentGalleryLayout != null) currentGalleryLayout.removeAllViews(); currentStatusText.setText("正在扫描本地目录...");
+        if (currentGalleryLayout != null) currentGalleryLayout.removeAllViews(); currentStatusText.setText("正在无限深度扫描本地目录...");
         new Thread(() -> {
             List<File> validGifs = new ArrayList<>();
             if (targetFile.isDirectory()) {
-                File[] files = targetFile.listFiles();
-                if (files != null) for (File f : files) if (f.getName().toLowerCase().endsWith(".gif")) validGifs.add(f);
+                findFilesRecursively(targetFile, validGifs, ".gif");
             } else {
                 validGifs.add(targetFile);
             }
@@ -1154,7 +1179,7 @@ public class DesktopSystemView extends Dialog {
                     TextView nameText = new TextView(getContext()); nameText.setText(f.getName()); nameText.setSingleLine(true); nameText.setGravity(Gravity.CENTER); nameText.setPadding(0, (int)(8*density), 0, (int)(8*density)); applyGlobalFontSettings(nameText, 0.9f, false); card.addView(nameText);
                     
                     Button exportBtn = createButton("✂️ 拆解为逐帧PNG", "#9C27B0");
-                    exportBtn.setOnClickListener(v -> startGifDisassembler(f)); card.addView(exportBtn);
+                    exportBtn.setOnClickListener(v -> promptGifDisassembler(f)); card.addView(exportBtn);
                     
                     LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1f); cardParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
                     currentRow.addView(card, cardParams); itemsInRow++; if (itemsInRow >= 3) itemsInRow = 0;
@@ -1164,8 +1189,42 @@ public class DesktopSystemView extends Dialog {
         }).start();
     }
 
-    private void startGifDisassembler(File gifFile) {
-        currentStatusText.setText("状态: 正在后台使用 Android Movie API 拆解...");
+    private void promptGifDisassembler(File gifFile) {
+        final Dialog pDialog = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
+        pDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE); applyImmersiveMode(pDialog.getWindow());
+        FrameLayout overlay = new FrameLayout(getContext()); overlay.setBackgroundColor(Color.argb(80, 0,0,0));
+        LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#1E1E1E")); border.setStroke(2, Color.parseColor("#9C27B0")); box.setBackground(border); box.setElevation(50f);
+        
+        LinearLayout titleBar = new LinearLayout(getContext()); titleBar.setBackgroundColor(Color.parseColor("#2D2D30")); 
+        TextView title = new TextView(getContext()); title.setText(" 🎞️ GIF 精确拆解设置"); applyGlobalFontSettings(title, 1.1f, true); title.setPadding((int)(10*density), (int)(8*density), 0, (int)(8*density)); titleBar.addView(title); box.addView(titleBar);
+        View sep = new View(getContext()); sep.setBackgroundColor(Color.parseColor("#9C27B0")); box.addView(sep, new LinearLayout.LayoutParams(-1, (int)(2*density)));
+        
+        LinearLayout contentLayout = new LinearLayout(getContext()); contentLayout.setOrientation(LinearLayout.VERTICAL); contentLayout.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+        TextView msg = new TextView(getContext()); msg.setText("请指定要提取的总帧数："); applyGlobalFontSettings(msg, 1.0f, false); contentLayout.addView(msg);
+        
+        EditText inputFrames = new EditText(getContext()); inputFrames.setInputType(InputType.TYPE_CLASS_NUMBER); inputFrames.setText("25"); applyGlobalFontSettings(inputFrames, 1.0f, false); 
+        GradientDrawable inputBg = new GradientDrawable(); inputBg.setColor(Color.parseColor("#252526")); inputBg.setStroke(1, Color.GRAY); inputFrames.setBackground(inputBg); inputFrames.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
+        contentLayout.addView(inputFrames, new LinearLayout.LayoutParams(-1, -2)); box.addView(contentLayout);
+        
+        LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); btnRow.setGravity(Gravity.RIGHT); btnRow.setPadding((int)(10*density), 0, (int)(10*density), (int)(15*density));
+        Button bSave = createButton("🚀 开始拆解", "#9C27B0"); 
+        bSave.setOnClickListener(v -> {
+            pDialog.dismiss(); 
+            int frames = 25;
+            try { frames = Integer.parseInt(inputFrames.getText().toString()); } catch (Exception e) {}
+            startGifDisassemblerExec(gifFile, frames);
+        });
+        Button bDiscard = createButton("❌ 取消", "#333333"); bDiscard.setOnClickListener(v -> pDialog.dismiss());
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2); bp.setMargins((int)(10*density),0,0,0);
+        btnRow.addView(bSave, bp); btnRow.addView(bDiscard, bp); box.addView(btnRow);
+        
+        FrameLayout.LayoutParams winParams = new FrameLayout.LayoutParams((int)(rootLayer.getWidth()*0.5f), -2); winParams.gravity = Gravity.CENTER; overlay.addView(box, winParams);
+        pDialog.setContentView(overlay); pDialog.show(); pDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+    }
+
+    private void startGifDisassemblerExec(File gifFile, int targetFrames) {
+        currentStatusText.setText("状态: 正在等分时间轴强制剥离 " + targetFrames + " 帧...");
         final android.os.Handler uiHandler = new android.os.Handler(android.os.Looper.getMainLooper());
         new Thread(() -> {
             try {
@@ -1178,13 +1237,16 @@ public class DesktopSystemView extends Dialog {
                 if (!subDir.exists()) subDir.mkdirs();
 
                 int duration = movie.duration();
-                if(duration == 0) duration = 1000; 
-                int frameCount = Math.max(1, duration / 40); 
+                if(duration == 0) duration = targetFrames * 40; 
+                int stepTime = duration / Math.max(1, targetFrames);
                 
-                for(int i = 0; i < frameCount; i++) {
+                for(int i = 0; i < targetFrames; i++) {
                     Bitmap frame = Bitmap.createBitmap(movie.width(), movie.height(), Bitmap.Config.ARGB_8888);
                     Canvas c = new Canvas(frame);
-                    movie.setTime(i * 40);
+                    
+                    // 修复：必须清理画布并强制设定精确时间轴
+                    frame.eraseColor(Color.TRANSPARENT);
+                    movie.setTime(i * stepTime);
                     movie.draw(c, 0, 0);
                     
                     File outFile = new File(subDir, "frame_" + String.format("%04d", i) + ".png");
@@ -1193,9 +1255,9 @@ public class DesktopSystemView extends Dialog {
                     fos.close(); frame.recycle();
                     
                     final int curr = i + 1;
-                    uiHandler.post(() -> currentStatusText.setText("状态: 正在拆解 " + curr + " / " + frameCount));
+                    uiHandler.post(() -> currentStatusText.setText("状态: 正在拆解 " + curr + " / " + targetFrames));
                 }
-                uiHandler.post(() -> Toast.makeText(getContext(), "✅ 拆解成功！保存至: " + subDir.getAbsolutePath(), Toast.LENGTH_LONG).show());
+                uiHandler.post(() -> Toast.makeText(getContext(), "✅ 拆解成功！完美截取 " + targetFrames + " 帧！保存至: " + subDir.getAbsolutePath(), Toast.LENGTH_LONG).show());
             } catch (Exception e) {
                 uiHandler.post(() -> currentStatusText.setText("拆解异常: " + e.getMessage()));
             }
