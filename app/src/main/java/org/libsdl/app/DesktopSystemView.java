@@ -23,6 +23,9 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
+import android.media.MediaCodec;
+import android.media.MediaExtractor;
+import android.media.MediaFormat;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -56,10 +59,12 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -67,7 +72,6 @@ import java.util.Queue;
 import java.util.HashSet;
 import java.util.List;
 
-// 👇 引入 Gomobile 编译生成的 Go 引擎 API
 import api.Api; 
 
 public class DesktopSystemView extends Dialog {
@@ -693,7 +697,7 @@ public class DesktopSystemView extends Dialog {
                     Button scanDirBtn = createButton("✔️ 深度扫描并提取本文件夹的 SND 音频", "#FF9800"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
                 } else if (targetType == 6) {
-                    Button scanDirBtn = createButton("✔️ 深度扫描并提取本文件夹的 GIF 动图", "#9C27B0"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                    Button scanDirBtn = createButton("✔️ 扫描当前目录寻找 GIF 资源", "#9C27B0"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
                 }
                 
@@ -727,7 +731,7 @@ public class DesktopSystemView extends Dialog {
                                     else Toast.makeText(getContext(), "❌ 必须选择图像文件用于替换", Toast.LENGTH_SHORT).show();
                                 }
                                 else if (targetType == 8) { 
-                                    if (absPath.toLowerCase().endsWith(".wav") || absPath.toLowerCase().endsWith(".ogg") || absPath.toLowerCase().endsWith(".mp3")) { if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); }
+                                    if (absPath.toLowerCase().endsWith(".wav") || absPath.toLowerCase().endsWith(".ogg") || absPath.toLowerCase().endsWith(".mp3") || absPath.toLowerCase().endsWith(".aac")) { if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); }
                                     else Toast.makeText(getContext(), "❌ 请选择音频文件用于替换", Toast.LENGTH_SHORT).show();
                                 }
                                 else if (targetType == 1 || targetType == 2) { 
@@ -1005,6 +1009,98 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ======================================================================================
+    // 🎵 全格式音频转 PCM WAV 底层解码器 (不依赖外部库，解决 MP3 替换失败问题)
+    // ======================================================================================
+    private static boolean decodeAudioToWav(String inputPath, String outputPath) {
+        try {
+            MediaExtractor extractor = new MediaExtractor();
+            extractor.setDataSource(inputPath);
+            int trackIndex = -1;
+            MediaFormat format = null;
+            for (int i = 0; i < extractor.getTrackCount(); i++) {
+                format = extractor.getTrackFormat(i);
+                if (format.getString(MediaFormat.KEY_MIME).startsWith("audio/")) {
+                    trackIndex = i;
+                    break;
+                }
+            }
+            if (trackIndex < 0) return false;
+            extractor.selectTrack(trackIndex);
+
+            String mime = format.getString(MediaFormat.KEY_MIME);
+            MediaCodec codec = MediaCodec.createDecoderByType(mime);
+            codec.configure(format, null, null, 0);
+            codec.start();
+
+            ByteBuffer[] inputBuffers = codec.getInputBuffers();
+            ByteBuffer[] outputBuffers = codec.getOutputBuffers();
+            MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+
+            boolean isEOS = false;
+            ByteArrayOutputStream pcmOut = new ByteArrayOutputStream();
+
+            while (true) {
+                if (!isEOS) {
+                    int inIndex = codec.dequeueInputBuffer(10000);
+                    if (inIndex >= 0) {
+                        ByteBuffer buffer = inputBuffers[inIndex];
+                        int sampleSize = extractor.readSampleData(buffer, 0);
+                        if (sampleSize < 0) {
+                            codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                            isEOS = true;
+                        } else {
+                            codec.queueInputBuffer(inIndex, 0, sampleSize, extractor.getSampleTime(), 0);
+                            extractor.advance();
+                        }
+                    }
+                }
+
+                int outIndex = codec.dequeueOutputBuffer(info, 10000);
+                if (outIndex >= 0) {
+                    if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                        break;
+                    }
+                    if (info.size != 0) {
+                        ByteBuffer outBuffer = outputBuffers[outIndex];
+                        outBuffer.position(info.offset);
+                        outBuffer.limit(info.offset + info.size);
+                        byte[] chunk = new byte[info.size];
+                        outBuffer.get(chunk);
+                        pcmOut.write(chunk);
+                    }
+                    codec.releaseOutputBuffer(outIndex, false);
+                } else if (outIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                    outputBuffers = codec.getOutputBuffers();
+                }
+            }
+            codec.stop(); codec.release(); extractor.release();
+
+            byte[] pcmData = pcmOut.toByteArray();
+            int sampleRate = format.containsKey(MediaFormat.KEY_SAMPLE_RATE) ? format.getInteger(MediaFormat.KEY_SAMPLE_RATE) : 44100;
+            int channelCount = format.containsKey(MediaFormat.KEY_CHANNEL_COUNT) ? format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) : 2;
+
+            FileOutputStream fos = new FileOutputStream(outputPath);
+            byte[] header = new byte[44];
+            header[0] = 'R'; header[1] = 'I'; header[2] = 'F'; header[3] = 'F';
+            int totalDataLen = pcmData.length + 36;
+            header[4] = (byte) (totalDataLen & 0xff); header[5] = (byte) ((totalDataLen >> 8) & 0xff); header[6] = (byte) ((totalDataLen >> 16) & 0xff); header[7] = (byte) ((totalDataLen >> 24) & 0xff);
+            header[8] = 'W'; header[9] = 'A'; header[10] = 'V'; header[11] = 'E';
+            header[12] = 'f'; header[13] = 'm'; header[14] = 't'; header[15] = ' ';
+            header[16] = 16; header[17] = 0; header[18] = 0; header[19] = 0;
+            header[20] = 1; header[21] = 0; header[22] = (byte) channelCount; header[23] = 0;
+            header[24] = (byte) (sampleRate & 0xff); header[25] = (byte) ((sampleRate >> 8) & 0xff); header[26] = (byte) ((sampleRate >> 16) & 0xff); header[27] = (byte) ((sampleRate >> 24) & 0xff);
+            int byteRate = sampleRate * channelCount * 16 / 8;
+            header[28] = (byte) (byteRate & 0xff); header[29] = (byte) ((byteRate >> 8) & 0xff); header[30] = (byte) ((byteRate >> 16) & 0xff); header[31] = (byte) ((byteRate >> 24) & 0xff);
+            header[32] = (byte) (channelCount * 16 / 8); header[33] = 0; header[34] = 16; header[35] = 0;
+            header[36] = 'd'; header[37] = 'a'; header[38] = 't'; header[39] = 'a';
+            header[40] = (byte) (pcmData.length & 0xff); header[41] = (byte) ((pcmData.length >> 8) & 0xff); header[42] = (byte) ((pcmData.length >> 16) & 0xff); header[43] = (byte) ((pcmData.length >> 24) & 0xff);
+            fos.write(header, 0, 44);
+            fos.write(pcmData); fos.close();
+            return true;
+        } catch (Exception e) { e.printStackTrace(); return false; }
+    }
+
+    // ======================================================================================
     // 🎵 模块 2：SND 音频检视工坊 (优化：底部滑轨工具栏)
     // ======================================================================================
     private View buildSndExtractorContent() {
@@ -1105,11 +1201,18 @@ public class DesktopSystemView extends Dialog {
                     Button btnReplace = createButton("🔄 替换", "#4CAF50");
                     btnReplace.setOnClickListener(v -> {
                         showWin10FilePicker("选择替换用的音频文件", 8, null, null, selectedFile -> {
+                            Toast.makeText(getContext(), "正在执行底层转码，请稍候...", Toast.LENGTH_LONG).show();
                             new Thread(() -> {
-                                boolean success = Api.replaceSndAudio(sndPath, n.group, n.item, selectedFile.getAbsolutePath());
+                                String targetWavPath = selectedFile.getAbsolutePath();
+                                File convertedWav = new File(getContext().getCacheDir(), "ik_converted.wav");
+                                boolean convSuccess = decodeAudioToWav(selectedFile.getAbsolutePath(), convertedWav.getAbsolutePath());
+                                if (convSuccess) {
+                                    targetWavPath = convertedWav.getAbsolutePath();
+                                }
+                                boolean success = Api.replaceSndAudio(sndPath, n.group, n.item, targetWavPath);
                                 new Handler(Looper.getMainLooper()).post(() -> {
-                                    if (success) { Toast.makeText(getContext(), "✅ " + n.group + "-" + n.item + " 音频已成功替换！", Toast.LENGTH_SHORT).show(); } 
-                                    else { Toast.makeText(getContext(), "❌ 音频替换失败", Toast.LENGTH_SHORT).show(); }
+                                    if (success) { Toast.makeText(getContext(), "✅ " + n.group + "-" + n.item + " 音频已成功转码并替换！", Toast.LENGTH_SHORT).show(); } 
+                                    else { Toast.makeText(getContext(), "❌ 音频替换失败（底层引擎异常）", Toast.LENGTH_SHORT).show(); }
                                 });
                             }).start();
                         });
@@ -1142,19 +1245,42 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ======================================================================================
-    // 🎞️ 模块 3：GIF 拆解器 (重构：滑条预览 + 定向提取)
+    // 🎞️ 模块 3：GIF 拆解器 (重构：列表选择后弹出界面)
     // ======================================================================================
     private View buildGifExtractorContent() {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
         LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL);
         TextView statusText = new TextView(getContext()); statusText.setText(" 状态: 等待选取文件夹或 .gif..."); applyGlobalFontSettings(statusText, 1.0f, false);
-        Button scanBtn = createButton("📂 浏览并选择 GIF 文件", "#0078D7"); LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, -2); btnParams.setMargins(0, 0, (int)(15*density), 0);
+        Button scanBtn = createButton("📂 浏览并选择 GIF 文件夹", "#0078D7"); LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, -2); btnParams.setMargins(0, 0, (int)(15*density), 0);
         topBar.addView(scanBtn, btnParams); topBar.addView(statusText); root.addView(topBar);
         
+        ScrollView scroll = new ScrollView(getContext()); LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, -1); scrollParams.setMargins(0, (int)(15*density), 0, 0); scroll.setLayoutParams(scrollParams);
+        final LinearLayout listLayout = new LinearLayout(getContext()); listLayout.setOrientation(LinearLayout.VERTICAL); scroll.addView(listLayout); root.addView(scroll);
+
         scanBtn.setOnClickListener(v -> {
-            showWin10FilePicker("选择 .gif 文件", 6, null, null, file -> promptGifDisassembler(file));
+            currentGalleryLayout = listLayout; currentStatusText = statusText;
+            showWin10FilePicker("选择 .gif 文件夹或文件", 6, null, null, file -> startGifScanner(file));
         });
         return root;
+    }
+
+    private void startGifScanner(File targetFile) {
+        if (currentGalleryLayout != null) currentGalleryLayout.removeAllViews();
+        currentStatusText.setText("状态: 正在扫描本地 GIF 资源...");
+        new Thread(() -> {
+            List<File> validFiles = new ArrayList<>();
+            if (targetFile.isDirectory()) { findFilesRecursively(targetFile, validFiles, ".gif"); } else { validFiles.add(targetFile); }
+            new Handler(Looper.getMainLooper()).post(() -> {
+                if(validFiles.isEmpty()){ currentStatusText.setText("❌ 未找到 GIF 文件"); return; }
+                for(File f : validFiles) {
+                    Button btn = createButton("🎞️ 打开 GIF: " + f.getName(), "#9C27B0");
+                    LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2); bp.setMargins(0,0,0,(int)(10*density));
+                    btn.setOnClickListener(v -> promptGifDisassembler(f));
+                    currentGalleryLayout.addView(btn, bp);
+                }
+                currentStatusText.setText("✅ 共发现 " + validFiles.size() + " 个 GIF 文件（点击对应文件启动拆解台）");
+            });
+        }).start();
     }
 
     private void promptGifDisassembler(File gifFile) {
@@ -1165,7 +1291,7 @@ public class DesktopSystemView extends Dialog {
         GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#1E1E1E")); border.setStroke(2, Color.parseColor("#9C27B0")); box.setBackground(border); box.setElevation(50f);
         
         LinearLayout titleBar = new LinearLayout(getContext()); titleBar.setBackgroundColor(Color.parseColor("#2D2D30")); 
-        TextView title = new TextView(getContext()); title.setText(" 🎞️ GIF 手动精准拆解器"); applyGlobalFontSettings(title, 1.1f, true); title.setPadding((int)(10*density), (int)(8*density), 0, (int)(8*density)); titleBar.addView(title); box.addView(titleBar);
+        TextView title = new TextView(getContext()); title.setText(" 🎞️ GIF 手动精准拆解器 - " + gifFile.getName()); applyGlobalFontSettings(title, 1.1f, true); title.setPadding((int)(10*density), (int)(8*density), 0, (int)(8*density)); titleBar.addView(title); box.addView(titleBar);
         View sep = new View(getContext()); sep.setBackgroundColor(Color.parseColor("#9C27B0")); box.addView(sep, new LinearLayout.LayoutParams(-1, (int)(2*density)));
         
         LinearLayout contentLayout = new LinearLayout(getContext()); contentLayout.setOrientation(LinearLayout.VERTICAL); contentLayout.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
