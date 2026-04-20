@@ -24,6 +24,8 @@ type SffFrame struct {
 	Item   int32 `json:"item"`
 	Width  int32 `json:"width"`
 	Height int32 `json:"height"`
+	X      int16 `json:"x"` // 新增：X轴心
+	Y      int16 `json:"y"` // 新增：Y轴心
 }
 
 type SndNode struct {
@@ -39,7 +41,7 @@ type SndNode struct {
 func ScanSff(targetPath string) string {
 	version, err := sff_module.ParseSffHeader(targetPath)
 	if err != nil {
-		return `[]` 
+		return `[]`
 	}
 
 	info := SffInfo{
@@ -67,6 +69,8 @@ func GetAllFrames(sffPath string) string {
 			Item:   f.Item,
 			Width:  f.Width,
 			Height: f.Height,
+			X:      f.X, // 提取轴心坐标传给前端
+			Y:      f.Y,
 		}
 	}
 
@@ -83,6 +87,13 @@ func DecodeSffFrame(sffPath string, group int32, item int32) []byte {
 	return pngBytes
 }
 
+// ReplaceSffFrame 替换 SFF 文件中指定帧的图像数据（供 Java 端调用）
+func ReplaceSffFrame(sffPath string, group int32, item int32, targetPngPath string) bool {
+	// 调用 sff_module 的底层写入逻辑
+	err := sff_module.ReplaceFrameWithPng(sffPath, group, item, targetPngPath)
+	return err == nil
+}
+
 // ==========================================
 // 🎵 SND 音频解析总接口
 // ==========================================
@@ -93,12 +104,12 @@ func ScanSnd(sndPath string) string {
 	if err != nil || len(nodes) == 0 {
 		return `[]`
 	}
-	
+
 	outNodes := make([]SndNode, len(nodes))
 	for i, n := range nodes {
 		outNodes[i] = SndNode{Group: n.Group, Item: n.Item}
 	}
-	
+
 	jsonBytes, _ := json.Marshal(outNodes)
 	return string(jsonBytes)
 }
@@ -110,4 +121,11 @@ func ExtractSndAudio(sndPath string, group int32, item int32) []byte {
 		return nil
 	}
 	return wavBytes
+}
+
+// ReplaceSndAudio 替换 SND 文件中指定索引的音频数据（供 Java 端调用）
+func ReplaceSndAudio(sndPath string, group int32, item int32, targetWavPath string) bool {
+	// 调用 snd_module 的底层写入逻辑
+	err := snd_module.ReplaceAudioWithWav(sndPath, group, item, targetWavPath)
+	return err == nil
 }
