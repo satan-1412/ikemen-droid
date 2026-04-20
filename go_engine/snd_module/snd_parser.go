@@ -17,7 +17,7 @@ type SndNodeInfo struct {
 }
 
 // ==========================================
-// 🎵 核心解包算法 (纯净剥离版，零第三方依赖)
+// 🎵 核心解包算法 (纯净剥离版，完全展开)
 // ==========================================
 
 // ExtractAllNodes 遍历 SND 文件，读取所有音频的组号和序号
@@ -31,13 +31,20 @@ func ExtractAllNodes(filename string) ([]SndNodeInfo, error) {
 	// 1. 读取并校验 12 字节签名
 	buf := make([]byte, 12)
 	n, err := f.Read(buf)
-	if err != nil || string(buf[:n]) != "ElecbyteSnd\x00" {
+	if err != nil {
+		return nil, err
+	}
+	
+	if string(buf[:n]) != "ElecbyteSnd\x00" {
 		return nil, fmt.Errorf("invalid SND header")
 	}
 
 	// 2. 读取头部信息
-	var ver, ver2 uint16
-	var numberOfSounds, subHeaderOffset uint32
+	var ver uint16
+	var ver2 uint16
+	var numberOfSounds uint32
+	var subHeaderOffset uint32
+	
 	binary.Read(f, binary.LittleEndian, &ver)
 	binary.Read(f, binary.LittleEndian, &ver2)
 	binary.Read(f, binary.LittleEndian, &numberOfSounds)
@@ -48,7 +55,8 @@ func ExtractAllNodes(filename string) ([]SndNodeInfo, error) {
 	// 3. 顺藤摸瓜遍历链表
 	for i := uint32(0); i < numberOfSounds; i++ {
 		f.Seek(int64(subHeaderOffset), 0)
-		var nextSubHeaderOffset, subFileLength uint32
+		var nextSubHeaderOffset uint32
+		var subFileLength uint32
 		var num [2]int32
 		
 		binary.Read(f, binary.LittleEndian, &nextSubHeaderOffset)
@@ -82,14 +90,17 @@ func ExtractWav(filename string, targetGroup int32, targetItem int32) ([]byte, e
 
 	// 跳过版本号，直接读数量和第一个偏移量
 	f.Seek(16, 0)
-	var numberOfSounds, subHeaderOffset uint32
+	var numberOfSounds uint32
+	var subHeaderOffset uint32
+	
 	binary.Read(f, binary.LittleEndian, &numberOfSounds)
 	binary.Read(f, binary.LittleEndian, &subHeaderOffset)
 
 	// 遍历链表寻找目标
 	for i := uint32(0); i < numberOfSounds; i++ {
 		f.Seek(int64(subHeaderOffset), 0)
-		var nextSubHeaderOffset, subFileLength uint32
+		var nextSubHeaderOffset uint32
+		var subFileLength uint32
 		var num [2]int32
 		
 		binary.Read(f, binary.LittleEndian, &nextSubHeaderOffset)
