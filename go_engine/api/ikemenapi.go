@@ -188,7 +188,7 @@ func loadGif(path string) error {
 		var prevFrame *image.RGBA
 
 		// 🔥 核心防爆盾：严密防止 Disposal 数组长度不足造成的越界 Panic (这也是闪退的罪魁祸首)
-		disposal := gif.DisposalNone
+		disposal := byte(gif.DisposalNone)
 		if i < len(g.Disposal) {
 			disposal = g.Disposal[i]
 		}
