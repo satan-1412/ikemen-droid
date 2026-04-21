@@ -82,7 +82,6 @@ func GetAllFrames(sffPath string) string {
 	return string(jsonBytes)
 }
 
-// 修改点：支持传入 actPath，如果为空则走默认 SFF 色表
 func DecodeSffFrame(sffPath string, group int32, item int32, actPath string) []byte {
 	pngBytes, err := sff_module.ExtractFrameAsPng(sffPath, group, item, actPath)
 	if err != nil {
@@ -109,6 +108,25 @@ func GetSffPreview(sffPath string) []byte {
 		}
 	}
 	return nil
+}
+
+// ==========================================
+// 🚀 全新加入：无损原生导出接口 (供 Java 层识别调用)
+// ==========================================
+
+// GetSffFrameExportExtension: 自动探测该素材的真实原始格式，返回 "pcx" 或 "png"
+func GetSffFrameExportExtension(sffPath string, group int32, item int32) string {
+	version, err := sff_module.ParseSffHeader(sffPath)
+	if err == nil && len(version) > 0 && version[0] == '1' {
+		return "pcx"
+	}
+	return "png"
+}
+
+// ExtractSffFrameRawData: 获取彻底未经过处理和渲染损耗的原始 PCX/PNG 二进制数据
+func ExtractSffFrameRawData(sffPath string, group int32, item int32, actPath string) []byte {
+	data, _, _ := sff_module.ExtractRawFrameData(sffPath, group, item, actPath)
+	return data
 }
 
 // ==========================================
@@ -168,14 +186,22 @@ func loadGif(path string) error {
 
 	for i, img := range g.Image {
 		var prevFrame *image.RGBA
-		// 处理 GIF 残影模式：记录上一帧状态
-		if g.Disposal[i] == gif.DisposalPrevious {
+
+		// 🔥 核心防爆盾：严密防止 Disposal 数组长度不足造成的越界 Panic (这也是闪退的罪魁祸首)
+		disposal := gif.DisposalNone
+		if i < len(g.Disposal) {
+			disposal = g.Disposal[i]
+		}
+
+		if disposal == gif.DisposalPrevious {
 			prevFrame = image.NewRGBA(bounds)
 			draw.Draw(prevFrame, bounds, currFrame, bounds.Min, draw.Src)
 		}
 
-		// 覆盖绘制当前帧增量数据
-		draw.Draw(currFrame, img.Bounds(), img, img.Bounds().Min, draw.Over)
+		// 🔥 防御：防止空帧、破损帧引发无效绘制
+		if img != nil && !img.Bounds().Empty() {
+			draw.Draw(currFrame, img.Bounds(), img, img.Bounds().Min, draw.Over)
+		}
 
 		// 独立存盘这一帧的纯净画面
 		newFrame := image.NewRGBA(bounds)
@@ -183,9 +209,9 @@ func loadGif(path string) error {
 		frames[i] = newFrame
 
 		// 绘制结束后，为下一帧做画布清理准备
-		if g.Disposal[i] == gif.DisposalBackground {
+		if disposal == gif.DisposalBackground {
 			draw.Draw(currFrame, img.Bounds(), image.Transparent, image.Point{}, draw.Src)
-		} else if g.Disposal[i] == gif.DisposalPrevious && prevFrame != nil {
+		} else if disposal == gif.DisposalPrevious && prevFrame != nil {
 			draw.Draw(currFrame, bounds, prevFrame, bounds.Min, draw.Src)
 		}
 	}
@@ -215,3 +241,4 @@ func DecodeGifFrame(gifPath string, index int32) []byte {
 	png.Encode(buf, gifCompositedFrames[idx])
 	return buf.Bytes()
 }
+
