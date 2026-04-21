@@ -9,11 +9,33 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"sort"
 
 	// 导入我们的两大核心提纯车间
 	"ikemenbridge/sff_module"
 	"ikemenbridge/snd_module"
 )
+
+// ==========================================
+// 🚀 全局 Context 内存环境 (100% 确保色表网络不断链)
+// ==========================================
+
+var activeSffContext *sff_module.Sff
+var activeSffPath string
+
+func loadActiveSff(path string) bool {
+	// 如果已经是当前打开的文件，直接命中缓存
+	if activeSffPath == path && activeSffContext != nil {
+		return true
+	}
+	sff, err := sff_module.LoadSffContext(path)
+	if err == nil && sff != nil {
+		activeSffContext = sff
+		activeSffPath = path
+		return true
+	}
+	return false
+}
 
 // ==========================================
 // 📦 内部数据结构 (用于转为 JSON 传给 Java)
@@ -40,31 +62,37 @@ type SndNode struct {
 }
 
 // ==========================================
-// 🖼️ SFF 图像解析总接口 (已接入 ACT 色表通道)
+// 🖼️ SFF 图像解析总接口
 // ==========================================
 
 func ScanSff(targetPath string) string {
-	version, err := sff_module.ParseSffHeader(targetPath)
+	version, err := sff_module.ParseSffHeaderForApi(targetPath)
 	if err != nil {
 		return `[]`
 	}
-
 	info := SffInfo{
 		Name:     filepath.Base(targetPath),
 		FilePath: targetPath,
 		Version:  "SFF v" + version,
 	}
-
 	result := []SffInfo{info}
 	jsonBytes, _ := json.Marshal(result)
 	return string(jsonBytes)
 }
 
 func GetAllFrames(sffPath string) string {
-	frames, err := sff_module.ExtractAllFrames(sffPath)
-	if err != nil || len(frames) == 0 {
+	if !loadActiveSff(sffPath) {
 		return `[]`
 	}
+	frames := sff_module.ExtractAllFramesFromContext(activeSffContext)
+
+	// 对无序的 map 结果进行排序输出
+	sort.Slice(frames, func(i, j int) bool {
+		if frames[i].Group == frames[j].Group {
+			return frames[i].Item < frames[j].Item
+		}
+		return frames[i].Group < frames[j].Group
+	})
 
 	outFrames := make([]SffFrame, len(frames))
 	for i, f := range frames {
@@ -77,13 +105,15 @@ func GetAllFrames(sffPath string) string {
 			Y:      f.Y,
 		}
 	}
-
 	jsonBytes, _ := json.Marshal(outFrames)
 	return string(jsonBytes)
 }
 
 func DecodeSffFrame(sffPath string, group int32, item int32, actPath string) []byte {
-	pngBytes, err := sff_module.ExtractFrameAsPng(sffPath, group, item, actPath)
+	if !loadActiveSff(sffPath) {
+		return nil
+	}
+	pngBytes, err := sff_module.RenderSpriteToPng(activeSffContext, uint16(group), uint16(item), actPath)
 	if err != nil {
 		return nil
 	}
@@ -92,17 +122,22 @@ func DecodeSffFrame(sffPath string, group int32, item int32, actPath string) []b
 
 func ReplaceSffFrame(sffPath string, group int32, item int32, targetPngPath string) bool {
 	err := sff_module.ReplaceFrameWithPng(sffPath, group, item, targetPngPath)
-	return err == nil
+	if err == nil {
+		// 替换成功后清空缓存，强制下次刷新读取新文件
+		activeSffPath = ""
+		activeSffContext = nil
+		return true
+	}
+	return false
 }
 
 func GetSffPreview(sffPath string) []byte {
-	frames, err := sff_module.ExtractAllFrames(sffPath)
-	if err != nil || len(frames) == 0 {
+	if !loadActiveSff(sffPath) {
 		return nil
 	}
+	frames := sff_module.ExtractAllFramesFromContext(activeSffContext)
 	for i := 0; i < len(frames) && i < 10; i++ {
-		// 预览时不挂载 ACT，强制提取内部色表进行快速试错
-		bmp, err := sff_module.ExtractFrameAsPng(sffPath, frames[i].Group, frames[i].Item, "")
+		bmp, err := sff_module.RenderSpriteToPng(activeSffContext, uint16(frames[i].Group), uint16(frames[i].Item), "")
 		if err == nil && len(bmp) > 0 {
 			return bmp
 		}
@@ -110,14 +145,12 @@ func GetSffPreview(sffPath string) []byte {
 	return nil
 }
 
-// ==========================================
-// 🚀 全新加入：无损原生导出接口 (供 Java 层识别调用)
-// ==========================================
-
 // GetSffFrameExportExtension: 自动探测该素材的真实原始格式，返回 "pcx" 或 "png"
 func GetSffFrameExportExtension(sffPath string, group int32, item int32) string {
-	version, err := sff_module.ParseSffHeader(sffPath)
-	if err == nil && len(version) > 0 && version[0] == '1' {
+	if !loadActiveSff(sffPath) {
+		return "png"
+	}
+	if activeSffContext.header.Version[0] == 1 {
 		return "pcx"
 	}
 	return "png"
@@ -125,7 +158,10 @@ func GetSffFrameExportExtension(sffPath string, group int32, item int32) string 
 
 // ExtractSffFrameRawData: 获取彻底未经过处理和渲染损耗的原始 PCX/PNG 二进制数据
 func ExtractSffFrameRawData(sffPath string, group int32, item int32, actPath string) []byte {
-	data, _, _ := sff_module.ExtractRawFrameData(sffPath, group, item, actPath)
+	if !loadActiveSff(sffPath) {
+		return nil
+	}
+	data, _, _ := sff_module.ExtractRawFrameData(activeSffContext, uint16(group), uint16(item), actPath)
 	return data
 }
 
@@ -160,7 +196,7 @@ func ReplaceSndAudio(sndPath string, group int32, item int32, targetWavPath stri
 }
 
 // ==========================================
-// 🎞️ 全新加入：纯 Go 语言级 GIF 逐帧完美合成引擎
+// 🎞️ GIF 逐帧完美合成引擎
 // ==========================================
 
 var gifCachePath string
@@ -186,29 +222,21 @@ func loadGif(path string) error {
 
 	for i, img := range g.Image {
 		var prevFrame *image.RGBA
-
-		// 🔥 核心防爆盾：严密防止 Disposal 数组长度不足造成的越界 Panic (这也是闪退的罪魁祸首)
 		disposal := byte(gif.DisposalNone)
 		if i < len(g.Disposal) {
 			disposal = g.Disposal[i]
 		}
-
 		if disposal == gif.DisposalPrevious {
 			prevFrame = image.NewRGBA(bounds)
 			draw.Draw(prevFrame, bounds, currFrame, bounds.Min, draw.Src)
 		}
-
-		// 🔥 防御：防止空帧、破损帧引发无效绘制
 		if img != nil && !img.Bounds().Empty() {
 			draw.Draw(currFrame, img.Bounds(), img, img.Bounds().Min, draw.Over)
 		}
-
-		// 独立存盘这一帧的纯净画面
 		newFrame := image.NewRGBA(bounds)
 		draw.Draw(newFrame, bounds, currFrame, bounds.Min, draw.Src)
 		frames[i] = newFrame
 
-		// 绘制结束后，为下一帧做画布清理准备
 		if disposal == gif.DisposalBackground {
 			draw.Draw(currFrame, img.Bounds(), image.Transparent, image.Point{}, draw.Src)
 		} else if disposal == gif.DisposalPrevious && prevFrame != nil {
@@ -220,7 +248,6 @@ func loadGif(path string) error {
 	return nil
 }
 
-// 核心修复1：明确返回 int32 类型，对应 Java 的 int
 func GetGifFrameCount(gifPath string) int32 {
 	if err := loadGif(gifPath); err != nil {
 		return 0
@@ -228,12 +255,11 @@ func GetGifFrameCount(gifPath string) int32 {
 	return int32(len(gifCompositedFrames))
 }
 
-// 核心修复2：明确接收 int32 类型参数，防止 Java 传参类型错位
 func DecodeGifFrame(gifPath string, index int32) []byte {
 	if err := loadGif(gifPath); err != nil {
 		return nil
 	}
-	idx := int(index) // 转回 Go 内部使用的原生 int
+	idx := int(index)
 	if idx < 0 || idx >= len(gifCompositedFrames) {
 		return nil
 	}
@@ -241,4 +267,3 @@ func DecodeGifFrame(gifPath string, index int32) []byte {
 	png.Encode(buf, gifCompositedFrames[idx])
 	return buf.Bytes()
 }
-
