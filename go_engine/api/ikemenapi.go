@@ -9,37 +9,10 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
-	"sort"
 
-	// 导入我们的两大核心提纯车间
 	"ikemenbridge/sff_module"
 	"ikemenbridge/snd_module"
 )
-
-// ==========================================
-// 🚀 全局 Context 内存环境 (100% 确保色表网络不断链)
-// ==========================================
-
-var activeSffContext *sff_module.Sff
-var activeSffPath string
-
-func loadActiveSff(path string) bool {
-	// 如果已经是当前打开的文件，直接命中缓存
-	if activeSffPath == path && activeSffContext != nil {
-		return true
-	}
-	sff, err := sff_module.LoadSffContext(path)
-	if err == nil && sff != nil {
-		activeSffContext = sff
-		activeSffPath = path
-		return true
-	}
-	return false
-}
-
-// ==========================================
-// 📦 内部数据结构 (用于转为 JSON 传给 Java)
-// ==========================================
 
 type SffInfo struct {
 	Name     string `json:"name"`
@@ -61,12 +34,8 @@ type SndNode struct {
 	Item  int32 `json:"item"`
 }
 
-// ==========================================
-// 🖼️ SFF 图像解析总接口
-// ==========================================
-
 func ScanSff(targetPath string) string {
-	version, err := sff_module.ParseSffHeaderForApi(targetPath)
+	version, err := sff_module.ParseSffHeader(targetPath)
 	if err != nil {
 		return `[]`
 	}
@@ -81,19 +50,10 @@ func ScanSff(targetPath string) string {
 }
 
 func GetAllFrames(sffPath string) string {
-	if !loadActiveSff(sffPath) {
+	frames, err := sff_module.ExtractAllFrames(sffPath)
+	if err != nil || len(frames) == 0 {
 		return `[]`
 	}
-	frames := sff_module.ExtractAllFramesFromContext(activeSffContext)
-
-	// 对无序的 map 结果进行排序输出
-	sort.Slice(frames, func(i, j int) bool {
-		if frames[i].Group == frames[j].Group {
-			return frames[i].Item < frames[j].Item
-		}
-		return frames[i].Group < frames[j].Group
-	})
-
 	outFrames := make([]SffFrame, len(frames))
 	for i, f := range frames {
 		outFrames[i] = SffFrame{
@@ -110,10 +70,7 @@ func GetAllFrames(sffPath string) string {
 }
 
 func DecodeSffFrame(sffPath string, group int32, item int32, actPath string) []byte {
-	if !loadActiveSff(sffPath) {
-		return nil
-	}
-	pngBytes, err := sff_module.RenderSpriteToPng(activeSffContext, uint16(group), uint16(item), actPath)
+	pngBytes, err := sff_module.ExtractFrameAsPng(sffPath, group, item, actPath)
 	if err != nil {
 		return nil
 	}
@@ -122,22 +79,16 @@ func DecodeSffFrame(sffPath string, group int32, item int32, actPath string) []b
 
 func ReplaceSffFrame(sffPath string, group int32, item int32, targetPngPath string) bool {
 	err := sff_module.ReplaceFrameWithPng(sffPath, group, item, targetPngPath)
-	if err == nil {
-		// 替换成功后清空缓存，强制下次刷新读取新文件
-		activeSffPath = ""
-		activeSffContext = nil
-		return true
-	}
-	return false
+	return err == nil
 }
 
 func GetSffPreview(sffPath string) []byte {
-	if !loadActiveSff(sffPath) {
+	frames, err := sff_module.ExtractAllFrames(sffPath)
+	if err != nil || len(frames) == 0 {
 		return nil
 	}
-	frames := sff_module.ExtractAllFramesFromContext(activeSffContext)
 	for i := 0; i < len(frames) && i < 10; i++ {
-		bmp, err := sff_module.RenderSpriteToPng(activeSffContext, uint16(frames[i].Group), uint16(frames[i].Item), "")
+		bmp, err := sff_module.ExtractFrameAsPng(sffPath, frames[i].Group, frames[i].Item, "")
 		if err == nil && len(bmp) > 0 {
 			return bmp
 		}
@@ -145,27 +96,18 @@ func GetSffPreview(sffPath string) []byte {
 	return nil
 }
 
-// GetSffFrameExportExtension: 自动探测该素材的真实原始格式，返回 "pcx" 或 "png"
 func GetSffFrameExportExtension(sffPath string, group int32, item int32) string {
-	version, err := sff_module.ParseSffHeaderForApi(sffPath)
+	version, err := sff_module.ParseSffHeader(sffPath)
 	if err == nil && len(version) > 0 && version[0] == '1' {
 		return "pcx"
 	}
 	return "png"
 }
 
-// ExtractSffFrameRawData: 获取彻底未经过处理和渲染损耗的原始 PCX/PNG 二进制数据
 func ExtractSffFrameRawData(sffPath string, group int32, item int32, actPath string) []byte {
-	if !loadActiveSff(sffPath) {
-		return nil
-	}
-	data, _, _ := sff_module.ExtractRawFrameData(activeSffContext, uint16(group), uint16(item), actPath)
+	data, _, _ := sff_module.ExtractRawFrameData(sffPath, group, item, actPath)
 	return data
 }
-
-// ==========================================
-// 🎵 SND 音频解析总接口
-// ==========================================
 
 func ScanSnd(sndPath string) string {
 	nodes, err := snd_module.ExtractAllNodes(sndPath)
@@ -192,10 +134,6 @@ func ReplaceSndAudio(sndPath string, group int32, item int32, targetWavPath stri
 	err := snd_module.ReplaceAudioWithWav(sndPath, group, item, targetWavPath)
 	return err == nil
 }
-
-// ==========================================
-// 🎞️ GIF 逐帧完美合成引擎
-// ==========================================
 
 var gifCachePath string
 var gifCompositedFrames []*image.RGBA
