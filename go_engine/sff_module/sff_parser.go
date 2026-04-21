@@ -711,7 +711,10 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32, act
 				idx := y*int(target.Size[0]) + x
 				if idx < len(target.PxlData) {
 					colorIdx := target.PxlData[idx]
-					if len(target.Pal) > 0 && int(colorIdx) < len(target.Pal) {
+					// 🔥 核心病理修复：严格执行 Mugen 色表规范，0 号索引强制为纯粹的抠像透明！
+					if colorIdx == 0 {
+						img.SetRGBA(x, y, color.RGBA{0, 0, 0, 0})
+					} else if len(target.Pal) > 0 && int(colorIdx) < len(target.Pal) {
 						c32 := target.Pal[colorIdx]
 						r := uint8(c32 & 0xFF)
 						g := uint8((c32 >> 8) & 0xFF)
@@ -803,7 +806,7 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, im
 
 			f.Seek(shofs+16, io.SeekStart)
 			binary.Write(f, binary.LittleEndian, finalOffset)
-			binary.Write(f, binary.LittleEndian, uint32(len(finalPngData)+4)) 
+			binary.Write(f, binary.LittleEndian, uint32(len(finalPngData)+4))
 
 			return nil
 		}
@@ -811,3 +814,214 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, im
 	}
 	return fmt.Errorf("在 SFF 文件中未找到 Group:%d Item:%d", targetGroup, targetItem)
 }
+
+// ==========================================
+// 🚀 全新底层：提取原汁原味的二进制数据用于无损导出
+// ==========================================
+
+func ExtractRawFrameData(filename string, targetGroup int32, targetItem int32, actPath string) ([]byte, string, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, "png", err
+	}
+	defer f.Close()
+
+	var h SffHeader
+	var lofs, tofs uint32
+	h.Read(f, &lofs, &tofs)
+	read := func(x interface{}) error { return binary.Read(f, binary.LittleEndian, x) }
+
+	sprites := make([]*Sprite, 0, h.NumberOfSprites)
+	shofs := int64(h.FirstSpriteHeaderOffset)
+	var lastPalOffset int64 = -1
+
+	// 精确锁定并解析 Sprites（逻辑与渲染端严格一致）
+	for i := 0; i < int(h.NumberOfSprites); i++ {
+		spr := newSprite()
+		f.Seek(shofs, 0)
+		if h.Version[0] == 1 {
+			var xofs uint32
+			var ps byte
+			read(&xofs)
+			read(&spr.DataSize)
+			read(&spr.Offset)
+			read(&spr.Group)
+			read(&spr.Number)
+			read(&spr.IndexOfPrevious)
+			read(&ps)
+			spr.DataOffset = uint32(shofs + 32)
+			if spr.DataSize > 0 {
+				if ps == 0 {
+					blockEnd := int64(spr.DataOffset + spr.DataSize)
+					if int64(xofs) > int64(spr.DataOffset) && int64(xofs) < blockEnd {
+						blockEnd = int64(xofs)
+					}
+					scanStart := blockEnd - 769
+					scanLimit := int64(spr.DataOffset + 128)
+					palOffset := int64(-1)
+					var b [1]byte
+					for pos := scanStart; pos >= scanLimit; pos-- {
+						f.Seek(pos, 0)
+						f.Read(b[:])
+						if b[0] == 0x0C {
+							palOffset = pos
+							break
+						}
+					}
+					if palOffset == -1 {
+						palOffset = blockEnd - 769
+					}
+					spr.PalOffset = palOffset
+					lastPalOffset = palOffset
+				} else {
+					spr.PalOffset = lastPalOffset
+				}
+			}
+			shofs = int64(xofs)
+		} else {
+			read(&spr.Group)
+			read(&spr.Number)
+			read(&spr.Size)
+			read(&spr.Offset)
+			read(&spr.IndexOfPrevious)
+			var format byte
+			read(&format)
+			spr.rle = -int(format)
+			read(&spr.coldepth)
+			var xofs uint32
+			read(&xofs)
+			read(&spr.DataSize)
+			var tmp uint16
+			read(&tmp)
+			spr.palidx = int(tmp)
+			read(&tmp)
+			if tmp&1 == 0 {
+				xofs += lofs
+			} else {
+				xofs += tofs
+			}
+			spr.DataOffset = xofs
+			shofs += 28
+		}
+		sprites = append(sprites, spr)
+	}
+
+	var target *Sprite
+	for _, spr := range sprites {
+		if int32(spr.Group) == targetGroup && int32(spr.Number) == targetItem {
+			target = spr
+			break
+		}
+	}
+	if target == nil {
+		return nil, "png", fmt.Errorf("frame not found")
+	}
+
+	// 追踪关联帧
+	visited := make(map[uint16]bool)
+	currIdx := uint16(0xFFFF)
+	for i, s := range sprites {
+		if s == target {
+			currIdx = uint16(i)
+			break
+		}
+	}
+	for target.DataSize == 0 && target.IndexOfPrevious < uint16(len(sprites)) {
+		if visited[currIdx] {
+			return nil, "png", fmt.Errorf("circular link detected")
+		}
+		visited[currIdx] = true
+		currIdx = target.IndexOfPrevious
+		sourceSpr := sprites[currIdx]
+		target.DataOffset = sourceSpr.DataOffset
+		target.DataSize = sourceSpr.DataSize
+		target.rle = sourceSpr.rle
+		target.coldepth = sourceSpr.coldepth
+		target.palidx = sourceSpr.palidx
+		target.PalOffset = sourceSpr.PalOffset
+		target.IsRaw = sourceSpr.IsRaw
+		if h.Version[0] == 1 {
+			target.Size = sourceSpr.Size
+		}
+	}
+
+	// 解析调色板以便注入 PCX
+	if h.Version[0] == 1 && target.PalOffset > 0 {
+		pal := make([]uint32, 256)
+		f.Seek(target.PalOffset+1, 0)
+		var rgb [3]byte
+		for c := 0; c < 256; c++ {
+			f.Read(rgb[:])
+			var alpha byte = 255
+			if c == 0 {
+				alpha = 0
+			}
+			pal[c] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
+		}
+		target.Pal = pal
+	}
+
+	// 注入外部 ACT (最高优先级)
+	if actPath != "" && !target.IsRaw {
+		actPal, err := ReadActPalette(actPath)
+		if err == nil && len(actPal) == 256 {
+			target.Pal = actPal
+		}
+	}
+
+	if h.Version[0] == 1 {
+		// 🛠️ SFFv1: 完美重建 PCX 结构
+		f.Seek(int64(target.DataOffset), 0)
+		pcxData := make([]byte, target.DataSize)
+		f.Read(pcxData)
+
+		if len(pcxData) >= 128 {
+			hasPalette := false
+			if len(pcxData) >= 769 && pcxData[len(pcxData)-769] == 0x0C {
+				hasPalette = true
+			}
+
+			if !hasPalette {
+				// 自动补齐 0x0C 标志位和 768 字节调色板尾巴
+				pcxData = append(pcxData, 0x0C)
+				for i := 0; i < 256; i++ {
+					var c uint32 = 0
+					if i < len(target.Pal) {
+						c = target.Pal[i]
+					}
+					pcxData = append(pcxData, byte(c&0xFF), byte((c>>8)&0xFF), byte((c>>16)&0xFF))
+				}
+			} else if actPath != "" && len(pcxData) >= 768 {
+				// 如果有自带调色板且用户挂载了 ACT，我们在二进制层面强行把新色表覆写进文件尾部！
+				palOffset := len(pcxData) - 768
+				for i := 0; i < 256; i++ {
+					c := target.Pal[i]
+					pcxData[palOffset+i*3] = byte(c & 0xFF)
+					pcxData[palOffset+i*3+1] = byte((c >> 8) & 0xFF)
+					pcxData[palOffset+i*3+2] = byte((c >> 16) & 0xFF)
+				}
+			}
+		}
+		return pcxData, "pcx", nil
+
+	} else {
+		// 🛠️ SFFv2: PNG 剥离机制
+		format := -target.rle
+		if format >= 10 && format <= 12 {
+			f.Seek(int64(target.DataOffset)+4, io.SeekStart)
+			pngSize := target.DataSize
+			if pngSize > 4 {
+				pngSize -= 4
+			}
+			pngData := make([]byte, pngSize)
+			f.Read(pngData)
+			return pngData, "png", nil
+		}
+
+		// SFFv2 的 RLE/LZ5 压缩，直接调用图像解码后封装为标准 PNG 导出
+		f.Close() // 必须先关闭句柄，防止双开冲突
+		pngBytes, err := ExtractFrameAsPng(filename, targetGroup, targetItem, actPath)
+		return pngBytes, "png", err
+	}
+}
+
