@@ -14,6 +14,40 @@ import (
 	"os"
 )
 
+// ==========================================
+// 🛠️ ACT 解析：支持 WinMugen 倒序灵魂色表挂载
+// ==========================================
+
+func ReadActPalette(filename string) ([]uint32, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	pal := make([]uint32, 256)
+	count := len(data) / 3
+	if count > 256 {
+		count = 256
+	}
+	// Mugen 的奇葩机制：正向读取，倒序注入色表 (255 -> 0)
+	for i := 0; i < count; i++ {
+		offset := i * 3
+		r := data[offset]
+		g := data[offset+1]
+		b := data[offset+2]
+		destIdx := 255 - i
+		if destIdx < 0 {
+			break
+		}
+		var alpha byte = 255
+		// Index 0 是 Mugen 铁打的透明背景色
+		if destIdx == 0 {
+			alpha = 0
+		}
+		pal[destIdx] = uint32(alpha)<<24 | uint32(b)<<16 | uint32(g)<<8 | uint32(r)
+	}
+	return pal, nil
+}
+
 type SffHeader struct {
 	Version                  [4]byte
 	FirstSpriteHeaderOffset  uint32
@@ -79,6 +113,7 @@ type Sprite struct {
 	IsRaw           bool
 	DataOffset      uint32
 	DataSize        uint32
+	PalOffset       int64
 }
 
 func newSprite() *Sprite { return &Sprite{palidx: -1} }
@@ -377,8 +412,8 @@ func ExtractAllFrames(filename string) ([]SffFrameInfo, error) {
 	return frames, nil
 }
 
-// 核心重构：完全模拟 image.go 的循序提取机制以获取 100% 精确的调色板
-func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]byte, error) {
+// 核心修改：支持将手动寻路的 ACT 文件无缝覆盖给图像进行渲染
+func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32, actPath string) ([]byte, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -390,35 +425,12 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 	h.Read(f, &lofs, &tofs)
 	read := func(x interface{}) error { return binary.Read(f, binary.LittleEndian, x) }
 
-	// SFFv2 提取独立调色板池
-	uniquePals := make(map[int][]uint32)
-	if h.Version[0] == 2 {
-		for i := 0; i < int(h.NumberOfPalettes); i++ {
-			f.Seek(int64(h.FirstPaletteHeaderOffset)+int64(i*16), 0)
-			var gn [3]uint16
-			read(&gn)
-			var link uint16
-			read(&link)
-			var pofs, plSize uint32
-			read(&pofs)
-			read(&plSize)
-			if plSize == 0 {
-				uniquePals[i] = uniquePals[int(link)]
-			} else {
-				pal, _ := ReadPalette(f, int64(lofs+pofs), plSize, h.Version[2] != 0)
-				uniquePals[i] = pal
-			}
-		}
-	}
-
 	sprites := make([]*Sprite, 0, h.NumberOfSprites)
 	shofs := int64(h.FirstSpriteHeaderOffset)
-	var prevPal []uint32
-	var target *Sprite
+	var lastPalOffset int64 = -1
 
 	for i := 0; i < int(h.NumberOfSprites); i++ {
 		spr := newSprite()
-		sprites = append(sprites, spr)
 		f.Seek(shofs, 0)
 
 		if h.Version[0] == 1 {
@@ -433,40 +445,8 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 			read(&ps)
 			spr.DataOffset = uint32(shofs + 32)
 
-			if spr.DataSize == 0 {
-				// Linked sprite
-				if int(spr.IndexOfPrevious) < i {
-					src := sprites[spr.IndexOfPrevious]
-					spr.DataOffset = src.DataOffset
-					spr.DataSize = src.DataSize
-					spr.Size = src.Size
-					spr.rle = src.rle
-					spr.Pal = src.Pal
-				}
-			} else {
-				f.Seek(int64(spr.DataOffset), 0)
-				var dummy uint16
-				read(&dummy)
-				var encoding, bpp byte
-				read(&encoding)
-				read(&bpp)
-				var rect [4]uint16
-				read(&rect)
-				f.Seek(int64(spr.DataOffset)+66, 0)
-				var bpl uint16
-				read(&bpl)
-
-				spr.Size[0] = rect[2] - rect[0] + 1
-				spr.Size[1] = rect[3] - rect[1] + 1
-				if encoding == 1 {
-					spr.rle = int(bpl)
-				} else {
-					spr.rle = 0
-				}
-				spr.coldepth = bpp
-
-				// SFFv1 Palette Resolution Logic
-				if ps == 0 || prevPal == nil {
+			if spr.DataSize > 0 {
+				if ps == 0 {
 					blockEnd := int64(spr.DataOffset + spr.DataSize)
 					if int64(xofs) > int64(spr.DataOffset) && int64(xofs) < blockEnd {
 						blockEnd = int64(xofs)
@@ -486,29 +466,14 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 					if palOffset == -1 {
 						palOffset = blockEnd - 769
 					}
-
-					if palOffset > 0 {
-						pal := make([]uint32, 256)
-						f.Seek(palOffset+1, 0)
-						var rgb [3]byte
-						for c := 0; c < 256; c++ {
-							f.Read(rgb[:])
-							var alpha byte = 255
-							if c == 0 {
-								alpha = 0
-							}
-							pal[c] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
-						}
-						spr.Pal = pal
-						prevPal = pal
-					}
+					spr.PalOffset = palOffset
+					lastPalOffset = palOffset
 				} else {
-					spr.Pal = prevPal
+					spr.PalOffset = lastPalOffset
 				}
 			}
 			shofs = int64(xofs)
 		} else {
-			// SFFv2 Parsing
 			read(&spr.Group)
 			read(&spr.Number)
 			read(&spr.Size)
@@ -521,9 +486,9 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 			var xofs uint32
 			read(&xofs)
 			read(&spr.DataSize)
-			var palidx uint16
-			read(&palidx)
 			var tmp uint16
+			read(&tmp)
+			spr.palidx = int(tmp)
 			read(&tmp)
 			if tmp&1 == 0 {
 				xofs += lofs
@@ -531,56 +496,107 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 				xofs += tofs
 			}
 			spr.DataOffset = xofs
-
-			if spr.DataSize == 0 {
-				if int(spr.IndexOfPrevious) < i {
-					src := sprites[spr.IndexOfPrevious]
-					spr.DataOffset = src.DataOffset
-					spr.DataSize = src.DataSize
-					spr.Size = src.Size
-					spr.rle = src.rle
-					spr.coldepth = src.coldepth
-					spr.IsRaw = src.IsRaw
-					spr.Pal = uniquePals[int(palidx)]
-					if len(spr.Pal) == 0 {
-						spr.Pal = src.Pal
-					}
-				}
-			} else {
-				spr.Pal = uniquePals[int(palidx)]
-			}
 			shofs += 28
 		}
-
-		// 这里千万不要 Break！即使找到了目标，我们也必须继续完整建立整套调色板字典，除非是为了极致速度（但你说性能要求可以忽略）。
-		// 我们保证只抓最后一次匹配以防被覆盖
-		if int32(spr.Group) == targetGroup && int32(spr.Number) == targetItem {
-			target = spr
-			break // 由于我们采取全链式前向继承，到达此处时前向调色板已完美建立。故在此Break不会干扰目标本身的色表。
-		}
+		sprites = append(sprites, spr)
 	}
 
+	var target *Sprite
+	for _, spr := range sprites {
+		if int32(spr.Group) == targetGroup && int32(spr.Number) == targetItem {
+			target = spr
+			break
+		}
+	}
 	if target == nil {
 		return nil, fmt.Errorf("frame not found")
 	}
-	if target.DataSize == 0 {
-		return nil, fmt.Errorf("empty frame data")
+
+	visited := make(map[uint16]bool)
+	currIdx := uint16(0xFFFF)
+	for i, s := range sprites {
+		if s == target {
+			currIdx = uint16(i)
+			break
+		}
 	}
 
-	// 像素解压处理
-	f.Seek(int64(target.DataOffset), 0)
+	for target.DataSize == 0 && target.IndexOfPrevious < uint16(len(sprites)) {
+		if visited[currIdx] {
+			return nil, fmt.Errorf("circular link detected")
+		}
+		visited[currIdx] = true
+		currIdx = target.IndexOfPrevious
+		sourceSpr := sprites[currIdx]
+
+		target.DataOffset = sourceSpr.DataOffset
+		target.DataSize = sourceSpr.DataSize
+		target.rle = sourceSpr.rle
+		target.coldepth = sourceSpr.coldepth
+		target.palidx = sourceSpr.palidx
+		target.PalOffset = sourceSpr.PalOffset
+		target.IsRaw = sourceSpr.IsRaw
+		if h.Version[0] == 1 {
+			target.Size = sourceSpr.Size
+		}
+	}
+	if target.DataSize == 0 {
+		return nil, fmt.Errorf("empty linked frame data")
+	}
 
 	if h.Version[0] == 1 {
+		f.Seek(int64(target.DataOffset), 0)
+		var dummy uint16
+		read(&dummy)
+		var encoding, bpp byte
+		read(&encoding)
+		read(&bpp)
+		var rect [4]uint16
+		read(&rect)
+		f.Seek(int64(target.DataOffset)+66, 0)
+		var bpl uint16
+		read(&bpl)
+
+		target.Size[0] = rect[2] - rect[0] + 1
+		target.Size[1] = rect[3] - rect[1] + 1
+		if encoding == 1 {
+			target.rle = int(bpl)
+		} else {
+			target.rle = 0
+		}
+
 		pcxDataStart := int64(target.DataOffset) + 128
+		rleSize := target.PalOffset - pcxDataStart
+		if rleSize <= 0 {
+			rleSize = int64(target.DataSize) - 128 - 769
+		}
+		if rleSize < 0 {
+			rleSize = 0
+		}
+
+		px := make([]byte, rleSize)
 		f.Seek(pcxDataStart, 0)
-		readSize := target.DataSize - 128
-		if readSize > 0 {
-			px := make([]byte, readSize)
-			f.Read(px)
-			target.PxlData = target.RlePcxDecode(px)
+		f.Read(px)
+		target.PxlData = target.RlePcxDecode(px)
+
+		if target.PalOffset > 0 {
+			pal := make([]uint32, 256)
+			f.Seek(target.PalOffset+1, 0)
+			var rgb [3]byte
+			for c := 0; c < 256; c++ {
+				f.Read(rgb[:])
+				var alpha byte = 255
+				if c == 0 {
+					alpha = 0
+				} // 强制透明度修正
+				pal[c] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
+			}
+			target.Pal = pal
 		}
 	} else {
+		f.Seek(int64(target.DataOffset), 0)
 		format := -target.rle
+
 		if format == 0 {
 			px := make([]uint8, target.DataSize)
 			f.Read(px)
@@ -616,10 +632,12 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 							target.PxlData = pi.Pix
 							target.Size[0] = uint16(pi.Rect.Dx())
 							target.Size[1] = uint16(pi.Rect.Dy())
+							target.IsRaw = false
 						} else if gray, ok := img.(*image.Gray); ok {
 							target.PxlData = gray.Pix
 							target.Size[0] = uint16(gray.Rect.Dx())
 							target.Size[1] = uint16(gray.Rect.Dy())
+							target.IsRaw = false
 						}
 					} else {
 						target.IsRaw = true
@@ -629,6 +647,49 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32) ([]
 					}
 				}
 			}
+		}
+
+		if !target.IsRaw && len(target.Pal) == 0 {
+			palidx := target.palidx
+			found := false
+			for loopLimit := 0; loopLimit < 10; loopLimit++ {
+				f.Seek(int64(h.FirstPaletteHeaderOffset)+int64(palidx*16), 0)
+				var gn [3]uint16
+				read(&gn)
+				var link uint16
+				read(&link)
+				var pofs, plSize uint32
+				read(&pofs)
+				read(&plSize)
+
+				if plSize == 0 {
+					palidx = int(link)
+				} else {
+					target.Pal, _ = ReadPalette(f, int64(lofs+pofs), plSize, h.Version[2] != 0)
+					found = true
+					break
+				}
+			}
+			if !found && h.NumberOfPalettes > 0 {
+				f.Seek(int64(h.FirstPaletteHeaderOffset), 0)
+				f.Seek(6, io.SeekCurrent)
+				var pofs, plSize uint32
+				read(&pofs)
+				read(&plSize)
+				if plSize > 0 {
+					target.Pal, _ = ReadPalette(f, int64(lofs+pofs), plSize, h.Version[2] != 0)
+				}
+			}
+		}
+	}
+
+	// ======================================
+	// 🚀 方案 A / B 核心生效区：挂载外部 ACT 灵魂
+	// ======================================
+	if actPath != "" && !target.IsRaw {
+		actPal, err := ReadActPalette(actPath)
+		if err == nil && len(actPal) == 256 {
+			target.Pal = actPal
 		}
 	}
 
@@ -742,7 +803,7 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, im
 
 			f.Seek(shofs+16, io.SeekStart)
 			binary.Write(f, binary.LittleEndian, finalOffset)
-			binary.Write(f, binary.LittleEndian, uint32(len(finalPngData)+4))
+			binary.Write(f, binary.LittleEndian, uint32(len(finalPngData)+4)) 
 
 			return nil
 		}
