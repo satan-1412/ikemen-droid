@@ -765,7 +765,7 @@ public class DesktopSystemView extends Dialog {
     @Override public void onBackPressed() { } 
 
     // ======================================================================================
-    // 🎨 模块 1：SFF 检视工坊 (支持 SFF自动预览、底部滑轨导航与 ACT 无损替换)
+    // 🎨 模块 1：SFF 检视工坊 (支持 SFF自动预览、横向控制带与 ACT 灵活挂载)
     // ======================================================================================
     private LinearLayout currentGalleryLayout = null;
     private TextView currentStatusText = null;
@@ -863,12 +863,8 @@ public class DesktopSystemView extends Dialog {
         final List<GoEngineBridge.SffFrame> currentGroupFrames = new ArrayList<>();
         final int[] currentFrameIndex = {0}; final boolean[] isPlaying = {false}; 
 
-        // 【核心】方案A：启动时自动扫描该文件夹内是否存在 `.act` 文件，如果存在则自动挂载第一个
+        // 🔥 核心修改：关闭默认自动挂载色表，恢复引擎原本色彩读取逻辑
         final String[] currentActPath = {""};
-        File[] actFiles = new File(sffPath).getParentFile().listFiles((d, name) -> name.toLowerCase().endsWith(".act"));
-        if (actFiles != null && actFiles.length > 0) {
-            currentActPath[0] = actFiles[0].getAbsolutePath();
-        }
 
         TextView infoText = new TextView(getContext()); infoText.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(4*density)); applyGlobalFontSettings(infoText, 0.85f, false); infoText.setTextColor(Color.parseColor("#0078D7")); root.addView(infoText);
 
@@ -896,15 +892,18 @@ public class DesktopSystemView extends Dialog {
         HorizontalScrollView groupScroll = new HorizontalScrollView(getContext()); groupScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout groupToolBelt = new LinearLayout(getContext()); groupToolBelt.setOrientation(LinearLayout.HORIZONTAL); groupToolBelt.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(5*density));
         
-        LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER); controls.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(15*density));
+        // 🔥 横向滚动按钮列设计
+        HorizontalScrollView controlsScroll = new HorizontalScrollView(getContext()); controlsScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER_VERTICAL); controls.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(15*density));
+        
         Button btnPrev = createButton("⏪", "#3F3F46"); Button btnPlay = createButton("▶️ 播放", "#0078D7"); Button btnNext = createButton("⏭️", "#3F3F46"); Button btnSpeed = createButton("⚙️ 调速", "#3F3F46"); Button btnExportRaw = createButton("💾 原生导出", "#3F3F46"); 
         Button btnReplace = createButton("🔄 替换", "#4CAF50");
         
-        // 【核心】方案B：手动更换 ACT 色表按钮
-        String initActName = currentActPath[0].isEmpty() ? "内部自带" : new File(currentActPath[0]).getName();
-        Button btnAct = createButton("🎨 色表: " + initActName, "#9C27B0");
+        Button btnInternalPal = createButton("🎨 内部色表", "#3F3F46");
+        Button btnAutoPal = createButton("🔍 自动检测色表", "#9C27B0");
+        Button btnManualPal = createButton("📂 手动选择色表", "#9C27B0");
         
-        LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(0, -2, 1f); btnP.setMargins((int)(2*density), 0, (int)(2*density), 0);
+        LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(-2, -2); btnP.setMargins((int)(5*density), 0, (int)(5*density), 0);
         
         final int[] currentDelay = {16}; 
         btnSpeed.setOnClickListener(v -> {
@@ -925,7 +924,6 @@ public class DesktopSystemView extends Dialog {
                 final GoEngineBridge.SffFrame targetFrame = currentGroupFrames.get(currentFrameIndex[0]);
                 new Thread(() -> {
                     try {
-                        // 传输时附带当前的 actPath 强制覆写色表
                         byte[] bmpData = Api.decodeSffFrame(sffPath, targetFrame.group, targetFrame.item, currentActPath[0]);
                         final Bitmap bmp = (bmpData != null && bmpData.length > 0) ? BitmapFactory.decodeByteArray(bmpData, 0, bmpData.length) : null;
                         uiHandler.post(() -> {
@@ -937,19 +935,37 @@ public class DesktopSystemView extends Dialog {
                                     imageMatrix.setScale(scale, scale); imageMatrix.postTranslate(dx, dy); previewImg.setImageMatrix(imageMatrix); isMatrixInitialized[0] = true;
                                 }
                             } else { previewImg.setImageBitmap(null); }
-                            infoText.setText(String.format("帧: %d / %d | 动作: %d | 索引: %d | 尺寸: %dx%d | 轴心: %d, %d", currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.width, targetFrame.height, targetFrame.x, targetFrame.y));
+                            String actInfo = currentActPath[0].isEmpty() ? "原生内部" : new File(currentActPath[0]).getName();
+                            infoText.setText(String.format("色表: %s | 帧: %d / %d | 动作: %d | 索引: %d | 尺寸: %dx%d | 轴心: %d, %d", actInfo, currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.width, targetFrame.height, targetFrame.x, targetFrame.y));
                         });
                     } catch(Exception e){}
                 }).start();
             }
         };
 
-        // 绑定重选 ACT 文件事件
-        btnAct.setOnClickListener(v -> {
-            showWin10FilePicker("选择 ACT 调色板", 9, null, null, selectedFile -> {
+        // 绑定三个独立的色表按键功能
+        btnInternalPal.setOnClickListener(v -> {
+            currentActPath[0] = "";
+            Toast.makeText(getContext(), "✅ 已切换为引擎默认内部色表", Toast.LENGTH_SHORT).show();
+            updateFrameAction.run();
+        });
+
+        btnAutoPal.setOnClickListener(v -> {
+            File[] actFiles = new File(sffPath).getParentFile().listFiles((d, name) -> name.toLowerCase().endsWith(".act"));
+            if (actFiles != null && actFiles.length > 0) {
+                currentActPath[0] = actFiles[0].getAbsolutePath();
+                Toast.makeText(getContext(), "✅ 已自动挂载: " + actFiles[0].getName(), Toast.LENGTH_SHORT).show();
+                updateFrameAction.run();
+            } else {
+                Toast.makeText(getContext(), "❌ 当前素材目录下未找到任何 .act 文件", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        btnManualPal.setOnClickListener(v -> {
+            showWin10FilePicker("手动选择 ACT 调色板文件", 9, null, null, selectedFile -> {
                 currentActPath[0] = selectedFile.getAbsolutePath();
-                btnAct.setText("🎨 色表: " + selectedFile.getName());
-                updateFrameAction.run(); // 选完立即刷新画面
+                Toast.makeText(getContext(), "✅ 已挂载: " + selectedFile.getName(), Toast.LENGTH_SHORT).show();
+                updateFrameAction.run();
             });
         });
 
@@ -1000,7 +1016,6 @@ public class DesktopSystemView extends Dialog {
             if (isPlaying[0]) playHandler.post(playRunnable); else playHandler.removeCallbacksAndMessages(null);
         });
 
-        // 🔥 导出功能升级为：向 Go 底层索要原始数据以智能输出
         btnExportRaw.setOnClickListener(v -> {
             if(currentGroupFrames.isEmpty()) return; GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
             new Thread(() -> {
@@ -1021,8 +1036,12 @@ public class DesktopSystemView extends Dialog {
             }).start();
         });
 
-        controls.addView(btnAct, btnP); controls.addView(btnPrev, btnP); controls.addView(btnPlay, btnP); controls.addView(btnNext, btnP); controls.addView(btnSpeed, btnP); controls.addView(btnExportRaw, btnP); controls.addView(btnReplace, btnP);
-        bottomToolArea.addView(controls);
+        controls.addView(btnPrev, btnP); controls.addView(btnPlay, btnP); controls.addView(btnNext, btnP); controls.addView(btnSpeed, btnP);
+        controls.addView(btnInternalPal, btnP); controls.addView(btnAutoPal, btnP); controls.addView(btnManualPal, btnP);
+        controls.addView(btnExportRaw, btnP); controls.addView(btnReplace, btnP);
+        
+        controlsScroll.addView(controls);
+        bottomToolArea.addView(controlsScroll);
         root.addView(bottomToolArea);
         
         openAppWindow(winTitle, root, () -> {
@@ -1189,7 +1208,6 @@ public class DesktopSystemView extends Dialog {
         return root;
     }
 
-    // 🔥 全新构建：支持批量加载 GIF 文件夹
     private void startGifScanner(File targetFile) {
         if (currentGalleryLayout != null) currentGalleryLayout.removeAllViews(); isAssetScannerRunning = true;
 
