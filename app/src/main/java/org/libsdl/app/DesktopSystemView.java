@@ -765,7 +765,7 @@ public class DesktopSystemView extends Dialog {
     @Override public void onBackPressed() { } 
 
     // ======================================================================================
-    // 🎨 模块 1：SFF 检视工坊 (支持 SFF自动预览、横向控制带与 ACT 灵活挂载)
+    // 🎨 模块 1：SFF 检视工坊 (支持 SFF自动预览、底部滑轨导航与 ACT 无损替换)
     // ======================================================================================
     private LinearLayout currentGalleryLayout = null;
     private TextView currentStatusText = null;
@@ -863,7 +863,7 @@ public class DesktopSystemView extends Dialog {
         final List<GoEngineBridge.SffFrame> currentGroupFrames = new ArrayList<>();
         final int[] currentFrameIndex = {0}; final boolean[] isPlaying = {false}; 
 
-        // 🔥 核心修改：关闭默认自动挂载色表，恢复引擎原本色彩读取逻辑，初始为空
+        // 默认不加载外部色表，使用空字符串走内置色表
         final String[] currentActPath = {""};
 
         TextView infoText = new TextView(getContext()); infoText.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(4*density)); applyGlobalFontSettings(infoText, 0.85f, false); infoText.setTextColor(Color.parseColor("#0078D7")); root.addView(infoText);
@@ -892,18 +892,25 @@ public class DesktopSystemView extends Dialog {
         HorizontalScrollView groupScroll = new HorizontalScrollView(getContext()); groupScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout groupToolBelt = new LinearLayout(getContext()); groupToolBelt.setOrientation(LinearLayout.HORIZONTAL); groupToolBelt.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(5*density));
         
-        // 🔥 横向滚动按钮列设计
-        HorizontalScrollView controlsScroll = new HorizontalScrollView(getContext()); controlsScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER_VERTICAL); controls.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(15*density));
+        HorizontalScrollView controlsScroll = new HorizontalScrollView(getContext()); 
+        controlsScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout controls = new LinearLayout(getContext()); 
+        controls.setOrientation(LinearLayout.HORIZONTAL); 
+        controls.setGravity(Gravity.CENTER_VERTICAL); 
+        controls.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(15*density));
         
-        Button btnPrev = createButton("⏪", "#3F3F46"); Button btnPlay = createButton("▶️ 播放", "#0078D7"); Button btnNext = createButton("⏭️", "#3F3F46"); Button btnSpeed = createButton("⚙️ 调速", "#3F3F46"); Button btnExportRaw = createButton("💾 原生导出", "#3F3F46"); 
+        Button btnPrev = createButton("⏪", "#3F3F46"); 
+        Button btnPlay = createButton("▶️ 播放", "#0078D7"); 
+        Button btnNext = createButton("⏭️", "#3F3F46"); 
+        Button btnSpeed = createButton("⚙️ 调速", "#3F3F46"); 
+        Button btnExportNative = createButton("💾 原生导出", "#3F3F46"); 
         Button btnReplace = createButton("🔄 替换", "#4CAF50");
         
-        Button btnInternalPal = createButton("🎨 内部色表", "#3F3F46");
-        Button btnAutoPal = createButton("🔍 自动检测色表", "#9C27B0");
-        Button btnManualPal = createButton("📂 手动选择色表", "#9C27B0");
+        Button btnAutoAct = createButton("🪄 自动色表", "#9C27B0");
+        Button btnManualAct = createButton("🎨 手动色表", "#9C27B0");
         
-        LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(-2, -2); btnP.setMargins((int)(5*density), 0, (int)(5*density), 0);
+        LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(-2, -2); 
+        btnP.setMargins((int)(2*density), 0, (int)(2*density), 0);
         
         final int[] currentDelay = {16}; 
         btnSpeed.setOnClickListener(v -> {
@@ -935,34 +942,26 @@ public class DesktopSystemView extends Dialog {
                                     imageMatrix.setScale(scale, scale); imageMatrix.postTranslate(dx, dy); previewImg.setImageMatrix(imageMatrix); isMatrixInitialized[0] = true;
                                 }
                             } else { previewImg.setImageBitmap(null); }
-                            String actInfo = currentActPath[0].isEmpty() ? "原生内部" : new File(currentActPath[0]).getName();
-                            infoText.setText(String.format("色表: %s | 帧: %d / %d | 动作: %d | 索引: %d | 尺寸: %dx%d | 轴心: %d, %d", actInfo, currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.width, targetFrame.height, targetFrame.x, targetFrame.y));
+                            infoText.setText(String.format("帧: %d / %d | 动作: %d | 索引: %d | 尺寸: %dx%d | 轴心: %d, %d", currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.width, targetFrame.height, targetFrame.x, targetFrame.y));
                         });
                     } catch(Exception e){}
                 }).start();
             }
         };
 
-        // 绑定三个独立的色表按键功能
-        btnInternalPal.setOnClickListener(v -> {
-            currentActPath[0] = "";
-            Toast.makeText(getContext(), "✅ 已切换为引擎默认内部色表", Toast.LENGTH_SHORT).show();
-            updateFrameAction.run();
-        });
-
-        btnAutoPal.setOnClickListener(v -> {
+        btnAutoAct.setOnClickListener(v -> {
             File[] actFiles = new File(sffPath).getParentFile().listFiles((d, name) -> name.toLowerCase().endsWith(".act"));
             if (actFiles != null && actFiles.length > 0) {
                 currentActPath[0] = actFiles[0].getAbsolutePath();
                 Toast.makeText(getContext(), "✅ 已自动挂载: " + actFiles[0].getName(), Toast.LENGTH_SHORT).show();
                 updateFrameAction.run();
             } else {
-                Toast.makeText(getContext(), "❌ 当前素材目录下未找到任何 .act 文件", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), "❌ 当前目录下未找到 .act 文件", Toast.LENGTH_SHORT).show();
             }
         });
 
-        btnManualPal.setOnClickListener(v -> {
-            showWin10FilePicker("手动选择 ACT 调色板文件", 9, null, null, selectedFile -> {
+        btnManualAct.setOnClickListener(v -> {
+            showWin10FilePicker("选择 ACT 调色板", 9, null, null, selectedFile -> {
                 currentActPath[0] = selectedFile.getAbsolutePath();
                 Toast.makeText(getContext(), "✅ 已挂载: " + selectedFile.getName(), Toast.LENGTH_SHORT).show();
                 updateFrameAction.run();
@@ -1016,29 +1015,35 @@ public class DesktopSystemView extends Dialog {
             if (isPlaying[0]) playHandler.post(playRunnable); else playHandler.removeCallbacksAndMessages(null);
         });
 
-        btnExportRaw.setOnClickListener(v -> {
+        btnExportNative.setOnClickListener(v -> {
             if(currentGroupFrames.isEmpty()) return; GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
             new Thread(() -> {
-                String ext = Api.getSffFrameExportExtension(sffPath, f.group, f.item);
-                byte[] rawData = Api.extractSffFrameRawData(sffPath, f.group, f.item, currentActPath[0]);
+                File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports"); 
+                if (!outDir.exists()) outDir.mkdirs();
                 
-                if (rawData != null && rawData.length > 0) {
-                    try {
-                        File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports"); if (!outDir.exists()) outDir.mkdirs();
-                        File outFile = new File(outDir, charName.replace(".sff","").replace(".def","") + "_G" + f.group + "_I" + f.item + "." + ext);
-                        java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
-                        fos.write(rawData); fos.close();
-                        uiHandler.post(() -> Toast.makeText(getContext(), "✅ 原生无损导出: " + outFile.getAbsolutePath(), Toast.LENGTH_LONG).show());
-                    } catch (Exception e) {}
-                } else {
-                    uiHandler.post(() -> Toast.makeText(getContext(), "❌ 导出失败：解析异常或数据为空", Toast.LENGTH_LONG).show());
+                try {
+                    String outPath = Api.exportSffFrameNative(sffPath, f.group, f.item, currentActPath[0], outDir.getAbsolutePath());
+                    uiHandler.post(() -> {
+                        if (outPath != null && !outPath.isEmpty()) {
+                            Toast.makeText(getContext(), "✅ 原生导出成功: " + outPath, Toast.LENGTH_LONG).show();
+                        } else {
+                            Toast.makeText(getContext(), "❌ 导出失败：解析异常或写入失败", Toast.LENGTH_LONG).show();
+                        }
+                    });
+                } catch (Exception e) {
+                    uiHandler.post(() -> Toast.makeText(getContext(), "❌ 导出崩溃: " + e.getMessage(), Toast.LENGTH_LONG).show());
                 }
             }).start();
         });
 
-        controls.addView(btnPrev, btnP); controls.addView(btnPlay, btnP); controls.addView(btnNext, btnP); controls.addView(btnSpeed, btnP);
-        controls.addView(btnInternalPal, btnP); controls.addView(btnAutoPal, btnP); controls.addView(btnManualPal, btnP);
-        controls.addView(btnExportRaw, btnP); controls.addView(btnReplace, btnP);
+        controls.addView(btnAutoAct, btnP); 
+        controls.addView(btnManualAct, btnP); 
+        controls.addView(btnPrev, btnP); 
+        controls.addView(btnPlay, btnP); 
+        controls.addView(btnNext, btnP); 
+        controls.addView(btnSpeed, btnP); 
+        controls.addView(btnExportNative, btnP); 
+        controls.addView(btnReplace, btnP);
         
         controlsScroll.addView(controls);
         bottomToolArea.addView(controlsScroll);
@@ -1189,80 +1194,61 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ======================================================================================
-    // 🎞️ 模块 3：GIF 拆解器 (批量解析 + 画廊卡片 + 防爆盾)
+    // 🎞️ 模块 3：GIF 拆解器 (完全重构：接入 Go 底层引擎解码，全功能标准窗口)
     // ======================================================================================
     private View buildGifExtractorContent() {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
         LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL);
-        TextView statusText = new TextView(getContext()); statusText.setText(" 状态: 等待选取目录或 .gif 文件..."); applyGlobalFontSettings(statusText, 1.0f, false);
-        Button scanBtn = createButton("📂 浏览并扫描 GIF 资源", "#0078D7"); LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, -2); btnParams.setMargins(0, 0, (int)(15*density), 0);
+        TextView statusText = new TextView(getContext()); statusText.setText(" 状态: 等待选取 .gif 文件..."); applyGlobalFontSettings(statusText, 1.0f, false);
+        Button scanBtn = createButton("📂 浏览并选择 GIF 文件", "#0078D7"); LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, -2); btnParams.setMargins(0, 0, (int)(15*density), 0);
         topBar.addView(scanBtn, btnParams); topBar.addView(statusText); root.addView(topBar);
         
-        ScrollView scroll = new ScrollView(getContext()); LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, -1); scrollParams.setMargins(0, (int)(15*density), 0, 0); scroll.setLayoutParams(scrollParams);
-        final LinearLayout galleryLayout = new LinearLayout(getContext()); galleryLayout.setOrientation(LinearLayout.VERTICAL); scroll.addView(galleryLayout); root.addView(scroll);
+        ScrollView scroll = new ScrollView(getContext()); 
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, -1); 
+        scrollParams.setMargins(0, (int)(15*density), 0, 0); 
+        scroll.setLayoutParams(scrollParams);
+        final LinearLayout listLayout = new LinearLayout(getContext()); 
+        listLayout.setOrientation(LinearLayout.VERTICAL); 
+        scroll.addView(listLayout); 
+        root.addView(scroll);
 
         scanBtn.setOnClickListener(v -> {
-            if (isAssetScannerRunning) return; currentGalleryLayout = galleryLayout; currentStatusText = statusText;
-            showWin10FilePicker("选择目录或 .gif 文件", 6, null, null, file -> startGifScanner(file));
+            currentGalleryLayout = listLayout; 
+            currentStatusText = statusText; 
+            showWin10FilePicker("选择 .gif 文件或所在目录", 6, null, null, file -> {
+                if (file.isDirectory()) {
+                    startGifScanner(file);
+                } else {
+                    openGifViewerWindow(file);
+                }
+            });
         });
         return root;
     }
 
-    private void startGifScanner(File targetFile) {
-        if (currentGalleryLayout != null) currentGalleryLayout.removeAllViews(); isAssetScannerRunning = true;
-
+    private void startGifScanner(File gifDir) {
+        if (currentGalleryLayout != null) currentGalleryLayout.removeAllViews(); 
+        currentStatusText.setText("状态: 正在扫描 GIF...");
         new Thread(() -> {
             try {
-                updateUI(currentStatusText, "📡 阶段 1/3: 正在深度检索 GIF 文件...");
-                List<File> targetFiles = new ArrayList<>();
-                if (targetFile.isDirectory()) { findFilesRecursively(targetFile, targetFiles, ".gif"); }
-                else { targetFiles.add(targetFile); }
-
-                if(targetFiles == null || targetFiles.isEmpty()) { updateUI(currentStatusText, "⚠️ 未找到有效的 GIF 文件"); return; }
-
-                updateUI(currentStatusText, "📡 阶段 2/3: 触发底层 Go 引擎获取首帧预览...");
-                class GifCardData { File file; Bitmap preview; }
-                List<GifCardData> validAssets = new ArrayList<>();
-
-                for (File f : targetFiles) {
-                    GifCardData data = new GifCardData(); data.file = f;
-                    try {
-                        byte[] pb = Api.decodeGifFrame(f.getAbsolutePath(), 0);
-                        if (pb != null && pb.length > 0) { data.preview = BitmapFactory.decodeByteArray(pb, 0, pb.length); }
-                    } catch (Exception e) {}
-                    validAssets.add(data);
-                }
-
-                updateUI(currentStatusText, "🖥️ 阶段 3/3: 预检完毕，正在渲染界面...");
+                List<File> validFiles = new ArrayList<>();
+                findFilesRecursively(gifDir, validFiles, ".gif");
+                if (validFiles.isEmpty()) { updateUI(currentStatusText, "❌ 未找到 GIF 文件"); return; }
+                
                 new Handler(Looper.getMainLooper()).post(() -> {
-                    LinearLayout currentRow = null; int itemsInRow = 0;
-                    for (GifCardData va : validAssets) {
-                        if (itemsInRow == 0) { currentRow = new LinearLayout(getContext()); currentRow.setOrientation(LinearLayout.HORIZONTAL); currentGalleryLayout.addView(currentRow, new LinearLayout.LayoutParams(-1, -2)); }
-                        View card = buildGifCard(va.file, va.preview);
-                        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1f); cardParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
-                        currentRow.addView(card, cardParams); itemsInRow++; if (itemsInRow >= 3) itemsInRow = 0;
+                    for(File f : validFiles) {
+                        Button btn = createButton("🎞️ 打开: " + f.getName(), "#9C27B0");
+                        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2); bp.setMargins(0,0,0,(int)(10*density));
+                        btn.setOnClickListener(v -> {
+                            Toast.makeText(getContext(), "加载 GIF 数据...", Toast.LENGTH_SHORT).show();
+                            openGifViewerWindow(f);
+                        });
+                        currentGalleryLayout.addView(btn, bp);
                     }
-                    currentStatusText.setText("✅ 解析完成! 成功挂载 " + validAssets.size() + " 个 GIF 文件");
+                    currentStatusText.setText("✅ 共发现 " + validFiles.size() + " 个 GIF 文件");
                 });
-            } catch (Exception e) { updateUI(currentStatusText, "扫描异常: " + e.getMessage()); }
-            finally { isAssetScannerRunning = false; }
+            } catch (Exception e) { updateUI(currentStatusText, "解析异常: " + e.getMessage()); }
         }).start();
-    }
-
-    private View buildGifCard(final File gifFile, Bitmap previewBmp) {
-        LinearLayout card = new LinearLayout(getContext()); card.setOrientation(LinearLayout.VERTICAL); card.setGravity(Gravity.CENTER); card.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
-        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#2D2D30")); bg.setCornerRadius(8f*density); bg.setStroke(1, Color.parseColor("#3F3F46")); card.setBackground(bg);
-        ImageView previewView = new ImageView(getContext()); previewView.setLayoutParams(new LinearLayout.LayoutParams((int)(90*density), (int)(90*density))); previewView.setScaleType(ImageView.ScaleType.FIT_CENTER); previewView.setBackgroundColor(Color.parseColor("#1E1E1E"));
-        if (previewBmp != null) previewView.setImageBitmap(previewBmp); else previewView.setImageResource(android.R.drawable.ic_menu_gallery);
-        card.addView(previewView);
-        TextView nameText = new TextView(getContext()); nameText.setText(gifFile.getName()); nameText.setSingleLine(true); nameText.setGravity(Gravity.CENTER); nameText.setPadding(0, (int)(8*density), 0, (int)(2*density)); applyGlobalFontSettings(nameText, 0.9f, false); card.addView(nameText);
-
-        Button exportBtn = createButton("👁️ 拆解查看", "#9C27B0"); exportBtn.setPadding(0, (int)(5*density), 0, (int)(5*density));
-        exportBtn.setOnClickListener(v -> {
-            Toast.makeText(getContext(), "正在解析 GIF 帧数据...", Toast.LENGTH_SHORT).show();
-            new Thread(() -> { new Handler(Looper.getMainLooper()).post(() -> openGifViewerWindow(gifFile)); }).start();
-        });
-        card.addView(exportBtn); return card;
     }
 
     private void openGifViewerWindow(File gifFile) {
@@ -1270,7 +1256,9 @@ public class DesktopSystemView extends Dialog {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.parseColor("#1E1E1E"));
 
         int totalFrames = (int) Api.getGifFrameCount(gifFile.getAbsolutePath());
-        if (totalFrames <= 0) { Toast.makeText(getContext(), "❌ 无法解析此 GIF，或者该文件已损坏", Toast.LENGTH_SHORT).show(); return; }
+        if (totalFrames <= 0) {
+            Toast.makeText(getContext(), "❌ 无法解析此 GIF，或者该文件已损坏", Toast.LENGTH_SHORT).show(); return;
+        }
 
         TextView infoText = new TextView(getContext()); infoText.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(4*density)); applyGlobalFontSettings(infoText, 0.85f, false); infoText.setTextColor(Color.parseColor("#0078D7")); root.addView(infoText);
 
