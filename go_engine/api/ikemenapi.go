@@ -194,21 +194,24 @@ func loadGif(path string) error {
 	return nil
 }
 
-func GetGifFrameCount(gifPath string) int {
+// 核心修复1：明确返回 int32 类型，对应 Java 的 int
+func GetGifFrameCount(gifPath string) int32 {
 	if err := loadGif(gifPath); err != nil {
 		return 0
 	}
-	return len(gifCompositedFrames)
+	return int32(len(gifCompositedFrames))
 }
 
-func DecodeGifFrame(gifPath string, index int) []byte {
+// 核心修复2：明确接收 int32 类型参数，防止 Java 传参类型错位
+func DecodeGifFrame(gifPath string, index int32) []byte {
 	if err := loadGif(gifPath); err != nil {
 		return nil
 	}
-	if index < 0 || index >= len(gifCompositedFrames) {
+	idx := int(index) // 转回 Go 内部使用的原生 int
+	if idx < 0 || idx >= len(gifCompositedFrames) {
 		return nil
 	}
 	buf := new(bytes.Buffer)
-	png.Encode(buf, gifCompositedFrames[index])
+	png.Encode(buf, gifCompositedFrames[idx])
 	return buf.Bytes()
 }
