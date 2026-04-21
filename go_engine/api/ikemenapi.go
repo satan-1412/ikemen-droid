@@ -1,7 +1,13 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"image"
+	"image/draw"
+	"image/gif"
+	"image/png"
+	"os"
 	"path/filepath"
 
 	// 导入我们的两大核心提纯车间
@@ -24,8 +30,8 @@ type SffFrame struct {
 	Item   int32 `json:"item"`
 	Width  int32 `json:"width"`
 	Height int32 `json:"height"`
-	X      int16 `json:"x"` 
-	Y      int16 `json:"y"` 
+	X      int16 `json:"x"`
+	Y      int16 `json:"y"`
 }
 
 type SndNode struct {
@@ -34,7 +40,7 @@ type SndNode struct {
 }
 
 // ==========================================
-// 🖼️ SFF 图像解析总接口
+// 🖼️ SFF 图像解析总接口 (已接入 ACT 色表通道)
 // ==========================================
 
 func ScanSff(targetPath string) string {
@@ -67,7 +73,7 @@ func GetAllFrames(sffPath string) string {
 			Item:   f.Item,
 			Width:  f.Width,
 			Height: f.Height,
-			X:      f.X, 
+			X:      f.X,
 			Y:      f.Y,
 		}
 	}
@@ -76,8 +82,9 @@ func GetAllFrames(sffPath string) string {
 	return string(jsonBytes)
 }
 
-func DecodeSffFrame(sffPath string, group int32, item int32) []byte {
-	pngBytes, err := sff_module.ExtractFrameAsPng(sffPath, group, item)
+// 修改点：支持传入 actPath，如果为空则走默认 SFF 色表
+func DecodeSffFrame(sffPath string, group int32, item int32, actPath string) []byte {
+	pngBytes, err := sff_module.ExtractFrameAsPng(sffPath, group, item, actPath)
 	if err != nil {
 		return nil
 	}
@@ -89,22 +96,16 @@ func ReplaceSffFrame(sffPath string, group int32, item int32, targetPngPath stri
 	return err == nil
 }
 
-// ==========================================
-// 🎯 新增：SFF 智能预览拉取机制 (为前端卡片自动供图)
-// ==========================================
-
-// GetSffPreview 循环提取 SFF 内部有效帧，抓取首个存活图象用作预览
 func GetSffPreview(sffPath string) []byte {
 	frames, err := sff_module.ExtractAllFrames(sffPath)
 	if err != nil || len(frames) == 0 {
 		return nil
 	}
-
-	// 轮询试错法 (最多抓取前10帧以防纯空白帧开局)
 	for i := 0; i < len(frames) && i < 10; i++ {
-		bmp, err := sff_module.ExtractFrameAsPng(sffPath, frames[i].Group, frames[i].Item)
+		// 预览时不挂载 ACT，强制提取内部色表进行快速试错
+		bmp, err := sff_module.ExtractFrameAsPng(sffPath, frames[i].Group, frames[i].Item, "")
 		if err == nil && len(bmp) > 0 {
-			return bmp // 抓到了，立即返回 PNG 流
+			return bmp
 		}
 	}
 	return nil
@@ -119,12 +120,10 @@ func ScanSnd(sndPath string) string {
 	if err != nil || len(nodes) == 0 {
 		return `[]`
 	}
-
 	outNodes := make([]SndNode, len(nodes))
 	for i, n := range nodes {
 		outNodes[i] = SndNode{Group: n.Group, Item: n.Item}
 	}
-
 	jsonBytes, _ := json.Marshal(outNodes)
 	return string(jsonBytes)
 }
@@ -140,4 +139,76 @@ func ExtractSndAudio(sndPath string, group int32, item int32) []byte {
 func ReplaceSndAudio(sndPath string, group int32, item int32, targetWavPath string) bool {
 	err := snd_module.ReplaceAudioWithWav(sndPath, group, item, targetWavPath)
 	return err == nil
+}
+
+// ==========================================
+// 🎞️ 全新加入：纯 Go 语言级 GIF 逐帧完美合成引擎
+// ==========================================
+
+var gifCachePath string
+var gifCompositedFrames []*image.RGBA
+
+func loadGif(path string) error {
+	if gifCachePath == path && gifCompositedFrames != nil {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	g, err := gif.DecodeAll(f)
+	if err != nil {
+		return err
+	}
+
+	bounds := g.Image[0].Bounds()
+	frames := make([]*image.RGBA, len(g.Image))
+	currFrame := image.NewRGBA(bounds)
+
+	for i, img := range g.Image {
+		var prevFrame *image.RGBA
+		// 处理 GIF 残影模式：记录上一帧状态
+		if g.Disposal[i] == gif.DisposalPrevious {
+			prevFrame = image.NewRGBA(bounds)
+			draw.Draw(prevFrame, bounds, currFrame, bounds.Min, draw.Src)
+		}
+
+		// 覆盖绘制当前帧增量数据
+		draw.Draw(currFrame, img.Bounds(), img, img.Bounds().Min, draw.Over)
+
+		// 独立存盘这一帧的纯净画面
+		newFrame := image.NewRGBA(bounds)
+		draw.Draw(newFrame, bounds, currFrame, bounds.Min, draw.Src)
+		frames[i] = newFrame
+
+		// 绘制结束后，为下一帧做画布清理准备
+		if g.Disposal[i] == gif.DisposalBackground {
+			draw.Draw(currFrame, img.Bounds(), image.Transparent, image.Point{}, draw.Src)
+		} else if g.Disposal[i] == gif.DisposalPrevious && prevFrame != nil {
+			draw.Draw(currFrame, bounds, prevFrame, bounds.Min, draw.Src)
+		}
+	}
+	gifCachePath = path
+	gifCompositedFrames = frames
+	return nil
+}
+
+func GetGifFrameCount(gifPath string) int {
+	if err := loadGif(gifPath); err != nil {
+		return 0
+	}
+	return len(gifCompositedFrames)
+}
+
+func DecodeGifFrame(gifPath string, index int) []byte {
+	if err := loadGif(gifPath); err != nil {
+		return nil
+	}
+	if index < 0 || index >= len(gifCompositedFrames) {
+		return nil
+	}
+	buf := new(bytes.Buffer)
+	png.Encode(buf, gifCompositedFrames[index])
+	return buf.Bytes()
 }
