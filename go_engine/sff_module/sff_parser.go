@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw" // 🔥 修复: 补上缺失的 draw 包，用于 SFFv2 的 RGBA 渲染
 	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
 	"io"
-	"math"
+	// 🔥 修复: 删除了没有实际使用的 math 包
 	"os"
 )
 
