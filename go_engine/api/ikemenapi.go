@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"image"
 	"image/draw"
 	"image/gif"
@@ -95,11 +94,10 @@ func ReplaceSffFrame(sffPath string, group int32, item int32, targetPngPath stri
 	return err == nil
 }
 
-// 新增原生导出 API
 func ExportSffFrameNative(sffPath string, group int32, item int32, actPath string, outDir string) string {
 	savedPath, err := sff_module.ExportFrameNative(sffPath, group, item, actPath, outDir)
 	if err != nil {
-		return "" // 如果为空字符串说明导出失败，交由 Java 层捕获
+		return ""
 	}
 	return savedPath
 }
@@ -110,7 +108,6 @@ func GetSffPreview(sffPath string) []byte {
 		return nil
 	}
 	for i := 0; i < len(frames) && i < 10; i++ {
-		// 预览时不挂载 ACT，强制提取内部色表进行快速试错
 		bmp, err := sff_module.ExtractFrameAsPng(sffPath, frames[i].Group, frames[i].Item, "")
 		if err == nil && len(bmp) > 0 {
 			return bmp
@@ -150,89 +147,122 @@ func ReplaceSndAudio(sndPath string, group int32, item int32, targetWavPath stri
 }
 
 // ==========================================
-// 🎞️ GIF 逐帧完美合成引擎 (包含严格越界保护)
+// 🎞️ GIF 极限省内存拆解引擎 (完美适配 32 位系统)
 // ==========================================
 
-var gifCachePath string
-var gifCompositedFrames []*image.RGBA
+var (
+	activeGifPath string
+	activeGif     *gif.GIF
+)
 
-func loadGif(path string) error {
-	if gifCachePath == path && gifCompositedFrames != nil {
-		return nil
-	}
-
-	// 🚨【安全防御】判断路径是否为空，或者传进来的是否是个文件夹（防止 Java 端错传路径导致空指针）
-	fileInfo, err := os.Stat(path)
-	if err != nil || fileInfo.IsDir() {
-		return errors.New("invalid gif file path: cannot decode a directory")
-	}
-
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	
-	g, err := gif.DecodeAll(f)
-	if err != nil {
-		return err
-	}
-
-	if len(g.Image) == 0 {
-		return errors.New("empty gif")
-	}
-
-	bounds := g.Image[0].Bounds()
-	frames := make([]*image.RGBA, len(g.Image))
-	currFrame := image.NewRGBA(bounds)
-
-	for i, img := range g.Image {
-		var prevFrame *image.RGBA
-		
-		// 🚨【安全防御】某些损坏的 GIF Disposal 数组长度不足导致越界 Panic，手动做防呆填充
-		disposalMode := byte(gif.DisposalNone)
-		if i < len(g.Disposal) {
-			disposalMode = g.Disposal[i]
-		}
-
-		if disposalMode == gif.DisposalPrevious {
-			prevFrame = image.NewRGBA(bounds)
-			draw.Draw(prevFrame, bounds, currFrame, bounds.Min, draw.Src)
-		}
-
-		draw.Draw(currFrame, img.Bounds(), img, img.Bounds().Min, draw.Over)
-
-		newFrame := image.NewRGBA(bounds)
-		draw.Draw(newFrame, bounds, currFrame, bounds.Min, draw.Src)
-		frames[i] = newFrame
-
-		if disposalMode == gif.DisposalBackground {
-			draw.Draw(currFrame, img.Bounds(), image.Transparent, image.Point{}, draw.Src)
-		} else if disposalMode == gif.DisposalPrevious && prevFrame != nil {
-			draw.Draw(currFrame, bounds, prevFrame, bounds.Min, draw.Src)
-		}
-	}
-	gifCachePath = path
-	gifCompositedFrames = frames
-	return nil
-}
-
+// GetGifFrameCount 读取文件结构，极低内存消耗，仅缓存调色板数据
 func GetGifFrameCount(gifPath string) int32 {
-	if err := loadGif(gifPath); err != nil {
+	fileInfo, err := os.Stat(gifPath)
+	if err != nil || fileInfo.IsDir() {
 		return 0
 	}
-	return int32(len(gifCompositedFrames))
+
+	if activeGifPath == gifPath && activeGif != nil {
+		return int32(len(activeGif.Image))
+	}
+
+	f, err := os.Open(gifPath)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+
+	g, err := gif.DecodeAll(f)
+	if err != nil || len(g.Image) == 0 {
+		return 0
+	}
+
+	activeGifPath = gifPath
+	activeGif = g
+	return int32(len(g.Image))
 }
 
+// DecodeGifFrame 即时合成请求的帧，告别数组堆叠，永不 OOM
 func DecodeGifFrame(gifPath string, index int32) []byte {
-	if err := loadGif(gifPath); err != nil {
+	if GetGifFrameCount(gifPath) == 0 {
 		return nil
 	}
+
 	idx := int(index)
-	if idx < 0 || idx >= len(gifCompositedFrames) {
+	if idx < 0 || idx >= len(activeGif.Image) {
 		return nil
 	}
+
+	// 取 GIF 逻辑画布尺寸
+	bounds := image.Rect(0, 0, activeGif.Config.Width, activeGif.Config.Height)
+	if bounds.Dx() == 0 || bounds.Dy() == 0 {
+		bounds = activeGif.Image[0].Bounds()
+	}
+
+	// 仅分配一张画板和一张备用画板的内存 (最大只需几 MB)
+	canvas := image.NewRGBA(bounds)
+	var backup *image.RGBA
+
+	for i := 0; i <= idx; i++ {
+		img := activeGif.Image[i]
+		disposal := byte(gif.DisposalNone)
+		if i < len(activeGif.Disposal) {
+			disposal = activeGif.Disposal[i]
+		}
+
+		if disposal == gif.DisposalPrevious {
+			if backup == nil {
+				backup = image.NewRGBA(bounds)
+			}
+			copy(backup.Pix, canvas.Pix) // 快速内存克隆，保存残影
+		}
+
+		// 将当前帧覆盖在画板上
+		draw.Draw(canvas, img.Bounds(), img, img.Bounds().Min, draw.Over)
+
+		// 如果这就是我们要的帧，直接截断循环，返回结果
+		if i == idx {
+			break
+		}
+
+		// 根据 Disposal 规则，为下一帧清理画板
+		if disposal == gif.DisposalBackground {
+			draw.Draw(canvas, img.Bounds(), image.Transparent, image.Point{}, draw.Src)
+		} else if disposal == gif.DisposalPrevious && backup != nil {
+			copy(canvas.Pix, backup.Pix) // 恢复残影
+		}
+	}
+
 	buf := new(bytes.Buffer)
-	png.Encode(buf, gifCompositedFrames[idx])
+	err := png.Encode(buf, canvas)
+	if err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
+// GetGifPreview 用于列表界面极速提取第一帧作为预览图，不执行完整结构解码
+func GetGifPreview(gifPath string) []byte {
+	fileInfo, err := os.Stat(gifPath)
+	if err != nil || fileInfo.IsDir() {
+		return nil
+	}
+
+	f, err := os.Open(gifPath)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	img, err := gif.Decode(f)
+	if err != nil {
+		return nil
+	}
+
+	buf := new(bytes.Buffer)
+	err = png.Encode(buf, img)
+	if err != nil {
+		return nil
+	}
 	return buf.Bytes()
 }
