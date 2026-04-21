@@ -2,14 +2,19 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/binary"
+	"errors"
+	"fmt"
 	"image"
-	"image/draw"
-	"image/gif"
+	"image/color"
+	"image/draw" // 🔥 补上了渲染需要的 draw 包
+	_ "image/gif"
+	_ "image/jpeg"
 	"image/png"
+	"io"
+	// 🔥 删除了这里原本没有用到的 "math"
 	"os"
-	"path/filepath"
-	"sort"
+)
 
 	// 导入我们的两大核心提纯车间
 	"ikemenbridge/sff_module"
