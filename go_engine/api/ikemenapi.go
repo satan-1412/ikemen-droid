@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/draw"
 	"image/gif"
@@ -13,6 +14,10 @@ import (
 	"ikemenbridge/sff_module"
 	"ikemenbridge/snd_module"
 )
+
+// ==========================================
+// 📦 内部数据结构 (用于转为 JSON 传给 Java)
+// ==========================================
 
 type SffInfo struct {
 	Name     string `json:"name"`
@@ -34,16 +39,22 @@ type SndNode struct {
 	Item  int32 `json:"item"`
 }
 
+// ==========================================
+// 🖼️ SFF 图像解析总接口 (已接入 ACT 色表通道)
+// ==========================================
+
 func ScanSff(targetPath string) string {
 	version, err := sff_module.ParseSffHeader(targetPath)
 	if err != nil {
 		return `[]`
 	}
+
 	info := SffInfo{
 		Name:     filepath.Base(targetPath),
 		FilePath: targetPath,
 		Version:  "SFF v" + version,
 	}
+
 	result := []SffInfo{info}
 	jsonBytes, _ := json.Marshal(result)
 	return string(jsonBytes)
@@ -54,6 +65,7 @@ func GetAllFrames(sffPath string) string {
 	if err != nil || len(frames) == 0 {
 		return `[]`
 	}
+
 	outFrames := make([]SffFrame, len(frames))
 	for i, f := range frames {
 		outFrames[i] = SffFrame{
@@ -65,6 +77,7 @@ func GetAllFrames(sffPath string) string {
 			Y:      f.Y,
 		}
 	}
+
 	jsonBytes, _ := json.Marshal(outFrames)
 	return string(jsonBytes)
 }
@@ -82,12 +95,22 @@ func ReplaceSffFrame(sffPath string, group int32, item int32, targetPngPath stri
 	return err == nil
 }
 
+// 新增原生导出 API
+func ExportSffFrameNative(sffPath string, group int32, item int32, actPath string, outDir string) string {
+	savedPath, err := sff_module.ExportFrameNative(sffPath, group, item, actPath, outDir)
+	if err != nil {
+		return "" // 如果为空字符串说明导出失败，交由 Java 层捕获
+	}
+	return savedPath
+}
+
 func GetSffPreview(sffPath string) []byte {
 	frames, err := sff_module.ExtractAllFrames(sffPath)
 	if err != nil || len(frames) == 0 {
 		return nil
 	}
 	for i := 0; i < len(frames) && i < 10; i++ {
+		// 预览时不挂载 ACT，强制提取内部色表进行快速试错
 		bmp, err := sff_module.ExtractFrameAsPng(sffPath, frames[i].Group, frames[i].Item, "")
 		if err == nil && len(bmp) > 0 {
 			return bmp
@@ -96,18 +119,9 @@ func GetSffPreview(sffPath string) []byte {
 	return nil
 }
 
-func GetSffFrameExportExtension(sffPath string, group int32, item int32) string {
-	version, err := sff_module.ParseSffHeader(sffPath)
-	if err == nil && len(version) > 0 && version[0] == '1' {
-		return "pcx"
-	}
-	return "png"
-}
-
-func ExtractSffFrameRawData(sffPath string, group int32, item int32, actPath string) []byte {
-	data, _, _ := sff_module.ExtractRawFrameData(sffPath, group, item, actPath)
-	return data
-}
+// ==========================================
+// 🎵 SND 音频解析总接口
+// ==========================================
 
 func ScanSnd(sndPath string) string {
 	nodes, err := snd_module.ExtractAllNodes(sndPath)
@@ -135,6 +149,10 @@ func ReplaceSndAudio(sndPath string, group int32, item int32, targetWavPath stri
 	return err == nil
 }
 
+// ==========================================
+// 🎞️ GIF 逐帧完美合成引擎 (包含严格越界保护)
+// ==========================================
+
 var gifCachePath string
 var gifCompositedFrames []*image.RGBA
 
@@ -142,14 +160,26 @@ func loadGif(path string) error {
 	if gifCachePath == path && gifCompositedFrames != nil {
 		return nil
 	}
+
+	// 🚨【安全防御】判断路径是否为空，或者传进来的是否是个文件夹（防止 Java 端错传路径导致空指针）
+	fileInfo, err := os.Stat(path)
+	if err != nil || fileInfo.IsDir() {
+		return errors.New("invalid gif file path: cannot decode a directory")
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	
 	g, err := gif.DecodeAll(f)
 	if err != nil {
 		return err
+	}
+
+	if len(g.Image) == 0 {
+		return errors.New("empty gif")
 	}
 
 	bounds := g.Image[0].Bounds()
@@ -158,24 +188,27 @@ func loadGif(path string) error {
 
 	for i, img := range g.Image {
 		var prevFrame *image.RGBA
-		disposal := byte(gif.DisposalNone)
+		
+		// 🚨【安全防御】某些损坏的 GIF Disposal 数组长度不足导致越界 Panic，手动做防呆填充
+		disposalMode := byte(gif.DisposalNone)
 		if i < len(g.Disposal) {
-			disposal = g.Disposal[i]
+			disposalMode = g.Disposal[i]
 		}
-		if disposal == gif.DisposalPrevious {
+
+		if disposalMode == gif.DisposalPrevious {
 			prevFrame = image.NewRGBA(bounds)
 			draw.Draw(prevFrame, bounds, currFrame, bounds.Min, draw.Src)
 		}
-		if img != nil && !img.Bounds().Empty() {
-			draw.Draw(currFrame, img.Bounds(), img, img.Bounds().Min, draw.Over)
-		}
+
+		draw.Draw(currFrame, img.Bounds(), img, img.Bounds().Min, draw.Over)
+
 		newFrame := image.NewRGBA(bounds)
 		draw.Draw(newFrame, bounds, currFrame, bounds.Min, draw.Src)
 		frames[i] = newFrame
 
-		if disposal == gif.DisposalBackground {
+		if disposalMode == gif.DisposalBackground {
 			draw.Draw(currFrame, img.Bounds(), image.Transparent, image.Point{}, draw.Src)
-		} else if disposal == gif.DisposalPrevious && prevFrame != nil {
+		} else if disposalMode == gif.DisposalPrevious && prevFrame != nil {
 			draw.Draw(currFrame, bounds, prevFrame, bounds.Min, draw.Src)
 		}
 	}
