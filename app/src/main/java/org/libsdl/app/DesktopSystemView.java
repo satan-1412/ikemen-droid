@@ -863,7 +863,7 @@ public class DesktopSystemView extends Dialog {
         final List<GoEngineBridge.SffFrame> currentGroupFrames = new ArrayList<>();
         final int[] currentFrameIndex = {0}; final boolean[] isPlaying = {false}; 
 
-        // 🔥 核心修改：关闭默认自动挂载色表，恢复引擎原本色彩读取逻辑
+        // 🔥 核心修改：关闭默认自动挂载色表，恢复引擎原本色彩读取逻辑，初始为空
         final String[] currentActPath = {""};
 
         TextView infoText = new TextView(getContext()); infoText.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(4*density)); applyGlobalFontSettings(infoText, 0.85f, false); infoText.setTextColor(Color.parseColor("#0078D7")); root.addView(infoText);
