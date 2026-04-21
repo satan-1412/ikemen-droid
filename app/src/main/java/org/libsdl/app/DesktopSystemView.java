@@ -1186,7 +1186,8 @@ public class DesktopSystemView extends Dialog {
         final String winTitle = "🎞️ GIF拆解: " + gifFile.getName();
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.parseColor("#1E1E1E"));
 
-        int totalFrames = Api.getGifFrameCount(gifFile.getAbsolutePath());
+        // 核心修复：强制转换为 (int)，彻底打消 Java 编译器的精度顾虑
+        int totalFrames = (int) Api.getGifFrameCount(gifFile.getAbsolutePath());
         if (totalFrames <= 0) {
             Toast.makeText(getContext(), "❌ 无法解析此 GIF，或者该文件已损坏", Toast.LENGTH_SHORT).show(); return;
         }
