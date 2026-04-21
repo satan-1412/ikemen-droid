@@ -3,6 +3,7 @@ package sff_module
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
