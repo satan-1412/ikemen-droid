@@ -988,16 +988,23 @@ public class DesktopSystemView extends Dialog {
             title.setText("选择动作编组"); 
             applyGlobalFontSettings(title, 1.1f, true); 
             title.setGravity(Gravity.CENTER); 
-            title.setPadding(0, 0, 0, (int)(15*density));
+            title.setPadding(0, 0, 0, (int)(10*density));
             gLayout.addView(title);
 
+            // 【新增】动作组搜索栏
+            EditText searchInput = createInput("🔍 输入动作组号搜索...", "");
+            LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(-1, -2);
+            searchParams.setMargins(0, 0, 0, (int)(15*density));
+            gLayout.addView(searchInput, searchParams);
+
             ScrollView gScroll = new ScrollView(getContext());
-            LinearLayout gList = new LinearLayout(getContext());
+            final LinearLayout gList = new LinearLayout(getContext());
             gList.setOrientation(LinearLayout.VERTICAL);
 
             for (final int g : groupList) {
                 String btnText = (g == -999) ? "📂 所有动作" : "📁 动作组 " + g;
                 Button groupBtn = createButton(btnText, "#1E1E1E");
+                groupBtn.setTag(String.valueOf(g)); // 挂载tag，方便搜索精确匹配数字
                 LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-1, -2); 
                 gp.setMargins(0, 0, 0, (int)(5*density));
                 groupBtn.setOnClickListener(gv -> {
@@ -1012,6 +1019,29 @@ public class DesktopSystemView extends Dialog {
                 });
                 gList.addView(groupBtn, gp);
             }
+            
+            // 【新增】实时监听搜索输入，动态过滤列表
+            searchInput.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                @Override public void afterTextChanged(Editable s) {
+                    String query = s.toString().trim();
+                    for (int i = 0; i < gList.getChildCount(); i++) {
+                        View child = gList.getChildAt(i);
+                        if (child instanceof Button) {
+                            String tag = (String) child.getTag();
+                            String text = ((Button) child).getText().toString();
+                            // 如果搜索框为空，或者按钮文本包含搜索词，或者Tag直接匹配，则显示
+                            if (query.isEmpty() || text.contains(query) || tag.equals(query)) {
+                                child.setVisibility(View.VISIBLE);
+                            } else {
+                                child.setVisibility(View.GONE);
+                            }
+                        }
+                    }
+                }
+            });
+
             gScroll.addView(gList);
             gLayout.addView(gScroll, new LinearLayout.LayoutParams((int)(250*density), (int)(300*density))); 
             groupDialog.setContentView(gLayout); 
