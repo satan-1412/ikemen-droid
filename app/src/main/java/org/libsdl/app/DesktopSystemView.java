@@ -1085,8 +1085,8 @@ public class DesktopSystemView extends Dialog {
                             // 绕开原生导出，直接调用底层解码引擎，将色表与图像合并渲染为无损 PNG 字节流
                             byte[] pngData = Api.decodeSffFrame(sffPath, f.group, f.item, currentActPath[0]);
                             if (pngData != null && pngData.length > 0) {
-                                String charName = new File(sffPath).getName().replaceAll("\\.[^.]+$", "");
-                                File outFile = new File(outDir, charName + "_G" + f.group + "_I" + f.item + ".png");
+                                String exportName = new File(sffPath).getName().replaceAll("\\.[^.]+$", "");
+                                File outFile = new File(outDir, exportName + "_G" + f.group + "_I" + f.item + ".png");
                                 FileOutputStream fos = new FileOutputStream(outFile);
                                 fos.write(pngData);
                                 fos.close();
