@@ -864,9 +864,9 @@ public class DesktopSystemView extends Dialog {
 
         final String[] currentActPath = {""};
 
-        TextView infoText = new TextView(getContext()); infoText.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(4*density)); applyGlobalFontSettings(infoText, 0.85f, false); infoText.setTextColor(Color.parseColor("#0078D7")); root.addView(infoText);
+        TextView infoText = new TextView(getContext()); infoText.setPadding((int)(5*density), (int)(4*density), (int)(5*density), (int)(2*density)); applyGlobalFontSettings(infoText, 0.85f, false); infoText.setTextColor(Color.parseColor("#0078D7")); root.addView(infoText);
 
-        FrameLayout canvasFrame = new FrameLayout(getContext()); LinearLayout.LayoutParams canvasParams = new LinearLayout.LayoutParams(-1, 0, 1f); canvasParams.setMargins((int)(15*density), (int)(10*density), (int)(15*density), (int)(10*density)); canvasFrame.setLayoutParams(canvasParams);
+        FrameLayout canvasFrame = new FrameLayout(getContext()); LinearLayout.LayoutParams canvasParams = new LinearLayout.LayoutParams(-1, 0, 1f); canvasParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density)); canvasFrame.setLayoutParams(canvasParams);
         Bitmap bgBmp = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888); Canvas bgCanvas = new Canvas(bgBmp); Paint bgPaint = new Paint(); bgPaint.setColor(Color.parseColor("#181818")); bgCanvas.drawRect(0,0,10,10,bgPaint); bgCanvas.drawRect(10,10,20,20,bgPaint); bgPaint.setColor(Color.parseColor("#252526")); bgCanvas.drawRect(10,0,20,10,bgPaint); bgCanvas.drawRect(0,10,10,20,bgPaint);
         BitmapDrawable tileBg = new BitmapDrawable(getContext().getResources(), bgBmp); tileBg.setTileModeXY(android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT); 
         GradientDrawable canvasBorder = new GradientDrawable(); canvasBorder.setStroke((int)(1*density), Color.parseColor("#3F3F46")); canvasFrame.setBackground(new LayerDrawable(new android.graphics.drawable.Drawable[]{tileBg, canvasBorder}));
@@ -887,23 +887,26 @@ public class DesktopSystemView extends Dialog {
 
         LinearLayout bottomToolArea = new LinearLayout(getContext()); bottomToolArea.setOrientation(LinearLayout.VERTICAL);
         
-        HorizontalScrollView groupScroll = new HorizontalScrollView(getContext()); groupScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout groupToolBelt = new LinearLayout(getContext()); groupToolBelt.setOrientation(LinearLayout.HORIZONTAL); groupToolBelt.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(5*density));
-        
         HorizontalScrollView controlsScroll = new HorizontalScrollView(getContext()); 
         controlsScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout controls = new LinearLayout(getContext()); 
         controls.setOrientation(LinearLayout.HORIZONTAL); 
         controls.setGravity(Gravity.CENTER_VERTICAL); 
-        controls.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(15*density));
+        // 压缩控制栏内边距，释放更多屏幕空间
+        controls.setPadding((int)(5*density), (int)(5*density), (int)(5*density), (int)(10*density));
         
         // 【按键等宽布局设置】限制在固定宽度，超出屏幕支持横向滑动
         LinearLayout.LayoutParams uniformBtnParams = new LinearLayout.LayoutParams((int)(115*density), -2);
         uniformBtnParams.setMargins((int)(4*density), 0, (int)(4*density), 0);
+        
+        // 【按键加宽布局设置】专门用于控制播放的三个按键
+        LinearLayout.LayoutParams wideBtnParams = new LinearLayout.LayoutParams((int)(140*density), -2);
+        wideBtnParams.setMargins((int)(4*density), 0, (int)(4*density), 0);
 
         Button btnDefaultAct = createButton("🎨 内置色表", "#4CAF50");
         Button btnAutoAct = createButton("🪄 自动色表", "#9C27B0");
         Button btnManualAct = createButton("🎨 手动色表", "#9C27B0");
+        Button btnGroup = createButton("📁 动作编组", "#1E1E1E"); // 新增：合并后的动作编组按键
         Button btnPrev = createButton("⏪ 上一帧", "#3F3F46"); 
         Button btnPlay = createButton("▶️ 播放", "#0078D7"); 
         Button btnNext = createButton("⏭️ 下一帧", "#3F3F46"); 
@@ -973,21 +976,47 @@ public class DesktopSystemView extends Dialog {
             });
         });
 
-        for (final int g : groupList) {
-            String btnText = (g == -999) ? "📂 所有动作" : "📁 动作组 " + g;
-            Button groupBtn = createButton(btnText, "#2D2D30");
-            LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-2, -2); gp.setMargins(0, 0, (int)(5*density), 0);
-            groupBtn.setOnClickListener(v -> {
-                currentGroupFrames.clear();
-                if (allFrames != null) {
-                    if (g == -999) currentGroupFrames.addAll(allFrames); else for (GoEngineBridge.SffFrame f : allFrames) { if (f.group == g) currentGroupFrames.add(f); }
-                }
-                currentFrameIndex[0] = 0; updateFrameAction.run();
-            });
-            groupToolBelt.addView(groupBtn, gp);
-        }
-        groupScroll.addView(groupToolBelt);
-        bottomToolArea.addView(groupScroll);
+        btnGroup.setOnClickListener(v -> {
+            final Dialog groupDialog = new Dialog(getContext()); 
+            groupDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout gLayout = new LinearLayout(getContext()); 
+            gLayout.setOrientation(LinearLayout.VERTICAL); 
+            gLayout.setBackgroundColor(Color.parseColor("#2D2D30")); 
+            gLayout.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+            
+            TextView title = new TextView(getContext()); 
+            title.setText("选择动作编组"); 
+            applyGlobalFontSettings(title, 1.1f, true); 
+            title.setGravity(Gravity.CENTER); 
+            title.setPadding(0, 0, 0, (int)(15*density));
+            gLayout.addView(title);
+
+            ScrollView gScroll = new ScrollView(getContext());
+            LinearLayout gList = new LinearLayout(getContext());
+            gList.setOrientation(LinearLayout.VERTICAL);
+
+            for (final int g : groupList) {
+                String btnText = (g == -999) ? "📂 所有动作" : "📁 动作组 " + g;
+                Button groupBtn = createButton(btnText, "#1E1E1E");
+                LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-1, -2); 
+                gp.setMargins(0, 0, 0, (int)(5*density));
+                groupBtn.setOnClickListener(gv -> {
+                    currentGroupFrames.clear();
+                    if (allFrames != null) {
+                        if (g == -999) currentGroupFrames.addAll(allFrames); 
+                        else for (GoEngineBridge.SffFrame f : allFrames) { if (f.group == g) currentGroupFrames.add(f); }
+                    }
+                    currentFrameIndex[0] = 0; updateFrameAction.run();
+                    btnGroup.setText(btnText);
+                    groupDialog.dismiss();
+                });
+                gList.addView(groupBtn, gp);
+            }
+            gScroll.addView(gList);
+            gLayout.addView(gScroll, new LinearLayout.LayoutParams((int)(250*density), (int)(300*density))); 
+            groupDialog.setContentView(gLayout); 
+            groupDialog.show();
+        });
 
         btnReplace.setOnClickListener(v -> {
             if (currentGroupFrames.isEmpty()) return;
@@ -1022,31 +1051,83 @@ public class DesktopSystemView extends Dialog {
 
         btnExportNative.setOnClickListener(v -> {
             if(currentGroupFrames.isEmpty()) return; GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
-            new Thread(() -> {
-                File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports"); 
-                if (!outDir.exists()) outDir.mkdirs();
+            
+            final Dialog formatDialog = new Dialog(getContext());
+            formatDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout fLayout = new LinearLayout(getContext());
+            fLayout.setOrientation(LinearLayout.VERTICAL);
+            fLayout.setBackgroundColor(Color.parseColor("#2D2D30"));
+            fLayout.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+            
+            TextView title = new TextView(getContext());
+            title.setText("选择导出格式");
+            applyGlobalFontSettings(title, 1.1f, true);
+            title.setGravity(Gravity.CENTER);
+            title.setPadding(0, 0, 0, (int)(15*density));
+            fLayout.addView(title);
+            
+            Button btnPcx = createButton("💾 导出为 PCX (原生)", "#0078D7");
+            Button btnPng = createButton("💾 导出为 PNG (通用)", "#4CAF50");
+            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams((int)(200*density), -2);
+            bp.setMargins(0, 0, 0, (int)(10*density));
+            
+            View.OnClickListener exportAction = ev -> {
+                boolean wantPng = (ev == btnPng);
+                formatDialog.dismiss();
                 
-                try {
-                    String outPath = Api.exportSffFrameNative(sffPath, f.group, f.item, currentActPath[0], outDir.getAbsolutePath());
-                    uiHandler.post(() -> {
-                        if (outPath != null && !outPath.isEmpty()) {
-                            Toast.makeText(getContext(), "✅ 原生导出成功: " + outPath, Toast.LENGTH_LONG).show();
+                new Thread(() -> {
+                    File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports"); 
+                    if (!outDir.exists()) outDir.mkdirs();
+                    try {
+                        String finalPath = "";
+                        if (wantPng) {
+                            // 💡 核心巧妙点：纯 Java 层实现 PCX 到 PNG 的自动转换！
+                            // 绕开原生导出，直接调用底层解码引擎，将色表与图像合并渲染为无损 PNG 字节流
+                            byte[] pngData = Api.decodeSffFrame(sffPath, f.group, f.item, currentActPath[0]);
+                            if (pngData != null && pngData.length > 0) {
+                                String charName = new File(sffPath).getName().replaceAll("\\.[^.]+$", "");
+                                File outFile = new File(outDir, charName + "_G" + f.group + "_I" + f.item + ".png");
+                                FileOutputStream fos = new FileOutputStream(outFile);
+                                fos.write(pngData);
+                                fos.close();
+                                finalPath = outFile.getAbsolutePath();
+                            }
                         } else {
-                            Toast.makeText(getContext(), "❌ 导出失败：解析异常或写入失败", Toast.LENGTH_LONG).show();
+                            // 玩家选择了 PCX (原生格式)：直接调用你底层的 exportSffFrameNative
+                            // Go 引擎中 SFFv1 依然会完美走 PCX 的原生抽离写入逻辑
+                            finalPath = Api.exportSffFrameNative(sffPath, f.group, f.item, currentActPath[0], outDir.getAbsolutePath());
                         }
-                    });
-                } catch (Exception e) {
-                    uiHandler.post(() -> Toast.makeText(getContext(), "❌ 导出崩溃: " + e.getMessage(), Toast.LENGTH_LONG).show());
-                }
-            }).start();
+                        
+                        final String outResult = finalPath;
+                        uiHandler.post(() -> {
+                            if (outResult != null && !outResult.isEmpty()) {
+                                Toast.makeText(getContext(), "✅ 导出成功: " + outResult, Toast.LENGTH_LONG).show();
+                            } else {
+                                Toast.makeText(getContext(), "❌ 导出失败：解析异常或写入失败", Toast.LENGTH_LONG).show();
+                            }
+                        });
+                    } catch (Exception e) {
+                        uiHandler.post(() -> Toast.makeText(getContext(), "❌ 导出崩溃: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                    }
+                }).start();
+            };
+            
+            btnPcx.setOnClickListener(exportAction);
+            btnPng.setOnClickListener(exportAction);
+            fLayout.addView(btnPcx, bp);
+            fLayout.addView(btnPng, bp);
+            
+            formatDialog.setContentView(fLayout);
+            formatDialog.show();
         });
 
         controls.addView(btnDefaultAct, uniformBtnParams);
         controls.addView(btnAutoAct, uniformBtnParams); 
         controls.addView(btnManualAct, uniformBtnParams); 
-        controls.addView(btnPrev, uniformBtnParams); 
-        controls.addView(btnPlay, uniformBtnParams); 
-        controls.addView(btnNext, uniformBtnParams); 
+        controls.addView(btnGroup, uniformBtnParams); // 加入统一的动作编组控件
+        controls.addView(btnPrev, wideBtnParams);     // 应用加宽布局
+        controls.addView(btnPlay, wideBtnParams);     // 应用加宽布局
+        controls.addView(btnNext, wideBtnParams);     // 应用加宽布局
         controls.addView(btnSpeed, uniformBtnParams); 
         controls.addView(btnExportNative, uniformBtnParams); 
         controls.addView(btnReplace, uniformBtnParams);
