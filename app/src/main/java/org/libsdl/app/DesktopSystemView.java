@@ -925,6 +925,7 @@ public class DesktopSystemView extends Dialog {
         });
 
         final Handler uiHandler = new Handler(Looper.getMainLooper());
+        final Handler playHandler = new Handler();
         Runnable updateFrameAction = new Runnable() {
             @Override public void run() {
                 if (currentGroupFrames.isEmpty()) return;
@@ -1076,7 +1077,7 @@ public class DesktopSystemView extends Dialog {
         if (allFrames != null) currentGroupFrames.addAll(allFrames);
         canvasFrame.post(updateFrameAction);
 
-        Handler playHandler = new Handler();
+        // playHandler 在上方已声明，此处直接使用即可
         Runnable playRunnable = new Runnable() { @Override public void run() { if (isPlaying[0] && !currentGroupFrames.isEmpty()) { currentFrameIndex[0]++; updateFrameAction.run(); playHandler.postDelayed(this, currentDelay[0]); } } };
 
         btnPrev.setOnClickListener(v -> { currentFrameIndex[0]--; updateFrameAction.run(); }); btnNext.setOnClickListener(v -> { currentFrameIndex[0]++; updateFrameAction.run(); });
