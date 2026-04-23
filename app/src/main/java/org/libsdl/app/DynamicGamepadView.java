@@ -179,6 +179,9 @@ import java.util.List;
     public boolean isEditMode = false;
         public boolean isGridSnapMode = false; // 是否开启网格吸附
             public boolean pendingDefaultLayout = false; // 【新增】延迟加载标记
+            public boolean pendingResolutionScale = false; // 【新增】等待动态分辨率拉伸标记
+            private int loadedSavedWidth = 0; // 【新增】存档记录的屏幕宽
+            private int loadedSavedHeight = 0; // 【新增】存档记录的屏幕高
             // 【新增】遮罩图功能相关变量
     public int overlayMode = 0; // 0=关闭, 1=单图, 2=双图
         // ================= 新增：按键风格系统变量 =================
@@ -471,7 +474,38 @@ import java.util.List;
             loadDefaultLayout();
             saveConfig();
             invalidate();
+        } else if (pendingResolutionScale && w > 0 && h > 0) {
+            // 【核心引擎：执行动态分辨率等比拉伸】
+            applyDynamicResolutionScale(w, h);
+            pendingResolutionScale = false;
+            saveConfig();
+            invalidate();
         }
+    }
+
+    // 【新增核心方法：动态分辨率等比拉伸系统】
+    private void applyDynamicResolutionScale(int currentW, int currentH) {
+        if (loadedSavedWidth <= 0 || loadedSavedHeight <= 0) return;
+        if (loadedSavedWidth == currentW && loadedSavedHeight == currentH) return; // 分辨率没变直接跳过
+
+        float scaleX = (float) currentW / loadedSavedWidth;
+        float scaleY = (float) currentH / loadedSavedHeight;
+        float minScale = Math.min(scaleX, scaleY); // 针对半径和按钮间距使用最小缩放比，防止按键变成椭圆
+
+        for (VirtualButton btn : buttons) {
+            btn.cx *= scaleX;
+            btn.cy *= scaleY;
+            btn.radius *= minScale;
+            btn.hitboxRadius *= minScale;
+        }
+
+        joyBaseX *= scaleX; joyBaseY *= scaleY;
+        joyRadius *= minScale; joyHitboxRadius *= minScale;
+        joyKnobX = joyBaseX; joyKnobY = joyBaseY;
+
+        menuX *= scaleX; menuY *= scaleY;
+        
+        Toast.makeText(getContext(), "✅ 已自动为您适配新屏幕的分辨率", Toast.LENGTH_SHORT).show();
     }
 
     // 【新增】将外部图片转存到APP私有目录的通用方法
@@ -2052,7 +2086,7 @@ import java.util.List;
         }
 
         layout.addView(createMenuButton("🕹️ 切换摇杆形态", v -> { joystickMode = (joystickMode + 1) % 5; if (joystickMode == JOYSTICK_MODE_STYLE) refreshJoystickStyle(); saveConfig(); invalidate(); dialog.dismiss(); showMainMenu(); }));
-        layout.addView(createMenuButton("📳 物理震动开关与强度", v -> { showVibrationSettingsDialog(); dialog.dismiss(); }));
+        layout.addView(createMenuButton("⚙️ 全局设置配置区", v -> { showVibrationSettingsDialog(); dialog.dismiss(); }));
         layout.addView(createMenuButton("📂 布局存档与导入导出", v -> { showProfileManager(); dialog.dismiss(); }));
         layout.addView(createMenuButton("🔄 恢复初始默认布局", v -> { loadDefaultLayout(); saveConfig(); invalidate(); dialog.dismiss(); }));
         layout.addView(createMenuButton("🖼️ 屏幕遮罩详细设置", v -> { showOverlaySettingsDialog(); dialog.dismiss(); }));
@@ -2594,6 +2628,9 @@ import java.util.List;
         final boolean[] tempFeedOn = {isGlobalFeedbackEnabled};
         final int[] tempFeedScale = {globalFeedbackScaleInt};
         final int[] tempGlobalAlpha = {joyAlpha}; // 初始值参考摇杆透明度
+        int initialPressedAlpha = 150;
+        if (!buttons.isEmpty()) initialPressedAlpha = buttons.get(0).pressedEffectAlpha;
+        final int[] tempGlobalPressedAlpha = {initialPressedAlpha}; // 获取首个按键的按下透明度作参考
 
         final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
         dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
@@ -2632,6 +2669,28 @@ import java.util.List;
                 }
             }
             public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
+        });
+
+        // 【新增：全局按下特效透明度滑块】
+        final SeekBar pressedAlphaBar = createColorBar(layout, "拖动统一修改所有按键【按下时的特效透明度】", tempGlobalPressedAlpha[0]);
+        pressedAlphaBar.setMax(255);
+        pressedAlphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                tempGlobalPressedAlpha[0] = p;
+                if (fromUser) {
+                    for (VirtualButton b : buttons) {
+                        b.pressedEffectAlpha = p; 
+                        // 为了能看见效果，强行让第一个按键保持按下状态进行实时预览
+                        if (buttons.indexOf(b) == 0) b.isPressed = true;
+                    }
+                    invalidate(); 
+                }
+            }
+            public void onStartTrackingTouch(SeekBar s) {} 
+            public void onStopTrackingTouch(SeekBar s) {
+                for (VirtualButton b : buttons) b.isPressed = false; // 松开滑块时恢复原状
+                invalidate();
+            }
         });
 
         layout.addView(createTitle("")); // 占位空行
@@ -2703,6 +2762,7 @@ import java.util.List;
                 b.useCustomVib = false;
                 b.useCustomFeed = false;
                 b.alpha = tempGlobalAlpha[0]; // 永久写入所有按键
+                b.pressedEffectAlpha = tempGlobalPressedAlpha[0]; // 【新增：永久写入所有按键按下透明度】
             }
             saveConfig(); invalidate(); dialog.dismiss(); 
         });
@@ -3953,6 +4013,11 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             JSONArray styleArr = new JSONArray();
             for(GamepadStyle s : styleList) styleArr.put(s.toJson());
             editor.putString("StyleList_" + currentSlot, styleArr.toString());
+
+            // 【新增：动态分辨率适配 - 记录保存时的屏幕真实宽高】
+            editor.putInt("SavedScreenWidth_" + currentSlot, getWidth());
+            editor.putInt("SavedScreenHeight_" + currentSlot, getHeight());
+
             editor.apply();
         } catch (Exception e) {}
     }
@@ -4158,19 +4223,21 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             }
 
             // 【开局全局纠偏】：无论玩家存的是什么神仙旧布局，开机瞬间强行把错误穿成“圆形衣服”的“方形按键”扒下来！
+            // 【修复】：只纠正外观图片，绝对不碰玩家自定义保存下来的透明度和颜色，解决重启丢失配置 Bug！
             if (joystickMode == JOYSTICK_MODE_STYLE && currentStyleIndex < styleList.size()) {
                 GamepadStyle currentTheme = styleList.get(currentStyleIndex);
                 for (VirtualButton b : buttons) {
                     if (!b.isDirectional) {
-                        b.color = currentTheme.globalBtnColor;
+                        // 移除对 b.color 和 b.pressedEffectAlpha 的强行覆盖，保留玩家自定义数值
                         if (b.shape == SHAPE_CIRCLE) {
                             b.customImageUri = currentTheme.btnNormalUri != null ? currentTheme.btnNormalUri : "";
                         } else {
                             b.customImageUri = (currentTheme.btnSquareUri != null && !currentTheme.btnSquareUri.isEmpty()) ? currentTheme.btnSquareUri : "";
                         }
-                        b.customPressedUri = currentTheme.btnPressedUri != null ? currentTheme.btnPressedUri : "";
-                        b.pressedEffectColor = currentTheme.globalPressedColor;
-                        b.pressedEffectAlpha = currentTheme.globalPressedAlpha;
+                        // 只有当按键的按下特效颜色等于默认 0 时，才补全主题皮肤；如果玩家改过，保留玩家的！
+                        if (b.pressedEffectColor == 0) {
+                             b.customPressedUri = currentTheme.btnPressedUri != null ? currentTheme.btnPressedUri : "";
+                        }
                         b.loadSkinFromUri(getContext());
                     }
                 }
@@ -4180,6 +4247,19 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             if (joystickMode == 2) {
                 RadialGradient baseGrad = new RadialGradient(joyBaseX, joyBaseY, joyRadius, Color.parseColor("#333333"), Color.parseColor("#080808"), Shader.TileMode.CLAMP);
                 paintBtn.setShader(baseGrad);
+            }
+
+            // 【读取旧存档的分辨率记录，触发动态拉伸（旧版本没这数据的不会被拉伸，保障兼容性）】
+            loadedSavedWidth = prefs.getInt("SavedScreenWidth_" + slot, 0);
+            loadedSavedHeight = prefs.getInt("SavedScreenHeight_" + slot, 0);
+            if (loadedSavedWidth > 0 && loadedSavedHeight > 0) {
+                int currentW = getWidth();
+                int currentH = getHeight();
+                if (currentW > 0 && currentH > 0 && (currentW != loadedSavedWidth || currentH != loadedSavedHeight)) {
+                    applyDynamicResolutionScale(currentW, currentH);
+                } else if (currentW == 0 || currentH == 0) {
+                    pendingResolutionScale = true; // 引擎生命周期原因此时拿不到长宽，交接给 onSizeChanged 处理
+                }
             }
             
             invalidate();
