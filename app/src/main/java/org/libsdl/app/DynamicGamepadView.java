@@ -483,29 +483,58 @@ import java.util.List;
         }
     }
 
-    // 【新增核心方法：动态分辨率等比拉伸系统】
+    // 【新增核心方法：动态分辨率智能锚定拉伸系统】
     private void applyDynamicResolutionScale(int currentW, int currentH) {
         if (loadedSavedWidth <= 0 || loadedSavedHeight <= 0) return;
         if (loadedSavedWidth == currentW && loadedSavedHeight == currentH) return; // 分辨率没变直接跳过
 
-        float scaleX = (float) currentW / loadedSavedWidth;
-        float scaleY = (float) currentH / loadedSavedHeight;
-        float minScale = Math.min(scaleX, scaleY); // 针对半径和按钮间距使用最小缩放比，防止按键变成椭圆
+        // 使用最短边比例来缩放按键大小，保证按键依然是正圆，不被拉伸成椭圆
+        float minScale = Math.min((float) currentW / loadedSavedWidth, (float) currentH / loadedSavedHeight);
 
         for (VirtualButton btn : buttons) {
-            btn.cx *= scaleX;
-            btn.cy *= scaleY;
+            // X轴智能锚定：判断它原本在左半屏还是右半屏
+            if (btn.cx < loadedSavedWidth / 2f) {
+                btn.cx = btn.cx * minScale; // 左边按键相对左边距自适应
+            } else {
+                btn.cx = currentW - (loadedSavedWidth - btn.cx) * minScale; // 右边按键相对右边距自适应
+            }
+            
+            // Y轴智能锚定：判断上半屏还是下半屏
+            if (btn.cy < loadedSavedHeight / 2f) {
+                btn.cy = btn.cy * minScale;
+            } else {
+                btn.cy = currentH - (loadedSavedHeight - btn.cy) * minScale;
+            }
+
             btn.radius *= minScale;
             btn.hitboxRadius *= minScale;
         }
 
-        joyBaseX *= scaleX; joyBaseY *= scaleY;
-        joyRadius *= minScale; joyHitboxRadius *= minScale;
+        // 摇杆智能锚定
+        if (joyBaseX < loadedSavedWidth / 2f) joyBaseX *= minScale;
+        else joyBaseX = currentW - (loadedSavedWidth - joyBaseX) * minScale;
+
+        if (joyBaseY < loadedSavedHeight / 2f) joyBaseY *= minScale;
+        else joyBaseY = currentH - (loadedSavedHeight - joyBaseY) * minScale;
+
+        joyRadius *= minScale; 
+        joyHitboxRadius *= minScale;
         joyKnobX = joyBaseX; joyKnobY = joyBaseY;
 
-        menuX *= scaleX; menuY *= scaleY;
+        // 菜单智能锚定
+        if (menuX < loadedSavedWidth / 2f) menuX *= minScale;
+        else menuX = currentW - (loadedSavedWidth - menuX) * minScale;
+
+        if (menuY < loadedSavedHeight / 2f) menuY *= minScale;
+        else menuY = currentH - (loadedSavedHeight - menuY) * minScale;
+
+        menuWidth *= minScale;
+        menuHeight *= minScale;
+
+        loadedSavedWidth = currentW; // 更新记录
+        loadedSavedHeight = currentH;
         
-        Toast.makeText(getContext(), "✅ 已自动为您适配新屏幕的分辨率", Toast.LENGTH_SHORT).show();
+        Toast.makeText(getContext(), "✅ 已智能锚定并适配新屏幕分辨率", Toast.LENGTH_SHORT).show();
     }
 
     // 【新增】将外部图片转存到APP私有目录的通用方法
@@ -2267,6 +2296,14 @@ import java.util.List;
                                 root.put("joySkinBase", joySkinBaseUri);root.put("joySkinKnob", joySkinKnobUri);
                                 root.put("isVibrationOn", isVibrationOn); root.put("vibrationIntensity", vibrationIntensity);
                                 root.put("currentStyleIndex", currentStyleIndex); // 【导出修复：把选中的风格索引写入文件】
+                                // 【新增：将摇杆、菜单锁定状态与动态分辨率基准一并打包进 JSON】
+                                root.put("isJoyLocked", isJoyLocked);
+                                root.put("isMenuLocked", isMenuLocked);
+                                root.put("menuX", menuX); root.put("menuY", menuY);
+                                root.put("menuWidth", menuWidth); root.put("menuHeight", menuHeight);
+                                root.put("menuScale", menuScale); root.put("menuAlpha", menuAlpha);
+                                root.put("savedScreenWidth", loadedSavedWidth > 0 ? loadedSavedWidth : getWidth());
+                                root.put("savedScreenHeight", loadedSavedHeight > 0 ? loadedSavedHeight : getHeight());
                             }
                             
                             if (which == 0 || which == 2) { // 包含风格
@@ -4410,6 +4447,17 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                             root.put("buttons", new JSONArray(DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, "[]")));
                             root.put("joySkinBase", DynamicGamepadView.instance.joySkinBaseUri);
                             root.put("joySkinKnob", DynamicGamepadView.instance.joySkinKnobUri);
+                            // 【新增：底层备份导出同样追加锁定状态与分辨率信息】
+                            root.put("isJoyLocked", DynamicGamepadView.instance.isJoyLocked);
+                            root.put("isMenuLocked", DynamicGamepadView.instance.isMenuLocked);
+                            root.put("menuX", DynamicGamepadView.instance.menuX);
+                            root.put("menuY", DynamicGamepadView.instance.menuY);
+                            root.put("menuWidth", DynamicGamepadView.instance.menuWidth);
+                            root.put("menuHeight", DynamicGamepadView.instance.menuHeight);
+                            root.put("menuScale", DynamicGamepadView.instance.menuScale);
+                            root.put("menuAlpha", DynamicGamepadView.instance.menuAlpha);
+                            root.put("savedScreenWidth", DynamicGamepadView.instance.loadedSavedWidth > 0 ? DynamicGamepadView.instance.loadedSavedWidth : DynamicGamepadView.instance.getWidth());
+                            root.put("savedScreenHeight", DynamicGamepadView.instance.loadedSavedHeight > 0 ? DynamicGamepadView.instance.loadedSavedHeight : DynamicGamepadView.instance.getHeight());
                             root.put("overlayMode", DynamicGamepadView.instance.overlayMode);
                                                         root.put("overlayUri1", DynamicGamepadView.instance.overlayUri1);
                             root.put("overlayX1", DynamicGamepadView.instance.overlayX1);
@@ -4523,6 +4571,22 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                                         editor.putInt("VibIntensity_" + v.currentSlot, root.optInt("vibrationIntensity", v.vibrationIntensity));
                                         editor.putInt("CurrentStyleIndex_" + v.currentSlot, root.optInt("currentStyleIndex", v.currentStyleIndex)); // 【导入修复：覆盖读取风格索引】
                                         editor.putString("JoySkinBase_" + v.currentSlot, root.optString("joySkinBase", v.joySkinBaseUri != null ? v.joySkinBaseUri : ""));     
+                                        
+                                        // 【新增：导入文件时，恢复锁定状态与菜单设置】
+                                        editor.putBoolean("JoyLocked_" + v.currentSlot, root.optBoolean("isJoyLocked", v.isJoyLocked));
+                                        editor.putBoolean("MenuLocked_" + v.currentSlot, root.optBoolean("isMenuLocked", v.isMenuLocked));
+                                        editor.putFloat("MenuX", (float) root.optDouble("menuX", v.menuX));
+                                        editor.putFloat("MenuY", (float) root.optDouble("menuY", v.menuY));
+                                        editor.putFloat("MenuWidth_" + v.currentSlot, (float) root.optDouble("menuWidth", v.menuWidth));
+                                        editor.putFloat("MenuHeight_" + v.currentSlot, (float) root.optDouble("menuHeight", v.menuHeight));
+                                        editor.putFloat("MenuScale", (float) root.optDouble("menuScale", v.menuScale));
+                                        editor.putInt("MenuAlpha", root.optInt("menuAlpha", v.menuAlpha));
+                                        
+                                        // 【新增：导入时继承文件里的屏幕分辨率，触发下次启动时的无损自适应伸缩】
+                                        if (root.has("savedScreenWidth") && root.has("savedScreenHeight")) {
+                                            editor.putInt("SavedScreenWidth_" + v.currentSlot, root.optInt("savedScreenWidth"));
+                                            editor.putInt("SavedScreenHeight_" + v.currentSlot, root.optInt("savedScreenHeight"));
+                                        }
                                     }
                                                                        
                                     
