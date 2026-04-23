@@ -65,7 +65,7 @@ import java.util.List;
     public long movieStart1 = 0;
     public long movieStart2 = 0;
     // 👇 新增：菜单按钮的高阶属性 👇
-    public boolean isMenuLocked = false; // 是否锁定拖拽
+    public boolean isDynamicScaleEnabled = false; // 是否开启跨设备动态键位适配
     public int menuColor = Color.parseColor("#333333");
     public int menuTextColor = Color.WHITE;
     public int menuTextSizeFactor = 100;
@@ -488,58 +488,59 @@ import java.util.List;
         }
     }
 
-    // 【终极方案：跨设备全局等比自适应 + 本机绝对锁定不动】彻底杜绝按键重叠！
+    // 【终极方案：加入开关控制的高度等比动态适配】
     private void applyDynamicResolutionScale(int currentW, int currentH) {
         if (loadedSavedWidth <= 0 || loadedSavedHeight <= 0) return;
         if (loadedSavedWidth == currentW && loadedSavedHeight == currentH) return;
 
-        // 计算 X 和 Y 轴的独立缩放比例
-        float scaleX = (float) currentW / loadedSavedWidth;
-        float scaleY = (float) currentH / loadedSavedHeight;
-        float baseScale = Math.min(scaleX, scaleY);
-
-        // 大于 5% 视为换了手机/跨设备导入存档，触发全局等比缩放
-        // 小于等于 5% 视为本机隐藏/呼出导航栏等微调，直接放行，坐标和大小绝对不动！
-        boolean isCrossDevice = Math.abs(baseScale - 1.0f) > 0.05f;
-
-        if (isCrossDevice) {
-            for (VirtualButton btn : buttons) {
-                btn.cx *= scaleX;
-                btn.cy *= scaleY;
-                btn.radius *= baseScale;
-                btn.hitboxRadius *= baseScale;
-            }
-
-            joyBaseX *= scaleX;
-            joyBaseY *= scaleY;
-            joyRadius *= baseScale;
-            joyHitboxRadius *= baseScale;
-            joyKnobX = joyBaseX; 
-            joyKnobY = joyBaseY;
-
-            menuX *= scaleX;
-            menuY *= scaleY;
-            menuScale *= baseScale;
-
-            // 跨设备缩放后强制重新渲染皮肤
-            try {
-                if(joySkinBaseUri != null && !joySkinBaseUri.isEmpty()) {
-                    java.io.InputStream is1 = getContext().getContentResolver().openInputStream(Uri.parse(joySkinBaseUri));
-                    if (joySkinBaseBitmap != null && !joySkinBaseBitmap.isRecycled()) joySkinBaseBitmap.recycle();
-                    joySkinBaseBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(is1), (int)(joyRadius*2), (int)(joyRadius*2), true);
-                    if(is1!=null) is1.close();
-                }
-                if(joySkinKnobUri != null && !joySkinKnobUri.isEmpty()) {
-                    java.io.InputStream is2 = getContext().getContentResolver().openInputStream(Uri.parse(joySkinKnobUri));
-                    if (joySkinKnobBitmap != null && !joySkinKnobBitmap.isRecycled()) joySkinKnobBitmap.recycle();
-                    joySkinKnobBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(is2), (int)(joyRadius*2), (int)(joyRadius*2), true);
-                    if(is2!=null) is2.close();
-                }
-                for (VirtualButton btn : buttons) {
-                    btn.loadSkinFromUri(getContext());
-                }
-            } catch (Exception e) {}
+        // 如果关闭了动态适配，仅执行最基础的坐标边界检查，绝对不动大小和位置 (原版逻辑)
+        if (!isDynamicScaleEnabled) {
+            loadedSavedWidth = currentW;
+            loadedSavedHeight = currentH;
+            return; 
         }
+
+        // 【动态适配逻辑】：以高度比例作为主缩放系数，解决“本地太小”的问题
+        float scaleFactor = (float) currentH / loadedSavedHeight;
+        // X轴比例用于坐标映射，确保位置不偏离
+        float scaleX = (float) currentW / loadedSavedWidth;
+
+        for (VirtualButton btn : buttons) {
+            btn.radius *= scaleFactor;
+            btn.hitboxRadius *= scaleFactor;
+            btn.cx *= scaleX;
+            btn.cy *= scaleFactor;
+        }
+
+        joyRadius *= scaleFactor;
+        joyHitboxRadius *= scaleFactor;
+        joyBaseX *= scaleX;
+        joyBaseY *= scaleFactor;
+        joyKnobX = joyBaseX; 
+        joyKnobY = joyBaseY;
+
+        menuX *= scaleX;
+        menuY *= scaleFactor;
+        menuScale *= scaleFactor;
+
+        // 缩放后强制重新渲染皮肤
+        try {
+            if(joySkinBaseUri != null && !joySkinBaseUri.isEmpty()) {
+                java.io.InputStream is1 = getContext().getContentResolver().openInputStream(Uri.parse(joySkinBaseUri));
+                if (joySkinBaseBitmap != null && !joySkinBaseBitmap.isRecycled()) joySkinBaseBitmap.recycle();
+                joySkinBaseBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(is1), (int)(joyRadius*2), (int)(joyRadius*2), true);
+                if(is1!=null) is1.close();
+            }
+            if(joySkinKnobUri != null && !joySkinKnobUri.isEmpty()) {
+                java.io.InputStream is2 = getContext().getContentResolver().openInputStream(Uri.parse(joySkinKnobUri));
+                if (joySkinKnobBitmap != null && !joySkinKnobBitmap.isRecycled()) joySkinKnobBitmap.recycle();
+                joySkinKnobBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(is2), (int)(joyRadius*2), (int)(joyRadius*2), true);
+                if(is2!=null) is2.close();
+            }
+            for (VirtualButton btn : buttons) {
+                btn.loadSkinFromUri(getContext());
+            }
+        } catch (Exception e) {}
         
         loadedSavedWidth = currentW; 
         loadedSavedHeight = currentH;
@@ -1845,6 +1846,19 @@ import java.util.List;
         layout.addView(createTitle("0. 菜单自定义文字 (留空则不显示文字):"));
         final EditText nameInput = createEditText("例如: ⚙ 高级设置", menuButtonName);
         layout.addView(nameInput);
+
+        layout.addView(createTitle("⚠️ 跨设备布局适配 (建议开启):"));
+        final Button dynamicBtn = new Button(getContext());
+        dynamicBtn.setText(isDynamicScaleEnabled ? "✅ 动态缩放适配：已开启" : "⚪ 动态缩放适配：已关闭 (原版)");
+        dynamicBtn.setTextColor(Color.WHITE);
+        dynamicBtn.setBackgroundColor(isDynamicScaleEnabled ? Color.parseColor("#4CAF50") : Color.parseColor("#555555"));
+        dynamicBtn.setOnClickListener(v -> {
+            isDynamicScaleEnabled = !isDynamicScaleEnabled;
+            dynamicBtn.setText(isDynamicScaleEnabled ? "✅ 动态缩放适配：已开启" : "⚪ 动态缩放适配：已关闭 (原版)");
+            dynamicBtn.setBackgroundColor(isDynamicScaleEnabled ? Color.parseColor("#4CAF50") : Color.parseColor("#555555"));
+            saveConfig();
+        });
+        layout.addView(dynamicBtn);
 
         layout.addView(createTitle("1. 菜单位置锁定:"));
         final Button lockBtn = new Button(getContext());
@@ -4051,6 +4065,8 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             editor.putString("MenuButtonName_" + currentSlot, menuButtonName);
             editor.putBoolean("AlwaysAskFolder", alwaysAskFolder); // 全局保存
             editor.putBoolean("IntegrationMode", isIntegrationModeEnabled); // 全局保存：整合包兼容模式
+            editor.putBoolean("DynamicScaleEnabled_" + currentSlot, isDynamicScaleEnabled);
+
             
             // 【新增：保存文件夹预设列表】
             JSONArray folderArr = new JSONArray();
@@ -4223,6 +4239,8 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             menuButtonName = prefs.getString("MenuButtonName_" + slot, "⚙ 高级设置");
             alwaysAskFolder = prefs.getBoolean("AlwaysAskFolder", true);
             isIntegrationModeEnabled = prefs.getBoolean("IntegrationMode", false); // 读取整合包兼容模式
+            isDynamicScaleEnabled = prefs.getBoolean("DynamicScaleEnabled_" + slot, false);
+
             
             // 【新增：读取文件夹预设列表】
             String folderJson = prefs.getString("FolderPresets", "[]");

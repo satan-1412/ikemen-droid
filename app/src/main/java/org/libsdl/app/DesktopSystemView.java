@@ -722,8 +722,8 @@ public class DesktopSystemView extends Dialog {
                                     else Toast.makeText(getContext(), "❌ 请选择 .gif 动画文件", Toast.LENGTH_SHORT).show();
                                 }
                                 else if (targetType == 7) { 
-                                    if (absPath.toLowerCase().endsWith(".png") || absPath.toLowerCase().endsWith(".jpg") || absPath.toLowerCase().endsWith(".jpeg") || absPath.toLowerCase().endsWith(".gif")) { if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); }
-                                    else Toast.makeText(getContext(), "❌ 必须选择图像文件用于替换", Toast.LENGTH_SHORT).show();
+                                    if (absPath.toLowerCase().endsWith(".png") || absPath.toLowerCase().endsWith(".jpg") || absPath.toLowerCase().endsWith(".jpeg") || absPath.toLowerCase().endsWith(".gif") || absPath.toLowerCase().endsWith(".pcx")) { if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); }
+                                    else Toast.makeText(getContext(), "❌ 请选择图像文件用于替换 (支持 PNG/JPG/GIF/PCX)", Toast.LENGTH_SHORT).show();
                                 }
                                 else if (targetType == 8) { 
                                     if (absPath.toLowerCase().endsWith(".wav") || absPath.toLowerCase().endsWith(".ogg") || absPath.toLowerCase().endsWith(".mp3") || absPath.toLowerCase().endsWith(".aac")) { if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); }
@@ -1051,28 +1051,52 @@ public class DesktopSystemView extends Dialog {
 
         btnReplace.setOnClickListener(v -> {
             if (currentGroupFrames.isEmpty()) return;
-            
-            // 🛑 核心修复：强制切断所有播放与读取循环，释放文件读锁 (Read Lock)
+            // 停止播放，释放锁
             isPlaying[0] = false;
             playHandler.removeCallbacksAndMessages(null);
-            btnPlay.setText("▶️ 播放");
-            btnPlay.setBackgroundColor(Color.parseColor("#0078D7"));
-
+            
             final GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
             showWin10FilePicker("选择替换用的图像文件", 7, null, null, selectedFile -> {
                 new Thread(() -> {
-                    boolean success = Api.replaceSffFrame(sffPath, f.group, f.item, selectedFile.getAbsolutePath());
-                    uiHandler.post(() -> {
-                        if (success) {
-                            Toast.makeText(getContext(), "✅ " + f.group + "-" + f.item + " 帧已成功替换！", Toast.LENGTH_SHORT).show();
-                            updateFrameAction.run(); 
-                        } else {
-                            Toast.makeText(getContext(), "❌ 替换失败：文件可能正被其他程序独占读取", Toast.LENGTH_LONG).show();
-                        }
-                    });
+                    try {
+                        // 1. 创建私有缓存副本
+                        File cacheSff = new File(getContext().getCacheDir(), "work_edit.sff");
+                        
+                        // 动态获取图片后缀名（保留 .pcx 特征让 Go 引擎识别）
+                        String fileName = selectedFile.getName();
+                        String ext = "";
+                        int dotIndex = fileName.lastIndexOf('.');
+                        if (dotIndex > 0) ext = fileName.substring(dotIndex);
+                        File cacheImg = new File(getContext().getCacheDir(), "work_img" + ext);
+                        
+                        // 2. 拷贝进去 (Java层拷贝不受锁定限制)
+                        copyFileToSandbox(new File(sffPath), cacheSff);
+                        copyFileToSandbox(selectedFile, cacheImg);
+
+                        // 3. 让Go修改副本
+                        boolean success = Api.replaceSffFrame(cacheSff.getAbsolutePath(), f.group, f.item, cacheImg.getAbsolutePath());
+                        
+                        uiHandler.post(() -> {
+                            if (success) {
+                                try {
+                                    // 4. 修改成功，写回原文件
+                                    copyFileToSandbox(cacheSff, new File(sffPath));
+                                    Toast.makeText(getContext(), "✅ 替换成功！", Toast.LENGTH_SHORT).show();
+                                    updateFrameAction.run();
+                                } catch (Exception e) {
+                                    Toast.makeText(getContext(), "❌ 回写失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                }
+                            } else {
+                                Toast.makeText(getContext(), "❌ 替换失败：SFFv1 仅接受 PCX，SFFv2 建议使用 PNG", Toast.LENGTH_LONG).show();
+                            }
+                        });
+                    } catch (Exception e) {
+                        uiHandler.post(() -> Toast.makeText(getContext(), "⚠️ 操作异常", Toast.LENGTH_SHORT).show());
+                    }
                 }).start();
             });
         });
+
 
         if (allFrames != null) currentGroupFrames.addAll(allFrames);
         canvasFrame.post(updateFrameAction);
@@ -1281,7 +1305,6 @@ public class DesktopSystemView extends Dialog {
                     
                     Button btnReplace = createButton("🔄 替换", "#4CAF50");
                     btnReplace.setOnClickListener(v -> {
-                        
                         // 🛑 核心修复：强制释放媒体引擎的底层占用，防止 FUSE 系统死锁
                         if (currentSndPlayer != null) { 
                             currentSndPlayer.release(); 
@@ -1290,11 +1313,31 @@ public class DesktopSystemView extends Dialog {
                         
                         showWin10FilePicker("选择替换用的音频文件", 8, null, null, selectedFile -> {
                             new Thread(() -> {
-                                boolean success = Api.replaceSndAudio(sndPath, n.group, n.item, selectedFile.getAbsolutePath());
-                                new Handler(Looper.getMainLooper()).post(() -> {
-                                    if (success) { Toast.makeText(getContext(), "✅ " + n.group + "-" + n.item + " 音频已成功替换！", Toast.LENGTH_SHORT).show(); } 
-                                    else { Toast.makeText(getContext(), "❌ 音频读写冲突，替换失败", Toast.LENGTH_SHORT).show(); }
-                                });
+                                try {
+                                    // 放入沙盒躲避系统锁定
+                                    File cacheSnd = new File(getContext().getCacheDir(), "temp_edit.snd");
+                                    copyFileToSandbox(new File(sndPath), cacheSnd);
+                                    
+                                    File cacheWav = new File(getContext().getCacheDir(), "temp_audio.wav");
+                                    copyFileToSandbox(selectedFile, cacheWav);
+
+                                    boolean success = Api.replaceSndAudio(cacheSnd.getAbsolutePath(), n.group, n.item, cacheWav.getAbsolutePath());
+                                    
+                                    new Handler(Looper.getMainLooper()).post(() -> {
+                                        if (success) { 
+                                            try {
+                                                copyFileToSandbox(cacheSnd, new File(sndPath));
+                                                Toast.makeText(getContext(), "✅ " + n.group + "-" + n.item + " 音频已成功替换！", Toast.LENGTH_SHORT).show();
+                                            } catch (Exception e) {
+                                                Toast.makeText(getContext(), "❌ 回写失败，存储权限被拦截", Toast.LENGTH_SHORT).show();
+                                            }
+                                        } else { 
+                                            Toast.makeText(getContext(), "❌ 底层引擎替换失败，请确保格式正确", Toast.LENGTH_SHORT).show(); 
+                                        }
+                                    });
+                                } catch (Exception e) {
+                                    new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(getContext(), "❌ 文件拷贝异常：" + e.getMessage(), Toast.LENGTH_SHORT).show());
+                                }
                             }).start();
                         });
                     });
@@ -1579,6 +1622,13 @@ public class DesktopSystemView extends Dialog {
                     SndNode n = new SndNode(); n.group = obj.getInt("group"); n.item = obj.getInt("item"); list.add(n);
                 }
             } catch (Exception e) {} return list;
+        }
+    }
+    
+        private void copyFileToSandbox(File src, File dst) throws Exception {
+        try (InputStream in = new FileInputStream(src); FileOutputStream out = new FileOutputStream(dst)) {
+            byte[] buf = new byte[8192]; int len;
+            while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
         }
     }
 }
