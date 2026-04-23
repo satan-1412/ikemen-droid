@@ -469,72 +469,62 @@ import java.util.List;
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        // 当 View 真正获取到游戏引擎赋予的逻辑分辨率时，执行延迟的排版
         if (pendingDefaultLayout && w > 0 && h > 0) {
             loadDefaultLayout();
             saveConfig();
             invalidate();
         } else if (pendingResolutionScale && w > 0 && h > 0) {
-            // 【核心引擎：执行动态分辨率等比拉伸】
             applyDynamicResolutionScale(w, h);
             pendingResolutionScale = false;
             saveConfig();
             invalidate();
+        } else if (w > 0 && h > 0 && loadedSavedWidth > 0 && loadedSavedHeight > 0) {
+            // 【终极修复】防止全屏隐藏导航栏引起的微小像素波动被漏判，只要发生变动立刻平移适应
+            if (w != loadedSavedWidth || h != loadedSavedHeight) {
+                applyDynamicResolutionScale(w, h);
+                saveConfig();
+                invalidate();
+            }
         }
     }
 
-    // 【新增核心方法：动态分辨率智能锚定拉伸系统】
+    // 【全新重构：无损平移自适应系统】只改变 X/Y 坐标使其贴边，绝对不压缩/放大按键原本的大小！
     private void applyDynamicResolutionScale(int currentW, int currentH) {
         if (loadedSavedWidth <= 0 || loadedSavedHeight <= 0) return;
-        if (loadedSavedWidth == currentW && loadedSavedHeight == currentH) return; // 分辨率没变直接跳过
+        if (loadedSavedWidth == currentW && loadedSavedHeight == currentH) return; 
 
-        // 使用最短边比例来缩放按键大小，保证按键依然是正圆，不被拉伸成椭圆
-        float minScale = Math.min((float) currentW / loadedSavedWidth, (float) currentH / loadedSavedHeight);
+        int deltaW = currentW - loadedSavedWidth;
+        int deltaH = currentH - loadedSavedHeight;
 
         for (VirtualButton btn : buttons) {
-            // X轴智能锚定：判断它原本在左半屏还是右半屏
-            if (btn.cx < loadedSavedWidth / 2f) {
-                btn.cx = btn.cx * minScale; // 左边按键相对左边距自适应
-            } else {
-                btn.cx = currentW - (loadedSavedWidth - btn.cx) * minScale; // 右边按键相对右边距自适应
-            }
-            
-            // Y轴智能锚定：判断上半屏还是下半屏
-            if (btn.cy < loadedSavedHeight / 2f) {
-                btn.cy = btn.cy * minScale;
-            } else {
-                btn.cy = currentH - (loadedSavedHeight - btn.cy) * minScale;
-            }
+            // X轴平移锚定：判断它占屏幕的比例，靠右的跟着右边缘走，居中的走一半
+            float ratioX = btn.cx / (float)loadedSavedWidth;
+            if (ratioX > 0.6f) btn.cx += deltaW; 
+            else if (ratioX > 0.4f) btn.cx += deltaW / 2f; 
 
-            btn.radius *= minScale;
-            btn.hitboxRadius *= minScale;
+            // Y轴平移锚定：靠下的跟着底部边缘走
+            float ratioY = btn.cy / (float)loadedSavedHeight;
+            if (ratioY > 0.6f) btn.cy += deltaH; 
+            else if (ratioY > 0.4f) btn.cy += deltaH / 2f; 
+            
+            // 🛑 核心修复：彻底删除所有修改 btn.radius 的代码！保证大小原汁原味！
         }
 
-        // 摇杆智能锚定
-        if (joyBaseX < loadedSavedWidth / 2f) joyBaseX *= minScale;
-        else joyBaseX = currentW - (loadedSavedWidth - joyBaseX) * minScale;
-
-        if (joyBaseY < loadedSavedHeight / 2f) joyBaseY *= minScale;
-        else joyBaseY = currentH - (loadedSavedHeight - joyBaseY) * minScale;
-
-        joyRadius *= minScale; 
-        joyHitboxRadius *= minScale;
+        // 摇杆平移锚定
+        float joyRatioX = joyBaseX / (float)loadedSavedWidth;
+        if (joyRatioX > 0.6f) joyBaseX += deltaW; else if (joyRatioX > 0.4f) joyBaseX += deltaW / 2f;
+        float joyRatioY = joyBaseY / (float)loadedSavedHeight;
+        if (joyRatioY > 0.6f) joyBaseY += deltaH; else if (joyRatioY > 0.4f) joyBaseY += deltaH / 2f;
         joyKnobX = joyBaseX; joyKnobY = joyBaseY;
 
-        // 菜单智能锚定
-        if (menuX < loadedSavedWidth / 2f) menuX *= minScale;
-        else menuX = currentW - (loadedSavedWidth - menuX) * minScale;
+        // 菜单平移锚定
+        float menuRatioX = menuX / (float)loadedSavedWidth;
+        if (menuRatioX > 0.6f) menuX += deltaW; else if (menuRatioX > 0.4f) menuX += deltaW / 2f;
+        float menuRatioY = menuY / (float)loadedSavedHeight;
+        if (menuRatioY > 0.6f) menuY += deltaH; else if (menuRatioY > 0.4f) menuY += deltaH / 2f;
 
-        if (menuY < loadedSavedHeight / 2f) menuY *= minScale;
-        else menuY = currentH - (loadedSavedHeight - menuY) * minScale;
-
-        menuWidth *= minScale;
-        menuHeight *= minScale;
-
-        loadedSavedWidth = currentW; // 更新记录
+        loadedSavedWidth = currentW; 
         loadedSavedHeight = currentH;
-        
-        Toast.makeText(getContext(), "✅ 已智能锚定并适配新屏幕分辨率", Toast.LENGTH_SHORT).show();
     }
 
     // 【新增】将外部图片转存到APP私有目录的通用方法
@@ -3702,6 +3692,7 @@ import java.util.List;
         final boolean origUseFeed = btn.useCustomFeed;
         final int origFeedScale = btn.customFeedScale;
         final int origShape = btn.shape;
+        final boolean origLocked = btn.isLocked; // 【修复备份：备份此按键的初始锁定状态】
 
         // 2. 将普通的“点击保存”标记起来，防止它也触发警告
         final boolean[] isNormalSave = {false};
@@ -3754,6 +3745,7 @@ import java.util.List;
                         btn.isTurbo = origTurbo; btn.turboInterval = origTurboInterval;
                         btn.textSizeFactor = origSizeFactor; btn.useCustomVib = origUseVib; btn.customVib = origVib;
                         btn.useCustomFeed = origUseFeed; btn.customFeedScale = origFeedScale; btn.shape = origShape;
+                        btn.isLocked = origLocked; // 【灾难恢复时精准还原锁定状态】
                         btn.loadSkinFromUri(getContext());
                         invalidate(); // 画布还原
                     }).show();
