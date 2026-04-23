@@ -488,88 +488,42 @@ import java.util.List;
         }
     }
 
-    // 【终极重构：智能混合自适应系统】本地微调无损平移，跨设备导入等比完美缩放！
+    // 【终极方案：跨设备全局等比自适应 + 本机绝对锁定不动】彻底杜绝按键重叠！
     private void applyDynamicResolutionScale(int currentW, int currentH) {
         if (loadedSavedWidth <= 0 || loadedSavedHeight <= 0) return;
         if (loadedSavedWidth == currentW && loadedSavedHeight == currentH) return;
 
-        // 计算屏幕缩放比例（以短边为主基准，通常是屏幕高度，防止变形）
-        float oldMin = Math.min(loadedSavedWidth, loadedSavedHeight);
-        float newMin = Math.min(currentW, currentH);
-        float scaleFactor = newMin / oldMin;
+        // 计算 X 和 Y 轴的独立缩放比例
+        float scaleX = (float) currentW / loadedSavedWidth;
+        float scaleY = (float) currentH / loadedSavedHeight;
+        float baseScale = Math.min(scaleX, scaleY);
 
-        // 【智能判定】：如果长宽变化在 5% 以内，认为是本机的状态栏/导航栏隐藏，触发无损平移。
-        // 如果变化超过 5%，认为是读取了其他设备的存档，触发完美等比缩放引擎！
-        boolean isCrossDevice = Math.abs(scaleFactor - 1.0f) > 0.05f;
+        // 核心判定：缩放变化是否大于 5%？
+        // 大于 5% 视为换了手机/跨设备导入存档，触发像图片一样的全局等比缩放。
+        // 小于等于 5% 视为本机隐藏/呼出导航栏等微调，直接放行，【坐标和大小绝对不动】！
+        boolean isCrossDevice = Math.abs(baseScale - 1.0f) > 0.05f;
 
-        for (VirtualButton btn : buttons) {
-            if (isCrossDevice) {
-                // [跨设备模式] 1. 按键大小完美等比缩放
-                btn.radius *= scaleFactor;
-                btn.hitboxRadius *= scaleFactor;
-
-                // [跨设备模式] 2. X轴智能锚点计算
-                float ratioX = btn.cx / (float)loadedSavedWidth;
-                if (ratioX > 0.6f) { 
-                    // 靠右：保持右边距比例
-                    float distFromRight = loadedSavedWidth - btn.cx;
-                    btn.cx = currentW - (distFromRight * scaleFactor);
-                } else if (ratioX < 0.4f) { 
-                    // 靠左：保持左边距比例
-                    btn.cx = btn.cx * scaleFactor;
-                } else { 
-                    // 居中：相对中心点缩放
-                    btn.cx = (currentW / 2f) + ((btn.cx - loadedSavedWidth / 2f) * scaleFactor);
-                }
-
-                // [跨设备模式] 3. Y轴智能锚点计算
-                float ratioY = btn.cy / (float)loadedSavedHeight;
-                if (ratioY > 0.6f) { // 靠下
-                    float distFromBottom = loadedSavedHeight - btn.cy;
-                    btn.cy = currentH - (distFromBottom * scaleFactor);
-                } else if (ratioY < 0.4f) { // 靠上
-                    btn.cy = btn.cy * scaleFactor;
-                } else { // 居中
-                    btn.cy = (currentH / 2f) + ((btn.cy - loadedSavedHeight / 2f) * scaleFactor);
-                }
-            } else {
-                // [本机微调模式] 纯平移，绝对不碰 radius，保持本地画质与手感巅峰
-                int deltaW = currentW - loadedSavedWidth;
-                int deltaH = currentH - loadedSavedHeight;
-                float ratioX = btn.cx / (float)loadedSavedWidth;
-                if (ratioX > 0.6f) btn.cx += deltaW; else if (ratioX > 0.4f) btn.cx += deltaW / 2f;
-                float ratioY = btn.cy / (float)loadedSavedHeight;
-                if (ratioY > 0.6f) btn.cy += deltaH; else if (ratioY > 0.4f) btn.cy += deltaH / 2f;
-            }
-        }
-
-        // 摇杆与菜单应用的同理逻辑
         if (isCrossDevice) {
-            joyRadius *= scaleFactor;
-            joyHitboxRadius *= scaleFactor;
+            for (VirtualButton btn : buttons) {
+                // [跨设备模式] 坐标和大小完美等比例拉伸映射，绝不重叠打架
+                btn.cx *= scaleX;
+                btn.cy *= scaleY;
+                btn.radius *= baseScale;
+                btn.hitboxRadius *= baseScale;
+            }
 
-            float joyRatioX = joyBaseX / (float)loadedSavedWidth;
-            if (joyRatioX > 0.6f) joyBaseX = currentW - ((loadedSavedWidth - joyBaseX) * scaleFactor);
-            else if (joyRatioX < 0.4f) joyBaseX = joyBaseX * scaleFactor;
-            else joyBaseX = (currentW / 2f) + ((joyBaseX - loadedSavedWidth / 2f) * scaleFactor);
+            joyBaseX *= scaleX;
+            joyBaseY *= scaleY;
+            joyRadius *= baseScale;
+            joyHitboxRadius *= baseScale;
+            joyKnobX = joyBaseX; 
+            joyKnobY = joyBaseY;
 
-            float joyRatioY = joyBaseY / (float)loadedSavedHeight;
-            if (joyRatioY > 0.6f) joyBaseY = currentH - ((loadedSavedHeight - joyBaseY) * scaleFactor);
-            else if (joyRatioY < 0.4f) joyBaseY = joyBaseY * scaleFactor;
-            else joyBaseY = (currentH / 2f) + ((joyBaseY - loadedSavedHeight / 2f) * scaleFactor);
-            joyKnobX = joyBaseX; joyKnobY = joyBaseY;
+            menuX *= scaleX;
+            menuY *= scaleY;
+            menuScale *= baseScale;
 
-            float menuRatioX = menuX / (float)loadedSavedWidth;
-            if (menuRatioX > 0.6f) menuX = currentW - ((loadedSavedWidth - menuX) * scaleFactor);
-            else if (menuRatioX < 0.4f) menuX = menuX * scaleFactor;
-            else menuX = (currentW / 2f) + ((menuX - loadedSavedWidth / 2f) * scaleFactor);
-
-            float menuRatioY = menuY / (float)loadedSavedHeight;
-            if (menuRatioY > 0.6f) menuY = currentH - ((loadedSavedHeight - menuY) * scaleFactor);
-            else if (menuRatioY < 0.4f) menuY = menuY * scaleFactor;
-            else menuY = (currentH / 2f) + ((menuY - loadedSavedHeight / 2f) * scaleFactor);
-
-            // 【重点修护】：跨设备尺寸改变后，必须让系统重新拉伸贴图，否则会显示错位！
+            // 跨设备缩放后强制重新渲染皮肤，防止贴图比例错乱
             try {
                 if(joySkinBaseUri != null && !joySkinBaseUri.isEmpty()) {
                     InputStream is1 = getContext().getContentResolver().openInputStream(Uri.parse(joySkinBaseUri));
@@ -581,6 +535,20 @@ import java.util.List;
                     InputStream is2 = getContext().getContentResolver().openInputStream(Uri.parse(joySkinKnobUri));
                     if (joySkinKnobBitmap != null && !joySkinKnobBitmap.isRecycled()) joySkinKnobBitmap.recycle();
                     joySkinKnobBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(is2), (int)(joyRadius*2), (int)(joyRadius*2), true);
+                    if(is2!=null) is2.close();
+                }
+                for (VirtualButton btn : buttons) {
+                    btn.loadSkinFromUri(getContext());
+                }
+            } catch (Exception e) {}
+        }
+        
+        // 如果不是跨设备 (isCrossDevice 为 false)，什么属性都不改！【本地微调时按键绝对纹丝不动】
+
+        loadedSavedWidth = currentW; 
+        loadedSavedHeight = currentH;
+    }
+                   joySkinKnobBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(is2), (int)(joyRadius*2), (int)(joyRadius*2), true);
                     if(is2!=null) is2.close();
                 }
                 for (VirtualButton btn : buttons) {

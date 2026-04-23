@@ -1050,16 +1050,23 @@ public class DesktopSystemView extends Dialog {
 
         btnReplace.setOnClickListener(v -> {
             if (currentGroupFrames.isEmpty()) return;
+            
+            // 🛑 核心修复：强制切断所有播放与读取循环，释放文件读锁 (Read Lock)
+            isPlaying[0] = false;
+            playHandler.removeCallbacksAndMessages(null);
+            btnPlay.setText("▶️ 播放");
+            btnPlay.setBackgroundColor(Color.parseColor("#0078D7"));
+
             final GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
             showWin10FilePicker("选择替换用的图像文件", 7, null, null, selectedFile -> {
                 new Thread(() -> {
                     boolean success = Api.replaceSffFrame(sffPath, f.group, f.item, selectedFile.getAbsolutePath());
                     uiHandler.post(() -> {
                         if (success) {
-                            Toast.makeText(getContext(), "✅ " + f.group + "-" + f.item + " 帧已成功替换为新图像！", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(getContext(), "✅ " + f.group + "-" + f.item + " 帧已成功替换！", Toast.LENGTH_SHORT).show();
                             updateFrameAction.run(); 
                         } else {
-                            Toast.makeText(getContext(), "❌ 替换失败：请检查文件格式或引擎底层实现", Toast.LENGTH_LONG).show();
+                            Toast.makeText(getContext(), "❌ 替换失败：文件可能正被其他程序独占读取", Toast.LENGTH_LONG).show();
                         }
                     });
                 }).start();
@@ -1273,12 +1280,19 @@ public class DesktopSystemView extends Dialog {
                     
                     Button btnReplace = createButton("🔄 替换", "#4CAF50");
                     btnReplace.setOnClickListener(v -> {
+                        
+                        // 🛑 核心修复：强制释放媒体引擎的底层占用，防止 FUSE 系统死锁
+                        if (currentSndPlayer != null) { 
+                            currentSndPlayer.release(); 
+                            currentSndPlayer = null; 
+                        }
+                        
                         showWin10FilePicker("选择替换用的音频文件", 8, null, null, selectedFile -> {
                             new Thread(() -> {
                                 boolean success = Api.replaceSndAudio(sndPath, n.group, n.item, selectedFile.getAbsolutePath());
                                 new Handler(Looper.getMainLooper()).post(() -> {
                                     if (success) { Toast.makeText(getContext(), "✅ " + n.group + "-" + n.item + " 音频已成功替换！", Toast.LENGTH_SHORT).show(); } 
-                                    else { Toast.makeText(getContext(), "❌ 音频替换失败", Toast.LENGTH_SHORT).show(); }
+                                    else { Toast.makeText(getContext(), "❌ 音频读写冲突，替换失败", Toast.LENGTH_SHORT).show(); }
                                 });
                             }).start();
                         });
