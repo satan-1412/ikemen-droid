@@ -498,14 +498,12 @@ import java.util.List;
         float scaleY = (float) currentH / loadedSavedHeight;
         float baseScale = Math.min(scaleX, scaleY);
 
-        // 核心判定：缩放变化是否大于 5%？
-        // 大于 5% 视为换了手机/跨设备导入存档，触发像图片一样的全局等比缩放。
-        // 小于等于 5% 视为本机隐藏/呼出导航栏等微调，直接放行，【坐标和大小绝对不动】！
+        // 大于 5% 视为换了手机/跨设备导入存档，触发全局等比缩放
+        // 小于等于 5% 视为本机隐藏/呼出导航栏等微调，直接放行，坐标和大小绝对不动！
         boolean isCrossDevice = Math.abs(baseScale - 1.0f) > 0.05f;
 
         if (isCrossDevice) {
             for (VirtualButton btn : buttons) {
-                // [跨设备模式] 坐标和大小完美等比例拉伸映射，绝不重叠打架
                 btn.cx *= scaleX;
                 btn.cy *= scaleY;
                 btn.radius *= baseScale;
@@ -523,16 +521,16 @@ import java.util.List;
             menuY *= scaleY;
             menuScale *= baseScale;
 
-            // 跨设备缩放后强制重新渲染皮肤，防止贴图比例错乱
+            // 跨设备缩放后强制重新渲染皮肤
             try {
                 if(joySkinBaseUri != null && !joySkinBaseUri.isEmpty()) {
-                    InputStream is1 = getContext().getContentResolver().openInputStream(Uri.parse(joySkinBaseUri));
+                    java.io.InputStream is1 = getContext().getContentResolver().openInputStream(Uri.parse(joySkinBaseUri));
                     if (joySkinBaseBitmap != null && !joySkinBaseBitmap.isRecycled()) joySkinBaseBitmap.recycle();
                     joySkinBaseBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(is1), (int)(joyRadius*2), (int)(joyRadius*2), true);
                     if(is1!=null) is1.close();
                 }
                 if(joySkinKnobUri != null && !joySkinKnobUri.isEmpty()) {
-                    InputStream is2 = getContext().getContentResolver().openInputStream(Uri.parse(joySkinKnobUri));
+                    java.io.InputStream is2 = getContext().getContentResolver().openInputStream(Uri.parse(joySkinKnobUri));
                     if (joySkinKnobBitmap != null && !joySkinKnobBitmap.isRecycled()) joySkinKnobBitmap.recycle();
                     joySkinKnobBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(is2), (int)(joyRadius*2), (int)(joyRadius*2), true);
                     if(is2!=null) is2.close();
@@ -543,34 +541,6 @@ import java.util.List;
             } catch (Exception e) {}
         }
         
-        // 如果不是跨设备 (isCrossDevice 为 false)，什么属性都不改！【本地微调时按键绝对纹丝不动】
-
-        loadedSavedWidth = currentW; 
-        loadedSavedHeight = currentH;
-    }
-                   joySkinKnobBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(is2), (int)(joyRadius*2), (int)(joyRadius*2), true);
-                    if(is2!=null) is2.close();
-                }
-                for (VirtualButton btn : buttons) {
-                    btn.loadSkinFromUri(getContext()); // 触发内部方法重新按新尺寸加载自定义皮肤
-                }
-            } catch (Exception e) {}
-
-        } else {
-            // 本机微调的平移
-            int deltaW = currentW - loadedSavedWidth; int deltaH = currentH - loadedSavedHeight;
-            float joyRatioX = joyBaseX / (float)loadedSavedWidth;
-            if (joyRatioX > 0.6f) joyBaseX += deltaW; else if (joyRatioX > 0.4f) joyBaseX += deltaW / 2f;
-            float joyRatioY = joyBaseY / (float)loadedSavedHeight;
-            if (joyRatioY > 0.6f) joyBaseY += deltaH; else if (joyRatioY > 0.4f) joyBaseY += deltaH / 2f;
-            joyKnobX = joyBaseX; joyKnobY = joyBaseY;
-
-            float menuRatioX = menuX / (float)loadedSavedWidth;
-            if (menuRatioX > 0.6f) menuX += deltaW; else if (menuRatioX > 0.4f) menuX += deltaW / 2f;
-            float menuRatioY = menuY / (float)loadedSavedHeight;
-            if (menuRatioY > 0.6f) menuY += deltaH; else if (menuRatioY > 0.4f) menuY += deltaH / 2f;
-        }
-
         loadedSavedWidth = currentW; 
         loadedSavedHeight = currentH;
     }
