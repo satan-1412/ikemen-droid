@@ -65,6 +65,7 @@ import java.util.List;
     public long movieStart1 = 0;
     public long movieStart2 = 0;
     // 👇 新增：菜单按钮的高阶属性 👇
+    public boolean isMenuLocked = false; // 【补回被误删的变量】是否锁定拖拽
     public boolean isDynamicScaleEnabled = false; // 是否开启跨设备动态键位适配
     public int menuColor = Color.parseColor("#333333");
     public int menuTextColor = Color.WHITE;
