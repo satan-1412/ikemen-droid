@@ -1848,18 +1848,6 @@ import java.util.List;
         final EditText nameInput = createEditText("例如: ⚙ 高级设置", menuButtonName);
         layout.addView(nameInput);
 
-        layout.addView(createTitle("⚠️ 跨设备布局适配 (建议开启):"));
-        final Button dynamicBtn = new Button(getContext());
-        dynamicBtn.setText(isDynamicScaleEnabled ? "✅ 动态缩放适配：已开启" : "⚪ 动态缩放适配：已关闭 (原版)");
-        dynamicBtn.setTextColor(Color.WHITE);
-        dynamicBtn.setBackgroundColor(isDynamicScaleEnabled ? Color.parseColor("#4CAF50") : Color.parseColor("#555555"));
-        dynamicBtn.setOnClickListener(v -> {
-            isDynamicScaleEnabled = !isDynamicScaleEnabled;
-            dynamicBtn.setText(isDynamicScaleEnabled ? "✅ 动态缩放适配：已开启" : "⚪ 动态缩放适配：已关闭 (原版)");
-            dynamicBtn.setBackgroundColor(isDynamicScaleEnabled ? Color.parseColor("#4CAF50") : Color.parseColor("#555555"));
-            saveConfig();
-        });
-        layout.addView(dynamicBtn);
 
         layout.addView(createTitle("1. 菜单位置锁定:"));
         final Button lockBtn = new Button(getContext());
@@ -2141,6 +2129,14 @@ import java.util.List;
         layout.addView(createMenuButton("⚙️ 全局设置配置区", v -> { showVibrationSettingsDialog(); dialog.dismiss(); }));
         layout.addView(createMenuButton("📂 布局存档与导入导出", v -> { showProfileManager(); dialog.dismiss(); }));
         layout.addView(createMenuButton("🔄 恢复初始默认布局", v -> { loadDefaultLayout(); saveConfig(); invalidate(); dialog.dismiss(); }));
+        
+        // 👇 这里是新增的动态缩放开关 👇
+        layout.addView(createMenuButton(isDynamicScaleEnabled ? "📱 跨设备动态缩放适配: [已开启]" : "📱 跨设备动态缩放适配: [已关闭(原版)]", v -> {
+            isDynamicScaleEnabled = !isDynamicScaleEnabled;
+            saveConfig();
+            Toast.makeText(getContext(), isDynamicScaleEnabled ? "已开启: 自动缩放适配不同分辨率屏幕" : "已关闭: 恢复原版像素1:1映射", Toast.LENGTH_SHORT).show();
+            dialog.dismiss(); showMainMenu();
+        }));
         layout.addView(createMenuButton("🖼️ 屏幕遮罩详细设置", v -> { showOverlaySettingsDialog(); dialog.dismiss(); }));
         layout.addView(createMenuButton(isOverlayVisible ? "👁️ 隐藏遮罩图 (当前:显示)" : "👁️ 显示遮罩图 (当前:隐藏)", v -> { isOverlayVisible = !isOverlayVisible; invalidate(); dialog.dismiss(); showMainMenu(); }));
         layout.addView(createMenuButton("📁 重新选择游戏数据目录", v -> { if (getContext() instanceof SDLActivity) ((SDLActivity) getContext()).checkAndPickFolder(); dialog.dismiss(); }));
