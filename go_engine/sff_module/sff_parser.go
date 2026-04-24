@@ -952,7 +952,7 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, im
 
 				// 将链表的上一个节点指针指向我们在文件末尾创建的新节点
 				if prevShofs == 0 {
-					f.Seek(4, io.SeekStart) // 修改总 Header 的第一帧指针
+					f.Seek(24, io.SeekStart) // [致命BUG已修复] SFFv1 的第一帧指针偏移量是 24！
 					binary.Write(f, binary.LittleEndian, newHeaderOffset)
 				} else {
 					f.Seek(prevShofs, io.SeekStart) // 修改上一帧的 NextOffset
