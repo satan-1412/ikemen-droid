@@ -1075,7 +1075,7 @@ public class DesktopSystemView extends Dialog {
                             Toast.makeText(getContext(), "✅ " + f.group + "-" + f.item + " 帧已成功替换！", Toast.LENGTH_SHORT).show();
                             updateFrameAction.run(); 
                         } else {
-                            Toast.makeText(getContext(), "❌ 替换失败：引擎拦截。SFFv1 仅支持 PCX，或文件正被占用！", Toast.LENGTH_LONG).show();
+                            Toast.makeText(getContext(), "❌ 替换失败：格式不兼容！SFFv1 只能使用 PCX，SFFv2 禁止使用 PCX！", Toast.LENGTH_LONG).show();
                         }
                     });
                 }).start();
