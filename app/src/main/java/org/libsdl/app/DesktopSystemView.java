@@ -1068,7 +1068,7 @@ public class DesktopSystemView extends Dialog {
             final GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
             showWin10FilePicker("选择替换用的图像文件", 7, null, null, selectedFile -> {
                 new Thread(() -> {
-                    // 回归稳定版：直接丢给底层的 Go 引擎执行，彻底废弃会导致 0 字节的沙盒流覆盖
+                    // 回归原生直写，抛弃会导致0字节的沙盒覆盖
                     boolean success = Api.replaceSffFrame(sffPath, f.group, f.item, selectedFile.getAbsolutePath());
                     uiHandler.post(() -> {
                         if (success) {
@@ -1081,6 +1081,7 @@ public class DesktopSystemView extends Dialog {
                 }).start();
             });
         });
+
 
 
         if (allFrames != null) currentGroupFrames.addAll(allFrames);
@@ -1288,9 +1289,9 @@ public class DesktopSystemView extends Dialog {
                         } catch (Exception e) {}
                     });
                     
-                    Button btnReplace = createButton("🔄 替换", "#4CAF50");
+                                       Button btnReplace = createButton("🔄 替换", "#4CAF50");
                     btnReplace.setOnClickListener(v -> {
-                        // 必须提前释放 MediaPlayer 的系统占用，否则底层 Go 写入时直接死锁！
+                        // 核心修复：必须提前释放 MediaPlayer 的系统占用，否则底层 Go 写入时直接死锁！
                         if (currentSndPlayer != null) { 
                             currentSndPlayer.release(); 
                             currentSndPlayer = null; 
@@ -1298,18 +1299,18 @@ public class DesktopSystemView extends Dialog {
                         
                         showWin10FilePicker("选择替换用的音频文件", 8, null, null, selectedFile -> {
                             new Thread(() -> {
-                                // 直接调用 Go 原生写入通道
                                 boolean success = Api.replaceSndAudio(sndPath, n.group, n.item, selectedFile.getAbsolutePath());
                                 new Handler(Looper.getMainLooper()).post(() -> {
                                     if (success) { 
                                         Toast.makeText(getContext(), "✅ " + n.group + "-" + n.item + " 音频已成功替换！", Toast.LENGTH_SHORT).show(); 
                                     } else { 
-                                        Toast.makeText(getContext(), "❌ 替换失败：目前底层仅支持原生 PCM WAV 格式，请检查音频文件！", Toast.LENGTH_LONG).show(); 
+                                        Toast.makeText(getContext(), "❌ 替换失败：请检查音频格式或文件是否被系统占用", Toast.LENGTH_LONG).show(); 
                                     }
                                 });
                             }).start();
                         });
                     });
+
 
                     row.addView(btnPlay); row.addView(btnExport, btnParams); row.addView(btnReplace, btnParams); listLayout.addView(row, rowParams);
                 }
