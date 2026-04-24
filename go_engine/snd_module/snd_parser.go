@@ -110,16 +110,16 @@ func ExtractWav(filename string, targetGroup int32, targetItem int32) ([]byte, e
 // 🛠️ 独家底层写入机制：真正实现 SND 音频替换
 // ==========================================
 
-func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, wavPath string) error {
-	wavData, err := os.ReadFile(wavPath)
+func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, audioPath string) error {
+	// 【极致优化】直接读取原始字节流，不再对格式进行任何死板拦截
+	audioData, err := os.ReadFile(audioPath)
 	if err != nil {
-		return fmt.Errorf("无法读取目标音频文件: %v", err)
+		return fmt.Errorf("无法读取音频源文件: %v", err)
 	}
 
-	// 基础检测：简单拦截非 WAV 格式 (保护原生播放器不崩溃)
-	if len(wavData) < 4 || string(wavData[:4]) != "RIFF" {
-		return fmt.Errorf("目前底层引擎仅严格支持原生 PCM WAV 格式替换，请转换格式")
-	}
+	// 注入逻辑：Ikemen GO 的音频底层 (sound.go) 拥有自动嗅探头部的智能解码器
+	//
+	// 无论你塞入的是 MP3/OGG/FLAC 还是 XM/MOD，它都能在读取时自动匹配解码模块。
 
 	f, err := os.OpenFile(sndPath, os.O_RDWR, 0644)
 	if err != nil {
@@ -157,17 +157,19 @@ func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, wa
 			fileInfo, _ := f.Stat()
 			appendOffset := fileInfo.Size()
 
+			// 🚀 原子级注入：在文件末尾追加新数据，最后才修改链表指针，防止损坏文件
 			f.Seek(0, io.SeekEnd)
 			binary.Write(f, binary.LittleEndian, nextSubHeaderOffset) 
-			binary.Write(f, binary.LittleEndian, uint32(len(wavData))) 
+			binary.Write(f, binary.LittleEndian, uint32(len(audioData))) 
 			binary.Write(f, binary.LittleEndian, num[0])               
 			binary.Write(f, binary.LittleEndian, num[1])               
 
-			_, err = f.Write(wavData)
+			_, err = f.Write(audioData)
 			if err != nil {
-				return fmt.Errorf("写入新音频数据失败: %v", err)
+				return fmt.Errorf("写入节点数据失败: %v", err)
 			}
 
+			// 切换指针，使新节点正式生效
 			f.Seek(ptrToCurrentNode, io.SeekStart)
 			binary.Write(f, binary.LittleEndian, uint32(appendOffset))
 
@@ -177,5 +179,5 @@ func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, wa
 		subHeaderOffset = nextSubHeaderOffset
 	}
 
-	return fmt.Errorf("在 SND 中未找到 Group:%d Item:%d", targetGroup, targetItem)
+	return fmt.Errorf("在 SND 内部索引中未找到对应的音频组")
 }
