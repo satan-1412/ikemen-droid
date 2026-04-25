@@ -1019,3 +1019,119 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, im
 		return fmt.Errorf("在 SFF 文件中未找到 Group:%d Item:%d", targetGroup, targetItem)
 	}
 }
+
+// ==========================================
+// 🎨 提取与注入内置色表 (原汁原味字节流安全版)
+// ==========================================
+
+func ExtractInternalPalette(sffPath string, outActPath string) error {
+	f, err := os.Open(sffPath)
+	if err != nil {
+		return fmt.Errorf("无法打开SFF文件: %v", err)
+	}
+	defer f.Close()
+
+	var h SffHeader
+	var lofs, tofs uint32
+	if err := h.Read(f, &lofs, &tofs); err != nil {
+		return fmt.Errorf("读取SFF头部失败: %v", err)
+	}
+
+	if h.Version[0] == 1 {
+		// SFFv1: 直接原样剥离最后 768 字节 (RGB)
+		shofs := int64(h.FirstSpriteHeaderOffset)
+		f.Seek(shofs+4, io.SeekStart)
+		var dataLen uint32
+		binary.Read(f, binary.LittleEndian, &dataLen)
+
+		if dataLen >= 768 {
+			actData := make([]byte, 768)
+			f.Seek(shofs+32+int64(dataLen)-768, io.SeekStart)
+			f.Read(actData)
+			return os.WriteFile(outActPath, actData, 0644)
+		}
+		return errors.New("SFFv1 第一帧数据异常，无法提取内置色表")
+	} else {
+		// SFFv2: 直接原样剥离整个 Palette Chunk (通常为 1024 字节 RGBA)
+		f.Seek(36, io.SeekStart)
+		var palOffset uint32
+		binary.Read(f, binary.LittleEndian, &palOffset)
+
+		if palOffset == 0 {
+			return errors.New("该 SFFv2 不存在内置色表节点")
+		}
+
+		f.Seek(int64(palOffset)+8, io.SeekStart)
+		var dataOffset, dataLength uint32
+		binary.Read(f, binary.LittleEndian, &dataOffset)
+		binary.Read(f, binary.LittleEndian, &dataLength)
+
+		if dataLength > 0 {
+			palData := make([]byte, dataLength)
+			f.Seek(int64(lofs+dataOffset), io.SeekStart)
+			f.Read(palData)
+			return os.WriteFile(outActPath, palData, 0644)
+		}
+		return errors.New("SFFv2 色表节点数据为空")
+	}
+}
+
+func InjectInternalPalette(sffPath string, actPath string) error {
+	actData, err := os.ReadFile(actPath)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(sffPath, os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var h SffHeader
+	var lofs, tofs uint32
+	if err := h.Read(f, &lofs, &tofs); err != nil {
+		return err
+	}
+
+	if h.Version[0] == 1 {
+		// SFFv1: 安全检查必须是 768 字节，直接覆盖
+		if len(actData) != 768 {
+			return errors.New("SFFv1 仅接受 768 字节的色表")
+		}
+		shofs := int64(h.FirstSpriteHeaderOffset)
+		f.Seek(shofs+4, io.SeekStart)
+		var dataLen uint32
+		binary.Read(f, binary.LittleEndian, &dataLen)
+
+		if dataLen >= 768 {
+			f.Seek(shofs+32+int64(dataLen)-768, io.SeekStart)
+			f.Write(actData)
+			return nil
+		}
+		return errors.New("SFFv1 写入内置色表失败")
+	} else {
+		// SFFv2: 安全检查并精确覆盖
+		if len(actData) < 1024 {
+			return errors.New("SFFv2 需注入 1024 字节的 RGBA 色表")
+		}
+		f.Seek(36, io.SeekStart)
+		var palOffset uint32
+		binary.Read(f, binary.LittleEndian, &palOffset)
+		if palOffset == 0 {
+			return errors.New("SFFv2 不存在内置色表节点，无法覆盖")
+		}
+
+		f.Seek(int64(palOffset)+8, io.SeekStart)
+		var dataOffset, dataLength uint32
+		binary.Read(f, binary.LittleEndian, &dataOffset)
+		binary.Read(f, binary.LittleEndian, &dataLength)
+
+		if dataLength > 0 {
+			f.Seek(int64(lofs+dataOffset), io.SeekStart)
+			f.Write(actData[:dataLength])
+			return nil
+		}
+		return errors.New("SFFv2 写入内置色表失败")
+	}
+}
