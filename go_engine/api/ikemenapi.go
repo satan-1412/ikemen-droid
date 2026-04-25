@@ -266,3 +266,17 @@ func GetGifPreview(gifPath string) []byte {
 	}
 	return buf.Bytes()
 }
+
+// ==========================================
+// 🎨 色表注入与提取 JNI 接口
+// ==========================================
+
+func ExtractSffPalette(sffPath string, actPath string) bool {
+	err := sff_module.ExtractInternalPalette(sffPath, actPath)
+	return err == nil
+}
+
+func InjectSffPalette(sffPath string, actPath string) bool {
+	err := sff_module.InjectInternalPalette(sffPath, actPath)
+	return err == nil
+}
