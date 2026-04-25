@@ -1550,7 +1550,7 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ======================================================================================
-    // 🎨 模块 4：ACT 色表工坊 (全同步系统扫描机制、防遮挡固定底部、智能状态机)
+    // 🎨 模块 4：ACT 色表工坊 (等宽补齐、双指缩放引擎、无损挂载机制)
     // ======================================================================================
     private View buildPaletteEditorContent() {
         LinearLayout root = new LinearLayout(getContext());
@@ -1559,7 +1559,7 @@ public class DesktopSystemView extends Dialog {
         root.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
 
         final String[] currentActPath = {""}; 
-        final String[] originalActPath = {""}; // 用于记录最开始挂载的源文件，避免重复备份
+        final String[] originalActPath = {""}; 
         final String[] currentSffPath = {""};
         final boolean[] isEditMode = {false}; final byte[][] currentActData = {null}; 
         final boolean[] isRgbaFormat = {false};
@@ -1568,26 +1568,39 @@ public class DesktopSystemView extends Dialog {
 
         HorizontalScrollView topScroll = new HorizontalScrollView(getContext());
         topScroll.setHorizontalScrollBarEnabled(false);
+        // 【核心修复1】允许内部控件强行撑满屏幕宽度
+        topScroll.setFillViewport(true); 
+
         LinearLayout topBar = new LinearLayout(getContext());
-        topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setOrientation(LinearLayout.HORIZONTAL); 
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
 
-        Button btnLoadAct = createButton("📂 挂载色表(.act)", "#0078D7");
-        Button btnLoadSff = createButton("🖼️ 挂载图像(.sff)", "#9C27B0");
+        Button btnLoadAct = createButton("📂 挂载色表", "#0078D7");
+        Button btnLoadSff = createButton("🖼️ 挂载图像", "#9C27B0");
         Button btnMode = createButton("👁️ 预览模式", "#4CAF50");
-        Button btnExtract = createButton("⬇️ 提取内置色表", "#FF9800");
+        Button btnExtract = createButton("⬇️ 提取内置", "#FF9800");
 
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2); bp.setMargins(0, 0, (int)(10*density), 0);
-        topBar.addView(btnLoadAct, bp); topBar.addView(btnLoadSff, bp);
-        topBar.addView(btnMode, bp); topBar.addView(btnExtract, bp);
-        // 删除了注入按钮，节约空间
-        topScroll.addView(topBar); root.addView(topScroll);
+        // 【核心修复2】width 设为 0，weight 设为 1f，让 4 个按键完美自动等宽铺满顶部！
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0, -2, 1f); 
+        bp.setMargins(0, 0, (int)(4*density), 0);
+        
+        topBar.addView(btnLoadAct, bp); 
+        topBar.addView(btnLoadSff, bp);
+        topBar.addView(btnMode, bp); 
+        topBar.addView(btnExtract, bp);
+        
+        topScroll.addView(topBar, new FrameLayout.LayoutParams(-1, -2)); 
+        root.addView(topScroll);
 
-        LinearLayout mainArea = new LinearLayout(getContext()); mainArea.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout mainArea = new LinearLayout(getContext()); 
+        mainArea.setOrientation(LinearLayout.HORIZONTAL);
         mainArea.setPadding(0, (int)(15*density), 0, 0);
 
         ScrollView gridScroll = new ScrollView(getContext());
-        LinearLayout gridContainer = new LinearLayout(getContext()); gridContainer.setOrientation(LinearLayout.VERTICAL);
-        gridContainer.setBackgroundColor(Color.parseColor("#2D2D30")); gridContainer.setPadding((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
+        LinearLayout gridContainer = new LinearLayout(getContext()); 
+        gridContainer.setOrientation(LinearLayout.VERTICAL);
+        gridContainer.setBackgroundColor(Color.parseColor("#2D2D30")); 
+        gridContainer.setPadding((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
         
         final View[] colorBoxes = new View[256];
         for (int r = 0; r < 16; r++) {
@@ -1602,10 +1615,13 @@ public class DesktopSystemView extends Dialog {
             }
             gridContainer.addView(row);
         }
-        gridScroll.addView(gridContainer); mainArea.addView(gridScroll, new LinearLayout.LayoutParams(-2, -1));
+        gridScroll.addView(gridContainer); 
+        mainArea.addView(gridScroll, new LinearLayout.LayoutParams(-2, -1));
 
-        LinearLayout rightArea = new LinearLayout(getContext()); rightArea.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, -1, 1f); rightParams.setMargins((int)(15*density), 0, 0, 0);
+        LinearLayout rightArea = new LinearLayout(getContext()); 
+        rightArea.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, -1, 1f); 
+        rightParams.setMargins((int)(15*density), 0, 0, 0);
         rightArea.setLayoutParams(rightParams);
 
         FrameLayout previewFrame = new FrameLayout(getContext());
@@ -1614,8 +1630,26 @@ public class DesktopSystemView extends Dialog {
         GradientDrawable canvasBorder = new GradientDrawable(); canvasBorder.setStroke((int)(1*density), Color.parseColor("#3F3F46")); 
         previewFrame.setBackground(new LayerDrawable(new android.graphics.drawable.Drawable[]{tileBg, canvasBorder}));
 
-        ImageView previewImg = new ImageView(getContext()); previewImg.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        previewFrame.addView(previewImg, new FrameLayout.LayoutParams(-1, -1)); rightArea.addView(previewFrame, new LinearLayout.LayoutParams(-1, 0, 1f));
+        // 【核心修复3】引入 Matrix 支持，激活双指无极缩放与任意拖拽
+        final ImageView previewImg = new ImageView(getContext()); 
+        previewImg.setScaleType(ImageView.ScaleType.MATRIX);
+        previewFrame.addView(previewImg, new FrameLayout.LayoutParams(-1, -1)); 
+        rightArea.addView(previewFrame, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        final Matrix imageMatrix = new Matrix(); final Matrix savedMatrix = new Matrix();
+        final int[] touchMode = {0}; final PointF startPoint = new PointF(); final PointF midPoint = new PointF();
+        final float[] oldDist = {1f}; final boolean[] isMatrixInitialized = {false};
+
+        previewFrame.setOnTouchListener((v, event) -> {
+            switch (event.getAction() & MotionEvent.ACTION_MASK) {
+                case MotionEvent.ACTION_DOWN: savedMatrix.set(imageMatrix); startPoint.set(event.getX(), event.getY()); touchMode[0] = 1; break;
+                case MotionEvent.ACTION_POINTER_DOWN: oldDist[0] = (float)Math.sqrt(Math.pow(event.getX(0)-event.getX(1), 2) + Math.pow(event.getY(0)-event.getY(1), 2)); if (oldDist[0] > 10f) { savedMatrix.set(imageMatrix); midPoint.set((event.getX(0)+event.getX(1))/2, (event.getY(0)+event.getY(1))/2); touchMode[0] = 2; } break;
+                case MotionEvent.ACTION_UP: case MotionEvent.ACTION_POINTER_UP: touchMode[0] = 0; break;
+                case MotionEvent.ACTION_MOVE:
+                    if (touchMode[0] == 1) { imageMatrix.set(savedMatrix); imageMatrix.postTranslate(event.getX() - startPoint.x, event.getY() - startPoint.y); } 
+                    else if (touchMode[0] == 2) { float newDist = (float)Math.sqrt(Math.pow(event.getX(0)-event.getX(1), 2) + Math.pow(event.getY(0)-event.getY(1), 2)); if (newDist > 10f) { imageMatrix.set(savedMatrix); float scale = newDist / oldDist[0]; imageMatrix.postScale(scale, scale, midPoint.x, midPoint.y); } } break;
+            } previewImg.setImageMatrix(imageMatrix); return true;
+        });
 
         LinearLayout previewControls = new LinearLayout(getContext()); previewControls.setOrientation(LinearLayout.HORIZONTAL); previewControls.setGravity(Gravity.CENTER); previewControls.setPadding(0, (int)(10*density), 0, 0);
         Button btnPrev = createButton("⏪", "#3F3F46"); Button btnNext = createButton("⏭️", "#3F3F46");
@@ -1639,7 +1673,20 @@ public class DesktopSystemView extends Dialog {
                     byte[] bmpData = Api.decodeSffFrame(currentSffPath[0], f.group, f.item, currentActPath[0]);
                     if (bmpData != null && bmpData.length > 0) {
                         Bitmap bmp = BitmapFactory.decodeByteArray(bmpData, 0, bmpData.length);
-                        new Handler(Looper.getMainLooper()).post(() -> { previewImg.setImageBitmap(bmp); txtFrameInfo.setText(String.format(" G:%d I:%d ", f.group, f.item)); });
+                        new Handler(Looper.getMainLooper()).post(() -> { 
+                            previewImg.setImageBitmap(bmp); 
+                            txtFrameInfo.setText(String.format(" G:%d I:%d ", f.group, f.item)); 
+                            
+                            // 第一次加载图像时自动居中，如果人物太小自动适度拉大
+                            if (!isMatrixInitialized[0] && previewFrame.getWidth() > 0) {
+                                float scale = Math.min((float)previewFrame.getWidth() / bmp.getWidth(), (float)previewFrame.getHeight() / bmp.getHeight());
+                                if (scale > 2.5f) scale = 2.5f; 
+                                float dx = (previewFrame.getWidth() - bmp.getWidth() * scale) / 2f; 
+                                float dy = (previewFrame.getHeight() - bmp.getHeight() * scale) / 2f;
+                                imageMatrix.setScale(scale, scale); imageMatrix.postTranslate(dx, dy); 
+                                previewImg.setImageMatrix(imageMatrix); isMatrixInitialized[0] = true;
+                            }
+                        });
                     }
                 } catch (Exception e) {}
             }).start();
@@ -1658,7 +1705,7 @@ public class DesktopSystemView extends Dialog {
                     else { r = currentActData[0][i*3] & 0xFF; g = currentActData[0][i*3+1] & 0xFF; b = currentActData[0][i*3+2] & 0xFF; }
                     colorBoxes[i].setBackgroundColor(Color.rgb(r,g,b));
                 }
-                originalActPath[0] = currentActPath[0]; // 记录挂载时的文件作为基准
+                originalActPath[0] = currentActPath[0]; 
                 isEditMode[0] = false;
                 btnMode.setText("👁️ 预览模式"); btnMode.setBackgroundColor(Color.parseColor("#4CAF50"));
                 updateSffPreview.run();
@@ -1674,7 +1721,6 @@ public class DesktopSystemView extends Dialog {
             });
         }
 
-        // 调用你系统自带的 Win10 扫描器！根据返回的是文件还是文件夹，决定是直接挂载还是调用网格图工具
         btnLoadAct.setOnClickListener(v -> showWin10FilePicker("选择 .act 色表或目录", 9, null, null, file -> {
             if (file.isDirectory()) {
                 showActGridPicker(file, selectedAct -> { currentActPath[0] = selectedAct.getAbsolutePath(); loadActToGrid.run(); });
@@ -1683,20 +1729,18 @@ public class DesktopSystemView extends Dialog {
 
         btnLoadSff.setOnClickListener(v -> showWin10FilePicker("选择 .sff 图像或目录", 4, null, null, file -> {
             if (file.isDirectory()) {
-                showSffGridPicker(file, selectedSff -> { currentSffPath[0] = selectedSff.getAbsolutePath(); loadedFrames.clear(); previewIndex[0] = 0; updateSffPreview.run(); });
-            } else { currentSffPath[0] = file.getAbsolutePath(); loadedFrames.clear(); previewIndex[0] = 0; updateSffPreview.run(); }
+                showSffGridPicker(file, selectedSff -> { currentSffPath[0] = selectedSff.getAbsolutePath(); loadedFrames.clear(); previewIndex[0] = 0; isMatrixInitialized[0] = false; updateSffPreview.run(); });
+            } else { currentSffPath[0] = file.getAbsolutePath(); loadedFrames.clear(); previewIndex[0] = 0; isMatrixInitialized[0] = false; updateSffPreview.run(); }
         }));
 
         btnMode.setOnClickListener(v -> {
             if (currentActPath[0].isEmpty()) { Toast.makeText(getContext(), "⚠️ 请先加载色表", Toast.LENGTH_SHORT).show(); return; }
             if (!isEditMode[0]) {
-                // 如果当前编辑的路径已经不是最初挂载的路径（比如已经是备份文件了），无需再弹窗，直接进入！
                 if (!currentActPath[0].equals(originalActPath[0])) {
                     isEditMode[0] = true;
                     btnMode.setText("📝 修改模式 (当前: " + new File(currentActPath[0]).getName() + ")");
                     btnMode.setBackgroundColor(Color.parseColor("#E81123"));
                 } else {
-                    // 第一次尝试修改原文件时，弹窗询问
                     final Dialog prompt = new Dialog(getContext()); prompt.requestWindowFeature(Window.FEATURE_NO_TITLE); prompt.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
                     LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
                     GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
@@ -1709,7 +1753,7 @@ public class DesktopSystemView extends Dialog {
                         try {
                             File orig = new File(originalActPath[0]); File backup = new File(orig.getParent(), orig.getName().replace(".act", "_backup.act"));
                             if (!backup.exists()) copyFileToSandbox(orig, backup);
-                            currentActPath[0] = backup.getAbsolutePath(); // 核心：切换底层路径至备份文件
+                            currentActPath[0] = backup.getAbsolutePath(); 
                             isEditMode[0] = true; btnMode.setText("📝 修改模式 (已备份)"); btnMode.setBackgroundColor(Color.parseColor("#E81123"));
                             Toast.makeText(getContext(), "✅ 已切换至备份文件: " + backup.getName(), Toast.LENGTH_LONG).show();
                         } catch(Exception e){} prompt.dismiss();
@@ -1726,7 +1770,6 @@ public class DesktopSystemView extends Dialog {
                     prompt.setContentView(box); prompt.show();
                 }
             } else {
-                // 退出编辑模式
                 isEditMode[0] = false;
                 btnMode.setText("👁️ 预览模式"); btnMode.setBackgroundColor(Color.parseColor("#4CAF50"));
             }
@@ -1744,263 +1787,7 @@ public class DesktopSystemView extends Dialog {
             }).start();
         });
 
-        // 永久注入功能已移除，采用更安全的外挂 .act 模式
-
         return root;
-    }
-
-    // ==========================================
-    // 🧲 纯净版悬浮窗：无黑框、白底黑字代码框、永不遮挡底部按钮
-    // ==========================================
-    private void showCleanDraggableRgbDialog(int index, byte[] actData, boolean isRgba, View colorBox, String actPath, Runnable onRealtimeUpdate) {
-        final Dialog dialog = new Dialog(getContext());
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE); 
-        dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-        dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND); 
-        dialog.setCanceledOnTouchOutside(false);
-        dialog.setCancelable(false); // 强制必须点取消或保存
-
-        // 绝对坐标系，像原生系统窗口一样丝滑拖动
-        WindowManager.LayoutParams wmlp = dialog.getWindow().getAttributes();
-        wmlp.gravity = Gravity.TOP | Gravity.LEFT; wmlp.x = 50; wmlp.y = 50;
-        dialog.getWindow().setAttributes(wmlp);
-
-        LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#252526")); bg.setCornerRadius(15*density); bg.setStroke((int)(1*density), Color.parseColor("#3F3F46"));
-        root.setBackground(bg);
-
-        // 圆角标题栏
-        TextView titleBar = new TextView(getContext()); titleBar.setText("✋ 调色板 (按住拖动)"); titleBar.setTextColor(Color.WHITE); titleBar.setPadding(20, 20, 20, 20); titleBar.setGravity(Gravity.CENTER);
-        GradientDrawable titleBg = new GradientDrawable(); titleBg.setColor(Color.parseColor("#0078D7")); titleBg.setCornerRadii(new float[]{15*density, 15*density, 15*density, 15*density, 0, 0, 0, 0});
-        titleBar.setBackground(titleBg);
-        root.addView(titleBar);
-
-        final float[] touchXY = new float[2]; final int[] startXY = new int[2];
-        titleBar.setOnTouchListener((v, event) -> {
-            if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                touchXY[0] = event.getRawX(); touchXY[1] = event.getRawY();
-                WindowManager.LayoutParams lp = dialog.getWindow().getAttributes(); startXY[0] = lp.x; startXY[1] = lp.y; return true;
-            } else if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                WindowManager.LayoutParams lp = dialog.getWindow().getAttributes();
-                lp.x = startXY[0] + (int)(event.getRawX() - touchXY[0]); lp.y = startXY[1] + (int)(event.getRawY() - touchXY[1]);
-                dialog.getWindow().setAttributes(lp); return true;
-            }
-            return false;
-        });
-
-        // 核心布局：弹性 ScrollView 夹在标题栏和底部按钮之间，绝不遮挡！
-        ScrollView scroll = new ScrollView(getContext()); 
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f); // 吸收剩余空间
-        scroll.setLayoutParams(scrollParams);
-        
-        LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding((int)(20*density), (int)(10*density), (int)(20*density), (int)(20*density));
-
-        final int origR = isRgba ? (actData[index*4] & 0xFF) : (actData[index*3] & 0xFF);
-        final int origG = isRgba ? (actData[index*4+1] & 0xFF) : (actData[index*3+1] & 0xFF);
-        final int origB = isRgba ? (actData[index*4+2] & 0xFF) : (actData[index*3+2] & 0xFF);
-        final int[] RGB = new int[]{origR, origG, origB};
-
-        View colorPreview = new View(getContext()); LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, (int)(40*density)); cp.setMargins(0, 0, 0, (int)(10*density));
-        colorPreview.setLayoutParams(cp); colorPreview.setBackgroundColor(Color.rgb(RGB[0], RGB[1], RGB[2])); layout.addView(colorPreview);
-
-        final boolean[] isUIUpdating = {false}; EditText hexInput = new EditText(getContext());
-        Runnable applyColorLive = () -> {
-            if (isUIUpdating[0]) return;
-            colorBox.setBackgroundColor(Color.rgb(RGB[0], RGB[1], RGB[2])); colorPreview.setBackgroundColor(Color.rgb(RGB[0], RGB[1], RGB[2]));
-            isUIUpdating[0] = true; hexInput.setText(String.format("#%02X%02X%02X", RGB[0], RGB[1], RGB[2])); isUIUpdating[0] = false;
-            if (isRgba) { actData[index*4]=(byte)RGB[0]; actData[index*4+1]=(byte)RGB[1]; actData[index*4+2]=(byte)RGB[2]; } 
-            else { actData[index*3]=(byte)RGB[0]; actData[index*3+1]=(byte)RGB[1]; actData[index*3+2]=(byte)RGB[2]; }
-            try { FileOutputStream fos = new FileOutputStream(actPath); fos.write(actData); fos.close(); if (onRealtimeUpdate != null) onRealtimeUpdate.run(); } catch (Exception e) {}
-        };
-
-        // 强力解析器与白底黑字样式
-        hexInput.setTextColor(Color.BLACK); hexInput.setBackgroundColor(Color.WHITE); hexInput.setPadding(20,20,20,20);
-        hexInput.setText(String.format("#%02X%02X%02X", RGB[0], RGB[1], RGB[2]));
-        hexInput.addTextChangedListener(new TextWatcher() {
-            public void afterTextChanged(Editable s) {
-                if (isUIUpdating[0]) return;
-                String hex = s.toString().trim();
-                if (!hex.startsWith("#")) hex = "#" + hex;
-                if (hex.length() == 4) hex = "#" + hex.charAt(1)+hex.charAt(1) + hex.charAt(2)+hex.charAt(2) + hex.charAt(3)+hex.charAt(3);
-                try { int c = Color.parseColor(hex); RGB[0]=Color.red(c); RGB[1]=Color.green(c); RGB[2]=Color.blue(c); applyColorLive.run(); } catch(Exception e){}
-            }
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {} public void onTextChanged(CharSequence s, int start, int before, int count) {}
-        });
-        layout.addView(createSubTitle("🎨 代码 (Hex)")); layout.addView(hexInput);
-
-        LinearLayout modeBar = new LinearLayout(getContext()); modeBar.setOrientation(LinearLayout.HORIZONTAL);
-        Button btnModeRgb = createButton("RGB滑块", "#333333"); Button btnModeWheel = createButton("纯净色盘", "#333333"); Button btnModeDpad = createButton("十字微调", "#333333");
-        modeBar.addView(btnModeRgb, new LinearLayout.LayoutParams(0, -2, 1)); modeBar.addView(btnModeWheel, new LinearLayout.LayoutParams(0, -2, 1)); modeBar.addView(btnModeDpad, new LinearLayout.LayoutParams(0, -2, 1));
-        layout.addView(modeBar);
-
-        FrameLayout modeContainer = new FrameLayout(getContext()); layout.addView(modeContainer);
-
-        // 模式 1: RGB
-        LinearLayout viewRgb = new LinearLayout(getContext()); viewRgb.setOrientation(LinearLayout.VERTICAL);
-        SeekBar barR = new SeekBar(getContext()); barR.setMax(255); barR.setProgress(RGB[0]);
-        SeekBar barG = new SeekBar(getContext()); barG.setMax(255); barG.setProgress(RGB[1]);
-        SeekBar barB = new SeekBar(getContext()); barB.setMax(255); barB.setProgress(RGB[2]);
-        SeekBar.OnSeekBarChangeListener rgbL = new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean b) { if(b){ if(s==barR) RGB[0]=p; if(s==barG) RGB[1]=p; if(s==barB) RGB[2]=p; applyColorLive.run(); } }
-            public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){}
-        };
-        barR.setOnSeekBarChangeListener(rgbL); barG.setOnSeekBarChangeListener(rgbL); barB.setOnSeekBarChangeListener(rgbL);
-        viewRgb.addView(createSubTitle("🔴 红 (R)")); viewRgb.addView(barR); viewRgb.addView(createSubTitle("🟢 绿 (G)")); viewRgb.addView(barG); viewRgb.addView(createSubTitle("🔵 蓝 (B)")); viewRgb.addView(barB);
-
-        // 模式 2: 原生极坐标色轮 (Color Wheel)
-        LinearLayout viewWheel = new LinearLayout(getContext()); viewWheel.setOrientation(LinearLayout.VERTICAL); viewWheel.setGravity(Gravity.CENTER);
-        View colorWheel = new View(getContext()) {
-            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG); android.graphics.Shader hueShader;
-            @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-                super.onSizeChanged(w,h,oldw,oldh);
-                int[] colors = {Color.RED, Color.MAGENTA, Color.BLUE, Color.CYAN, Color.GREEN, Color.YELLOW, Color.RED};
-                hueShader = new android.graphics.SweepGradient(w/2f, h/2f, colors, null);
-            }
-            @Override protected void onDraw(Canvas c) {
-                float cx = getWidth()/2f, cy = getHeight()/2f, radius = Math.min(cx, cy) - 5;
-                p.setShader(hueShader); c.drawCircle(cx, cy, radius, p);
-                p.setShader(new android.graphics.RadialGradient(cx, cy, radius, Color.WHITE, Color.TRANSPARENT, android.graphics.Shader.TileMode.CLAMP));
-                c.drawCircle(cx, cy, radius, p);
-            }
-            @Override public boolean onTouchEvent(MotionEvent event) {
-                float dx = event.getX() - getWidth()/2f, dy = event.getY() - getHeight()/2f;
-                float angle = (float)(Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
-                float radius = (float)Math.hypot(dx, dy); float maxR = getWidth()/2f;
-                float sat = Math.min(1f, radius / maxR);
-                int c = Color.HSVToColor(new float[]{angle, sat, 1f}); 
-                RGB[0]=Color.red(c); RGB[1]=Color.green(c); RGB[2]=Color.blue(c); applyColorLive.run(); return true;
-            }
-        };
-        LinearLayout.LayoutParams wheelParams = new LinearLayout.LayoutParams((int)(200*density), (int)(200*density));
-        wheelParams.setMargins(0, (int)(15*density), 0, (int)(15*density));
-        viewWheel.addView(colorWheel, wheelParams);
-        TextView hint = new TextView(getContext()); hint.setText("☝️ 在色盘上滑动即可提取任意中性色"); hint.setTextColor(Color.GRAY); hint.setGravity(Gravity.CENTER); viewWheel.addView(hint);
-
-        // 模式 3: 十字微调
-        LinearLayout viewDpad = new LinearLayout(getContext()); viewDpad.setOrientation(LinearLayout.VERTICAL); viewDpad.setGravity(Gravity.CENTER);
-        viewDpad.setPadding(0, (int)(15*density), 0, 0);
-        View.OnClickListener dpadClick = v -> {
-            float[] hsv = new float[3]; Color.colorToHSV(Color.rgb(RGB[0],RGB[1],RGB[2]), hsv);
-            String tag = (String)v.getTag();
-            if(tag.equals("H+")) hsv[0] = (hsv[0] + 5) % 360; else if(tag.equals("H-")) hsv[0] = (hsv[0] - 5 + 360) % 360;
-            if(tag.equals("S+")) hsv[1] = Math.min(1f, hsv[1] + 0.05f); else if(tag.equals("S-")) hsv[1] = Math.max(0f, hsv[1] - 0.05f);
-            if(tag.equals("V+")) hsv[2] = Math.min(1f, hsv[2] + 0.05f); else if(tag.equals("V-")) hsv[2] = Math.max(0f, hsv[2] - 0.05f);
-            int c = Color.HSVToColor(hsv); RGB[0]=Color.red(c); RGB[1]=Color.green(c); RGB[2]=Color.blue(c); applyColorLive.run();
-        };
-        LinearLayout row1 = new LinearLayout(getContext()); row1.setGravity(Gravity.CENTER); 
-        Button btnVplus = createButton("🔼 变亮", "#555555"); btnVplus.setTag("V+"); btnVplus.setOnClickListener(dpadClick); row1.addView(btnVplus);
-        LinearLayout row2 = new LinearLayout(getContext()); row2.setGravity(Gravity.CENTER);
-        Button btnHminus = createButton("◀️ 色偏", "#555555"); btnHminus.setTag("H-"); btnHminus.setOnClickListener(dpadClick);
-        Button btnSplus = createButton("⏺️ 加浓", "#E81123"); btnSplus.setTag("S+"); btnSplus.setOnClickListener(dpadClick);
-        Button btnHplus = createButton("色偏 ▶️", "#555555"); btnHplus.setTag("H+"); btnHplus.setOnClickListener(dpadClick);
-        row2.addView(btnHminus); row2.addView(btnSplus); row2.addView(btnHplus);
-        LinearLayout row3 = new LinearLayout(getContext()); row3.setGravity(Gravity.CENTER);
-        Button btnVminus = createButton("🔽 变暗", "#555555"); btnVminus.setTag("V-"); btnVminus.setOnClickListener(dpadClick); row3.addView(btnVminus);
-        viewDpad.addView(row1); viewDpad.addView(row2); viewDpad.addView(row3);
-
-        modeContainer.addView(viewRgb); modeContainer.addView(viewWheel); modeContainer.addView(viewDpad);
-        viewRgb.setVisibility(View.VISIBLE); viewWheel.setVisibility(View.GONE); viewDpad.setVisibility(View.GONE);
-
-        btnModeRgb.setOnClickListener(v -> { viewRgb.setVisibility(View.VISIBLE); viewWheel.setVisibility(View.GONE); viewDpad.setVisibility(View.GONE); });
-        btnModeWheel.setOnClickListener(v -> { viewRgb.setVisibility(View.GONE); viewWheel.setVisibility(View.VISIBLE); viewDpad.setVisibility(View.GONE); });
-        btnModeDpad.setOnClickListener(v -> { viewRgb.setVisibility(View.GONE); viewWheel.setVisibility(View.GONE); viewDpad.setVisibility(View.VISIBLE); });
-
-        // 将模式栏放入滚动层
-        scroll.addView(layout); 
-        root.addView(scroll);
-
-        // 底部防误触反悔系统 (永远钉死在底部，绝对不会消失)
-        LinearLayout bottomRow = new LinearLayout(getContext()); bottomRow.setOrientation(LinearLayout.HORIZONTAL);
-        bottomRow.setBackgroundColor(Color.parseColor("#1E1E1E"));
-        bottomRow.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
-
-        Button btnCancel = createButton("❌ 取消恢复", "#E81123");
-        Button btnSave = createButton("💾 确认保存", "#4CAF50");
-
-        btnCancel.setOnClickListener(v -> {
-            if (isRgba) { actData[index*4]=(byte)origR; actData[index*4+1]=(byte)origG; actData[index*4+2]=(byte)origB; } 
-            else { actData[index*3]=(byte)origR; actData[index*3+1]=(byte)origG; actData[index*3+2]=(byte)origB; }
-            colorBox.setBackgroundColor(Color.rgb(origR, origG, origB));
-            try { FileOutputStream fos = new FileOutputStream(actPath); fos.write(actData); fos.close(); if (onRealtimeUpdate != null) onRealtimeUpdate.run(); } catch (Exception e) {}
-            dialog.dismiss();
-        });
-
-        btnSave.setOnClickListener(v -> dialog.dismiss());
-
-        bottomRow.addView(btnCancel, new LinearLayout.LayoutParams(0, -2, 1f));
-        bottomRow.addView(btnSave, new LinearLayout.LayoutParams(0, -2, 1f));
-        root.addView(bottomRow, new LinearLayout.LayoutParams(-1, -2)); 
-
-        dialog.setContentView(root);
-        
-        // 【核心修复】计算安全高度（屏幕高度的 80%），防止被系统下方导航栏吃掉
-        int screenHeight = getContext().getResources().getDisplayMetrics().heightPixels;
-        dialog.getWindow().setLayout((int)(340*density), (int)(screenHeight * 0.85f));
-        dialog.show();
-    }
-
-    // ==========================================
-    // 🔎 弹窗型资产网格选择器 (完全同步原版 SFF 解析器机制)
-    // ==========================================
-    private void showSffGridPicker(File dir, DesktopSystemView.OnFileSelectedListener listener) {
-        Dialog d = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
-        d.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE); applyImmersiveMode(d.getWindow());
-        FrameLayout overlay = new FrameLayout(getContext()); overlay.setBackgroundColor(Color.argb(230, 0,0,0));
-        LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
-        
-        TextView title = new TextView(getContext()); title.setText("正在极速扫描 SFF 并渲染头像，请稍候..."); title.setTextColor(Color.WHITE); applyGlobalFontSettings(title, 1.2f, true); box.addView(title);
-        ScrollView scroll = new ScrollView(getContext()); LinearLayout grid = new LinearLayout(getContext()); grid.setOrientation(LinearLayout.VERTICAL); scroll.addView(grid); box.addView(scroll);
-        overlay.addView(box); d.setContentView(overlay); d.show(); d.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-
-        new Thread(() -> {
-            List<File> files = new ArrayList<>(); findFilesRecursively(dir, files, ".sff");
-            List<GoEngineBridge.SffInfo> infos = new ArrayList<>();
-            for(File f : files) {
-                List<GoEngineBridge.SffInfo> s = GoEngineBridge.scanSff(f.getAbsolutePath());
-                for(GoEngineBridge.SffInfo i : s) { try { byte[] pb = Api.getSffPreview(i.filePath); if(pb!=null&&pb.length>0) i.preview = BitmapFactory.decodeByteArray(pb,0,pb.length); } catch(Exception e){} infos.add(i); }
-            }
-            new Handler(Looper.getMainLooper()).post(() -> {
-                title.setText("✅ 扫描完成，请点击选择用于挂载的文件:");
-                LinearLayout row = null; int count = 0;
-                for(GoEngineBridge.SffInfo info : infos) {
-                    if(count == 0) { row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); grid.addView(row); }
-                    LinearLayout card = new LinearLayout(getContext()); card.setOrientation(LinearLayout.VERTICAL); card.setGravity(Gravity.CENTER); card.setPadding((int)(10*density),(int)(10*density),(int)(10*density),(int)(10*density));
-                    GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#2D2D30")); bg.setCornerRadius(10f); bg.setStroke(2, Color.parseColor("#3F3F46")); card.setBackground(bg);
-                    ImageView iv = new ImageView(getContext()); iv.setLayoutParams(new LinearLayout.LayoutParams((int)(90*density), (int)(90*density))); iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                    if(info.preview != null) iv.setImageBitmap(info.preview); else iv.setBackgroundColor(Color.DKGRAY); card.addView(iv);
-                    TextView tv = new TextView(getContext()); tv.setText(info.name); tv.setTextColor(Color.WHITE); tv.setSingleLine(true); applyGlobalFontSettings(tv, 0.9f, false); card.addView(tv);
-                    Button btn = createButton("✔️ 选择此项", "#4CAF50"); btn.setOnClickListener(v -> { listener.onFileSelected(new File(info.filePath)); d.dismiss(); }); card.addView(btn);
-                    LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, -2, 1f); cp.setMargins((int)(5*density),(int)(5*density),(int)(5*density),(int)(5*density)); row.addView(card, cp);
-                    count++; if(count >= 3) count = 0;
-                }
-                Button closeBtn = createButton("❌ 取消并关闭", "#E81123"); closeBtn.setOnClickListener(v -> d.dismiss()); grid.addView(closeBtn);
-            });
-        }).start();
-    }
-
-    private void showActGridPicker(File dir, DesktopSystemView.OnFileSelectedListener listener) {
-        Dialog d = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
-        d.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE); applyImmersiveMode(d.getWindow());
-        FrameLayout overlay = new FrameLayout(getContext()); overlay.setBackgroundColor(Color.argb(230, 0,0,0));
-        LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
-        
-        TextView title = new TextView(getContext()); title.setText("正在扫描 ACT，请稍候..."); title.setTextColor(Color.WHITE); applyGlobalFontSettings(title, 1.2f, true); box.addView(title);
-        ScrollView scroll = new ScrollView(getContext()); LinearLayout grid = new LinearLayout(getContext()); grid.setOrientation(LinearLayout.VERTICAL); scroll.addView(grid); box.addView(scroll);
-        overlay.addView(box); d.setContentView(overlay); d.show(); d.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-
-        new Thread(() -> {
-            List<File> files = new ArrayList<>(); findFilesRecursively(dir, files, ".act");
-            new Handler(Looper.getMainLooper()).post(() -> {
-                title.setText("✅ 扫描完成，共找到 " + files.size() + " 个 ACT 色表文件:");
-                for(File f : files) {
-                    Button btn = createButton("🎨 " + f.getName() + "\n" + f.getParent(), "#0078D7");
-                    btn.setOnClickListener(v -> { listener.onFileSelected(f); d.dismiss(); });
-                    LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2); bp.setMargins(0,0,0,(int)(10*density));
-                    grid.addView(btn, bp);
-                }
-                Button closeBtn = createButton("❌ 取消并关闭", "#E81123"); closeBtn.setOnClickListener(v -> d.dismiss()); grid.addView(closeBtn);
-            });
-        }).start();
     }
 
     // 🌉 Go 引擎底层抽象桥接
