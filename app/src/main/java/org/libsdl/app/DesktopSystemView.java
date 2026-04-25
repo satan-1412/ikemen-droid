@@ -1721,8 +1721,8 @@ public class DesktopSystemView extends Dialog {
                     Button btnCancel = createButton("❌ 取消", "#333333");
                     btnCancel.setOnClickListener(bv -> prompt.dismiss());
                     
-                    LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2); bp.setMargins(0,0,0,(int)(10*density));
-                    box.addView(btnBackup, bp); box.addView(btnOrig, bp); box.addView(btnCancel, bp);
+                    LinearLayout.LayoutParams promptBp = new LinearLayout.LayoutParams(-1, -2); promptBp.setMargins(0,0,0,(int)(10*density));
+                    box.addView(btnBackup, promptBp); box.addView(btnOrig, promptBp); box.addView(btnCancel, promptBp);
                     prompt.setContentView(box); prompt.show();
                 }
             } else {
