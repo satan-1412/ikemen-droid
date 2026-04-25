@@ -49,6 +49,7 @@ import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.RelativeLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Spinner;
@@ -1909,7 +1910,12 @@ public class DesktopSystemView extends Dialog {
     // ==========================================
     // 🔎 进阶扫描器：先选文件夹，再在文件夹内深度扫描
     // ==========================================
-    private void showDirectoryScannerDialog(String title, String targetExt, boolean showAvatar, org.libsdl.app.DesktopSystemView.FileCallback callback) {
+        // 补齐缺失的文件选择回调接口
+    public interface FileCallback {
+        void onFileSelected(java.io.File file);
+    }
+
+    private void showDirectoryScannerDialog(String title, String targetExt, boolean showAvatar, FileCallback callback) {
         Dialog d = new Dialog(getContext()); LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setBackgroundColor(Color.parseColor("#252526"));
         
         TextView tvTitle = new TextView(getContext()); tvTitle.setText(title + "\n(点击文件夹进入，点击下方按钮开始扫描该目录)"); tvTitle.setTextColor(Color.WHITE); tvTitle.setPadding(20,20,20,20); layout.addView(tvTitle);
