@@ -1963,6 +1963,11 @@ public class DesktopSystemView extends Dialog {
     // ==========================================
     // 🔎 弹窗型网格选择器：安全防挂掉独立解析机制
     // ==========================================
+    // 补齐被误删的文件选择回调接口
+    public interface FileCallback {
+        void onFileSelected(java.io.File file);
+    }
+
     private void showSffGridPicker(File dir, FileCallback listener) {
         Dialog d = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
         d.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE); 
