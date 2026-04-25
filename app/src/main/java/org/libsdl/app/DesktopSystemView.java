@@ -697,7 +697,11 @@ public class DesktopSystemView extends Dialog {
                 } else if (targetType == 6) {
                     Button scanDirBtn = createButton("✔️ 深度扫描并提取本文件夹的 GIF 动图", "#9C27B0"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
+                } else if (targetType == 9) {
+                    Button scanDirBtn = createButton("✔️ 深度扫描并提取本文件夹的 ACT 色表", "#0078D7"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                    scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
                 }
+
                 
                 File[] files = lastVisitedDir.listFiles();
                 if (files != null) {
@@ -1546,7 +1550,7 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ======================================================================================
-    // 🎨 模块 4：ACT 色表工坊 (回归原生扫描机制、移除黑框、丝滑拖动窗口)
+    // 🎨 模块 4：ACT 色表工坊 (全同步系统扫描机制、防遮挡固定底部、智能状态机)
     // ======================================================================================
     private View buildPaletteEditorContent() {
         LinearLayout root = new LinearLayout(getContext());
@@ -1554,7 +1558,9 @@ public class DesktopSystemView extends Dialog {
         root.setBackgroundColor(Color.parseColor("#1E1E1E"));
         root.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
 
-        final String[] currentActPath = {""}; final String[] currentSffPath = {""};
+        final String[] currentActPath = {""}; 
+        final String[] originalActPath = {""}; // 用于记录最开始挂载的源文件，避免重复备份
+        final String[] currentSffPath = {""};
         final boolean[] isEditMode = {false}; final byte[][] currentActData = {null}; 
         final boolean[] isRgbaFormat = {false};
         final List<GoEngineBridge.SffFrame> loadedFrames = new ArrayList<>();
@@ -1565,7 +1571,6 @@ public class DesktopSystemView extends Dialog {
         LinearLayout topBar = new LinearLayout(getContext());
         topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL);
 
-        // 回归原生！不再使用自制扫描器
         Button btnLoadAct = createButton("📂 挂载色表(.act)", "#0078D7");
         Button btnLoadSff = createButton("🖼️ 挂载图像(.sff)", "#9C27B0");
         Button btnMode = createButton("👁️ 预览模式", "#4CAF50");
@@ -1653,6 +1658,9 @@ public class DesktopSystemView extends Dialog {
                     else { r = currentActData[0][i*3] & 0xFF; g = currentActData[0][i*3+1] & 0xFF; b = currentActData[0][i*3+2] & 0xFF; }
                     colorBoxes[i].setBackgroundColor(Color.rgb(r,g,b));
                 }
+                originalActPath[0] = currentActPath[0]; // 记录挂载时的文件作为基准
+                isEditMode[0] = false;
+                btnMode.setText("👁️ 预览模式"); btnMode.setBackgroundColor(Color.parseColor("#4CAF50"));
                 updateSffPreview.run();
             } catch (Exception e) { Toast.makeText(getContext(), "❌ 色表加载失败", Toast.LENGTH_SHORT).show(); }
         };
@@ -1666,26 +1674,62 @@ public class DesktopSystemView extends Dialog {
             });
         }
 
-        // 【彻底回归】调用你系统自带的原生 Win10 扫描器！
-        btnLoadAct.setOnClickListener(v -> showWin10FilePicker("选择 .act 色表文件", 9, null, null, file -> {
-            currentActPath[0] = file.getAbsolutePath(); loadActToGrid.run();
+        // 调用你系统自带的 Win10 扫描器！根据返回的是文件还是文件夹，决定是直接挂载还是调用网格图工具
+        btnLoadAct.setOnClickListener(v -> showWin10FilePicker("选择 .act 色表或目录", 9, null, null, file -> {
+            if (file.isDirectory()) {
+                showActGridPicker(file, selectedAct -> { currentActPath[0] = selectedAct.getAbsolutePath(); loadActToGrid.run(); });
+            } else { currentActPath[0] = file.getAbsolutePath(); loadActToGrid.run(); }
         }));
 
-        btnLoadSff.setOnClickListener(v -> showWin10FilePicker("选择 .sff 图像文件", 4, null, null, file -> {
-            currentSffPath[0] = file.getAbsolutePath(); loadedFrames.clear(); previewIndex[0] = 0; updateSffPreview.run();
+        btnLoadSff.setOnClickListener(v -> showWin10FilePicker("选择 .sff 图像或目录", 4, null, null, file -> {
+            if (file.isDirectory()) {
+                showSffGridPicker(file, selectedSff -> { currentSffPath[0] = selectedSff.getAbsolutePath(); loadedFrames.clear(); previewIndex[0] = 0; updateSffPreview.run(); });
+            } else { currentSffPath[0] = file.getAbsolutePath(); loadedFrames.clear(); previewIndex[0] = 0; updateSffPreview.run(); }
         }));
 
         btnMode.setOnClickListener(v -> {
             if (currentActPath[0].isEmpty()) { Toast.makeText(getContext(), "⚠️ 请先加载色表", Toast.LENGTH_SHORT).show(); return; }
-            isEditMode[0] = !isEditMode[0];
-            if (isEditMode[0]) {
-                btnMode.setText("📝 修改模式 (已备份)"); btnMode.setBackgroundColor(Color.parseColor("#E81123"));
-                try {
-                    File orig = new File(currentActPath[0]); File backup = new File(orig.getParent(), orig.getName().replace(".act", "_backup.act"));
-                    if (!backup.exists()) copyFileToSandbox(orig, backup); 
-                    Toast.makeText(getContext(), "✅ 已自动创建安全备份: " + backup.getName(), Toast.LENGTH_LONG).show();
-                } catch (Exception e) {}
-            } else { btnMode.setText("👁️ 预览模式"); btnMode.setBackgroundColor(Color.parseColor("#4CAF50")); }
+            if (!isEditMode[0]) {
+                // 如果当前编辑的路径已经不是最初挂载的路径（比如已经是备份文件了），无需再弹窗，直接进入！
+                if (!currentActPath[0].equals(originalActPath[0])) {
+                    isEditMode[0] = true;
+                    btnMode.setText("📝 修改模式 (当前: " + new File(currentActPath[0]).getName() + ")");
+                    btnMode.setBackgroundColor(Color.parseColor("#E81123"));
+                } else {
+                    // 第一次尝试修改原文件时，弹窗询问
+                    final Dialog prompt = new Dialog(getContext()); prompt.requestWindowFeature(Window.FEATURE_NO_TITLE); prompt.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                    LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+                    GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
+                    
+                    TextView title = createSubTitle("🛡️ 安全修改提示"); title.setTextColor(Color.WHITE); box.addView(title);
+                    TextView msg = new TextView(getContext()); msg.setText("即将进入修改模式。为了防止人物文件损坏，建议创建一个备份后再进行修改。"); msg.setTextColor(Color.LTGRAY); applyGlobalFontSettings(msg, 0.9f, false); msg.setPadding(0,(int)(10*density),0,(int)(20*density)); box.addView(msg);
+                    
+                    Button btnBackup = createButton("💾 自动创建防毁备份并修改", "#4CAF50");
+                    btnBackup.setOnClickListener(bv -> {
+                        try {
+                            File orig = new File(originalActPath[0]); File backup = new File(orig.getParent(), orig.getName().replace(".act", "_backup.act"));
+                            if (!backup.exists()) copyFileToSandbox(orig, backup);
+                            currentActPath[0] = backup.getAbsolutePath(); // 核心：切换底层路径至备份文件
+                            isEditMode[0] = true; btnMode.setText("📝 修改模式 (已备份)"); btnMode.setBackgroundColor(Color.parseColor("#E81123"));
+                            Toast.makeText(getContext(), "✅ 已切换至备份文件: " + backup.getName(), Toast.LENGTH_LONG).show();
+                        } catch(Exception e){} prompt.dismiss();
+                    });
+                    
+                    Button btnOrig = createButton("⚠️ 无视风险，直接修改原文件", "#FF9800");
+                    btnOrig.setOnClickListener(bv -> { isEditMode[0] = true; btnMode.setText("📝 修改模式 (修改原文件)"); btnMode.setBackgroundColor(Color.parseColor("#E81123")); prompt.dismiss(); });
+                    
+                    Button btnCancel = createButton("❌ 取消", "#333333");
+                    btnCancel.setOnClickListener(bv -> prompt.dismiss());
+                    
+                    LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2); bp.setMargins(0,0,0,(int)(10*density));
+                    box.addView(btnBackup, bp); box.addView(btnOrig, bp); box.addView(btnCancel, bp);
+                    prompt.setContentView(box); prompt.show();
+                }
+            } else {
+                // 退出编辑模式
+                isEditMode[0] = false;
+                btnMode.setText("👁️ 预览模式"); btnMode.setBackgroundColor(Color.parseColor("#4CAF50"));
+            }
         });
 
         btnExtract.setOnClickListener(v -> {
@@ -1719,21 +1763,19 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ==========================================
-    // 🧲 纯净版悬浮窗：无黑框、丝滑移动、十字微调
+    // 🧲 纯净版悬浮窗：无黑框、白底黑字代码框、永不遮挡底部按钮
     // ==========================================
     private void showCleanDraggableRgbDialog(int index, byte[] actData, boolean isRgba, View colorBox, String actPath, Runnable onRealtimeUpdate) {
         final Dialog dialog = new Dialog(getContext());
-        // 【核心修复】彻底干掉系统默认的丑陋黑色标题栏！
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE); 
         dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
         dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND); 
         dialog.setCanceledOnTouchOutside(false);
         dialog.setCancelable(false); // 强制必须点取消或保存
 
-        // 【核心修复】绝对坐标系，像原生系统窗口一样丝滑拖动
+        // 绝对坐标系，像原生系统窗口一样丝滑拖动
         WindowManager.LayoutParams wmlp = dialog.getWindow().getAttributes();
-        wmlp.gravity = Gravity.TOP | Gravity.LEFT;
-        wmlp.x = 100; wmlp.y = 100; // 默认出生位置
+        wmlp.gravity = Gravity.TOP | Gravity.LEFT; wmlp.x = 50; wmlp.y = 50;
         dialog.getWindow().setAttributes(wmlp);
 
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL);
@@ -1759,7 +1801,12 @@ public class DesktopSystemView extends Dialog {
             return false;
         });
 
-        ScrollView scroll = new ScrollView(getContext()); LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding((int)(20*density), (int)(10*density), (int)(20*density), (int)(20*density));
+        // 核心布局：弹性 ScrollView 夹在标题栏和底部按钮之间，绝不遮挡！
+        ScrollView scroll = new ScrollView(getContext()); 
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f); // 吸收剩余空间
+        scroll.setLayoutParams(scrollParams);
+        
+        LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding((int)(20*density), (int)(10*density), (int)(20*density), (int)(20*density));
 
         final int origR = isRgba ? (actData[index*4] & 0xFF) : (actData[index*3] & 0xFF);
         final int origG = isRgba ? (actData[index*4+1] & 0xFF) : (actData[index*3+1] & 0xFF);
@@ -1779,11 +1826,16 @@ public class DesktopSystemView extends Dialog {
             try { FileOutputStream fos = new FileOutputStream(actPath); fos.write(actData); fos.close(); if (onRealtimeUpdate != null) onRealtimeUpdate.run(); } catch (Exception e) {}
         };
 
-        hexInput.setTextColor(Color.WHITE); hexInput.setHintTextColor(Color.GRAY); hexInput.setText(String.format("#%02X%02X%02X", RGB[0], RGB[1], RGB[2]));
+        // 强力解析器与白底黑字样式
+        hexInput.setTextColor(Color.BLACK); hexInput.setBackgroundColor(Color.WHITE); hexInput.setPadding(20,20,20,20);
+        hexInput.setText(String.format("#%02X%02X%02X", RGB[0], RGB[1], RGB[2]));
         hexInput.addTextChangedListener(new TextWatcher() {
             public void afterTextChanged(Editable s) {
                 if (isUIUpdating[0]) return;
-                try { int c = Color.parseColor(s.toString()); RGB[0]=Color.red(c); RGB[1]=Color.green(c); RGB[2]=Color.blue(c); applyColorLive.run(); } catch(Exception e){}
+                String hex = s.toString().trim();
+                if (!hex.startsWith("#")) hex = "#" + hex;
+                if (hex.length() == 4) hex = "#" + hex.charAt(1)+hex.charAt(1) + hex.charAt(2)+hex.charAt(2) + hex.charAt(3)+hex.charAt(3);
+                try { int c = Color.parseColor(hex); RGB[0]=Color.red(c); RGB[1]=Color.green(c); RGB[2]=Color.blue(c); applyColorLive.run(); } catch(Exception e){}
             }
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {} public void onTextChanged(CharSequence s, int start, int before, int count) {}
         });
@@ -1837,7 +1889,7 @@ public class DesktopSystemView extends Dialog {
         viewWheel.addView(colorWheel, wheelParams);
         TextView hint = new TextView(getContext()); hint.setText("☝️ 在色盘上滑动即可提取任意中性色"); hint.setTextColor(Color.GRAY); hint.setGravity(Gravity.CENTER); viewWheel.addView(hint);
 
-        // 模式 3: 硬核玩家专属十字键 (1像素微调)
+        // 模式 3: 十字微调
         LinearLayout viewDpad = new LinearLayout(getContext()); viewDpad.setOrientation(LinearLayout.VERTICAL); viewDpad.setGravity(Gravity.CENTER);
         viewDpad.setPadding(0, (int)(15*density), 0, 0);
         View.OnClickListener dpadClick = v -> {
@@ -1866,9 +1918,14 @@ public class DesktopSystemView extends Dialog {
         btnModeWheel.setOnClickListener(v -> { viewRgb.setVisibility(View.GONE); viewWheel.setVisibility(View.VISIBLE); viewDpad.setVisibility(View.GONE); });
         btnModeDpad.setOnClickListener(v -> { viewRgb.setVisibility(View.GONE); viewWheel.setVisibility(View.GONE); viewDpad.setVisibility(View.VISIBLE); });
 
-        // 底部防误触反悔系统
+        // 将模式栏放入滚动层
+        scroll.addView(layout); 
+        root.addView(scroll);
+
+        // 底部防误触反悔系统 (永远钉死在底部，绝对不会消失)
         LinearLayout bottomRow = new LinearLayout(getContext()); bottomRow.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2); sp.setMargins(0, (int)(20*density), 0, 0);
+        bottomRow.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        bottomRow.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
 
         Button btnCancel = createButton("❌ 取消恢复", "#E81123");
         Button btnSave = createButton("💾 确认保存", "#4CAF50");
@@ -1885,16 +1942,80 @@ public class DesktopSystemView extends Dialog {
 
         bottomRow.addView(btnCancel, new LinearLayout.LayoutParams(0, -2, 1f));
         bottomRow.addView(btnSave, new LinearLayout.LayoutParams(0, -2, 1f));
-        layout.addView(bottomRow, sp);
+        root.addView(bottomRow, new LinearLayout.LayoutParams(-1, -2)); 
 
-        scroll.addView(layout); root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
         dialog.setContentView(root);
         
-        // 核心：设置宽高固定，内部弹性滑动，绝不被手机屏幕切断！
-        dialog.getWindow().setLayout((int)(320*density), (int)(500*density));
+        // 【核心修复】计算安全高度（屏幕高度的 80%），防止被系统下方导航栏吃掉
+        int screenHeight = getContext().getResources().getDisplayMetrics().heightPixels;
+        dialog.getWindow().setLayout((int)(340*density), (int)(screenHeight * 0.85f));
         dialog.show();
     }
-    // ======================================================================================
+
+    // ==========================================
+    // 🔎 弹窗型资产网格选择器 (完全同步原版 SFF 解析器机制)
+    // ==========================================
+    private void showSffGridPicker(File dir, DesktopSystemView.OnFileSelectedListener listener) {
+        Dialog d = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
+        d.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE); applyImmersiveMode(d.getWindow());
+        FrameLayout overlay = new FrameLayout(getContext()); overlay.setBackgroundColor(Color.argb(230, 0,0,0));
+        LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+        
+        TextView title = new TextView(getContext()); title.setText("正在极速扫描 SFF 并渲染头像，请稍候..."); title.setTextColor(Color.WHITE); applyGlobalFontSettings(title, 1.2f, true); box.addView(title);
+        ScrollView scroll = new ScrollView(getContext()); LinearLayout grid = new LinearLayout(getContext()); grid.setOrientation(LinearLayout.VERTICAL); scroll.addView(grid); box.addView(scroll);
+        overlay.addView(box); d.setContentView(overlay); d.show(); d.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+
+        new Thread(() -> {
+            List<File> files = new ArrayList<>(); findFilesRecursively(dir, files, ".sff");
+            List<GoEngineBridge.SffInfo> infos = new ArrayList<>();
+            for(File f : files) {
+                List<GoEngineBridge.SffInfo> s = GoEngineBridge.scanSff(f.getAbsolutePath());
+                for(GoEngineBridge.SffInfo i : s) { try { byte[] pb = Api.getSffPreview(i.filePath); if(pb!=null&&pb.length>0) i.preview = BitmapFactory.decodeByteArray(pb,0,pb.length); } catch(Exception e){} infos.add(i); }
+            }
+            new Handler(Looper.getMainLooper()).post(() -> {
+                title.setText("✅ 扫描完成，请点击选择用于挂载的文件:");
+                LinearLayout row = null; int count = 0;
+                for(GoEngineBridge.SffInfo info : infos) {
+                    if(count == 0) { row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); grid.addView(row); }
+                    LinearLayout card = new LinearLayout(getContext()); card.setOrientation(LinearLayout.VERTICAL); card.setGravity(Gravity.CENTER); card.setPadding((int)(10*density),(int)(10*density),(int)(10*density),(int)(10*density));
+                    GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#2D2D30")); bg.setCornerRadius(10f); bg.setStroke(2, Color.parseColor("#3F3F46")); card.setBackground(bg);
+                    ImageView iv = new ImageView(getContext()); iv.setLayoutParams(new LinearLayout.LayoutParams((int)(90*density), (int)(90*density))); iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                    if(info.preview != null) iv.setImageBitmap(info.preview); else iv.setBackgroundColor(Color.DKGRAY); card.addView(iv);
+                    TextView tv = new TextView(getContext()); tv.setText(info.name); tv.setTextColor(Color.WHITE); tv.setSingleLine(true); applyGlobalFontSettings(tv, 0.9f, false); card.addView(tv);
+                    Button btn = createButton("✔️ 选择此项", "#4CAF50"); btn.setOnClickListener(v -> { listener.onFileSelected(new File(info.filePath)); d.dismiss(); }); card.addView(btn);
+                    LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, -2, 1f); cp.setMargins((int)(5*density),(int)(5*density),(int)(5*density),(int)(5*density)); row.addView(card, cp);
+                    count++; if(count >= 3) count = 0;
+                }
+                Button closeBtn = createButton("❌ 取消并关闭", "#E81123"); closeBtn.setOnClickListener(v -> d.dismiss()); grid.addView(closeBtn);
+            });
+        }).start();
+    }
+
+    private void showActGridPicker(File dir, DesktopSystemView.OnFileSelectedListener listener) {
+        Dialog d = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
+        d.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE); applyImmersiveMode(d.getWindow());
+        FrameLayout overlay = new FrameLayout(getContext()); overlay.setBackgroundColor(Color.argb(230, 0,0,0));
+        LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+        
+        TextView title = new TextView(getContext()); title.setText("正在扫描 ACT，请稍候..."); title.setTextColor(Color.WHITE); applyGlobalFontSettings(title, 1.2f, true); box.addView(title);
+        ScrollView scroll = new ScrollView(getContext()); LinearLayout grid = new LinearLayout(getContext()); grid.setOrientation(LinearLayout.VERTICAL); scroll.addView(grid); box.addView(scroll);
+        overlay.addView(box); d.setContentView(overlay); d.show(); d.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+
+        new Thread(() -> {
+            List<File> files = new ArrayList<>(); findFilesRecursively(dir, files, ".act");
+            new Handler(Looper.getMainLooper()).post(() -> {
+                title.setText("✅ 扫描完成，共找到 " + files.size() + " 个 ACT 色表文件:");
+                for(File f : files) {
+                    Button btn = createButton("🎨 " + f.getName() + "\n" + f.getParent(), "#0078D7");
+                    btn.setOnClickListener(v -> { listener.onFileSelected(f); d.dismiss(); });
+                    LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2); bp.setMargins(0,0,0,(int)(10*density));
+                    grid.addView(btn, bp);
+                }
+                Button closeBtn = createButton("❌ 取消并关闭", "#E81123"); closeBtn.setOnClickListener(v -> d.dismiss()); grid.addView(closeBtn);
+            });
+        }).start();
+    }
+
     // 🌉 Go 引擎底层抽象桥接
     // ======================================================================================
     public static class GoEngineBridge {
