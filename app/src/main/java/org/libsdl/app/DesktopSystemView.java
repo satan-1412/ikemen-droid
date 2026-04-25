@@ -1575,11 +1575,11 @@ public class DesktopSystemView extends Dialog {
         Button btnLoadSff = createButton("🖼️ 挂载图像(.sff)", "#9C27B0");
         Button btnMode = createButton("👁️ 预览模式", "#4CAF50");
         Button btnExtract = createButton("⬇️ 提取内置色表", "#FF9800");
-        Button btnInject = createButton("💉 永久注入SFF", "#E81123");
 
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2); bp.setMargins(0, 0, (int)(10*density), 0);
         topBar.addView(btnLoadAct, bp); topBar.addView(btnLoadSff, bp);
-        topBar.addView(btnMode, bp); topBar.addView(btnExtract, bp); topBar.addView(btnInject, bp);
+        topBar.addView(btnMode, bp); topBar.addView(btnExtract, bp);
+        // 删除了注入按钮，节约空间
         topScroll.addView(topBar); root.addView(topScroll);
 
         LinearLayout mainArea = new LinearLayout(getContext()); mainArea.setOrientation(LinearLayout.HORIZONTAL);
@@ -1744,20 +1744,7 @@ public class DesktopSystemView extends Dialog {
             }).start();
         });
 
-        btnInject.setOnClickListener(v -> {
-            if (currentSffPath[0].isEmpty() || currentActPath[0].isEmpty()) { Toast.makeText(getContext(), "⚠️ 必须同时挂载 SFF 和调好的色表！", Toast.LENGTH_SHORT).show(); return; }
-            new Thread(() -> {
-                try {
-                    File origSff = new File(currentSffPath[0]); File backupSff = new File(origSff.getParent(), origSff.getName().replace(".sff", "_backup.sff"));
-                    if (!backupSff.exists()) copyFileToSandbox(origSff, backupSff);
-                    boolean success = Api.injectSffPalette(currentSffPath[0], currentActPath[0]);
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        if (success) Toast.makeText(getContext(), "✅ 注入成功！原人物已永久改色！(已备份)", Toast.LENGTH_LONG).show();
-                        else Toast.makeText(getContext(), "❌ 注入失败：格式或引擎拦截", Toast.LENGTH_LONG).show();
-                    });
-                } catch (Exception e) {}
-            }).start();
-        });
+        // 永久注入功能已移除，采用更安全的外挂 .act 模式
 
         return root;
     }
