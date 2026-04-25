@@ -1867,7 +1867,12 @@ public class DesktopSystemView extends Dialog {
     // ==========================================
     // 🔎 智能无限深度文件扫描器 (支持附带人物头像预览)
     // ==========================================
-    private void showInfiniteScannerDialog(String title, String targetExt, boolean showAvatar, org.libsdl.app.DesktopSystemView.FileCallback callback) {
+        // 补齐缺失的回调接口定义
+    public interface FileCallback {
+        void onFileSelected(File file);
+    }
+
+    private void showInfiniteScannerDialog(String title, String targetExt, boolean showAvatar, FileCallback callback) {
         Dialog d = new Dialog(getContext()); LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setBackgroundColor(Color.parseColor("#252526"));
         TextView tvTitle = new TextView(getContext()); tvTitle.setText("正在全盘深度扫描 " + targetExt + " 文件...\n(请稍等，手机文件越多越慢)"); tvTitle.setTextColor(Color.WHITE); tvTitle.setPadding(20,20,20,20); layout.addView(tvTitle);
         android.widget.ListView listView = new android.widget.ListView(getContext()); layout.addView(listView, new LinearLayout.LayoutParams(-1, -1));
