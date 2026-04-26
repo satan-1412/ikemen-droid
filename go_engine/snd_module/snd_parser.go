@@ -52,7 +52,7 @@ func ExtractAllNodes(filename string) ([]SndNodeInfo, error) {
 		if subHeaderOffset == 0 {
 			break
 		}
-		f.Seek(int64(subHeaderOffset), 0)
+		f.Seek(int64(subHeaderOffset), io.SeekStart)
 		var nextSubHeaderOffset, subFileLength uint32
 		var num [2]int32
 
@@ -79,7 +79,7 @@ func ExtractWav(filename string, targetGroup int32, targetItem int32) ([]byte, e
 		return nil, fmt.Errorf("invalid SND header")
 	}
 
-	f.Seek(16, 0)
+	f.Seek(16, io.SeekStart)
 	var numberOfSounds, subHeaderOffset uint32
 	binary.Read(f, binary.LittleEndian, &numberOfSounds)
 	binary.Read(f, binary.LittleEndian, &subHeaderOffset)
@@ -88,7 +88,7 @@ func ExtractWav(filename string, targetGroup int32, targetItem int32) ([]byte, e
 		if subHeaderOffset == 0 {
 			break
 		}
-		f.Seek(int64(subHeaderOffset), 0)
+		f.Seek(int64(subHeaderOffset), io.SeekStart)
 		var nextSubHeaderOffset, subFileLength uint32
 		var num [2]int32
 
@@ -107,77 +107,97 @@ func ExtractWav(filename string, targetGroup int32, targetItem int32) ([]byte, e
 }
 
 // ==========================================
-// 🛠️ 独家底层写入机制：真正实现 SND 音频替换
+// 🛠️ 独家底层写入机制：真正实现 SND 音频替换 (顺序重建防静音)
 // ==========================================
 
 func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, audioPath string) error {
-	// 【极致优化】直接读取原始字节流，不再对格式进行任何死板拦截
 	audioData, err := os.ReadFile(audioPath)
 	if err != nil {
 		return fmt.Errorf("无法读取音频源文件: %v", err)
 	}
 
-	// 注入逻辑：Ikemen GO 的音频底层 (sound.go) 拥有自动嗅探头部的智能解码器
-	//
-	// 无论你塞入的是 MP3/OGG/FLAC 还是 XM/MOD，它都能在读取时自动匹配解码模块。
-
-	f, err := os.OpenFile(sndPath, os.O_RDWR, 0644)
+	f, err := os.Open(sndPath)
 	if err != nil {
 		return fmt.Errorf("无法打开SND文件: %v", err)
 	}
-	defer f.Close()
 
 	buf := make([]byte, 12)
 	f.Read(buf)
 	if string(buf) != "ElecbyteSnd\x00" {
+		f.Close()
 		return fmt.Errorf("非法的 SND 格式")
 	}
 
-	f.Seek(16, io.SeekStart)
+	var ver, ver2 uint16
 	var numberOfSounds, subHeaderOffset uint32
+	binary.Read(f, binary.LittleEndian, &ver)
+	binary.Read(f, binary.LittleEndian, &ver2)
 	binary.Read(f, binary.LittleEndian, &numberOfSounds)
 	binary.Read(f, binary.LittleEndian, &subHeaderOffset)
 
-	var ptrToCurrentNode int64 = 20
+	type Node struct {
+		Group int32
+		Item  int32
+		Data  []byte
+	}
+	var nodes []Node
 
+	// 提取全部节点
 	for i := uint32(0); i < numberOfSounds; i++ {
 		if subHeaderOffset == 0 {
 			break
 		}
-
 		f.Seek(int64(subHeaderOffset), io.SeekStart)
 		var nextSubHeaderOffset, subFileLength uint32
 		var num [2]int32
-
 		binary.Read(f, binary.LittleEndian, &nextSubHeaderOffset)
 		binary.Read(f, binary.LittleEndian, &subFileLength)
 		binary.Read(f, binary.LittleEndian, &num)
 
+		data := make([]byte, subFileLength)
+		f.Read(data)
+
+		// 将新音频替换进去
 		if num[0] == targetGroup && num[1] == targetItem {
-			fileInfo, _ := f.Stat()
-			appendOffset := fileInfo.Size()
-
-			// 🚀 原子级注入：在文件末尾追加新数据，最后才修改链表指针，防止损坏文件
-			f.Seek(0, io.SeekEnd)
-			binary.Write(f, binary.LittleEndian, nextSubHeaderOffset) 
-			binary.Write(f, binary.LittleEndian, uint32(len(audioData))) 
-			binary.Write(f, binary.LittleEndian, num[0])               
-			binary.Write(f, binary.LittleEndian, num[1])               
-
-			_, err = f.Write(audioData)
-			if err != nil {
-				return fmt.Errorf("写入节点数据失败: %v", err)
-			}
-
-			// 切换指针，使新节点正式生效
-			f.Seek(ptrToCurrentNode, io.SeekStart)
-			binary.Write(f, binary.LittleEndian, uint32(appendOffset))
-
-			return nil 
+			data = audioData
 		}
-		ptrToCurrentNode = int64(subHeaderOffset)
+		nodes = append(nodes, Node{Group: num[0], Item: num[1], Data: data})
 		subHeaderOffset = nextSubHeaderOffset
 	}
+	f.Close()
 
-	return fmt.Errorf("在 SND 内部索引中未找到对应的音频组")
+	// 全量物理重写，保证引擎读取顺畅
+	out, err := os.Create(sndPath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	out.Write([]byte("ElecbyteSnd\x00"))
+	binary.Write(out, binary.LittleEndian, ver)
+	binary.Write(out, binary.LittleEndian, ver2)
+	binary.Write(out, binary.LittleEndian, uint32(len(nodes)))
+	
+	if len(nodes) > 0 {
+		binary.Write(out, binary.LittleEndian, uint32(24))
+	} else {
+		binary.Write(out, binary.LittleEndian, uint32(0))
+	}
+	out.Write(make([]byte, 4))
+
+	currentOffset := uint32(24)
+	for i, n := range nodes {
+		nextOffset := uint32(0)
+		if i < len(nodes)-1 {
+			nextOffset = currentOffset + 16 + uint32(len(n.Data))
+		}
+		out.Seek(int64(currentOffset), io.SeekStart)
+		binary.Write(out, binary.LittleEndian, nextOffset)
+		binary.Write(out, binary.LittleEndian, uint32(len(n.Data)))
+		binary.Write(out, binary.LittleEndian, n.Group)
+		binary.Write(out, binary.LittleEndian, n.Item)
+		out.Write(n.Data)
+		currentOffset = nextOffset
+	}
+	return nil
 }
