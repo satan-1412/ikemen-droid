@@ -2260,6 +2260,7 @@ public class DesktopSystemView extends Dialog {
         root.setBackgroundColor(Color.parseColor("#1E1E1E"));
 
         final String[] currentDefPath = {""};
+        final boolean[] isEditMode = {false}; // 👈 补回这行极其重要的状态声明！
         final boolean[] is3DMode = {false};
         final int[] currentViewMode = {0}; // 0: SFF图层, 1: DEF代码, 2: 3D模型
         
