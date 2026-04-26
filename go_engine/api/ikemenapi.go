@@ -12,6 +12,7 @@ import (
 
 	"ikemenbridge/sff_module"
 	"ikemenbridge/snd_module"
+	"ikemenbridge/stage_module"
 )
 
 // ==========================================
@@ -279,4 +280,18 @@ func ExtractSffPalette(sffPath string, actPath string) bool {
 func InjectSffPalette(sffPath string, actPath string) bool {
 	err := sff_module.InjectInternalPalette(sffPath, actPath)
 	return err == nil
+}
+
+// ==========================================
+// 🗺️ 地图编辑器：打包生成 DEF 核心工程
+// ==========================================
+
+// ExportStageDef 接收安卓 UI 传来的 JSON 和保存路径，生成完美的 .def 配置文件
+func ExportStageDef(exportDir string, stageJson string) string {
+	outPath, err := stage_module.WriteStageDef(exportDir, stageJson)
+	if err != nil {
+		// 遭遇致命错误时返回空字符串通知 Java 弹窗报错
+		return "" 
+	}
+	return outPath
 }
