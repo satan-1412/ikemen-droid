@@ -142,7 +142,6 @@ func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, au
 	}
 	var nodes []Node
 
-	// 提取全部节点
 	for i := uint32(0); i < numberOfSounds; i++ {
 		if subHeaderOffset == 0 {
 			break
@@ -157,7 +156,6 @@ func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, au
 		data := make([]byte, subFileLength)
 		f.Read(data)
 
-		// 将新音频替换进去
 		if num[0] == targetGroup && num[1] == targetItem {
 			data = audioData
 		}
@@ -166,7 +164,6 @@ func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, au
 	}
 	f.Close()
 
-	// 全量物理重写，保证引擎读取顺畅
 	out, err := os.Create(sndPath)
 	if err != nil {
 		return err
@@ -183,7 +180,6 @@ func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, au
 	} else {
 		binary.Write(out, binary.LittleEndian, uint32(0))
 	}
-	out.Write(make([]byte, 4))
 
 	currentOffset := uint32(24)
 	for i, n := range nodes {
