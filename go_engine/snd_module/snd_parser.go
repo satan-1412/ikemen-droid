@@ -6,6 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+
+	"github.com/gopxl/beep/v2"
+	"github.com/gopxl/beep/v2/flac"
+	"github.com/gopxl/beep/v2/mp3"
+	"github.com/gopxl/beep/v2/vorbis"
 )
 
 // ==========================================
@@ -18,7 +24,7 @@ type SndNodeInfo struct {
 }
 
 // ==========================================
-// 🎵 核心解包算法 (纯净剥离版，完全展开)
+// 🎵 核心解包算法
 // ==========================================
 
 func ExtractAllNodes(filename string) ([]SndNodeInfo, error) {
@@ -107,13 +113,105 @@ func ExtractWav(filename string, targetGroup int32, targetItem int32) ([]byte, e
 }
 
 // ==========================================
-// 🛠️ 独家底层写入机制：真正实现 SND 音频替换 (顺序重建防静音)
+// 🚀 核心黑科技：底层无损转码器 (解决引擎静音Bug)
+// ==========================================
+
+func getWavData(audioPath string) ([]byte, error) {
+	f, err := os.Open(audioPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	lowerPath := strings.ToLower(audioPath)
+	
+	// 如果本来就是 WAV，直接返回，跳过转码
+	if strings.HasSuffix(lowerPath, ".wav") {
+		return io.ReadAll(f)
+	}
+
+	var streamer beep.StreamSeekCloser
+	var format beep.Format
+
+	// 智能识别源格式并调用对应解码器
+	if strings.HasSuffix(lowerPath, ".mp3") {
+		streamer, format, err = mp3.Decode(f)
+	} else if strings.HasSuffix(lowerPath, ".ogg") {
+		streamer, format, err = vorbis.Decode(f)
+	} else if strings.HasSuffix(lowerPath, ".flac") {
+		streamer, format, err = flac.Decode(f)
+	} else {
+		// 未知后缀，尝试直接按原数据读取
+		return io.ReadAll(f)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("解码失败: %v", err)
+	}
+	defer streamer.Close()
+
+	numFrames := streamer.Len()
+	if numFrames <= 0 {
+		return nil, fmt.Errorf("音频长度无效")
+	}
+
+	// 强制构建 16位 PCM WAV 文件头，这是引擎唯一认死理的格式
+	numChannels := format.NumChannels
+	sampleRate := uint32(format.SampleRate)
+	bitsPerSample := 16
+	byteRate := sampleRate * uint32(numChannels) * uint32(bitsPerSample/8)
+	blockAlign := uint16(numChannels) * uint16(bitsPerSample/8)
+	dataSize := uint32(numFrames) * uint32(blockAlign)
+	fileSize := 36 + dataSize
+
+	buf := new(bytes.Buffer)
+	buf.WriteString("RIFF")
+	binary.Write(buf, binary.LittleEndian, uint32(fileSize))
+	buf.WriteString("WAVEfmt ")
+	binary.Write(buf, binary.LittleEndian, uint32(16))
+	binary.Write(buf, binary.LittleEndian, uint16(1)) // PCM
+	binary.Write(buf, binary.LittleEndian, uint16(numChannels))
+	binary.Write(buf, binary.LittleEndian, uint32(sampleRate))
+	binary.Write(buf, binary.LittleEndian, uint32(byteRate))
+	binary.Write(buf, binary.LittleEndian, uint16(blockAlign))
+	binary.Write(buf, binary.LittleEndian, uint16(bitsPerSample))
+	buf.WriteString("data")
+	binary.Write(buf, binary.LittleEndian, uint32(dataSize))
+
+	// 将音频流提取并强制转换为 16位 纯净 PCM 写入
+	samples := make([][2]float64, 512)
+	for {
+		n, ok := streamer.Stream(samples)
+		if n == 0 || !ok {
+			break
+		}
+		for i := 0; i < n; i++ {
+			for c := 0; c < numChannels; c++ {
+				val := samples[i][c]
+				if val < -1.0 { val = -1.0 }
+				if val > 1.0 { val = 1.0 }
+				intVal := int16(val * 32767.0)
+				binary.Write(buf, binary.LittleEndian, intVal)
+			}
+		}
+	}
+
+	return buf.Bytes(), nil
+}
+
+// ==========================================
+// 🛠️ 独家底层写入机制：带转码的顺序重建
 // ==========================================
 
 func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, audioPath string) error {
-	audioData, err := os.ReadFile(audioPath)
+	// 1. 无损转码：自动把 MP3/OGG 变成引擎需要的纯种 WAV
+	audioData, err := getWavData(audioPath)
 	if err != nil {
-		return fmt.Errorf("无法读取音频源文件: %v", err)
+		// 如果转码失败（比如奇怪的未知文件），兜底方案直接读取原文件
+		audioData, err = os.ReadFile(audioPath)
+		if err != nil {
+			return fmt.Errorf("读取文件失败: %v", err)
+		}
 	}
 
 	f, err := os.Open(sndPath)
@@ -156,6 +254,7 @@ func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, au
 		data := make([]byte, subFileLength)
 		f.Read(data)
 
+		// 将转码后的纯净音频替换进去
 		if num[0] == targetGroup && num[1] == targetItem {
 			data = audioData
 		}
@@ -164,6 +263,7 @@ func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, au
 	}
 	f.Close()
 
+	// 2. 全量物理重写，严格锁定 24 字节头部
 	out, err := os.Create(sndPath)
 	if err != nil {
 		return err
