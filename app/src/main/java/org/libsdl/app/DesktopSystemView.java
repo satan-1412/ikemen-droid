@@ -708,6 +708,9 @@ public class DesktopSystemView extends Dialog {
                 } else if (targetType == 9) {
                     Button scanDirBtn = createButton("✔️ 深度扫描并提取本文件夹的 ACT 色表", "#0078D7"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
+                } else if (targetType == 10) {
+                    Button scanDirBtn = createButton("✔️ 深度扫描本文件夹的地图工程 (.def)", "#E81123"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                    scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
                 }
 
                 
@@ -755,6 +758,23 @@ public class DesktopSystemView extends Dialog {
                                 else if (targetType == 9) {
                                     if (absPath.toLowerCase().endsWith(".act")) { if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); }
                                     else Toast.makeText(getContext(), "❌ 请选择 .act 调色板文件", Toast.LENGTH_SHORT).show();
+                                }
+                                else if (targetType == 10) {
+                                    if (absPath.toLowerCase().endsWith(".def")) {
+                                        // 智能探针：全文件深度扫描，绝对不误杀任何一个合法的地图工程
+                                        boolean isStage = false;
+                                        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(f))) {
+                                            String line;
+                                            while ((line = br.readLine()) != null) {
+                                                String lower = line.toLowerCase().trim();
+                                                if (lower.startsWith("[stageinfo]") || lower.startsWith("[bgdef]")) { isStage = true; break; }
+                                            }
+                                        } catch (Exception ignored) {}
+                                        
+                                        if (isStage) { if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); }
+                                        else { Toast.makeText(getContext(), "❌ 引擎拦截：这是一个人物包或无效配置，只能选择地图工程！", Toast.LENGTH_LONG).show(); }
+                                    }
+                                    else Toast.makeText(getContext(), "❌ 请选择 .def 地图配置文件", Toast.LENGTH_SHORT).show();
                                 }
                                 else if (targetType == 1 || targetType == 2) { 
                                     if(targetType == 1) customDesktopBg = absPath; else customWindowBg = absPath;
@@ -2173,12 +2193,20 @@ public class DesktopSystemView extends Dialog {
     }
 
     // ======================================================================================
-    // 🗺️ 模块 5：全能地图编辑器 (支持 2D/3D, 动图一键导入, 防误触微调)
+    // 🗺️ 模块 5：全能地图编辑器 (双轨 UI, 折叠菜单, 防冲突防误触)
     // ======================================================================================
     private View buildStageEditorContent() {
         LinearLayout root = new LinearLayout(getContext());
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.parseColor("#1E1E1E"));
+
+        final String[] currentDefPath = {""};
+        final boolean[] isEditMode = {false};
+        
+        // 视口样式变量 (支持动态修改)
+        final int[] gridAlpha = {70};
+        final int[] gridColor = {Color.WHITE};
+        final int[] bgColor = {Color.parseColor("#000080")};
 
         // 顶部工具栏 (工程管理与模式切换)
         LinearLayout topBar = new LinearLayout(getContext());
@@ -2187,7 +2215,7 @@ public class DesktopSystemView extends Dialog {
         topBar.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
         topBar.setBackgroundColor(Color.parseColor("#252526"));
 
-        Button btnScan = createButton("📂 载入/新建地图工程", "#0078D7");
+        Button btnScan = createButton("📂 载入/新建工程", "#0078D7");
         Button btnSave = createButton("💾 编译打包地图", "#4CAF50");
         Button btnMode2D = createButton("📐 2D 层级模式", "#9C27B0");
         Button btnMode3D = createButton("🧊 3D 节点模式", "#333333");
@@ -2209,21 +2237,25 @@ public class DesktopSystemView extends Dialog {
         leftPanel.setBackgroundColor(Color.parseColor("#2D2D30"));
         leftPanel.setPadding((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
         
-        TextView layerTitle = createSubTitle("📑 场景元素大纲"); layerTitle.setTextColor(Color.WHITE);
-        leftPanel.addView(layerTitle);
+        LinearLayout titleRow = new LinearLayout(getContext()); titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        TextView layerTitle = createSubTitle("📑 场景大纲"); layerTitle.setTextColor(Color.WHITE);
+        Button btnSettings = createButton("⚙️ 视口设置", "#3F3F46"); // 折叠菜单入口
+        titleRow.addView(layerTitle, new LinearLayout.LayoutParams(0, -2, 1f));
+        titleRow.addView(btnSettings, new LinearLayout.LayoutParams(-2, -2));
+        leftPanel.addView(titleRow);
 
         ScrollView layerScroll = new ScrollView(getContext());
         LinearLayout layerList = new LinearLayout(getContext());
         layerList.setOrientation(LinearLayout.VERTICAL);
 
-        // 示例图层项 (带锁定防误触机制)
+        // 示例图层项 (带锁定防误触)
         LinearLayout sampleLayer = new LinearLayout(getContext());
         sampleLayer.setOrientation(LinearLayout.HORIZONTAL);
         sampleLayer.setGravity(Gravity.CENTER_VERTICAL);
         sampleLayer.setBackgroundColor(Color.parseColor("#3F3F46"));
         sampleLayer.setPadding((int)(5*density), (int)(8*density), (int)(5*density), (int)(8*density));
         
-        Button btnLock = createButton("🔓", "#333333"); // 图层锁定键
+        Button btnLock = createButton("🔓", "#333333"); 
         TextView txtLayerName = new TextView(getContext()); txtLayerName.setText(" [BG] 远景天空"); txtLayerName.setTextColor(Color.WHITE);
         
         sampleLayer.addView(btnLock, new LinearLayout.LayoutParams(-2, -2));
@@ -2233,8 +2265,13 @@ public class DesktopSystemView extends Dialog {
         layerScroll.addView(layerList);
         leftPanel.addView(layerScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        Button btnImportGif = createButton("🎞️ 一键导入 GIF 动图", "#FF9800");
-        leftPanel.addView(btnImportGif, new LinearLayout.LayoutParams(-1, -2));
+        // 动态导入按键：根据模式显示不同的按钮
+        Button btnImportAsset = createButton("🖼️ 导入图像/GIF动图素材", "#FF9800");
+        Button btnImportModel = createButton("🧊 导入 3D 模型 (.gltf/.glb)", "#0078D7");
+        btnImportModel.setVisibility(View.GONE); 
+        
+        leftPanel.addView(btnImportAsset, new LinearLayout.LayoutParams(-1, -2));
+        leftPanel.addView(btnImportModel, new LinearLayout.LayoutParams(-1, -2));
 
         // ----------------------------------------------------
         // 中间：可视区 (Viewport) 与防误触微调控制
@@ -2245,51 +2282,45 @@ public class DesktopSystemView extends Dialog {
         final Matrix imageMatrix = new Matrix(); 
         
         // 🚀 致敬 Fighter Factory：带有 0,0 绝对坐标轴和动态网格的专业视口
-        FrameLayout viewportFrame = new FrameLayout(getContext()) {
+        final FrameLayout viewportFrame = new FrameLayout(getContext()) {
             Paint gridPaint = new Paint();
             Paint axisPaint = new Paint();
             
             {
-                gridPaint.setColor(Color.argb(70, 255, 255, 255)); // 半透明白网格
-                gridPaint.setStrokeWidth(1);
-                axisPaint.setColor(Color.parseColor("#FF0000")); // FF 经典的红色 X/Y 轴 (0,0基准线)
+                axisPaint.setColor(Color.parseColor("#FF0000")); 
                 axisPaint.setStrokeWidth(2 * density);
-                setWillNotDraw(false); // 强制开启绘制
+                setWillNotDraw(false); 
             }
 
             @Override
             protected void dispatchDraw(Canvas canvas) {
-                // 1. 铺满 FF 经典的深蓝色背景
-                canvas.drawColor(Color.parseColor("#000080")); 
+                // 实时采用动态修改的背景色
+                canvas.drawColor(bgColor[0]); 
                 
-                // 获取当前 Matrix 的平移和缩放参数
+                // 实时更新网格颜色和透明度
+                gridPaint.setColor(gridColor[0]);
+                gridPaint.setAlpha(gridAlpha[0]);
+                gridPaint.setStrokeWidth(1);
+
                 float[] values = new float[9];
                 imageMatrix.getValues(values);
                 float transX = values[Matrix.MTRANS_X];
                 float transY = values[Matrix.MTRANS_Y];
                 float scale = values[Matrix.MSCALE_X];
 
-                // 2. 动态渲染网格 (跟随玩家拖拽和缩放同步移动)
-                float gridSize = 20 * scale; // 基础网格大小
-                if (gridSize > 4) { // 缩得太小就不画网格防卡顿
-                    // 垂直网格线
+                float gridSize = 20 * scale; 
+                if (gridSize > 4 && gridAlpha[0] > 0) { 
                     float startX = transX % gridSize;
                     if (startX < 0) startX += gridSize;
-                    for (float x = startX; x < getWidth(); x += gridSize) {
-                        canvas.drawLine(x, 0, x, getHeight(), gridPaint);
-                    }
-                    // 水平网格线
+                    for (float x = startX; x < getWidth(); x += gridSize) { canvas.drawLine(x, 0, x, getHeight(), gridPaint); }
+                    
                     float startY = transY % gridSize;
                     if (startY < 0) startY += gridSize;
-                    for (float y = startY; y < getHeight(); y += gridSize) {
-                        canvas.drawLine(0, y, getWidth(), y, gridPaint);
-                    }
+                    for (float y = startY; y < getHeight(); y += gridSize) { canvas.drawLine(0, y, getWidth(), y, gridPaint); }
                 }
 
-                // 3. 绘制 0,0 绝对坐标十字轴
-                // 当图片在里面拖动时，这根红线永远代表引擎里的绝对坐标 0,0 位置
-                canvas.drawLine(transX, 0, transX, getHeight(), axisPaint); // 绝对 Y 轴
-                canvas.drawLine(0, transY, getWidth(), transY, axisPaint); // 绝对 X 轴
+                canvas.drawLine(transX, 0, transX, getHeight(), axisPaint); 
+                canvas.drawLine(0, transY, getWidth(), transY, axisPaint); 
 
                 super.dispatchDraw(canvas); 
             }
@@ -2301,7 +2332,6 @@ public class DesktopSystemView extends Dialog {
         
         centerPanel.addView(viewportFrame, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        // 注入双指缩放与拖拽物理引擎
         final Matrix savedMatrix = new Matrix();
         final int[] touchMode = {0}; final PointF startPoint = new PointF(); final PointF midPoint = new PointF();
         final float[] oldDist = {1f}; 
@@ -2309,16 +2339,12 @@ public class DesktopSystemView extends Dialog {
         viewportFrame.setOnTouchListener((v, event) -> {
             switch (event.getAction() & MotionEvent.ACTION_MASK) {
                 case MotionEvent.ACTION_DOWN: 
-                    savedMatrix.set(imageMatrix); startPoint.set(event.getX(), event.getY()); touchMode[0] = 1; 
-                    break;
+                    savedMatrix.set(imageMatrix); startPoint.set(event.getX(), event.getY()); touchMode[0] = 1; break;
                 case MotionEvent.ACTION_POINTER_DOWN: 
                     oldDist[0] = (float)Math.sqrt(Math.pow(event.getX(0)-event.getX(1), 2) + Math.pow(event.getY(0)-event.getY(1), 2)); 
                     if (oldDist[0] > 10f) { savedMatrix.set(imageMatrix); midPoint.set((event.getX(0)+event.getX(1))/2, (event.getY(0)+event.getY(1))/2); touchMode[0] = 2; } 
                     break;
-                case MotionEvent.ACTION_UP: 
-                case MotionEvent.ACTION_POINTER_UP: 
-                    touchMode[0] = 0; 
-                    break;
+                case MotionEvent.ACTION_UP: case MotionEvent.ACTION_POINTER_UP: touchMode[0] = 0; break;
                 case MotionEvent.ACTION_MOVE:
                     if (touchMode[0] == 1) { 
                         imageMatrix.set(savedMatrix); imageMatrix.postTranslate(event.getX() - startPoint.x, event.getY() - startPoint.y); 
@@ -2329,18 +2355,16 @@ public class DesktopSystemView extends Dialog {
                     break;
             } 
             previewImg.setImageMatrix(imageMatrix); 
-            viewportFrame.invalidate(); // 强制重绘网格与坐标轴
+            viewportFrame.invalidate(); 
             return true;
         });
 
-        // 初始化时，将 0,0 坐标轴置于屏幕中央偏下的位置 (适配地图底部的常态)
         viewportFrame.post(() -> {
             imageMatrix.postTranslate(viewportFrame.getWidth() / 2f, viewportFrame.getHeight() * 0.8f);
             previewImg.setImageMatrix(imageMatrix);
             viewportFrame.invalidate();
         });
 
-        // 底部十字微调防误触控制区 (D-Pad Nudge)
         LinearLayout dpadArea = new LinearLayout(getContext());
         dpadArea.setOrientation(LinearLayout.HORIZONTAL);
         dpadArea.setGravity(Gravity.CENTER);
@@ -2357,46 +2381,176 @@ public class DesktopSystemView extends Dialog {
         centerPanel.addView(dpadArea, new LinearLayout.LayoutParams(-1, -2));
 
         // ----------------------------------------------------
-        // 右侧：属性检查器 (Inspector)
+        // 右侧：属性检查器 (Inspector) - 包含 2D 和 3D 专属面板
         // ----------------------------------------------------
         ScrollView rightScroll = new ScrollView(getContext());
         rightScroll.setBackgroundColor(Color.parseColor("#252526"));
+        
         LinearLayout rightPanel = new LinearLayout(getContext());
         rightPanel.setOrientation(LinearLayout.VERTICAL);
         rightPanel.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
 
-        rightPanel.addView(createSubTitle("📏 尺寸控制 (适配大小)"));
-        rightPanel.addView(createInput("缩放比例 (默认1.0)", "1.0"));
+        // 2D 专属控制区
+        LinearLayout panel2D = new LinearLayout(getContext()); panel2D.setOrientation(LinearLayout.VERTICAL);
+        panel2D.addView(createSubTitle("📐 2D 尺寸与视差混合"));
+        panel2D.addView(createInput("缩放比例 (默认1.0)", "1.0"));
+        panel2D.addView(createInput("X轴滚动视差 (Delta)", "1.0"));
+        panel2D.addView(createInput("Y轴滚动视差 (Delta)", "1.0"));
+        panel2D.addView(createInput("透明混合模式 (Trans)", "none"));
+        rightPanel.addView(panel2D);
 
-        rightPanel.addView(createSubTitle("💨 视差与混合"));
-        rightPanel.addView(createInput("X轴滚动视差 (Delta)", "1.0"));
-        rightPanel.addView(createInput("Y轴滚动视差 (Delta)", "1.0"));
-        rightPanel.addView(createInput("透明混合模式 (Trans)", "none"));
+        // 3D 专属控制区
+        LinearLayout panel3D = new LinearLayout(getContext()); panel3D.setOrientation(LinearLayout.VERTICAL);
+        panel3D.addView(createSubTitle("🧊 3D 空间与光照"));
+        panel3D.addView(createInput("全局位移 (Offset X,Y,Z)", "0,0,0"));
+        panel3D.addView(createInput("全局缩放 (Scale X,Y,Z)", "1,1,1"));
+        panel3D.addView(createInput("环境光强度 (Intensity)", "1.0"));
+        panel3D.setVisibility(View.GONE); // 默认隐藏 3D 参数
+        rightPanel.addView(panel3D);
 
         rightScroll.addView(rightPanel);
 
-        // 组装左右中三栏
+        // 组装
         mainArea.addView(leftPanel, new LinearLayout.LayoutParams(0, -1, 1f));
         mainArea.addView(centerPanel, new LinearLayout.LayoutParams(0, -1, 2f));
         mainArea.addView(rightScroll, new LinearLayout.LayoutParams(0, -1, 1f));
-        
         root.addView(mainArea, new LinearLayout.LayoutParams(-1, -1));
 
-        // 逻辑事件绑定
-        btnMode2D.setOnClickListener(v -> { btnMode2D.setBackgroundColor(Color.parseColor("#9C27B0")); btnMode3D.setBackgroundColor(Color.parseColor("#333333")); });
-        btnMode3D.setOnClickListener(v -> { btnMode3D.setBackgroundColor(Color.parseColor("#0078D7")); btnMode2D.setBackgroundColor(Color.parseColor("#333333")); Toast.makeText(getContext(), "已切换至真3D节点模式，部分2D参数将隐藏", Toast.LENGTH_SHORT).show(); });
+        // ----------------------------------------------------
+        // 核心按键逻辑绑定
+        // ----------------------------------------------------
 
+        // 1. 折叠式视口设置菜单
+        btnSettings.setOnClickListener(v -> {
+            final Dialog setDialog = new Dialog(getContext()); setDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout setBox = new LinearLayout(getContext()); setBox.setOrientation(LinearLayout.VERTICAL); setBox.setBackgroundColor(Color.parseColor("#252526")); setBox.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); setBox.setBackground(border);
+            
+            setBox.addView(createTitle("⚙️ 视口偏好设置"));
+            
+            setBox.addView(createSubTitle("背景底色代码 (Hex):"));
+            EditText bgInput = createInput("如: #000080", String.format("#%06X", (0xFFFFFF & bgColor[0])));
+            setBox.addView(bgInput);
+            
+            setBox.addView(createSubTitle("网格线颜色代码 (Hex):"));
+            EditText gridColorInput = createInput("如: #FFFFFF", String.format("#%06X", (0xFFFFFF & gridColor[0])));
+            setBox.addView(gridColorInput);
+            
+            setBox.addView(createSubTitle("网格透明度 (0-255):"));
+            SeekBar alphaBar = new SeekBar(getContext()); alphaBar.setMax(255); alphaBar.setProgress(gridAlpha[0]);
+            alphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                public void onProgressChanged(SeekBar s, int p, boolean b) { gridAlpha[0] = p; viewportFrame.invalidate(); }
+                public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {}
+            });
+            setBox.addView(alphaBar);
+
+            Button btnApply = createButton("✔️ 应用设置", "#4CAF50");
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,(int)(15*density),0,0);
+            btnApply.setOnClickListener(bv -> {
+                try { bgColor[0] = Color.parseColor(bgInput.getText().toString()); } catch (Exception e){}
+                try { gridColor[0] = Color.parseColor(gridColorInput.getText().toString()); } catch (Exception e){}
+                viewportFrame.invalidate(); setDialog.dismiss();
+            });
+            setBox.addView(btnApply, lp);
+            setDialog.setContentView(setBox); setDialog.show();
+        });
+        
+        // 2. 2D/3D 模式联动切换
+        btnMode2D.setOnClickListener(v -> { 
+            btnMode2D.setBackgroundColor(Color.parseColor("#9C27B0")); btnMode3D.setBackgroundColor(Color.parseColor("#333333")); 
+            btnImportAsset.setVisibility(View.VISIBLE); btnImportModel.setVisibility(View.GONE);
+            panel2D.setVisibility(View.VISIBLE); panel3D.setVisibility(View.GONE);
+        });
+        btnMode3D.setOnClickListener(v -> { 
+            btnMode3D.setBackgroundColor(Color.parseColor("#0078D7")); btnMode2D.setBackgroundColor(Color.parseColor("#333333")); 
+            btnImportAsset.setVisibility(View.GONE); btnImportModel.setVisibility(View.VISIBLE);
+            panel2D.setVisibility(View.GONE); panel3D.setVisibility(View.VISIBLE);
+        });
+
+        // 3. 导入图像/GIF/模型素材
+        btnImportAsset.setOnClickListener(v -> showWin10FilePicker("选择图像素材 (自动拆解 GIF)", 7, null, null, file -> {
+            Toast.makeText(getContext(), "已挂载素材: " + file.getName() + "，即将植入工程...", Toast.LENGTH_SHORT).show();
+        }));
+        btnImportModel.setOnClickListener(v -> Toast.makeText(getContext(), "准备扫描 .gltf/.glb 模型...", Toast.LENGTH_SHORT).show());
+
+        // 4. 载入/新建工程状态机
+        btnScan.setOnClickListener(v -> {
+            final Dialog prompt = new Dialog(getContext()); prompt.requestWindowFeature(Window.FEATURE_NO_TITLE); prompt.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
+            
+            TextView title = createSubTitle("📂 工程管理"); title.setTextColor(Color.WHITE); box.addView(title);
+            
+            Button btnNew = createButton("📄 新建空白地图", "#4CAF50");
+            btnNew.setOnClickListener(bv -> { currentDefPath[0] = ""; isEditMode[0] = false; Toast.makeText(getContext(), "已建立新工程", Toast.LENGTH_SHORT).show(); prompt.dismiss(); });
+            
+            Button btnLoad = createButton("📂 读取现有 .def 地图", "#0078D7");
+            btnLoad.setOnClickListener(bv -> {
+                prompt.dismiss();
+                showWin10FilePicker("选择 .def 地图工程", 10, null, null, selectedDef -> {
+                    // 读取后询问修改或备份
+                    final Dialog safePrompt = new Dialog(getContext()); safePrompt.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                    LinearLayout safeBox = new LinearLayout(getContext()); safeBox.setOrientation(LinearLayout.VERTICAL); safeBox.setBackgroundColor(Color.parseColor("#252526")); safeBox.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density)); safeBox.setBackground(border);
+                    
+                    safeBox.addView(createSubTitle("🛡️ 安全修改提示"));
+                    Button btnBackup = createButton("💾 自动创建防毁备份并读取", "#4CAF50");
+                    btnBackup.setOnClickListener(sv -> {
+                        try {
+                            File backup = new File(selectedDef.getParent(), selectedDef.getName().replace(".def", "_backup.def"));
+                            if (!backup.exists()) copyFileToSandbox(selectedDef, backup);
+                            currentDefPath[0] = backup.getAbsolutePath(); isEditMode[0] = true;
+                            Toast.makeText(getContext(), "✅ 已切换至备份工程: " + backup.getName(), Toast.LENGTH_LONG).show();
+                        } catch(Exception e){} safePrompt.dismiss();
+                    });
+                    
+                    Button btnOrig = createButton("⚠️ 直接读取并修改原文件", "#FF9800");
+                    btnOrig.setOnClickListener(sv -> { currentDefPath[0] = selectedDef.getAbsolutePath(); isEditMode[0] = true; safePrompt.dismiss(); });
+                    
+                    Button btnCancel = createButton("❌ 取消", "#333333"); btnCancel.setOnClickListener(sv -> safePrompt.dismiss());
+                    
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density));
+                    safeBox.addView(btnBackup, lp); safeBox.addView(btnOrig, lp); safeBox.addView(btnCancel, lp);
+                    safePrompt.setContentView(safeBox); safePrompt.show();
+                });
+            });
+            
+            Button btnCancelMain = createButton("❌ 取消", "#333333"); btnCancelMain.setOnClickListener(bv -> prompt.dismiss());
+            
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density));
+            box.addView(btnNew, lp); box.addView(btnLoad, lp); box.addView(btnCancelMain, lp);
+            prompt.setContentView(box); prompt.show();
+        });
+
+        // 5. 真实打包导出到底层 Go 引擎
         btnSave.setOnClickListener(v -> {
-            Toast.makeText(getContext(), "正在执行严格语法编译...", Toast.LENGTH_SHORT).show();
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                // 安全打包导出逻辑
-                Toast.makeText(getContext(), "✅ 地图已打包并统一导出至：/Download/IkemenExports 目录", Toast.LENGTH_LONG).show();
-            }, 1000);
+            Toast.makeText(getContext(), "正在执行底层编译打包...", Toast.LENGTH_SHORT).show();
+            new Thread(() -> {
+                try {
+                    String stageJson = "{\n" +
+                            "  \"Info\": {\"name\": \"MyMobileStage\", \"displayname\": \"Mobile Stage\", \"author\": \"IkemenEditor\"},\n" +
+                            "  \"Camera\": {\"startx\": 0, \"starty\": 0, \"boundleft\": -150, \"boundright\": 150},\n" +
+                            "  \"BGs\": [\n" +
+                            "    {\"_name\": \"0\", \"type\": \"normal\", \"spriteno\": \"0,0\", \"start\": \"0,0\"}\n" +
+                            "  ]\n" +
+                            "}";
+                    
+                    File exportDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports");
+                    if (!exportDir.exists()) exportDir.mkdirs();
+                    
+                    String resultPath = Api.exportStageDef(exportDir.getAbsolutePath(), stageJson);
+                    
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        if (resultPath != null && !resultPath.isEmpty()) { Toast.makeText(getContext(), "✅ 地图已成功打包至：\n" + resultPath, Toast.LENGTH_LONG).show(); } 
+                        else { Toast.makeText(getContext(), "❌ 编译失败：底层拦截或 JSON 语法错误", Toast.LENGTH_LONG).show(); }
+                    });
+                } catch (Throwable t) {
+                    new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(getContext(), "❌ 严重错误: 请检查 Api.java 是否已声明 exportStageDef", Toast.LENGTH_LONG).show());
+                }
+            }).start();
         });
 
         return root;
     }
-
     // 🌉 Go 引擎底层抽象桥接
     // ======================================================================================
     public static class GoEngineBridge {
