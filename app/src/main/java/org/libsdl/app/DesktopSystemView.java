@@ -697,6 +697,12 @@ public class DesktopSystemView extends Dialog {
                 } else if (targetType == 6) {
                     Button scanDirBtn = createButton("✔️ 深度扫描并提取本文件夹的 GIF 动图", "#9C27B0"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
+                } else if (targetType == 7) {
+                    Button scanDirBtn = createButton("✔️ 深度扫描本文件夹的外部图像素材", "#4CAF50"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                    scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
+                } else if (targetType == 8) {
+                    Button scanDirBtn = createButton("✔️ 深度扫描本文件夹的外部音频素材", "#FF9800"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                    scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
                 } else if (targetType == 9) {
                     Button scanDirBtn = createButton("✔️ 深度扫描并提取本文件夹的 ACT 色表", "#0078D7"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
@@ -1066,26 +1072,22 @@ public class DesktopSystemView extends Dialog {
 
         btnReplace.setOnClickListener(v -> {
             if (currentGroupFrames.isEmpty()) return;
-            // 停止播放，释放对文件的所有读取占用，防止 Go 报错读写冲突
-            isPlaying[0] = false;
-            playHandler.removeCallbacksAndMessages(null);
-            btnPlay.setText("▶️ 播放");
-            btnPlay.setBackgroundColor(Color.parseColor("#0078D7"));
-            
+            isPlaying[0] = false; playHandler.removeCallbacksAndMessages(null);
+            btnPlay.setText("▶️ 播放"); btnPlay.setBackgroundColor(Color.parseColor("#0078D7"));
             final GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
-            showWin10FilePicker("选择替换用的图像文件", 7, null, null, selectedFile -> {
-                new Thread(() -> {
-                    // 回归原生直写，抛弃会导致0字节的沙盒覆盖
-                    boolean success = Api.replaceSffFrame(sffPath, f.group, f.item, selectedFile.getAbsolutePath());
-                    uiHandler.post(() -> {
-                        if (success) {
-                            Toast.makeText(getContext(), "✅ " + f.group + "-" + f.item + " 帧已成功替换！", Toast.LENGTH_SHORT).show();
-                            updateFrameAction.run(); 
-                        } else {
-                            Toast.makeText(getContext(), "❌ 替换失败：格式不兼容！SFFv1 只能使用 PCX，SFFv2 禁止使用 PCX！", Toast.LENGTH_LONG).show();
-                        }
-                    });
-                }).start();
+            
+            showWin10FilePicker("选择替换用的图像或所在目录", 7, null, null, selectedFile -> {
+                FileCallback doReplace = finalFile -> {
+                    new Thread(() -> {
+                        boolean success = Api.replaceSffFrame(sffPath, f.group, f.item, finalFile.getAbsolutePath());
+                        uiHandler.post(() -> {
+                            if (success) { Toast.makeText(getContext(), "✅ " + f.group + "-" + f.item + " 帧已替换！", Toast.LENGTH_SHORT).show(); updateFrameAction.run(); } 
+                            else { Toast.makeText(getContext(), "❌ 替换失败：格式不兼容！SFFv1 只能使用 PCX，SFFv2 禁止使用 PCX！", Toast.LENGTH_LONG).show(); }
+                        });
+                    }).start();
+                };
+                // 如果选的是文件夹，打开网格图像扫描器；如果是文件，直接替换
+                if (selectedFile.isDirectory()) showImageGridPicker(selectedFile, doReplace); else doReplace.onFileSelected(selectedFile);
             });
         });
 
@@ -1298,23 +1300,19 @@ public class DesktopSystemView extends Dialog {
                     
                                        Button btnReplace = createButton("🔄 替换", "#4CAF50");
                     btnReplace.setOnClickListener(v -> {
-                        // 核心修复：必须提前释放 MediaPlayer 的系统占用，否则底层 Go 写入时直接死锁！
-                        if (currentSndPlayer != null) { 
-                            currentSndPlayer.release(); 
-                            currentSndPlayer = null; 
-                        }
-                        
-                        showWin10FilePicker("选择替换用的音频文件", 8, null, null, selectedFile -> {
-                            new Thread(() -> {
-                                boolean success = Api.replaceSndAudio(sndPath, n.group, n.item, selectedFile.getAbsolutePath());
-                                new Handler(Looper.getMainLooper()).post(() -> {
-                                    if (success) { 
-                                        Toast.makeText(getContext(), "✅ " + n.group + "-" + n.item + " 音频已成功替换！", Toast.LENGTH_SHORT).show(); 
-                                    } else { 
-                                        Toast.makeText(getContext(), "❌ 替换失败：请检查音频格式或文件是否被系统占用", Toast.LENGTH_LONG).show(); 
-                                    }
-                                });
-                            }).start();
+                        if (currentSndPlayer != null) { currentSndPlayer.release(); currentSndPlayer = null; }
+                        showWin10FilePicker("选择替换用的音频或所在目录", 8, null, null, selectedFile -> {
+                            FileCallback doReplace = finalFile -> {
+                                new Thread(() -> {
+                                    boolean success = Api.replaceSndAudio(sndPath, n.group, n.item, finalFile.getAbsolutePath());
+                                    new Handler(Looper.getMainLooper()).post(() -> {
+                                        if (success) { Toast.makeText(getContext(), "✅ " + n.group + "-" + n.item + " 音频已替换！", Toast.LENGTH_SHORT).show(); } 
+                                        else { Toast.makeText(getContext(), "❌ 音频格式不支持，替换失败", Toast.LENGTH_LONG).show(); }
+                                    });
+                                }).start();
+                            };
+                            // 如果选的是文件夹，打开音频列表扫描器；如果是文件，直接替换
+                            if (selectedFile.isDirectory()) showAudioListPicker(selectedFile, doReplace); else doReplace.onFileSelected(selectedFile);
                         });
                     });
 
@@ -2050,6 +2048,124 @@ public class DesktopSystemView extends Dialog {
                     grid.addView(btn, bp);
                 }
                 Button closeBtn = createButton("❌ 取消并关闭", "#E81123"); closeBtn.setOnClickListener(v -> d.dismiss()); grid.addView(closeBtn);
+            });
+        }).start();
+    }
+
+    // ==========================================
+    // 🔎 弹窗型外部图像网格选择器 (用于SFF替换)
+    // ==========================================
+    private void showImageGridPicker(File dir, FileCallback listener) {
+        Dialog d = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
+        d.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        FrameLayout overlay = new FrameLayout(getContext()); overlay.setBackgroundColor(Color.argb(230, 0,0,0));
+        LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+        
+        TextView title = new TextView(getContext()); title.setText("正在生成图像缩略图，请稍候..."); title.setTextColor(Color.WHITE); applyGlobalFontSettings(title, 1.2f, true); box.addView(title);
+        ScrollView scroll = new ScrollView(getContext()); LinearLayout grid = new LinearLayout(getContext()); grid.setOrientation(LinearLayout.VERTICAL); scroll.addView(grid); box.addView(scroll);
+        overlay.addView(box); d.setContentView(overlay); d.show(); d.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+
+        new Thread(() -> {
+            List<File> files = new ArrayList<>();
+            class Scanner {
+                void scan(File targetDir) {
+                    File[] fs = targetDir.listFiles(); if(fs==null) return;
+                    for(File f:fs){ 
+                        if(f.isDirectory() && !f.isHidden()) scan(f); 
+                        else {
+                            String n = f.getName().toLowerCase();
+                            if(n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".gif") || n.endsWith(".pcx")) files.add(f); 
+                        }
+                    }
+                }
+            }
+            new Scanner().scan(dir);
+
+            new Handler(Looper.getMainLooper()).post(() -> {
+                title.setText("✅ 扫描完成，请点击选择用于替换的图像:");
+                LinearLayout row = null; int count = 0;
+                for(File f : files) {
+                    if(count == 0) { row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); grid.addView(row); }
+                    LinearLayout card = new LinearLayout(getContext()); card.setOrientation(LinearLayout.VERTICAL); card.setGravity(Gravity.CENTER); card.setPadding((int)(10*density),(int)(10*density),(int)(10*density),(int)(10*density));
+                    GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#2D2D30")); bg.setCornerRadius(10f); bg.setStroke(2, Color.parseColor("#3F3F46")); card.setBackground(bg);
+                    ImageView iv = new ImageView(getContext()); iv.setLayoutParams(new LinearLayout.LayoutParams((int)(90*density), (int)(90*density))); iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                    
+                    iv.setBackgroundColor(Color.parseColor("#1E1E1E"));
+                    if (!f.getName().toLowerCase().endsWith(".pcx")) {
+                        new Thread(() -> { // 异步极速解码缩略图，防卡顿
+                            try { BitmapFactory.Options opt = new BitmapFactory.Options(); opt.inSampleSize = 4; Bitmap bmp = BitmapFactory.decodeFile(f.getAbsolutePath(), opt);
+                                if (bmp != null) new Handler(Looper.getMainLooper()).post(() -> iv.setImageBitmap(bmp)); } catch (Exception e){}
+                        }).start();
+                    }
+                    card.addView(iv);
+                    TextView tv = new TextView(getContext()); tv.setText(f.getName()); tv.setTextColor(Color.WHITE); tv.setSingleLine(true); applyGlobalFontSettings(tv, 0.9f, false); card.addView(tv);
+                    Button btn = createButton("✔️ 选择替换", "#4CAF50"); btn.setOnClickListener(v -> { listener.onFileSelected(f); d.dismiss(); }); card.addView(btn);
+                    LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, -2, 1f); cp.setMargins((int)(5*density),(int)(5*density),(int)(5*density),(int)(5*density)); row.addView(card, cp);
+                    count++; if(count >= 3) count = 0;
+                }
+                Button closeBtn = createButton("❌ 取消并关闭", "#E81123"); closeBtn.setOnClickListener(v -> d.dismiss()); grid.addView(closeBtn);
+            });
+        }).start();
+    }
+
+    // ==========================================
+    // 🔎 弹窗型外部音频列表选择器 (带试听)
+    // ==========================================
+    private void showAudioListPicker(File dir, FileCallback listener) {
+        Dialog d = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
+        d.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        FrameLayout overlay = new FrameLayout(getContext()); overlay.setBackgroundColor(Color.argb(230, 0,0,0));
+        LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+        
+        TextView title = new TextView(getContext()); title.setText("正在检索本地音频，请稍候..."); title.setTextColor(Color.WHITE); applyGlobalFontSettings(title, 1.2f, true); box.addView(title);
+        ScrollView scroll = new ScrollView(getContext()); LinearLayout listLayout = new LinearLayout(getContext()); listLayout.setOrientation(LinearLayout.VERTICAL); scroll.addView(listLayout); box.addView(scroll);
+        overlay.addView(box); d.setContentView(overlay); d.show(); d.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+
+        new Thread(() -> {
+            List<File> files = new ArrayList<>();
+            class Scanner {
+                void scan(File targetDir) {
+                    File[] fs = targetDir.listFiles(); if(fs==null) return;
+                    for(File f:fs){ 
+                        if(f.isDirectory() && !f.isHidden()) scan(f); 
+                        else {
+                            String n = f.getName().toLowerCase();
+                            // 根据引擎源码扫描支持的所有格式
+                            if(n.endsWith(".wav") || n.endsWith(".ogg") || n.endsWith(".mp3") || n.endsWith(".flac") || n.endsWith(".xm") || n.endsWith(".mod")) files.add(f); 
+                        }
+                    }
+                }
+            }
+            new Scanner().scan(dir);
+
+            new Handler(Looper.getMainLooper()).post(() -> {
+                title.setText("✅ 扫描完成，共找到 " + files.size() + " 个音频文件:");
+                for(File f : files) {
+                    LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
+                    GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#2D2D30")); bg.setCornerRadius(8f*density); row.setBackground(bg);
+                    LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, -2); rowParams.setMargins(0, 0, 0, (int)(8*density));
+                    
+                    TextView info = new TextView(getContext()); info.setText(f.getName() + "\n" + f.getParent()); applyGlobalFontSettings(info, 0.9f, false); info.setTextColor(Color.WHITE); row.addView(info, new LinearLayout.LayoutParams(0, -2, 1f));
+
+                    Button btnPlay = createButton("▶️ 试听", "#FF9800"); 
+                    btnPlay.setOnClickListener(v -> {
+                        try {
+                            if (currentSndPlayer != null) { currentSndPlayer.release(); currentSndPlayer = null; }
+                            currentSndPlayer = new MediaPlayer(); currentSndPlayer.setDataSource(f.getAbsolutePath()); currentSndPlayer.prepare(); currentSndPlayer.start();
+                        } catch (Exception e) { Toast.makeText(getContext(), "播放器不支持试听此编码 (但仍可强行注入)", Toast.LENGTH_SHORT).show(); }
+                    });
+                    
+                    Button btnSelect = createButton("✔️ 选择", "#4CAF50"); LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, -2); btnParams.setMargins((int)(10*density), 0, 0, 0);
+                    btnSelect.setOnClickListener(v -> { 
+                        if (currentSndPlayer != null) { currentSndPlayer.release(); currentSndPlayer = null; }
+                        listener.onFileSelected(f); d.dismiss(); 
+                    });
+
+                    row.addView(btnPlay); row.addView(btnSelect, btnParams); listLayout.addView(row, rowParams);
+                }
+                Button closeBtn = createButton("❌ 取消并关闭", "#E81123"); 
+                closeBtn.setOnClickListener(v -> { if (currentSndPlayer != null) { currentSndPlayer.release(); currentSndPlayer = null; } d.dismiss(); }); 
+                listLayout.addView(closeBtn);
             });
         }).start();
     }
