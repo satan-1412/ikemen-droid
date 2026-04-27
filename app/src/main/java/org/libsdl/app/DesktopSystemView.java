@@ -2243,25 +2243,25 @@ public class DesktopSystemView extends Dialog {
         }).start();
     }
     
-     // ======================================================================================
-    // 🗺️ 模块 5：全能地图编辑器 (FF完美坐标系, Three.js 3D沙盘, 解封WebView)
+    // ======================================================================================
+    // 🗺️ 模块 5：全能地图编辑器 (智能全景沙盘, 光照增强, 自动关联装载)
     // ======================================================================================
     private static class StageLayerInfo {
         String name; boolean isVisible = false; boolean manuallyVisible = false; boolean isLocked = false; boolean isGhostGrid = false;
         int group = 0; int item = 0; float startX = 0; float startY = 0; float deltaX = 1; float deltaY = 1;
-        int axisX = 0; int axisY = 0; // 👈 核心修复：FF 原生轴心点坐标
+        int axisX = 0; int axisY = 0;
         Bitmap cacheBmp = null;
         public StageLayerInfo cloneLayer() {
             StageLayerInfo copy = new StageLayerInfo();
             copy.name = this.name + " (副本)"; copy.isVisible = this.isVisible; copy.manuallyVisible = this.manuallyVisible; copy.isLocked = this.isLocked;
             copy.group = this.group; copy.item = this.item; copy.startX = this.startX; copy.startY = this.startY;
-            copy.axisX = this.axisX; copy.axisY = this.axisY; // 同步轴心
+            copy.axisX = this.axisX; copy.axisY = this.axisY;
             copy.cacheBmp = this.cacheBmp; return copy;
         }
     }
     
     private static class StageModelInfo { 
-        String name; String path; 
+        String name; String path; boolean isVisible = true; // 👈 新增：模型可见性
         float offsetX = 0; float offsetY = 0; float offsetZ = 0;
         float scaleX = 1; float scaleY = 1; float scaleZ = 1;
     }
@@ -2276,9 +2276,9 @@ public class DesktopSystemView extends Dialog {
 
         final List<StageLayerInfo> layerList = new ArrayList<>();
         final List<StageModelInfo> modelList = new ArrayList<>();
-        final int[] selectedLayerIndex = {0}; final StageLayerInfo[] clipboardLayer = {null}; 
+        final int[] selectedLayerIndex = {0}; final int[] selectedModelIndex = {-1}; // 记录当前选中的模型
         
-        StageLayerInfo ghostGrid = new StageLayerInfo(); ghostGrid.name = "[系统] 蓝色基准参考网格"; ghostGrid.isGhostGrid = true; ghostGrid.isLocked = true; ghostGrid.isVisible = true; ghostGrid.manuallyVisible = true;
+        StageLayerInfo ghostGrid = new StageLayerInfo(); ghostGrid.name = "[系统] 蓝色参考网格"; ghostGrid.isGhostGrid = true; ghostGrid.isLocked = true; ghostGrid.isVisible = true; ghostGrid.manuallyVisible = true;
         layerList.add(ghostGrid);
 
         LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL); topBar.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density)); topBar.setBackgroundColor(Color.parseColor("#252526"));
@@ -2350,7 +2350,6 @@ public class DesktopSystemView extends Dialog {
                     StageLayerInfo layer = layerList.get(i);
                     if (layer.isVisible && layer.cacheBmp != null) {
                         canvas.save(); canvas.concat(imageMatrix); 
-                        // 👈 核心修复：完全遵循 FF 原生坐标系，坐标 = 设定位置 - SFF内的原版轴心点！
                         canvas.translate(layer.startX - layer.axisX, layer.startY - layer.axisY); 
                         canvas.drawBitmap(layer.cacheBmp, 0, 0, null); 
                         canvas.restore();
@@ -2407,19 +2406,19 @@ public class DesktopSystemView extends Dialog {
         EditText defCodeInput = new EditText(getContext()); defCodeInput.setBackgroundColor(Color.TRANSPARENT); defCodeInput.setTextColor(Color.parseColor("#D4D4D4")); defCodeInput.setGravity(Gravity.TOP | Gravity.LEFT); defCodeInput.setTypeface(Typeface.MONOSPACE); applyGlobalFontSettings(defCodeInput, 1.0f, false);
         defEditorPanel.addView(defCodeInput, new FrameLayout.LayoutParams(-1, -2)); defEditorPanel.setVisibility(View.GONE); 
 
-        // 4.3 🔥 解除封印！真 3D 模型场景引擎 (支持所有导入模型同屏渲染)
+        // 4.3 🔥 WebGL 原生 3D 模型渲染视口 (强化光照与材质)
         LinearLayout modelCenterPanel = new LinearLayout(getContext()); modelCenterPanel.setOrientation(LinearLayout.VERTICAL); modelCenterPanel.setVisibility(View.GONE);
         final WebView modelWebView = new WebView(getContext()); 
         modelWebView.getSettings().setJavaScriptEnabled(true); 
         modelWebView.getSettings().setAllowFileAccess(true); 
-        modelWebView.getSettings().setAllowFileAccessFromFileURLs(true);      // 👈 打破安卓本地跨域屏障
-        modelWebView.getSettings().setAllowUniversalAccessFromFileURLs(true); // 👈 允许本地 js 随便读取本地模型
-        modelWebView.setWebChromeClient(new android.webkit.WebChromeClient()); // 强制启用硬件 WebGL 加速
+        modelWebView.getSettings().setAllowFileAccessFromFileURLs(true);
+        modelWebView.getSettings().setAllowUniversalAccessFromFileURLs(true);
+        modelWebView.setWebChromeClient(new android.webkit.WebChromeClient());
         modelWebView.setBackgroundColor(Color.parseColor("#121212"));
         
-        // 构建全景 Three.js 沙盘 HTML 引擎
         Runnable render3DScene = () -> {
             StringBuilder html = new StringBuilder();
+            // 👈 核心增强 1：设置渲染器使用 sRGBEncoding，防止模型发暗
             html.append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;}</style>");
             html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js\"></script>");
             html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js\"></script>");
@@ -2427,41 +2426,58 @@ public class DesktopSystemView extends Dialog {
             html.append("</head><body><script>");
             html.append("var scene = new THREE.Scene();");
             html.append("var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 10000); camera.position.set(0, 20, 100);");
-            html.append("var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true}); renderer.setSize(window.innerWidth, window.innerHeight); document.body.appendChild(renderer.domElement);");
+            html.append("var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});");
+            html.append("renderer.setSize(window.innerWidth, window.innerHeight);");
+            html.append("renderer.outputEncoding = THREE.sRGBEncoding;"); // 强制 sRGB 编码，提亮画面
+            html.append("document.body.appendChild(renderer.domElement);");
             html.append("var controls = new THREE.OrbitControls(camera, renderer.domElement);");
-            html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 1.5); scene.add(ambientLight);");
-            html.append("var dirLight = new THREE.DirectionalLight(0xffffff, 1); dirLight.position.set(50, 100, 50); scene.add(dirLight);");
+            // 👈 核心增强 2：加强全局环境光，增加半球光模拟真实天光
+            html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 2.5); scene.add(ambientLight);"); 
+            html.append("var hemiLight = new THREE.HemisphereLight( 0xffffff, 0x444444, 1.5 ); scene.add(hemiLight);");
+            html.append("var dirLight = new THREE.DirectionalLight(0xffffff, 2.0); dirLight.position.set(50, 100, 50); scene.add(dirLight);");
             html.append("var grid = new THREE.GridHelper(200, 20, 0x0078D7, 0x3F3F46); scene.add(grid);");
             html.append("var loader = new THREE.GLTFLoader();");
             for (StageModelInfo m : modelList) {
-                html.append("loader.load('file://").append(m.path).append("', function(gltf) {");
-                html.append("  var model = gltf.scene;");
-                html.append("  model.position.set(").append(m.offsetX).append(",").append(m.offsetY).append(",").append(m.offsetZ).append(");");
-                html.append("  model.scale.set(").append(m.scaleX).append(",").append(m.scaleY).append(",").append(m.scaleZ).append(");");
-                html.append("  scene.add(model);");
-                html.append("});");
+                if(m.isVisible) { // 👈 新增：只渲染可见的模型
+                    html.append("loader.load('file://").append(m.path).append("', function(gltf) {");
+                    html.append("  var model = gltf.scene;");
+                    html.append("  model.position.set(").append(m.offsetX).append(",").append(m.offsetY).append(",").append(m.offsetZ).append(");");
+                    html.append("  model.scale.set(").append(m.scaleX).append(",").append(m.scaleY).append(",").append(m.scaleZ).append(");");
+                    // 可选：遍历材质修正 roughness，如果依然发黑可以取消注释下面这段
+                    // html.append("  model.traverse(function(child){ if(child.isMesh && child.material){ child.material.needsUpdate = true; } });");
+                    html.append("  scene.add(model);");
+                    html.append("});");
+                }
             }
             html.append("function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); } animate();");
             html.append("window.addEventListener('resize', function(){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });");
             html.append("</script></body></html>");
             modelWebView.loadDataWithBaseURL("file://", html.toString(), "text/html", "utf-8", null);
         };
-        modelCenterPanel.addView(modelWebView, new LinearLayout.LayoutParams(-1, -1));
+
+        String defaultHtml = "<html><body style='background:#121212;color:white;display:flex;justify-content:center;align-items:center;height:100%;font-size:24px;'>等待导入 3D 模型 (.glb)</body></html>";
+        modelWebView.loadDataWithBaseURL(null, defaultHtml, "text/html", "utf-8", null);
+        modelCenterPanel.addView(modelWebView, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         centerContainer.addView(sffCenterPanel, new FrameLayout.LayoutParams(-1, -1));
         centerContainer.addView(defEditorPanel, new FrameLayout.LayoutParams(-1, -1));
         centerContainer.addView(modelCenterPanel, new FrameLayout.LayoutParams(-1, -1));
 
-        // ================== 5. 右侧属性面板 ==================
+        // ================== 5. 右侧属性面板 (优化布局) ==================
         ScrollView rightScroll = new ScrollView(getContext()); rightScroll.setBackgroundColor(Color.parseColor("#252526"));
         LinearLayout rightPanel = new LinearLayout(getContext()); rightPanel.setOrientation(LinearLayout.VERTICAL); rightPanel.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
+        
         LinearLayout panel2D = new LinearLayout(getContext()); panel2D.setOrientation(LinearLayout.VERTICAL);
-        panel2D.addView(createSubTitle("📐 2D 尺寸与视差混合")); panel2D.addView(createInput("缩放比例 (默认1.0)", "1.0")); panel2D.addView(createInput("X轴滚动视差 (Delta)", "1.0")); panel2D.addView(createInput("Y轴滚动视差 (Delta)", "1.0")); panel2D.addView(createInput("透明混合模式 (Trans)", "none"));
+        panel2D.addView(createSubTitle("📐 2D 尺寸与视差参数")); 
+        panel2D.addView(createSubTitle("Scale X, Y (缩放比例):")); panel2D.addView(createInput("1.0, 1.0", "1.0, 1.0")); 
+        panel2D.addView(createSubTitle("Delta X, Y (滚动视差):")); panel2D.addView(createInput("1.0, 1.0", "1.0, 1.0")); 
+        panel2D.addView(createSubTitle("Trans (透明混合模式):")); panel2D.addView(createInput("add/sub/none", "none"));
         rightPanel.addView(panel2D);
+
         LinearLayout panel3D = new LinearLayout(getContext()); panel3D.setOrientation(LinearLayout.VERTICAL);
         panel3D.addView(createSubTitle("🧊 3D 模型空间矩阵")); 
-        EditText offset3D = createInput("全局位移 (Offset X,Y,Z)", "0,0,0"); panel3D.addView(offset3D); 
-        EditText scale3D = createInput("全局缩放 (Scale X,Y,Z)", "1,1,1"); panel3D.addView(scale3D);
+        panel3D.addView(createSubTitle("Offset X,Y,Z (全局位移):")); EditText offset3D = createInput("0, 0, 0", "0,0,0"); panel3D.addView(offset3D); 
+        panel3D.addView(createSubTitle("Scale X,Y,Z (全局缩放):")); EditText scale3D = createInput("1, 1, 1", "1,1,1"); panel3D.addView(scale3D);
         Button btnApply3D = createButton("✔️ 应用 3D 参数并刷新视口", "#4CAF50");
         panel3D.addView(btnApply3D); panel3D.setVisibility(View.GONE); rightPanel.addView(panel3D);
         rightScroll.addView(rightPanel);
@@ -2469,24 +2485,40 @@ public class DesktopSystemView extends Dialog {
         mainArea.addView(leftPanel, new LinearLayout.LayoutParams(0, -1, 1.4f)); mainArea.addView(centerContainer, new LinearLayout.LayoutParams(0, -1, 2f)); mainArea.addView(rightScroll, new LinearLayout.LayoutParams(0, -1, 1f));
         root.addView(mainArea, new LinearLayout.LayoutParams(-1, -1));
 
-        // 刷新模型列表
+        // 刷新模型列表，实现类似图层的可见性控制
         Runnable refreshModelListUI = () -> {
             modelNodeListLayout.removeAllViews();
             if (modelList.isEmpty()) { TextView t = new TextView(getContext()); t.setText("未导入任何模型"); t.setTextColor(Color.GRAY); modelNodeListLayout.addView(t); return; }
-            for (StageModelInfo m : modelList) {
-                Button mBtn = createButton("📦 " + m.name, "#3F3F46"); mBtn.setGravity(Gravity.LEFT);
-                mBtn.setOnClickListener(v -> Toast.makeText(getContext(), "已选中模型: " + m.name, Toast.LENGTH_SHORT).show());
-                modelNodeListLayout.addView(mBtn, new LinearLayout.LayoutParams(-1,-2));
+            for (int i = 0; i < modelList.size(); i++) {
+                final int idx = i;
+                StageModelInfo m = modelList.get(i);
+                LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setBackgroundColor(selectedModelIndex[0] == idx ? Color.parseColor("#0078D7") : Color.parseColor("#3F3F46"));
+                row.setPadding((int)(5*density), (int)(8*density), (int)(5*density), (int)(8*density));
+                
+                Button btnVis = createButton(m.isVisible ? "👁️" : "❌", "#333333"); btnVis.setPadding(0,(int)(5*density),0,(int)(5*density));
+                btnVis.setOnClickListener(v -> { m.isVisible = !m.isVisible; render3DScene.run(); this.run(); }); // 切换可见性并重绘3D
+                
+                TextView tName = new TextView(getContext()); tName.setText(" 📦 " + m.name); tName.setTextColor(Color.WHITE); applyGlobalFontSettings(tName, 0.9f, false);
+                
+                row.addView(btnVis, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(tName, new LinearLayout.LayoutParams(0, -2, 1f));
+                
+                row.setOnClickListener(v -> { 
+                    selectedModelIndex[0] = idx;
+                    offset3D.setText(String.format("%.1f,%.1f,%.1f", m.offsetX, m.offsetY, m.offsetZ));
+                    scale3D.setText(String.format("%.1f,%.1f,%.1f", m.scaleX, m.scaleY, m.scaleZ));
+                    this.run(); 
+                });
+                modelNodeListLayout.addView(row, new LinearLayout.LayoutParams(-1,-2));
             }
-            render3DScene.run(); // 有模型变化时自动重新渲染 3D 沙盘
         };
         
         btnApply3D.setOnClickListener(v -> {
-            if(!modelList.isEmpty()){
-                StageModelInfo m = modelList.get(modelList.size()-1); // 默认修改最新挂载的模型
+            if(!modelList.isEmpty() && selectedModelIndex[0] >= 0){
+                StageModelInfo m = modelList.get(selectedModelIndex[0]); 
                 try {
-                    String[] o = offset3D.getText().toString().split(","); if(o.length==3){ m.offsetX=Float.parseFloat(o[0]); m.offsetY=Float.parseFloat(o[1]); m.offsetZ=Float.parseFloat(o[2]); }
-                    String[] s = scale3D.getText().toString().split(","); if(s.length==3){ m.scaleX=Float.parseFloat(s[0]); m.scaleY=Float.parseFloat(s[1]); m.scaleZ=Float.parseFloat(s[2]); }
+                    String[] o = offset3D.getText().toString().split(","); if(o.length==3){ m.offsetX=Float.parseFloat(o[0].trim()); m.offsetY=Float.parseFloat(o[1].trim()); m.offsetZ=Float.parseFloat(o[2].trim()); }
+                    String[] s = scale3D.getText().toString().split(","); if(s.length==3){ m.scaleX=Float.parseFloat(s[0].trim()); m.scaleY=Float.parseFloat(s[1].trim()); m.scaleZ=Float.parseFloat(s[2].trim()); }
                     render3DScene.run(); Toast.makeText(getContext(), "✅ 3D 参数已应用到沙盘", Toast.LENGTH_SHORT).show();
                 } catch(Exception e){}
             }
@@ -2512,7 +2544,7 @@ public class DesktopSystemView extends Dialog {
                     
                     row.setOnClickListener(v -> { 
                         selectedLayerIndex[0] = idx; txtCoord.setText(String.format("  X: %.0f   Y: %.0f  ", info.startX, info.startY));
-                        // 🔥 核心 Solo 逻辑：点击谁就显示谁
+                        // 🔥 核心 Solo 逻辑
                         for (int j = 1; j < layerList.size(); j++) {
                             StageLayerInfo l = layerList.get(j);
                             if (j == idx) l.isVisible = true; else l.isVisible = l.manuallyVisible;
@@ -2542,7 +2574,6 @@ public class DesktopSystemView extends Dialog {
         btnMode2D.setOnClickListener(v -> { is3DMode[0] = false; btnMode2D.setBackgroundColor(Color.parseColor("#9C27B0")); btnMode3D.setBackgroundColor(Color.parseColor("#333333")); btnViewModel.setVisibility(View.GONE); panel2D.setVisibility(View.VISIBLE); panel3D.setVisibility(View.GONE); if(currentViewMode[0] == 2) { currentViewMode[0] = 0; updateViewState.run(); } });
         btnMode3D.setOnClickListener(v -> { is3DMode[0] = true; btnMode3D.setBackgroundColor(Color.parseColor("#0078D7")); btnMode2D.setBackgroundColor(Color.parseColor("#333333")); btnViewModel.setVisibility(View.VISIBLE); panel2D.setVisibility(View.VISIBLE); panel3D.setVisibility(View.VISIBLE); });
 
-        // 🔥 强化导入引擎
         btnImportMenu.setOnClickListener(v -> {
             final Dialog iDialog = new Dialog(getContext()); iDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
             LinearLayout iBox = new LinearLayout(getContext()); iBox.setOrientation(LinearLayout.VERTICAL); iBox.setBackgroundColor(Color.parseColor("#252526")); iBox.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
@@ -2562,8 +2593,7 @@ public class DesktopSystemView extends Dialog {
                                 layerList.clear(); layerList.add(ghostGrid);
                                 for (GoEngineBridge.SffFrame f : frames) {
                                     StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]"; layer.group = f.group; layer.item = f.item; 
-                                    layer.axisX = f.x; layer.axisY = f.y; // 👈 提取 SFF 轴心
-                                    layer.isVisible = false; layer.manuallyVisible = false; // 默认闭眼隐藏
+                                    layer.axisX = f.x; layer.axisY = f.y; layer.isVisible = false; layer.manuallyVisible = false;
                                     layerList.add(layer);
                                 }
                                 refreshLayerListUI.run();
@@ -2583,8 +2613,8 @@ public class DesktopSystemView extends Dialog {
                     iDialog.dismiss(); 
                     showWin10FilePicker("选择 3D 模型", 11, null, null, file -> {
                         FileCallback onSelected = f -> {
-                            StageModelInfo m = new StageModelInfo(); m.name = f.getName(); m.path = f.getAbsolutePath(); modelList.add(m); refreshModelListUI.run();
-                            Toast.makeText(getContext(), "✅ 3D模型加载成功！切到【3D视口】预览", Toast.LENGTH_LONG).show();
+                            StageModelInfo m = new StageModelInfo(); m.name = f.getName(); m.path = f.getAbsolutePath(); modelList.add(m); selectedModelIndex[0] = modelList.size() - 1; refreshModelListUI.run();
+                            Toast.makeText(getContext(), "✅ 3D模型已添加！", Toast.LENGTH_LONG).show();
                         };
                         if(file.isDirectory()) showGenericFileListPicker(file, new String[]{".gltf", ".glb"}, "3D模型", "#0078D7", onSelected); else onSelected.onFileSelected(file);
                     }); 
@@ -2629,13 +2659,29 @@ public class DesktopSystemView extends Dialog {
                         final Dialog safePrompt = new Dialog(getContext()); safePrompt.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
                         LinearLayout safeBox = new LinearLayout(getContext()); safeBox.setOrientation(LinearLayout.VERTICAL); safeBox.setBackgroundColor(Color.parseColor("#252526")); safeBox.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density)); safeBox.setBackground(border); safeBox.addView(createSubTitle("🛡️ 安全读取"));
                         Runnable performLoad = () -> {
-                            try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(globalDefPath))) { StringBuilder sb = new StringBuilder(); String line; while ((line = br.readLine()) != null) sb.append(line).append("\n"); defCodeInput.setText(sb.toString()); } catch (Exception e) {}
+                            try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(globalDefPath))) { 
+                                StringBuilder sb = new StringBuilder(); String line; 
+                                while ((line = br.readLine()) != null) {
+                                    sb.append(line).append("\n");
+                                    // 🔥 自动提取 DEF 内的 3D 模型
+                                    if (line.toLowerCase().trim().startsWith("file") && line.contains("=")) {
+                                        String mFile = line.split("=")[1].replace("\"", "").trim();
+                                        if (mFile.endsWith(".glb") || mFile.endsWith(".gltf")) {
+                                            File fM = new File(new File(globalDefPath).getParent(), mFile);
+                                            if(fM.exists()) { StageModelInfo sm = new StageModelInfo(); sm.name = fM.getName(); sm.path = fM.getAbsolutePath(); modelList.add(sm); }
+                                        }
+                                    }
+                                } 
+                                defCodeInput.setText(sb.toString()); 
+                                refreshModelListUI.run();
+                            } catch (Exception e) {}
+                            
                             File targetDef = new File(globalDefPath); File sffFile = new File(targetDef.getParent(), targetDef.getName().replace(".def", ".sff")); if (!sffFile.exists()) sffFile = new File(targetDef.getParent(), targetDef.getName().replace(".def", ".SFF"));
                             if (sffFile.exists()) {
                                 globalSffPath = sffFile.getAbsolutePath();
                                 new Thread(() -> {
                                     List<GoEngineBridge.SffFrame> frames = GoEngineBridge.getAllFrames(globalSffPath);
-                                    new Handler(Looper.getMainLooper()).post(() -> { layerList.clear(); layerList.add(ghostGrid); for (GoEngineBridge.SffFrame f : frames) { StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]"; layer.group = f.group; layer.item = f.item; layer.axisX = f.x; layer.axisY = f.y; layer.isVisible=false; layer.manuallyVisible=false; layerList.add(layer); } refreshLayerListUI.run(); Toast.makeText(getContext(), "✅ 已载入 " + frames.size() + " 个图层", Toast.LENGTH_SHORT).show(); });
+                                    new Handler(Looper.getMainLooper()).post(() -> { layerList.clear(); layerList.add(ghostGrid); for (GoEngineBridge.SffFrame f : frames) { StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]"; layer.group = f.group; layer.item = f.item; layer.axisX = f.x; layer.axisY = f.y; layer.isVisible=false; layer.manuallyVisible=false; layerList.add(layer); } refreshLayerListUI.run(); Toast.makeText(getContext(), "✅ 已自动载入 SFF 及其 " + frames.size() + " 个图层", Toast.LENGTH_SHORT).show(); });
                                 }).start();
                             }
                         };
@@ -2650,7 +2696,6 @@ public class DesktopSystemView extends Dialog {
             Button btnCancelMain = createButton("❌ 取消", "#333333"); btnCancelMain.setOnClickListener(bv -> prompt.dismiss()); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density)); box.addView(btnNew, lp); box.addView(btnLoad, lp); box.addView(btnCancelMain, lp); prompt.setContentView(box); prompt.show();
         });
 
-        // 🔥 防重名导出引擎 (打包全套)
         btnSave.setOnClickListener(v -> {
             final Dialog exportDialog = new Dialog(getContext()); exportDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
             LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
@@ -2712,7 +2757,6 @@ public class DesktopSystemView extends Dialog {
 
         updateViewState.run(); refreshLayerListUI.run(); refreshModelListUI.run(); return root;
     }
-
 
     // 🌉 Go 引擎底层抽象桥接
     // ======================================================================================
