@@ -2244,14 +2244,13 @@ public class DesktopSystemView extends Dialog {
     }
     
     // ======================================================================================
-    // ======================================================================================
-    // 🗺️ 模块 5：全能地图编辑器 (弹窗自适应, 智能进位追加, 编组交换引擎)
+    // 🗺️ 模块 5：全能地图编辑器 (动态比例适配, SFF追加防重名, 双排操作盘)
     // ======================================================================================
     private static class StageLayerInfo {
         String name; boolean isVisible = false; boolean manuallyVisible = false; boolean isLocked = false; boolean isGhostGrid = false;
         int group = 0; int item = 0; float startX = 0; float startY = 0; float deltaX = 1; float deltaY = 1;
         int axisX = 0; int axisY = 0;
-        String sourcePath = ""; // 记录素材来源路径，支持多源文件混合
+        String sourcePath = "";
         Bitmap cacheBmp = null;
         public StageLayerInfo cloneLayer() {
             StageLayerInfo copy = new StageLayerInfo();
@@ -2282,10 +2281,15 @@ public class DesktopSystemView extends Dialog {
         final int[] selectedLayerIndex = {0}; final int[] selectedModelIndex = {-1}; 
         final StageLayerInfo[] clipboardLayer = {null};
         
+        // 🔥 核心防御：采用单例数组指针，彻底免疫 Java Lambda 作用域编译报错！
+        final Runnable[] refreshLayerListUI = {null};
+        final Runnable[] refreshModelListUI = {null};
+        final Runnable[] render3DScene = {null};
+        final Runnable[] updateViewState = {null};
+        
         StageLayerInfo ghostGrid = new StageLayerInfo(); ghostGrid.name = "[系统] 蓝色参考网格"; ghostGrid.isGhostGrid = true; ghostGrid.isLocked = true; ghostGrid.isVisible = true; ghostGrid.manuallyVisible = true;
         layerList.add(ghostGrid);
 
-        // 🔥 智能进位引擎：检测冲突并自动递增 Item
         AutoIncrementer incrementer = (g, i) -> {
             int curI = i;
             while(true) {
@@ -2296,20 +2300,23 @@ public class DesktopSystemView extends Dialog {
             }
         };
 
-        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL); topBar.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density)); topBar.setBackgroundColor(Color.parseColor("#252526"));
+        // 动态适配：缩小间距，防拥挤
+        int padS = (int)(4 * density); int padM = (int)(8 * density);
+
+        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL); topBar.setPadding(padS, padS, padS, padS); topBar.setBackgroundColor(Color.parseColor("#252526"));
         Button btnScan = createButton("📂 工程", "#0078D7"); Button btnSave = createButton("💾 打包", "#4CAF50"); 
         Button btnMode2D = createButton("📐 2D 地图模式", "#9C27B0"); Button btnMode3D = createButton("🧊 3D 地图模式", "#333333");
-        LinearLayout.LayoutParams topBp = new LinearLayout.LayoutParams(0, -2, 1f); topBp.setMargins(0, 0, (int)(5*density), 0);
+        LinearLayout.LayoutParams topBp = new LinearLayout.LayoutParams(0, -2, 1f); topBp.setMargins(0, 0, padS, 0);
         topBar.addView(btnScan, topBp); topBar.addView(btnSave, topBp); topBar.addView(btnMode2D, topBp); topBar.addView(btnMode3D, topBp);
         root.addView(topBar);
 
-        LinearLayout viewSwitchBar = new LinearLayout(getContext()); viewSwitchBar.setOrientation(LinearLayout.HORIZONTAL); viewSwitchBar.setGravity(Gravity.CENTER); viewSwitchBar.setPadding(0, (int)(5*density), 0, (int)(5*density)); viewSwitchBar.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        LinearLayout viewSwitchBar = new LinearLayout(getContext()); viewSwitchBar.setOrientation(LinearLayout.HORIZONTAL); viewSwitchBar.setGravity(Gravity.CENTER); viewSwitchBar.setPadding(0, padS, 0, padS); viewSwitchBar.setBackgroundColor(Color.parseColor("#1E1E1E"));
         Button btnViewSff = createButton("🖼️ 2D SFF 贴图视口", "#4CAF50"); Button btnViewDef = createButton("📝 DEF 代码编辑器", "#333333"); Button btnViewModel = createButton("🧊 真 3D 全景沙盘", "#333333"); btnViewModel.setVisibility(View.GONE);
         viewSwitchBar.addView(btnViewSff, topBp); viewSwitchBar.addView(btnViewDef, topBp); viewSwitchBar.addView(btnViewModel, topBp);
         root.addView(viewSwitchBar);
 
         LinearLayout mainArea = new LinearLayout(getContext()); mainArea.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout leftPanel = new LinearLayout(getContext()); leftPanel.setOrientation(LinearLayout.VERTICAL); leftPanel.setBackgroundColor(Color.parseColor("#2D2D30")); leftPanel.setPadding((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
+        LinearLayout leftPanel = new LinearLayout(getContext()); leftPanel.setOrientation(LinearLayout.VERTICAL); leftPanel.setBackgroundColor(Color.parseColor("#2D2D30")); leftPanel.setPadding(padS, padS, padS, padS);
         
         LinearLayout titleRow = new LinearLayout(getContext()); titleRow.setOrientation(LinearLayout.HORIZONTAL); titleRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView layerTitle = createSubTitle("📑 元素大纲"); layerTitle.setTextColor(Color.WHITE);
@@ -2317,7 +2324,7 @@ public class DesktopSystemView extends Dialog {
         titleRow.addView(layerTitle, new LinearLayout.LayoutParams(0, -2, 1f)); titleRow.addView(btnSettings, new LinearLayout.LayoutParams(-2, -2));
         leftPanel.addView(titleRow);
 
-        LinearLayout psToolsRow = new LinearLayout(getContext()); psToolsRow.setOrientation(LinearLayout.HORIZONTAL); psToolsRow.setPadding(0, (int)(5*density), 0, (int)(5*density));
+        LinearLayout psToolsRow = new LinearLayout(getContext()); psToolsRow.setOrientation(LinearLayout.HORIZONTAL); psToolsRow.setPadding(0, padS, 0, padS);
         Button btnNewLayer = createButton("➕", "#4CAF50"); Button btnCopyLayer = createButton("📄", "#0078D7"); Button btnPasteLayer = createButton("📋", "#FF9800"); Button btnDelLayer = createButton("🗑️", "#E81123");
         LinearLayout.LayoutParams toolBp = new LinearLayout.LayoutParams(0, -2, 1f); toolBp.setMargins((int)(2*density), 0, (int)(2*density), 0);
         psToolsRow.addView(btnNewLayer, toolBp); psToolsRow.addView(btnCopyLayer, toolBp); psToolsRow.addView(btnPasteLayer, toolBp); psToolsRow.addView(btnDelLayer, toolBp);
@@ -2388,18 +2395,168 @@ public class DesktopSystemView extends Dialog {
         });
         viewportFrame.post(() -> { imageMatrix.postTranslate(viewportFrame.getWidth() / 2f, viewportFrame.getHeight() * 0.8f); viewportFrame.invalidate(); });
 
-        LinearLayout dpadArea = new LinearLayout(getContext()); dpadArea.setOrientation(LinearLayout.HORIZONTAL); dpadArea.setGravity(Gravity.CENTER); dpadArea.setPadding(0, (int)(10*density), 0, (int)(10*density)); dpadArea.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        // 🔥 动态适配：十字操作盘分为两排，防拥挤
+        LinearLayout dpadAreaContainer = new LinearLayout(getContext()); dpadAreaContainer.setOrientation(LinearLayout.VERTICAL); dpadAreaContainer.setBackgroundColor(Color.parseColor("#1E1E1E")); dpadAreaContainer.setPadding(padS, padS, padS, padS);
         
-        // 🔥 编组管理按钮与显示
-        Button btnEditGI = createButton("⚙️ 编组", "#3F3F46");
-        TextView txtGI = new TextView(getContext()); txtGI.setText(" [0,0] "); txtGI.setTextColor(Color.parseColor("#0078D7")); applyGlobalFontSettings(txtGI, 1.1f, true);
-        dpadArea.addView(btnEditGI); dpadArea.addView(txtGI);
-
-        Button btnLeft = createButton("◀", "#333333"); Button btnUp = createButton("▲", "#333333"); Button btnDown = createButton("▼", "#333333"); Button btnRight = createButton("▶", "#333333");
-        TextView txtCoord = new TextView(getContext()); txtCoord.setText(" X:0 Y:0 "); txtCoord.setTextColor(Color.WHITE); applyGlobalFontSettings(txtCoord, 1.0f, true);
+        // 第一排：编组与步长
+        LinearLayout dpadRow1 = new LinearLayout(getContext()); dpadRow1.setOrientation(LinearLayout.HORIZONTAL); dpadRow1.setGravity(Gravity.CENTER); dpadRow1.setPadding(0, 0, 0, padS);
+        Button btnEditGI = createButton("⚙️ 交换/修改编组", "#3F3F46");
+        TextView txtGI = new TextView(getContext()); txtGI.setText("  [0,0]  "); txtGI.setTextColor(Color.parseColor("#0078D7")); applyGlobalFontSettings(txtGI, 1.1f, true);
         Button btnStep = createButton("👣 步长: 1", "#FF9800");
+        dpadRow1.addView(btnEditGI); dpadRow1.addView(txtGI); dpadRow1.addView(btnStep);
         
-        Runnable refreshLayerListUI = new Runnable() {
+        // 第二排：方向键与坐标
+        LinearLayout dpadRow2 = new LinearLayout(getContext()); dpadRow2.setOrientation(LinearLayout.HORIZONTAL); dpadRow2.setGravity(Gravity.CENTER);
+        Button btnLeft = createButton("◀", "#333333"); Button btnUp = createButton("▲", "#333333"); Button btnDown = createButton("▼", "#333333"); Button btnRight = createButton("▶", "#333333");
+        TextView txtCoord = new TextView(getContext()); txtCoord.setText("  X:0  Y:0  "); txtCoord.setTextColor(Color.WHITE); applyGlobalFontSettings(txtCoord, 1.0f, true);
+        dpadRow2.addView(btnLeft); dpadRow2.addView(btnUp); dpadRow2.addView(btnDown); dpadRow2.addView(btnRight); dpadRow2.addView(txtCoord);
+        
+        dpadAreaContainer.addView(dpadRow1); dpadAreaContainer.addView(dpadRow2);
+        sffCenterPanel.addView(dpadAreaContainer, new LinearLayout.LayoutParams(-1, -2));
+
+        btnStep.setOnClickListener(v -> {
+            final Dialog stepDialog = new Dialog(getContext()); stepDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            FrameLayout fl = new FrameLayout(getContext()); ScrollView sv = new ScrollView(getContext());
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding(padM, padM, padM, padM);
+            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
+            box.addView(createSubTitle("👣 设置方向键移动步长"));
+            box.addView(createSubTitle("一次点击移动的像素格数:")); EditText stepInput = createInput("如: 1 或 10", String.valueOf((int)dpadStep[0])); stepInput.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(stepInput);
+            LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL);
+            Button bSave = createButton("✔️ 保存", "#4CAF50"); bSave.setOnClickListener(bv -> { try { dpadStep[0] = Float.parseFloat(stepInput.getText().toString()); btnStep.setText("👣 步长: " + (int)dpadStep[0]); } catch(Exception e){} stepDialog.dismiss(); });
+            Button bReset = createButton("🔄 恢复默认", "#0078D7"); bReset.setOnClickListener(bv -> { dpadStep[0] = 1.0f; btnStep.setText("👣 步长: 1"); stepDialog.dismiss(); });
+            Button bCancel = createButton("❌ 取消", "#333333"); bCancel.setOnClickListener(bv -> stepDialog.dismiss());
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), padM, (int)(2*density), 0);
+            btnRow.addView(bSave, lp); btnRow.addView(bReset, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); sv.addView(box); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); stepDialog.setContentView(fl); stepDialog.show();
+        });
+
+        View.OnClickListener dpadListener = v -> {
+            if (selectedLayerIndex[0] == 0) { Toast.makeText(getContext(), "不能移动网格底板", Toast.LENGTH_SHORT).show(); return; }
+            StageLayerInfo layer = layerList.get(selectedLayerIndex[0]); float step = dpadStep[0];
+            if (v == btnLeft) layer.startX -= step; else if (v == btnRight) layer.startX += step; else if (v == btnUp) layer.startY -= step; else if (v == btnDown) layer.startY += step;
+            txtCoord.setText(String.format(" X:%.0f Y:%.0f ", layer.startX, layer.startY)); viewportFrame.invalidate(); 
+        };
+        btnLeft.setOnClickListener(dpadListener); btnRight.setOnClickListener(dpadListener); btnUp.setOnClickListener(dpadListener); btnDown.setOnClickListener(dpadListener);
+
+        ScrollView defEditorPanel = new ScrollView(getContext()); defEditorPanel.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        EditText defCodeInput = new EditText(getContext()); defCodeInput.setBackgroundColor(Color.TRANSPARENT); defCodeInput.setTextColor(Color.parseColor("#D4D4D4")); defCodeInput.setGravity(Gravity.TOP | Gravity.LEFT); defCodeInput.setTypeface(Typeface.MONOSPACE); applyGlobalFontSettings(defCodeInput, 1.0f, false);
+        defEditorPanel.addView(defCodeInput, new FrameLayout.LayoutParams(-1, -2)); defEditorPanel.setVisibility(View.GONE); 
+
+        LinearLayout modelCenterPanel = new LinearLayout(getContext()); modelCenterPanel.setOrientation(LinearLayout.VERTICAL); modelCenterPanel.setVisibility(View.GONE);
+        final WebView modelWebView = new WebView(getContext()); 
+        modelWebView.getSettings().setJavaScriptEnabled(true); 
+        modelWebView.getSettings().setAllowFileAccess(true); 
+        modelWebView.getSettings().setAllowFileAccessFromFileURLs(true);
+        modelWebView.getSettings().setAllowUniversalAccessFromFileURLs(true);
+        modelWebView.setWebChromeClient(new android.webkit.WebChromeClient());
+        modelWebView.setBackgroundColor(Color.parseColor("#121212"));
+        
+        render3DScene[0] = new Runnable() {
+            @Override public void run() {
+                StringBuilder html = new StringBuilder();
+                html.append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;}</style>");
+                html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js\"></script>");
+                html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js\"></script>");
+                html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js\"></script>");
+                html.append("</head><body><script>");
+                html.append("var scene = new THREE.Scene();");
+                html.append("var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 10000); camera.position.set(0, 20, 100);");
+                html.append("var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});");
+                html.append("renderer.setSize(window.innerWidth, window.innerHeight);");
+                html.append("renderer.outputEncoding = THREE.sRGBEncoding;"); 
+                html.append("document.body.appendChild(renderer.domElement);");
+                html.append("var controls = new THREE.OrbitControls(camera, renderer.domElement);");
+                html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 2.5); scene.add(ambientLight);"); 
+                html.append("var hemiLight = new THREE.HemisphereLight( 0xffffff, 0x444444, 1.5 ); scene.add(hemiLight);");
+                html.append("var dirLight = new THREE.DirectionalLight(0xffffff, 2.0); dirLight.position.set(50, 100, 50); scene.add(dirLight);");
+                html.append("var grid = new THREE.GridHelper(200, 20, 0x0078D7, 0x3F3F46); scene.add(grid);");
+                html.append("var loader = new THREE.GLTFLoader();");
+                for (StageModelInfo m : modelList) {
+                    if(m.isVisible) { 
+                        html.append("loader.load('file://").append(m.path).append("', function(gltf) {");
+                        html.append("  var model = gltf.scene;");
+                        html.append("  model.position.set(").append(m.offsetX).append(",").append(m.offsetY).append(",").append(m.offsetZ).append(");");
+                        html.append("  model.scale.set(").append(m.scaleX).append(",").append(m.scaleY).append(",").append(m.scaleZ).append(");");
+                        html.append("  scene.add(model);");
+                        html.append("});");
+                    }
+                }
+                html.append("function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); } animate();");
+                html.append("window.addEventListener('resize', function(){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });");
+                html.append("</script></body></html>");
+                modelWebView.loadDataWithBaseURL("file://", html.toString(), "text/html", "utf-8", null);
+            }
+        };
+
+        String defaultHtml = "<html><body style='background:#121212;color:gray;display:flex;justify-content:center;align-items:center;height:100%;font-size:20px;'>左侧导入并在列表激活 3D 模型 (.glb)</body></html>";
+        modelWebView.loadDataWithBaseURL(null, defaultHtml, "text/html", "utf-8", null);
+        modelCenterPanel.addView(modelWebView, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        centerContainer.addView(sffCenterPanel, new FrameLayout.LayoutParams(-1, -1));
+        centerContainer.addView(defEditorPanel, new FrameLayout.LayoutParams(-1, -1));
+        centerContainer.addView(modelCenterPanel, new FrameLayout.LayoutParams(-1, -1));
+
+        // ================== 5. 右侧属性面板 ==================
+        ScrollView rightScroll = new ScrollView(getContext()); rightScroll.setBackgroundColor(Color.parseColor("#252526"));
+        LinearLayout rightPanel = new LinearLayout(getContext()); rightPanel.setOrientation(LinearLayout.VERTICAL); rightPanel.setPadding(padS, padS, padS, padS);
+        
+        LinearLayout panel2D = new LinearLayout(getContext()); panel2D.setOrientation(LinearLayout.VERTICAL);
+        panel2D.addView(createSubTitle("📐 2D 图层属性")); 
+        panel2D.addView(createSubTitle("Scale X,Y (缩放):")); panel2D.addView(createInput("1.0, 1.0", "1.0, 1.0")); 
+        panel2D.addView(createSubTitle("Delta X,Y (视差):")); panel2D.addView(createInput("1.0, 1.0", "1.0, 1.0")); 
+        panel2D.addView(createSubTitle("Trans (透明混合):")); panel2D.addView(createInput("add/sub/none", "none"));
+        rightPanel.addView(panel2D);
+
+        LinearLayout panel3D = new LinearLayout(getContext()); panel3D.setOrientation(LinearLayout.VERTICAL);
+        panel3D.addView(createSubTitle("🧊 模型 3D 矩阵")); 
+        panel3D.addView(createSubTitle("Offset X,Y,Z (位移):")); EditText offset3D = createInput("0, 0, 0", "0,0,0"); panel3D.addView(offset3D); 
+        panel3D.addView(createSubTitle("Scale X,Y,Z (缩放):")); EditText scale3D = createInput("1, 1, 1", "1,1,1"); panel3D.addView(scale3D);
+        Button btnApply3D = createButton("✔️ 应用并刷新视口", "#4CAF50");
+        panel3D.addView(btnApply3D); panel3D.setVisibility(View.GONE); rightPanel.addView(panel3D);
+        rightScroll.addView(rightPanel);
+
+        // 🔥 动态自适应核心布局比例：左 1.2, 中 2.5, 右 1 (保证中间可视区足够大)
+        mainArea.addView(leftPanel, new LinearLayout.LayoutParams(0, -1, 1.2f)); 
+        mainArea.addView(centerContainer, new LinearLayout.LayoutParams(0, -1, 2.5f)); 
+        mainArea.addView(rightScroll, new LinearLayout.LayoutParams(0, -1, 1f));
+        root.addView(mainArea, new LinearLayout.LayoutParams(-1, -1));
+
+        refreshModelListUI[0] = new Runnable() {
+            @Override public void run() {
+                modelNodeListLayout.removeAllViews();
+                if (modelList.isEmpty()) { TextView t = new TextView(getContext()); t.setText("未导入模型"); t.setTextColor(Color.GRAY); modelNodeListLayout.addView(t); return; }
+                for (int i = 0; i < modelList.size(); i++) {
+                    final int idx = i; StageModelInfo m = modelList.get(i);
+                    LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+                    row.setBackgroundColor(selectedModelIndex[0] == idx ? Color.parseColor("#0078D7") : Color.parseColor("#3F3F46"));
+                    row.setPadding((int)(5*density), (int)(8*density), (int)(5*density), (int)(8*density));
+                    
+                    Button btnVis = createButton(m.isVisible ? "👁️" : "❌", "#333333"); btnVis.setPadding(0,(int)(5*density),0,(int)(5*density));
+                    btnVis.setOnClickListener(v -> { m.isVisible = !m.isVisible; render3DScene[0].run(); this.run(); }); 
+                    TextView tName = new TextView(getContext()); tName.setText(" 📦 " + m.name); tName.setTextColor(Color.WHITE); applyGlobalFontSettings(tName, 0.9f, false);
+                    
+                    row.addView(btnVis, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(tName, new LinearLayout.LayoutParams(0, -2, 1f));
+                    row.setOnClickListener(v -> { 
+                        selectedModelIndex[0] = idx;
+                        offset3D.setText(String.format("%.1f,%.1f,%.1f", m.offsetX, m.offsetY, m.offsetZ)); scale3D.setText(String.format("%.1f,%.1f,%.1f", m.scaleX, m.scaleY, m.scaleZ));
+                        this.run(); 
+                    });
+                    modelNodeListLayout.addView(row, new LinearLayout.LayoutParams(-1,-2));
+                }
+            }
+        };
+        
+        btnApply3D.setOnClickListener(v -> {
+            if(!modelList.isEmpty() && selectedModelIndex[0] >= 0){
+                StageModelInfo m = modelList.get(selectedModelIndex[0]); 
+                try {
+                    String[] o = offset3D.getText().toString().split(","); if(o.length==3){ m.offsetX=Float.parseFloat(o[0].trim()); m.offsetY=Float.parseFloat(o[1].trim()); m.offsetZ=Float.parseFloat(o[2].trim()); }
+                    String[] s = scale3D.getText().toString().split(","); if(s.length==3){ m.scaleX=Float.parseFloat(s[0].trim()); m.scaleY=Float.parseFloat(s[1].trim()); m.scaleZ=Float.parseFloat(s[2].trim()); }
+                    render3DScene[0].run(); Toast.makeText(getContext(), "✅ 3D 参数已应用", Toast.LENGTH_SHORT).show();
+                } catch(Exception e){}
+            }
+        });
+
+        refreshLayerListUI[0] = new Runnable() {
             @Override public void run() {
                 layerListLayout.removeAllViews();
                 for (int i = layerList.size() - 1; i >= 0; i--) { 
@@ -2423,10 +2580,8 @@ public class DesktopSystemView extends Dialog {
                         if (!info.isGhostGrid && info.cacheBmp == null && !info.sourcePath.isEmpty()) {
                             new Thread(() -> { 
                                 Bitmap bmp = null;
-                                if (info.sourcePath.toLowerCase().endsWith(".sff")) {
-                                    byte[] bmpData = Api.decodeSffFrame(info.sourcePath, info.group, info.item, ""); 
-                                    if (bmpData != null && bmpData.length > 0) bmp = BitmapFactory.decodeByteArray(bmpData, 0, bmpData.length);
-                                } else bmp = BitmapFactory.decodeFile(info.sourcePath);
+                                if (info.sourcePath.toLowerCase().endsWith(".sff")) { byte[] bmpData = Api.decodeSffFrame(info.sourcePath, info.group, info.item, ""); if (bmpData != null && bmpData.length > 0) bmp = BitmapFactory.decodeByteArray(bmpData, 0, bmpData.length); } 
+                                else bmp = BitmapFactory.decodeFile(info.sourcePath);
                                 if (bmp != null) { final Bitmap fbm = bmp; new Handler(Looper.getMainLooper()).post(() -> { info.cacheBmp = fbm; viewportFrame.invalidate(); }); } 
                             }).start();
                         }
@@ -2437,18 +2592,35 @@ public class DesktopSystemView extends Dialog {
             }
         };
 
+        updateViewState[0] = new Runnable() {
+            @Override public void run() {
+                sffCenterPanel.setVisibility(View.GONE); defEditorPanel.setVisibility(View.GONE); modelCenterPanel.setVisibility(View.GONE);
+                layerScroll.setVisibility(View.GONE); modelNodeScroll.setVisibility(View.GONE); psToolsRow.setVisibility(View.GONE);
+                btnViewSff.setBackgroundColor(Color.parseColor("#333333")); btnViewDef.setBackgroundColor(Color.parseColor("#333333")); btnViewModel.setBackgroundColor(Color.parseColor("#333333"));
+                
+                if (currentViewMode[0] == 0) { sffCenterPanel.setVisibility(View.VISIBLE); layerScroll.setVisibility(View.VISIBLE); psToolsRow.setVisibility(View.VISIBLE); btnViewSff.setBackgroundColor(Color.parseColor("#4CAF50")); } 
+                else if (currentViewMode[0] == 1) { defEditorPanel.setVisibility(View.VISIBLE); layerScroll.setVisibility(View.VISIBLE); btnViewDef.setBackgroundColor(Color.parseColor("#FF9800")); } 
+                else if (currentViewMode[0] == 2) { modelCenterPanel.setVisibility(View.VISIBLE); modelNodeScroll.setVisibility(View.VISIBLE); btnViewModel.setBackgroundColor(Color.parseColor("#0078D7")); render3DScene[0].run(); }
+            }
+        };
+
+        btnViewSff.setOnClickListener(v -> { currentViewMode[0] = 0; updateViewState[0].run(); }); btnViewDef.setOnClickListener(v -> { currentViewMode[0] = 1; updateViewState[0].run(); }); btnViewModel.setOnClickListener(v -> { currentViewMode[0] = 2; updateViewState[0].run(); });
+
+        btnMode2D.setOnClickListener(v -> { is3DMode[0] = false; btnMode2D.setBackgroundColor(Color.parseColor("#9C27B0")); btnMode3D.setBackgroundColor(Color.parseColor("#333333")); btnViewModel.setVisibility(View.GONE); panel2D.setVisibility(View.VISIBLE); panel3D.setVisibility(View.GONE); if(currentViewMode[0] == 2) { currentViewMode[0] = 0; updateViewState[0].run(); } });
+        btnMode3D.setOnClickListener(v -> { is3DMode[0] = true; btnMode3D.setBackgroundColor(Color.parseColor("#0078D7")); btnMode2D.setBackgroundColor(Color.parseColor("#333333")); btnViewModel.setVisibility(View.VISIBLE); panel2D.setVisibility(View.VISIBLE); panel3D.setVisibility(View.VISIBLE); });
+
         btnEditGI.setOnClickListener(v -> {
             if (selectedLayerIndex[0] == 0) { Toast.makeText(getContext(), "底板不可修改", Toast.LENGTH_SHORT).show(); return; }
             StageLayerInfo curLayer = layerList.get(selectedLayerIndex[0]);
             final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
             FrameLayout fl = new FrameLayout(getContext()); ScrollView sv = new ScrollView(getContext());
-            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding(padM,padM,padM,padM);
             GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
             box.addView(createSubTitle("⚙️ 调整图层动作编组"));
             box.addView(createSubTitle("Group 编号:")); EditText grpIn = createInput("", String.valueOf(curLayer.group)); grpIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(grpIn);
             box.addView(createSubTitle("Item 编号:")); EditText itmIn = createInput("", String.valueOf(curLayer.item)); itmIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(itmIn);
             
-            Button bSave = createButton("✔️ 保存", "#4CAF50");
+            Button bSave = createButton("✔️ 保存并智能交换", "#4CAF50");
             bSave.setOnClickListener(bv -> {
                 try {
                     int ng = Integer.parseInt(grpIn.getText().toString().trim()); int ni = Integer.parseInt(itmIn.getText().toString().trim());
@@ -2456,283 +2628,125 @@ public class DesktopSystemView extends Dialog {
                     if (conflict != null) {
                         int og = curLayer.group; int oi = curLayer.item;
                         curLayer.group = ng; curLayer.item = ni; conflict.group = og; conflict.item = oi;
-                        Toast.makeText(getContext(), "🔄 检测到重复，已与目标图层互相交换编号", Toast.LENGTH_LONG).show();
+                        Toast.makeText(getContext(), "🔄 检测到重复，已互相交换编号", Toast.LENGTH_LONG).show();
                     } else { curLayer.group = ng; curLayer.item = ni; Toast.makeText(getContext(), "✅ 编组已更新", Toast.LENGTH_SHORT).show(); }
                     txtGI.setText(String.format(" [%d,%d] ", curLayer.group, curLayer.item));
-                    refreshLayerListUI.run(); d.dismiss();
+                    refreshLayerListUI[0].run(); d.dismiss();
                 } catch(Exception e){}
             });
             Button bCancel = createButton("❌ 取消", "#333333"); bCancel.setOnClickListener(bv -> d.dismiss());
             LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0);
-            btnRow.addView(bSave, lp); btnRow.addView(bCancel, lp); box.addView(btnRow);
-            sv.addView(box); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); d.setContentView(fl); d.show();
+            btnRow.addView(bSave, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); sv.addView(box); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); d.setContentView(fl); d.show();
         });
 
-        btnStep.setOnClickListener(v -> {
-            final Dialog stepDialog = new Dialog(getContext()); stepDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            FrameLayout fl = new FrameLayout(getContext()); ScrollView sv = new ScrollView(getContext());
-            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
-            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
-            box.addView(createSubTitle("👣 设置方向键移动步长"));
-            box.addView(createSubTitle("一次点击移动的像素格数:")); EditText stepInput = createInput("如: 1 或 10", String.valueOf((int)dpadStep[0])); stepInput.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(stepInput);
-            LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL);
-            Button bSave = createButton("✔️ 保存", "#4CAF50"); bSave.setOnClickListener(bv -> { try { dpadStep[0] = Float.parseFloat(stepInput.getText().toString()); btnStep.setText("👣 步长: " + (int)dpadStep[0]); } catch(Exception e){} stepDialog.dismiss(); });
-            Button bReset = createButton("🔄 恢复默认", "#0078D7"); bReset.setOnClickListener(bv -> { dpadStep[0] = 1.0f; btnStep.setText("👣 步长: 1"); stepDialog.dismiss(); });
-            Button bCancel = createButton("❌ 取消", "#333333"); bCancel.setOnClickListener(bv -> stepDialog.dismiss());
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0);
-            btnRow.addView(bSave, lp); btnRow.addView(bReset, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); sv.addView(box); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); stepDialog.setContentView(fl); stepDialog.show();
-        });
+        Runnable openImageImporter = new Runnable() {
+            @Override public void run() {
+                showWin10FilePicker("选择 图片或GIF 目录", 7, null, null, file -> {
+                    FileCallback processImage = imgFile -> {
+                        String lowerPath = imgFile.getAbsolutePath().toLowerCase();
+                        if (lowerPath.endsWith(".gif")) {
+                            final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                            FrameLayout fl = new FrameLayout(getContext()); ScrollView sv = new ScrollView(getContext());
+                            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding(padM,padM,padM,padM);
+                            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
+                            box.addView(createSubTitle("🎞️ 检测到 GIF 动图"));
+                            TextView hint = new TextView(getContext()); hint.setText("请选择导入策略："); hint.setTextColor(Color.LTGRAY); box.addView(hint);
+                            
+                            long count = Api.getGifFrameCount(imgFile.getAbsolutePath()); int totalFrames = (int)count;
+                            if(totalFrames <= 0) { Toast.makeText(getContext(), "❌ GIF 解析失败", Toast.LENGTH_SHORT).show(); d.dismiss(); return; }
 
-        View.OnClickListener dpadListener = v -> {
-            if (selectedLayerIndex[0] == 0) { Toast.makeText(getContext(), "不能移动网格底板", Toast.LENGTH_SHORT).show(); return; }
-            StageLayerInfo layer = layerList.get(selectedLayerIndex[0]); float step = dpadStep[0];
-            if (v == btnLeft) layer.startX -= step; else if (v == btnRight) layer.startX += step; else if (v == btnUp) layer.startY -= step; else if (v == btnDown) layer.startY += step;
-            txtCoord.setText(String.format(" X:%.0f Y:%.0f ", layer.startX, layer.startY)); viewportFrame.invalidate(); 
-        };
-        btnLeft.setOnClickListener(dpadListener); btnRight.setOnClickListener(dpadListener); btnUp.setOnClickListener(dpadListener); btnDown.setOnClickListener(dpadListener);
-        dpadArea.addView(btnLeft); dpadArea.addView(btnUp); dpadArea.addView(btnDown); dpadArea.addView(btnRight); dpadArea.addView(txtCoord); dpadArea.addView(btnStep, new LinearLayout.LayoutParams(-2, -2));
-        sffCenterPanel.addView(dpadArea, new LinearLayout.LayoutParams(-1, -2));
+                            ImageView preview = new ImageView(getContext()); preview.setLayoutParams(new LinearLayout.LayoutParams(-1, (int)(150*density))); box.addView(preview);
+                            
+                            final int[] currentFrame = {0}; final Bitmap[] currentBmp = {null};
+                            Runnable updatePreview = () -> { new Thread(() -> { byte[] b = Api.decodeGifFrame(imgFile.getAbsolutePath(), currentFrame[0]); if(b != null) { currentBmp[0] = BitmapFactory.decodeByteArray(b, 0, b.length); new Handler(Looper.getMainLooper()).post(() -> preview.setImageBitmap(currentBmp[0])); } }).start(); };
 
-        ScrollView defEditorPanel = new ScrollView(getContext()); defEditorPanel.setBackgroundColor(Color.parseColor("#1E1E1E"));
-        EditText defCodeInput = new EditText(getContext()); defCodeInput.setBackgroundColor(Color.TRANSPARENT); defCodeInput.setTextColor(Color.parseColor("#D4D4D4")); defCodeInput.setGravity(Gravity.TOP | Gravity.LEFT); defCodeInput.setTypeface(Typeface.MONOSPACE); applyGlobalFontSettings(defCodeInput, 1.0f, false);
-        defEditorPanel.addView(defCodeInput, new FrameLayout.LayoutParams(-1, -2)); defEditorPanel.setVisibility(View.GONE); 
+                            TextView frameInfo = new TextView(getContext()); frameInfo.setTextColor(Color.WHITE); frameInfo.setGravity(Gravity.CENTER); box.addView(frameInfo);
+                            SeekBar slider = new SeekBar(getContext()); slider.setMax(totalFrames - 1);
+                            slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                                public void onProgressChanged(SeekBar s, int p, boolean b) { if(b) { currentFrame[0] = p; frameInfo.setText("当前预览: 第 " + (p+1) + " / " + totalFrames + " 帧"); updatePreview.run(); } }
+                                public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){}
+                            });
+                            box.addView(slider); frameInfo.setText("当前预览: 第 1 / " + totalFrames + " 帧"); updatePreview.run();
 
-        LinearLayout modelCenterPanel = new LinearLayout(getContext()); modelCenterPanel.setOrientation(LinearLayout.VERTICAL); modelCenterPanel.setVisibility(View.GONE);
-        final WebView modelWebView = new WebView(getContext()); 
-        modelWebView.getSettings().setJavaScriptEnabled(true); 
-        modelWebView.getSettings().setAllowFileAccess(true); 
-        modelWebView.getSettings().setAllowFileAccessFromFileURLs(true);
-        modelWebView.getSettings().setAllowUniversalAccessFromFileURLs(true);
-        modelWebView.setWebChromeClient(new android.webkit.WebChromeClient());
-        modelWebView.setBackgroundColor(Color.parseColor("#121212"));
-        
-        Runnable render3DScene = () -> {
-            StringBuilder html = new StringBuilder();
-            html.append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;}</style>");
-            html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js\"></script>");
-            html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js\"></script>");
-            html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js\"></script>");
-            html.append("</head><body><script>");
-            html.append("var scene = new THREE.Scene();");
-            html.append("var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 10000); camera.position.set(0, 20, 100);");
-            html.append("var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});");
-            html.append("renderer.setSize(window.innerWidth, window.innerHeight);");
-            html.append("renderer.outputEncoding = THREE.sRGBEncoding;"); 
-            html.append("document.body.appendChild(renderer.domElement);");
-            html.append("var controls = new THREE.OrbitControls(camera, renderer.domElement);");
-            html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 2.5); scene.add(ambientLight);"); 
-            html.append("var hemiLight = new THREE.HemisphereLight( 0xffffff, 0x444444, 1.5 ); scene.add(hemiLight);");
-            html.append("var dirLight = new THREE.DirectionalLight(0xffffff, 2.0); dirLight.position.set(50, 100, 50); scene.add(dirLight);");
-            html.append("var grid = new THREE.GridHelper(200, 20, 0x0078D7, 0x3F3F46); scene.add(grid);");
-            html.append("var loader = new THREE.GLTFLoader();");
-            for (StageModelInfo m : modelList) {
-                if(m.isVisible) { 
-                    html.append("loader.load('file://").append(m.path).append("', function(gltf) {");
-                    html.append("  var model = gltf.scene;");
-                    html.append("  model.position.set(").append(m.offsetX).append(",").append(m.offsetY).append(",").append(m.offsetZ).append(");");
-                    html.append("  model.scale.set(").append(m.scaleX).append(",").append(m.scaleY).append(",").append(m.scaleZ).append(");");
-                    html.append("  scene.add(model);");
-                    html.append("});");
-                }
-            }
-            html.append("function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); } animate();");
-            html.append("window.addEventListener('resize', function(){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });");
-            html.append("</script></body></html>");
-            modelWebView.loadDataWithBaseURL("file://", html.toString(), "text/html", "utf-8", null);
-        };
+                            box.addView(createSubTitle("图层统一前缀名称:")); EditText nameInput = createInput("", imgFile.getName().replace(".gif","")); box.addView(nameInput);
+                            box.addView(createSubTitle("所属 Group 编号 (默认0):")); EditText groupInput = createInput("", "0"); groupInput.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(groupInput);
 
-        String defaultHtml = "<html><body style='background:#121212;color:gray;display:flex;justify-content:center;align-items:center;height:100%;font-size:20px;'>左侧导入并在列表激活 3D 模型 (.glb)<br>支持同时导入并在沙盘组装多模型</body></html>";
-        modelWebView.loadDataWithBaseURL(null, defaultHtml, "text/html", "utf-8", null);
-        modelCenterPanel.addView(modelWebView, new LinearLayout.LayoutParams(-1, 0, 1f));
+                            Button btnSingle = createButton("🎯 仅导入当前帧为新图层", "#4CAF50");
+                            btnSingle.setOnClickListener(v -> {
+                                StageLayerInfo layer = new StageLayerInfo(); layer.name = nameInput.getText().toString() + " [帧" + currentFrame[0] + "]";
+                                int g = 0; try { g = Integer.parseInt(groupInput.getText().toString()); } catch(Exception e){}
+                                int[] gi = incrementer.getNext(g, currentFrame[0]); layer.group = gi[0]; layer.item = gi[1];
+                                layer.sourcePath = imgFile.getAbsolutePath(); layer.cacheBmp = currentBmp[0]; layer.isVisible = false; layer.manuallyVisible = false;
+                                layerList.add(layer); refreshLayerListUI[0].run(); d.dismiss(); Toast.makeText(getContext(), "✅ 已添加单帧图层", Toast.LENGTH_SHORT).show();
+                            });
 
-        centerContainer.addView(sffCenterPanel, new FrameLayout.LayoutParams(-1, -1));
-        centerContainer.addView(defEditorPanel, new FrameLayout.LayoutParams(-1, -1));
-        centerContainer.addView(modelCenterPanel, new FrameLayout.LayoutParams(-1, -1));
-
-        // ================== 5. 右侧属性面板 ==================
-        ScrollView rightScroll = new ScrollView(getContext()); rightScroll.setBackgroundColor(Color.parseColor("#252526"));
-        LinearLayout rightPanel = new LinearLayout(getContext()); rightPanel.setOrientation(LinearLayout.VERTICAL); rightPanel.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
-        
-        LinearLayout panel2D = new LinearLayout(getContext()); panel2D.setOrientation(LinearLayout.VERTICAL);
-        panel2D.addView(createSubTitle("📐 2D 尺寸与视差混合")); 
-        panel2D.addView(createSubTitle("Scale X,Y (视口缩放):")); panel2D.addView(createInput("1.0, 1.0", "1.0, 1.0")); 
-        panel2D.addView(createSubTitle("Delta X,Y (镜头偏移率):")); panel2D.addView(createInput("1.0, 1.0", "1.0, 1.0")); 
-        panel2D.addView(createSubTitle("Trans (透明混合模式):")); panel2D.addView(createInput("add/sub/none", "none"));
-        rightPanel.addView(panel2D);
-
-        LinearLayout panel3D = new LinearLayout(getContext()); panel3D.setOrientation(LinearLayout.VERTICAL);
-        panel3D.addView(createSubTitle("🧊 当前模型 3D 空间矩阵")); 
-        panel3D.addView(createSubTitle("Offset X,Y,Z (全局位移):")); EditText offset3D = createInput("0, 0, 0", "0,0,0"); panel3D.addView(offset3D); 
-        panel3D.addView(createSubTitle("Scale X,Y,Z (全局缩放):")); EditText scale3D = createInput("1, 1, 1", "1,1,1"); panel3D.addView(scale3D);
-        Button btnApply3D = createButton("✔️ 应用 3D 参数并刷新视口", "#4CAF50");
-        panel3D.addView(btnApply3D); panel3D.setVisibility(View.GONE); rightPanel.addView(panel3D);
-        rightScroll.addView(rightPanel);
-
-        mainArea.addView(leftPanel, new LinearLayout.LayoutParams(0, -1, 1.4f)); mainArea.addView(centerContainer, new LinearLayout.LayoutParams(0, -1, 2f)); mainArea.addView(rightScroll, new LinearLayout.LayoutParams(0, -1, 1f));
-        root.addView(mainArea, new LinearLayout.LayoutParams(-1, -1));
-
-        Runnable refreshModelListUI = () -> {
-            modelNodeListLayout.removeAllViews();
-            if (modelList.isEmpty()) { TextView t = new TextView(getContext()); t.setText("未导入任何模型"); t.setTextColor(Color.GRAY); modelNodeListLayout.addView(t); return; }
-            for (int i = 0; i < modelList.size(); i++) {
-                final int idx = i; StageModelInfo m = modelList.get(i);
-                LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
-                row.setBackgroundColor(selectedModelIndex[0] == idx ? Color.parseColor("#0078D7") : Color.parseColor("#3F3F46"));
-                row.setPadding((int)(5*density), (int)(8*density), (int)(5*density), (int)(8*density));
-                
-                Button btnVis = createButton(m.isVisible ? "👁️" : "❌", "#333333"); btnVis.setPadding(0,(int)(5*density),0,(int)(5*density));
-                btnVis.setOnClickListener(v -> { m.isVisible = !m.isVisible; render3DScene.run(); this.run(); }); 
-                TextView tName = new TextView(getContext()); tName.setText(" 📦 " + m.name); tName.setTextColor(Color.WHITE); applyGlobalFontSettings(tName, 0.9f, false);
-                
-                row.addView(btnVis, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(tName, new LinearLayout.LayoutParams(0, -2, 1f));
-                row.setOnClickListener(v -> { 
-                    selectedModelIndex[0] = idx;
-                    offset3D.setText(String.format("%.1f,%.1f,%.1f", m.offsetX, m.offsetY, m.offsetZ)); scale3D.setText(String.format("%.1f,%.1f,%.1f", m.scaleX, m.scaleY, m.scaleZ));
-                    this.run(); 
-                });
-                modelNodeListLayout.addView(row, new LinearLayout.LayoutParams(-1,-2));
-            }
-        };
-        
-        btnApply3D.setOnClickListener(v -> {
-            if(!modelList.isEmpty() && selectedModelIndex[0] >= 0){
-                StageModelInfo m = modelList.get(selectedModelIndex[0]); 
-                try {
-                    String[] o = offset3D.getText().toString().split(","); if(o.length==3){ m.offsetX=Float.parseFloat(o[0].trim()); m.offsetY=Float.parseFloat(o[1].trim()); m.offsetZ=Float.parseFloat(o[2].trim()); }
-                    String[] s = scale3D.getText().toString().split(","); if(s.length==3){ m.scaleX=Float.parseFloat(s[0].trim()); m.scaleY=Float.parseFloat(s[1].trim()); m.scaleZ=Float.parseFloat(s[2].trim()); }
-                    render3DScene.run(); Toast.makeText(getContext(), "✅ 3D 参数已应用到沙盘", Toast.LENGTH_SHORT).show();
-                } catch(Exception e){}
-            }
-        });
-
-        Runnable updateViewState = () -> {
-            sffCenterPanel.setVisibility(View.GONE); defEditorPanel.setVisibility(View.GONE); modelCenterPanel.setVisibility(View.GONE);
-            layerScroll.setVisibility(View.GONE); modelNodeScroll.setVisibility(View.GONE); psToolsRow.setVisibility(View.GONE);
-            btnViewSff.setBackgroundColor(Color.parseColor("#333333")); btnViewDef.setBackgroundColor(Color.parseColor("#333333")); btnViewModel.setBackgroundColor(Color.parseColor("#333333"));
-            
-            if (currentViewMode[0] == 0) { sffCenterPanel.setVisibility(View.VISIBLE); layerScroll.setVisibility(View.VISIBLE); psToolsRow.setVisibility(View.VISIBLE); btnViewSff.setBackgroundColor(Color.parseColor("#4CAF50")); } 
-            else if (currentViewMode[0] == 1) { defEditorPanel.setVisibility(View.VISIBLE); layerScroll.setVisibility(View.VISIBLE); btnViewDef.setBackgroundColor(Color.parseColor("#FF9800")); } 
-            else if (currentViewMode[0] == 2) { modelCenterPanel.setVisibility(View.VISIBLE); modelNodeScroll.setVisibility(View.VISIBLE); btnViewModel.setBackgroundColor(Color.parseColor("#0078D7")); render3DScene.run(); }
-        };
-
-        btnViewSff.setOnClickListener(v -> { currentViewMode[0] = 0; updateViewState.run(); }); btnViewDef.setOnClickListener(v -> { currentViewMode[0] = 1; updateViewState.run(); }); btnViewModel.setOnClickListener(v -> { currentViewMode[0] = 2; updateViewState.run(); });
-
-        btnMode2D.setOnClickListener(v -> { is3DMode[0] = false; btnMode2D.setBackgroundColor(Color.parseColor("#9C27B0")); btnMode3D.setBackgroundColor(Color.parseColor("#333333")); btnViewModel.setVisibility(View.GONE); panel2D.setVisibility(View.VISIBLE); panel3D.setVisibility(View.GONE); if(currentViewMode[0] == 2) { currentViewMode[0] = 0; updateViewState.run(); } });
-        btnMode3D.setOnClickListener(v -> { is3DMode[0] = true; btnMode3D.setBackgroundColor(Color.parseColor("#0078D7")); btnMode2D.setBackgroundColor(Color.parseColor("#333333")); btnViewModel.setVisibility(View.VISIBLE); panel2D.setVisibility(View.VISIBLE); panel3D.setVisibility(View.VISIBLE); });
-
-        Runnable openImageImporter = () -> {
-            showWin10FilePicker("选择 图片或GIF 目录", 7, null, null, file -> {
-                FileCallback processImage = imgFile -> {
-                    String lowerPath = imgFile.getAbsolutePath().toLowerCase();
-                    if (lowerPath.endsWith(".gif")) {
-                        final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-                        FrameLayout fl = new FrameLayout(getContext()); ScrollView sv = new ScrollView(getContext());
-                        LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
-                        GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
-                        box.addView(createSubTitle("🎞️ 检测到 GIF 动图"));
-                        TextView hint = new TextView(getContext()); hint.setText("由于 GIF 有多帧，请选择导入策略："); hint.setTextColor(Color.LTGRAY); box.addView(hint);
-                        
-                        long count = Api.getGifFrameCount(imgFile.getAbsolutePath()); int totalFrames = (int)count;
-                        if(totalFrames <= 0) { Toast.makeText(getContext(), "❌ GIF 解析失败", Toast.LENGTH_SHORT).show(); d.dismiss(); return; }
-
-                        ImageView preview = new ImageView(getContext()); preview.setLayoutParams(new LinearLayout.LayoutParams(-1, (int)(150*density))); box.addView(preview);
-                        
-                        final int[] currentFrame = {0}; final Bitmap[] currentBmp = {null};
-                        Runnable updatePreview = () -> {
-                            new Thread(() -> { byte[] b = Api.decodeGifFrame(imgFile.getAbsolutePath(), currentFrame[0]); if(b != null) { currentBmp[0] = BitmapFactory.decodeByteArray(b, 0, b.length); new Handler(Looper.getMainLooper()).post(() -> preview.setImageBitmap(currentBmp[0])); } }).start();
-                        };
-
-                        TextView frameInfo = new TextView(getContext()); frameInfo.setTextColor(Color.WHITE); frameInfo.setGravity(Gravity.CENTER); box.addView(frameInfo);
-                        SeekBar slider = new SeekBar(getContext()); slider.setMax(totalFrames - 1);
-                        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-                            public void onProgressChanged(SeekBar s, int p, boolean b) { if(b) { currentFrame[0] = p; frameInfo.setText("当前预览: 第 " + (p+1) + " / " + totalFrames + " 帧"); updatePreview.run(); } }
-                            public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){}
-                        });
-                        box.addView(slider); frameInfo.setText("当前预览: 第 1 / " + totalFrames + " 帧"); updatePreview.run();
-
-                        box.addView(createSubTitle("图层统一前缀名称:")); EditText nameInput = createInput("", imgFile.getName().replace(".gif","")); box.addView(nameInput);
-                        box.addView(createSubTitle("所属 Group 编号 (默认0):")); EditText groupInput = createInput("", "0"); groupInput.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(groupInput);
-
-                        Button btnSingle = createButton("🎯 仅导入当前帧为新图层", "#4CAF50");
-                        btnSingle.setOnClickListener(v -> {
-                            StageLayerInfo layer = new StageLayerInfo(); layer.name = nameInput.getText().toString() + " [帧" + currentFrame[0] + "]";
-                            int g = 0; try { g = Integer.parseInt(groupInput.getText().toString()); } catch(Exception e){}
-                            int[] gi = incrementer.getNext(g, currentFrame[0]);
-                            layer.group = gi[0]; layer.item = gi[1];
-                            layer.sourcePath = imgFile.getAbsolutePath(); layer.cacheBmp = currentBmp[0]; layer.isVisible = false; layer.manuallyVisible = false;
-                            layerList.add(layer); refreshLayerListUI.run(); d.dismiss(); Toast.makeText(getContext(), "✅ 已添加单帧图层", Toast.LENGTH_SHORT).show();
-                        });
-
-                        Button btnAll = createButton("🚀 瞬间拆解所有帧，追加图层序列", "#9C27B0");
-                        btnAll.setOnClickListener(v -> {
-                            Toast.makeText(getContext(), "正在提取全部帧序列...", Toast.LENGTH_SHORT).show();
-                            new Thread(() -> {
-                                int grp = 0; try { grp = Integer.parseInt(groupInput.getText().toString()); } catch(Exception e){} final int fGrp = grp;
-                                final String baseName = nameInput.getText().toString();
-                                for (int i=0; i<totalFrames; i++) {
-                                    byte[] b = Api.decodeGifFrame(imgFile.getAbsolutePath(), i);
-                                    if(b != null) {
-                                        Bitmap bmp = BitmapFactory.decodeByteArray(b, 0, b.length);
-                                        StageLayerInfo layer = new StageLayerInfo(); layer.name = baseName + " [帧" + i + "]";
-                                        int[] gi = incrementer.getNext(fGrp, i); layer.group = gi[0]; layer.item = gi[1];
-                                        layer.sourcePath = imgFile.getAbsolutePath(); layer.cacheBmp = bmp; layer.isVisible = false; layer.manuallyVisible = false;
-                                        layerList.add(layer);
+                            Button btnAll = createButton("🚀 瞬间拆解所有帧追加", "#9C27B0");
+                            btnAll.setOnClickListener(v -> {
+                                Toast.makeText(getContext(), "正在提取全部帧序列...", Toast.LENGTH_SHORT).show();
+                                new Thread(() -> {
+                                    int grp = 0; try { grp = Integer.parseInt(groupInput.getText().toString()); } catch(Exception e){} final int fGrp = grp;
+                                    final String baseName = nameInput.getText().toString();
+                                    for (int i=0; i<totalFrames; i++) {
+                                        byte[] b = Api.decodeGifFrame(imgFile.getAbsolutePath(), i);
+                                        if(b != null) {
+                                            Bitmap bmp = BitmapFactory.decodeByteArray(b, 0, b.length);
+                                            StageLayerInfo layer = new StageLayerInfo(); layer.name = baseName + " [帧" + i + "]";
+                                            int[] gi = incrementer.getNext(fGrp, i); layer.group = gi[0]; layer.item = gi[1];
+                                            layer.sourcePath = imgFile.getAbsolutePath(); layer.cacheBmp = bmp; layer.isVisible = false; layer.manuallyVisible = false;
+                                            layerList.add(layer);
+                                        }
                                     }
-                                }
-                                new Handler(Looper.getMainLooper()).post(() -> { refreshLayerListUI.run(); d.dismiss(); Toast.makeText(getContext(), "✅ GIF 全部拆解并生成追加图层！", Toast.LENGTH_LONG).show(); });
-                            }).start();
-                        });
+                                    new Handler(Looper.getMainLooper()).post(() -> { refreshLayerListUI[0].run(); d.dismiss(); Toast.makeText(getContext(), "✅ GIF 追加生成图层完毕", Toast.LENGTH_LONG).show(); });
+                                }).start();
+                            });
+                            Button btnCancel = createButton("❌ 取消", "#333333"); btnCancel.setOnClickListener(v -> d.dismiss());
+                            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, (int)(10*density), 0, 0); box.addView(btnSingle, lp); box.addView(btnAll, lp); box.addView(btnCancel, lp); sv.addView(box); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); d.setContentView(fl); d.show();
+                        } else {
+                            final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                            FrameLayout fl = new FrameLayout(getContext()); ScrollView sv = new ScrollView(getContext());
+                            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding(padM,padM,padM,padM);
+                            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
+                            box.addView(createSubTitle("🖼️ 导入单张静态图像"));
+                            ImageView preview = new ImageView(getContext()); preview.setLayoutParams(new LinearLayout.LayoutParams(-1, (int)(150*density)));
+                            Bitmap bmp = BitmapFactory.decodeFile(imgFile.getAbsolutePath()); preview.setImageBitmap(bmp); box.addView(preview);
+                            box.addView(createSubTitle("自定义图层名称:")); EditText nameInput = createInput("", imgFile.getName()); box.addView(nameInput);
+                            box.addView(createSubTitle("设定 Group 编号 (默认0):")); EditText groupInput = createInput("", "0"); groupInput.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(groupInput);
+                            box.addView(createSubTitle("设定 Item 编号 (默认0):")); EditText itemInput = createInput("", "0"); itemInput.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(itemInput);
 
-                        Button btnCancel = createButton("❌ 取消", "#333333"); btnCancel.setOnClickListener(v -> d.dismiss());
-                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, (int)(10*density), 0, 0); box.addView(btnSingle, lp); box.addView(btnAll, lp); box.addView(btnCancel, lp);
-                        sv.addView(box); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); d.setContentView(fl); d.show();
-                    } else {
-                        final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-                        FrameLayout fl = new FrameLayout(getContext()); ScrollView sv = new ScrollView(getContext());
-                        LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
-                        GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
-                        box.addView(createSubTitle("🖼️ 导入单张静态图像"));
-                        
-                        ImageView preview = new ImageView(getContext()); preview.setLayoutParams(new LinearLayout.LayoutParams(-1, (int)(150*density)));
-                        Bitmap bmp = BitmapFactory.decodeFile(imgFile.getAbsolutePath()); preview.setImageBitmap(bmp); box.addView(preview);
-
-                        box.addView(createSubTitle("自定义图层名称:")); EditText nameInput = createInput("", imgFile.getName()); box.addView(nameInput);
-                        box.addView(createSubTitle("设定 Group 编号 (默认0):")); EditText groupInput = createInput("", "0"); groupInput.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(groupInput);
-                        box.addView(createSubTitle("设定 Item 编号 (默认0):")); EditText itemInput = createInput("", "0"); itemInput.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(itemInput);
-
-                        LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL);
-                        Button btnAdd = createButton("✔️ 添加图层", "#4CAF50");
-                        btnAdd.setOnClickListener(v -> {
-                            StageLayerInfo layer = new StageLayerInfo(); layer.name = nameInput.getText().toString();
-                            int g = 0; try { g = Integer.parseInt(groupInput.getText().toString()); } catch(Exception e){}
-                            int i = 0; try { i = Integer.parseInt(itemInput.getText().toString()); } catch(Exception e){}
-                            int[] gi = incrementer.getNext(g, i); layer.group = gi[0]; layer.item = gi[1];
-                            layer.sourcePath = imgFile.getAbsolutePath(); layer.cacheBmp = bmp; layer.isVisible = false; layer.manuallyVisible = false;
-                            layerList.add(layer); refreshLayerListUI.run(); d.dismiss(); Toast.makeText(getContext(), "✅ 已追加新图层", Toast.LENGTH_SHORT).show();
-                        });
-                        Button btnCancel = createButton("❌ 取消", "#333333"); btnCancel.setOnClickListener(v -> d.dismiss());
-                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0);
-                        btnRow.addView(btnAdd, lp); btnRow.addView(btnCancel, lp); box.addView(btnRow);
-                        sv.addView(box); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); d.setContentView(fl); d.show();
-                    }
-                };
-                if (file.isDirectory()) showGenericFileListPicker(file, new String[]{".png", ".jpg", ".jpeg", ".gif", ".pcx"}, "外部图像素材", "#4CAF50", processImage);
-                else processImage.onFileSelected(file);
-            });
+                            LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL);
+                            Button btnAdd = createButton("✔️ 追加图层", "#4CAF50");
+                            btnAdd.setOnClickListener(v -> {
+                                StageLayerInfo layer = new StageLayerInfo(); layer.name = nameInput.getText().toString();
+                                int g = 0; try { g = Integer.parseInt(groupInput.getText().toString()); } catch(Exception e){}
+                                int i = 0; try { i = Integer.parseInt(itemInput.getText().toString()); } catch(Exception e){}
+                                int[] gi = incrementer.getNext(g, i); layer.group = gi[0]; layer.item = gi[1];
+                                layer.sourcePath = imgFile.getAbsolutePath(); layer.cacheBmp = bmp; layer.isVisible = false; layer.manuallyVisible = false;
+                                layerList.add(layer); refreshLayerListUI[0].run(); d.dismiss(); Toast.makeText(getContext(), "✅ 已追加新图层", Toast.LENGTH_SHORT).show();
+                            });
+                            Button btnCancel = createButton("❌ 取消", "#333333"); btnCancel.setOnClickListener(v -> d.dismiss());
+                            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0);
+                            btnRow.addView(btnAdd, lp); btnRow.addView(btnCancel, lp); box.addView(btnRow); sv.addView(box); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); d.setContentView(fl); d.show();
+                        }
+                    };
+                    if (file.isDirectory()) showGenericFileListPicker(file, new String[]{".png", ".jpg", ".jpeg", ".gif", ".pcx"}, "外部图像素材", "#4CAF50", processImage);
+                    else processImage.onFileSelected(file);
+                });
+            }
         };
 
         btnImportMenu.setOnClickListener(v -> {
             final Dialog iDialog = new Dialog(getContext()); iDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            LinearLayout iBox = new LinearLayout(getContext()); iBox.setOrientation(LinearLayout.VERTICAL); iBox.setBackgroundColor(Color.parseColor("#252526")); iBox.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+            FrameLayout fl = new FrameLayout(getContext()); ScrollView sv = new ScrollView(getContext());
+            LinearLayout iBox = new LinearLayout(getContext()); iBox.setOrientation(LinearLayout.VERTICAL); iBox.setBackgroundColor(Color.parseColor("#252526")); iBox.setPadding(padM,padM,padM,padM);
             GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); iBox.setBackground(border);
             iBox.addView(createSubTitle("📥 导入素材到场景"));
             
-            Button iSff = createButton("🖼️ 追加 SFF 官方图集包 (全量提取)", "#FF9800");
+            Button iSff = createButton("🖼️ 追加 SFF 官方图集包", "#FF9800");
             iSff.setOnClickListener(bv -> { 
                 iDialog.dismiss(); 
                 showWin10FilePicker("选择 SFF 文件或目录", 4, null, null, file -> {
                     FileCallback extractAction = finalFile -> {
-                        Toast.makeText(getContext(), "正在深度提取 SFF 图层...", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getContext(), "正在提取 SFF 并追加图层...", Toast.LENGTH_SHORT).show();
                         String currentPath = finalFile.getAbsolutePath();
                         new Thread(() -> {
                             List<GoEngineBridge.SffFrame> frames = GoEngineBridge.getAllFrames(currentPath);
@@ -2743,8 +2757,7 @@ public class DesktopSystemView extends Dialog {
                                     layer.axisX = f.x; layer.axisY = f.y; layer.sourcePath = currentPath; layer.isVisible = false; layer.manuallyVisible = false;
                                     layerList.add(layer);
                                 }
-                                refreshLayerListUI.run();
-                                Toast.makeText(getContext(), "✅ SFF 解析完成！追加提取了 " + frames.size() + " 个图层", Toast.LENGTH_LONG).show();
+                                refreshLayerListUI[0].run(); Toast.makeText(getContext(), "✅ 追加提取了 " + frames.size() + " 个图层", Toast.LENGTH_LONG).show();
                             });
                         }).start();
                     };
@@ -2753,7 +2766,7 @@ public class DesktopSystemView extends Dialog {
             });
             iBox.addView(iSff, new LinearLayout.LayoutParams(-1, -2));
 
-            Button iImg = createButton("🖼️ 导入 单张图片 / GIF 动画", "#4CAF50");
+            Button iImg = createButton("🖼️ 追加 单张图片 / GIF 动画", "#4CAF50");
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,(int)(10*density),0,0);
             iImg.setOnClickListener(bv -> { iDialog.dismiss(); openImageImporter.run(); }); iBox.addView(iImg, lp);
 
@@ -2763,7 +2776,7 @@ public class DesktopSystemView extends Dialog {
                     iDialog.dismiss(); 
                     showWin10FilePicker("选择 3D 模型", 11, null, null, file -> {
                         FileCallback onSelected = f -> {
-                            StageModelInfo m = new StageModelInfo(); m.name = f.getName(); m.path = f.getAbsolutePath(); modelList.add(m); selectedModelIndex[0] = modelList.size() - 1; refreshModelListUI.run();
+                            StageModelInfo m = new StageModelInfo(); m.name = f.getName(); m.path = f.getAbsolutePath(); modelList.add(m); selectedModelIndex[0] = modelList.size() - 1; refreshModelListUI[0].run();
                             Toast.makeText(getContext(), "✅ 3D模型已添加入列！", Toast.LENGTH_LONG).show();
                         };
                         if(file.isDirectory()) showGenericFileListPicker(file, new String[]{".gltf", ".glb"}, "3D模型", "#0078D7", onSelected); else onSelected.onFileSelected(file);
@@ -2771,12 +2784,13 @@ public class DesktopSystemView extends Dialog {
                 });
                 iBox.addView(iMod, lp);
             }
-            Button iCancel = createButton("❌ 取消", "#333333"); iCancel.setOnClickListener(bv -> iDialog.dismiss()); iBox.addView(iCancel, lp); iDialog.setContentView(iBox); iDialog.show();
+            Button iCancel = createButton("❌ 取消", "#333333"); iCancel.setOnClickListener(bv -> iDialog.dismiss()); iBox.addView(iCancel, lp); sv.addView(iBox); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); iDialog.setContentView(fl); iDialog.show();
         });
 
         btnSettings.setOnClickListener(v -> {
             final Dialog setDialog = new Dialog(getContext()); setDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            LinearLayout setBox = new LinearLayout(getContext()); setBox.setOrientation(LinearLayout.VERTICAL); setBox.setBackgroundColor(Color.parseColor("#252526")); setBox.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+            FrameLayout fl = new FrameLayout(getContext()); ScrollView sv = new ScrollView(getContext());
+            LinearLayout setBox = new LinearLayout(getContext()); setBox.setOrientation(LinearLayout.VERTICAL); setBox.setBackgroundColor(Color.parseColor("#252526")); setBox.setPadding(padM,padM,padM,padM);
             GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); setBox.setBackground(border);
             setBox.addView(createTitle("⚙️ 视口偏好设置"));
             setBox.addView(createSubTitle("背景底色代码 (Hex):")); EditText bgInput = createInput("如: #000080", String.format("#%06X", (0xFFFFFF & bgColor[0]))); setBox.addView(bgInput);
@@ -2785,28 +2799,30 @@ public class DesktopSystemView extends Dialog {
             alphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() { public void onProgressChanged(SeekBar s, int p, boolean b) { gridAlpha[0] = p; viewportFrame.invalidate(); } public void onStartTrackingTouch(SeekBar s) {} public void onStopTrackingTouch(SeekBar s) {} }); setBox.addView(alphaBar);
             Button btnApply = createButton("✔️ 应用设置", "#4CAF50"); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,(int)(15*density),0,0);
             btnApply.setOnClickListener(bv -> { try { bgColor[0] = Color.parseColor(bgInput.getText().toString()); gridColor[0] = Color.parseColor(gridColorInput.getText().toString()); } catch (Exception e){} viewportFrame.invalidate(); setDialog.dismiss(); });
-            setBox.addView(btnApply, lp); setDialog.setContentView(setBox); setDialog.show();
+            setBox.addView(btnApply, lp); sv.addView(setBox); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); setDialog.setContentView(fl); setDialog.show();
         });
 
-        btnNewLayer.setOnClickListener(v -> { StageLayerInfo newL = new StageLayerInfo(); newL.name = "[BG] 新建空图层 " + layerList.size(); layerList.add(newL); selectedLayerIndex[0] = layerList.size() - 1; refreshLayerListUI.run(); });
+        btnNewLayer.setOnClickListener(v -> { StageLayerInfo newL = new StageLayerInfo(); newL.name = "[BG] 新建空图层 " + layerList.size(); layerList.add(newL); selectedLayerIndex[0] = layerList.size() - 1; refreshLayerListUI[0].run(); });
         btnCopyLayer.setOnClickListener(v -> { if (selectedLayerIndex[0] == 0) { Toast.makeText(getContext(), "❌ 无法复制幽灵网格", Toast.LENGTH_SHORT).show(); return; } clipboardLayer[0] = layerList.get(selectedLayerIndex[0]).cloneLayer(); Toast.makeText(getContext(), "✅ 已复制当前图层", Toast.LENGTH_SHORT).show(); });
-        btnPasteLayer.setOnClickListener(v -> { if (clipboardLayer[0] != null) { layerList.add(clipboardLayer[0].cloneLayer()); selectedLayerIndex[0] = layerList.size() - 1; refreshLayerListUI.run(); } else Toast.makeText(getContext(), "❌ 剪贴板为空", Toast.LENGTH_SHORT).show(); });
-        btnDelLayer.setOnClickListener(v -> { int targetIdx = selectedLayerIndex[0]; if (targetIdx == 0) { Toast.makeText(getContext(), "🛡️ 引擎保护：参考网格不可删除", Toast.LENGTH_SHORT).show(); return; } layerList.remove(targetIdx); selectedLayerIndex[0] = Math.max(0, targetIdx - 1); refreshLayerListUI.run(); viewportFrame.invalidate(); });
+        btnPasteLayer.setOnClickListener(v -> { if (clipboardLayer[0] != null) { layerList.add(clipboardLayer[0].cloneLayer()); selectedLayerIndex[0] = layerList.size() - 1; refreshLayerListUI[0].run(); } else Toast.makeText(getContext(), "❌ 剪贴板为空", Toast.LENGTH_SHORT).show(); });
+        btnDelLayer.setOnClickListener(v -> { int targetIdx = selectedLayerIndex[0]; if (targetIdx == 0) { Toast.makeText(getContext(), "🛡️ 引擎保护：参考网格不可删除", Toast.LENGTH_SHORT).show(); return; } layerList.remove(targetIdx); selectedLayerIndex[0] = Math.max(0, targetIdx - 1); refreshLayerListUI[0].run(); viewportFrame.invalidate(); });
 
         btnScan.setOnClickListener(v -> {
             final Dialog prompt = new Dialog(getContext()); prompt.requestWindowFeature(Window.FEATURE_NO_TITLE); prompt.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+            FrameLayout fl = new FrameLayout(getContext()); ScrollView sv = new ScrollView(getContext());
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding(padM,padM,padM,padM);
             GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
             box.addView(createSubTitle("📂 工程读取与新建"));
             Button btnNew = createButton("📄 新建空白地图", "#4CAF50");
-            btnNew.setOnClickListener(bv -> { globalDefPath = ""; globalIsEditMode = false; layerList.clear(); layerList.add(ghostGrid); refreshLayerListUI.run(); modelList.clear(); refreshModelListUI.run(); defCodeInput.setText("[Info]\nname = \"NewStage\"\n\n[BGdef]\nspr = stages/NewStage.sff\ndebugbg = 0"); Toast.makeText(getContext(), "已建立新工程", Toast.LENGTH_SHORT).show(); prompt.dismiss(); });
+            btnNew.setOnClickListener(bv -> { globalDefPath = ""; globalIsEditMode = false; layerList.clear(); layerList.add(ghostGrid); refreshLayerListUI[0].run(); modelList.clear(); refreshModelListUI[0].run(); defCodeInput.setText("[Info]\nname = \"NewStage\"\n\n[BGdef]\nspr = stages/NewStage.sff\ndebugbg = 0"); Toast.makeText(getContext(), "已建立新工程", Toast.LENGTH_SHORT).show(); prompt.dismiss(); });
             Button btnLoad = createButton("📂 读取现有 .def 地图", "#0078D7");
             btnLoad.setOnClickListener(bv -> {
                 prompt.dismiss();
                 showWin10FilePicker("选择 .def 地图工程", 10, null, null, selectedFile -> {
                     FileCallback loadDefAction = finalDef -> {
                         final Dialog safePrompt = new Dialog(getContext()); safePrompt.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-                        LinearLayout safeBox = new LinearLayout(getContext()); safeBox.setOrientation(LinearLayout.VERTICAL); safeBox.setBackgroundColor(Color.parseColor("#252526")); safeBox.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density)); safeBox.setBackground(border); safeBox.addView(createSubTitle("🛡️ 安全加载选项"));
+                        FrameLayout fl2 = new FrameLayout(getContext()); ScrollView sv2 = new ScrollView(getContext());
+                        LinearLayout safeBox = new LinearLayout(getContext()); safeBox.setOrientation(LinearLayout.VERTICAL); safeBox.setBackgroundColor(Color.parseColor("#252526")); safeBox.setPadding(padM,padM,padM,padM); safeBox.setBackground(border); safeBox.addView(createSubTitle("🛡️ 安全加载选项"));
                         Runnable performLoad = () -> {
                             try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(globalDefPath))) { 
                                 StringBuilder sb = new StringBuilder(); String line; modelList.clear();
@@ -2816,55 +2832,48 @@ public class DesktopSystemView extends Dialog {
                                         try { String mFile = line.substring(line.indexOf("=") + 1).replace("\"", "").trim(); File fM = new File(new File(globalDefPath).getParent(), mFile); if(fM.exists()) { StageModelInfo sm = new StageModelInfo(); sm.name = fM.getName(); sm.path = fM.getAbsolutePath(); modelList.add(sm); } } catch(Exception ignored){}
                                     }
                                 } 
-                                defCodeInput.setText(sb.toString()); refreshModelListUI.run();
+                                defCodeInput.setText(sb.toString()); refreshModelListUI[0].run();
                             } catch (Exception e) {}
-                            
                             File targetDef = new File(globalDefPath); File sffFile = new File(targetDef.getParent(), targetDef.getName().replace(".def", ".sff")); if (!sffFile.exists()) sffFile = new File(targetDef.getParent(), targetDef.getName().replace(".def", ".SFF"));
                             if (sffFile.exists()) {
                                 globalSffPath = sffFile.getAbsolutePath();
                                 new Thread(() -> {
                                     List<GoEngineBridge.SffFrame> frames = GoEngineBridge.getAllFrames(globalSffPath);
-                                    new Handler(Looper.getMainLooper()).post(() -> { layerList.clear(); layerList.add(ghostGrid); for (GoEngineBridge.SffFrame f : frames) { StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]"; layer.group = f.group; layer.item = f.item; layer.axisX = f.x; layer.axisY = f.y; layer.sourcePath = globalSffPath; layer.isVisible=false; layer.manuallyVisible=false; layerList.add(layer); } refreshLayerListUI.run(); Toast.makeText(getContext(), "✅ 已载入 " + frames.size() + " 个素材图层与关联模型", Toast.LENGTH_LONG).show(); });
+                                    new Handler(Looper.getMainLooper()).post(() -> { layerList.clear(); layerList.add(ghostGrid); for (GoEngineBridge.SffFrame f : frames) { StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]"; layer.group = f.group; layer.item = f.item; layer.axisX = f.x; layer.axisY = f.y; layer.sourcePath = globalSffPath; layer.isVisible=false; layer.manuallyVisible=false; layerList.add(layer); } refreshLayerListUI[0].run(); Toast.makeText(getContext(), "✅ 已载入 " + frames.size() + " 个素材图层与关联模型", Toast.LENGTH_LONG).show(); });
                                 }).start();
                             }
                         };
                         Button btnBackup = createButton("💾 自动防毁备份并读取", "#4CAF50"); btnBackup.setOnClickListener(sv -> { try { File backup = new File(finalDef.getParent(), finalDef.getName().replace(".def", "_backup.def")); if (!backup.exists()) copyFileToSandbox(finalDef, backup); globalDefPath = backup.getAbsolutePath(); globalIsEditMode = true; Toast.makeText(getContext(), "✅ 已切换至备份工程: " + backup.getName(), Toast.LENGTH_SHORT).show(); performLoad.run(); } catch(Exception e){} safePrompt.dismiss(); });
                         Button btnOrig = createButton("⚠️ 无视风险直接读取", "#FF9800"); btnOrig.setOnClickListener(sv -> { globalDefPath = finalDef.getAbsolutePath(); globalIsEditMode = true; performLoad.run(); safePrompt.dismiss(); });
                         Button btnCancel = createButton("❌ 取消", "#333333"); btnCancel.setOnClickListener(sv -> safePrompt.dismiss());
-                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density)); safeBox.addView(btnBackup, lp); safeBox.addView(btnOrig, lp); safeBox.addView(btnCancel, lp); safePrompt.setContentView(safeBox); safePrompt.show();
+                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density)); safeBox.addView(btnBackup, lp); safeBox.addView(btnOrig, lp); safeBox.addView(btnCancel, lp); sv2.addView(safeBox); fl2.addView(sv2, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); safePrompt.setContentView(fl2); safePrompt.show();
                     };
                     if (selectedFile.isDirectory()) showGenericFileListPicker(selectedFile, new String[]{".def"}, "地图工程", "#E81123", loadDefAction); else loadDefAction.onFileSelected(selectedFile);
                 });
             });
-            Button btnCancelMain = createButton("❌ 取消", "#333333"); btnCancelMain.setOnClickListener(bv -> prompt.dismiss()); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density)); box.addView(btnNew, lp); box.addView(btnLoad, lp); box.addView(btnCancelMain, lp); prompt.setContentView(box); prompt.show();
+            Button btnCancelMain = createButton("❌ 取消", "#333333"); btnCancelMain.setOnClickListener(bv -> prompt.dismiss()); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density)); box.addView(btnNew, lp); box.addView(btnLoad, lp); box.addView(btnCancelMain, lp); sv.addView(box); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); prompt.setContentView(fl); prompt.show();
         });
 
         btnSave.setOnClickListener(v -> {
             final Dialog exportDialog = new Dialog(getContext()); exportDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+            FrameLayout fl = new FrameLayout(getContext()); ScrollView sv = new ScrollView(getContext());
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding(padM,padM,padM,padM);
             GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
-            
             box.addView(createSubTitle("💾 执行防覆盖打包导出"));
             String defaultName = "NewStage";
             if (globalIsEditMode && !globalDefPath.isEmpty()) defaultName = new File(globalDefPath).getName().replace(".def", "");
-            EditText nameInput = createInput("地图导出前缀名 (默认追加递增防重名)", defaultName); box.addView(nameInput);
-
+            box.addView(createSubTitle("地图导出前缀名:")); EditText nameInput = createInput("(默认追加递增防重名)", defaultName); box.addView(nameInput);
             Button bConfirm = createButton("✔️ 确认打包生成", "#4CAF50");
             bConfirm.setOnClickListener(bv -> {
                 exportDialog.dismiss(); Toast.makeText(getContext(), "📦 引擎正在装箱...", Toast.LENGTH_SHORT).show();
                 new Thread(() -> {
                     try {
-                        String baseName = nameInput.getText().toString().trim();
-                        if (baseName.isEmpty()) baseName = "NewStage";
+                        String baseName = nameInput.getText().toString().trim(); if (baseName.isEmpty()) baseName = "NewStage";
                         File rootExportDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports");
                         File tempDir = new File(rootExportDir, baseName);
                         int counter = 1; while (tempDir.exists()) { tempDir = new File(rootExportDir, baseName + "_" + counter); counter++; }
                         tempDir.mkdirs(); final File finalExportDir = tempDir; 
-
-                        // 【修改点】：如果有多源SFF或者图层改动，理想状态需要将所有 sourcePath 的图片封装成新 sff
-                        // 这里默认复制最初的主 SFF 文件，如果想实现多图片合并 SFF，还需要 Go 端接口配合
                         if (!globalSffPath.isEmpty()) { copyFileToSandbox(new File(globalSffPath), new File(finalExportDir, baseName + ".sff")); }
-
                         StringBuilder modelJson = new StringBuilder();
                         if (is3DMode[0] && !modelList.isEmpty()) {
                             modelJson.append("  \"Model\": {\n");
@@ -2875,7 +2884,6 @@ public class DesktopSystemView extends Dialog {
                             }
                             modelJson.append("\n  },\n");
                         }
-
                         StringBuilder jsonBGs = new StringBuilder();
                         for (int i = 1; i < layerList.size(); i++) {
                             StageLayerInfo info = layerList.get(i);
@@ -2883,7 +2891,6 @@ public class DesktopSystemView extends Dialog {
                             if (i < layerList.size() - 1) jsonBGs.append(",\n");
                         }
                         String stageJson = "{\n  \"Info\": {\"name\": \"" + baseName + "\"},\n" + modelJson.toString() + "  \"BGs\": [\n" + jsonBGs.toString() + "\n  ]\n}";
-                        
                         String resultPath = Api.exportStageDef(finalExportDir.getAbsolutePath(), stageJson);
                         new Handler(Looper.getMainLooper()).post(() -> {
                             if (resultPath != null && !resultPath.isEmpty()) { Toast.makeText(getContext(), "✅ 导出成功并放入:\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); } 
@@ -2894,10 +2901,10 @@ public class DesktopSystemView extends Dialog {
             });
             Button bCancel = createButton("❌ 取消", "#333333"); bCancel.setOnClickListener(bv -> exportDialog.dismiss());
             LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0);
-            btnRow.addView(bConfirm, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); exportDialog.setContentView(box); exportDialog.show();
+            btnRow.addView(bConfirm, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); sv.addView(box); fl.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); exportDialog.setContentView(fl); exportDialog.show();
         });
 
-        updateViewState.run(); refreshLayerListUI.run(); refreshModelListUI.run(); return root;
+        updateViewState[0].run(); refreshLayerListUI[0].run(); refreshModelListUI[0].run(); return root;
     }
 
     // 🌉 Go 引擎底层抽象桥接
