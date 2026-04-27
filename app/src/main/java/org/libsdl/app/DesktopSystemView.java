@@ -2244,31 +2244,35 @@ public class DesktopSystemView extends Dialog {
     }
     
     // ======================================================================================
-    // 🗺️ 模块 5：全能地图编辑器 (真·叠加图层, 十字键满血, WebGL模型引擎)
+    // 🗺️ 模块 5：全能地图编辑器 (Solo图层引擎, WebGL模型解封, 智能打包导出)
     // ======================================================================================
     private static class StageLayerInfo {
-        String name; boolean isVisible = true; boolean isLocked = false; boolean isGhostGrid = false;
+        String name; boolean isVisible = false; boolean manuallyVisible = false; boolean isLocked = false; boolean isGhostGrid = false;
         int group = 0; int item = 0; float startX = 0; float startY = 0; float deltaX = 1; float deltaY = 1;
         Bitmap cacheBmp = null;
         public StageLayerInfo cloneLayer() {
             StageLayerInfo copy = new StageLayerInfo();
-            copy.name = this.name + " (副本)"; copy.isVisible = this.isVisible; copy.isLocked = this.isLocked;
+            copy.name = this.name + " (副本)"; copy.isVisible = this.isVisible; copy.manuallyVisible = this.manuallyVisible; copy.isLocked = this.isLocked;
             copy.group = this.group; copy.item = this.item; copy.startX = this.startX; copy.startY = this.startY;
             copy.cacheBmp = this.cacheBmp; return copy;
         }
     }
+    
+    private static class StageModelInfo { String name; String path; }
 
     private View buildStageEditorContent() {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.parseColor("#1E1E1E"));
 
-        // 初始化全局状态
         globalDefPath = ""; globalSffPath = ""; globalIsEditMode = false;
         final boolean[] is3DMode = {false}; final int[] currentViewMode = {0}; 
         final int[] gridAlpha = {70}; final int[] gridColor = {Color.WHITE}; final int[] bgColor = {Color.parseColor("#000080")};
+        final float[] dpadStep = {1.0f};
 
         final List<StageLayerInfo> layerList = new ArrayList<>();
+        final List<StageModelInfo> modelList = new ArrayList<>();
         final int[] selectedLayerIndex = {0}; final StageLayerInfo[] clipboardLayer = {null}; 
-        StageLayerInfo ghostGrid = new StageLayerInfo(); ghostGrid.name = "[系统] 蓝色基准参考网格"; ghostGrid.isGhostGrid = true; ghostGrid.isLocked = true;
+        
+        StageLayerInfo ghostGrid = new StageLayerInfo(); ghostGrid.name = "[系统] 蓝色基准参考网格"; ghostGrid.isGhostGrid = true; ghostGrid.isLocked = true; ghostGrid.isVisible = true; ghostGrid.manuallyVisible = true;
         layerList.add(ghostGrid);
 
         LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL); topBar.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density)); topBar.setBackgroundColor(Color.parseColor("#252526"));
@@ -2303,8 +2307,7 @@ public class DesktopSystemView extends Dialog {
         layerScroll.addView(layerListLayout);
 
         ScrollView modelNodeScroll = new ScrollView(getContext()); modelNodeScroll.setVisibility(View.GONE);
-        LinearLayout modelNodeListLayout = new LinearLayout(getContext()); modelNodeListLayout.setOrientation(LinearLayout.VERTICAL);
-        Button dummyNode1 = createButton("🧊 Scene Root (变换矩阵)", "#3F3F46"); dummyNode1.setGravity(Gravity.LEFT); modelNodeListLayout.addView(dummyNode1, new LinearLayout.LayoutParams(-1,-2));
+        final LinearLayout modelNodeListLayout = new LinearLayout(getContext()); modelNodeListLayout.setOrientation(LinearLayout.VERTICAL);
         modelNodeScroll.addView(modelNodeListLayout);
 
         FrameLayout leftScrollContainer = new FrameLayout(getContext());
@@ -2364,24 +2367,45 @@ public class DesktopSystemView extends Dialog {
         LinearLayout dpadArea = new LinearLayout(getContext()); dpadArea.setOrientation(LinearLayout.HORIZONTAL); dpadArea.setGravity(Gravity.CENTER); dpadArea.setPadding(0, (int)(10*density), 0, (int)(10*density)); dpadArea.setBackgroundColor(Color.parseColor("#1E1E1E"));
         Button btnLeft = createButton("◀", "#333333"); Button btnUp = createButton("▲", "#333333"); Button btnDown = createButton("▼", "#333333"); Button btnRight = createButton("▶", "#333333");
         TextView txtCoord = new TextView(getContext()); txtCoord.setText("  X: 0   Y: 0  "); txtCoord.setTextColor(Color.WHITE); applyGlobalFontSettings(txtCoord, 1.0f, true);
+        Button btnStep = createButton("👣 步长: 1", "#FF9800");
         
+        btnStep.setOnClickListener(v -> {
+            final Dialog stepDialog = new Dialog(getContext()); stepDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
+            box.addView(createSubTitle("👣 设置移动步长"));
+            EditText stepInput = createInput("输入像素格数", String.valueOf((int)dpadStep[0])); stepInput.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(stepInput);
+            LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL);
+            Button bSave = createButton("✔️ 保存", "#4CAF50"); bSave.setOnClickListener(bv -> { try { dpadStep[0] = Float.parseFloat(stepInput.getText().toString()); btnStep.setText("👣 步长: " + (int)dpadStep[0]); } catch(Exception e){} stepDialog.dismiss(); });
+            Button bReset = createButton("🔄 恢复默认", "#0078D7"); bReset.setOnClickListener(bv -> { dpadStep[0] = 1.0f; btnStep.setText("👣 步长: 1"); stepDialog.dismiss(); });
+            Button bCancel = createButton("❌ 取消", "#333333"); bCancel.setOnClickListener(bv -> stepDialog.dismiss());
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0);
+            btnRow.addView(bSave, lp); btnRow.addView(bReset, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); stepDialog.setContentView(box); stepDialog.show();
+        });
+
         View.OnClickListener dpadListener = v -> {
             if (selectedLayerIndex[0] == 0) { Toast.makeText(getContext(), "不能移动网格底板", Toast.LENGTH_SHORT).show(); return; }
-            StageLayerInfo layer = layerList.get(selectedLayerIndex[0]);
-            if (v == btnLeft) layer.startX -= 1; else if (v == btnRight) layer.startX += 1; else if (v == btnUp) layer.startY -= 1; else if (v == btnDown) layer.startY += 1;
+            StageLayerInfo layer = layerList.get(selectedLayerIndex[0]); float step = dpadStep[0];
+            if (v == btnLeft) layer.startX -= step; else if (v == btnRight) layer.startX += step; else if (v == btnUp) layer.startY -= step; else if (v == btnDown) layer.startY += step;
             txtCoord.setText(String.format("  X: %.0f   Y: %.0f  ", layer.startX, layer.startY)); viewportFrame.invalidate(); 
         };
         btnLeft.setOnClickListener(dpadListener); btnRight.setOnClickListener(dpadListener); btnUp.setOnClickListener(dpadListener); btnDown.setOnClickListener(dpadListener);
-        dpadArea.addView(btnLeft); dpadArea.addView(btnUp); dpadArea.addView(btnDown); dpadArea.addView(btnRight); dpadArea.addView(txtCoord);
+        dpadArea.addView(btnLeft); dpadArea.addView(btnUp); dpadArea.addView(btnDown); dpadArea.addView(btnRight); dpadArea.addView(txtCoord); dpadArea.addView(btnStep, new LinearLayout.LayoutParams(-2, -2));
         sffCenterPanel.addView(dpadArea, new LinearLayout.LayoutParams(-1, -2));
 
         ScrollView defEditorPanel = new ScrollView(getContext()); defEditorPanel.setBackgroundColor(Color.parseColor("#1E1E1E"));
         EditText defCodeInput = new EditText(getContext()); defCodeInput.setBackgroundColor(Color.TRANSPARENT); defCodeInput.setTextColor(Color.parseColor("#D4D4D4")); defCodeInput.setGravity(Gravity.TOP | Gravity.LEFT); defCodeInput.setTypeface(Typeface.MONOSPACE); applyGlobalFontSettings(defCodeInput, 1.0f, false);
         defEditorPanel.addView(defCodeInput, new FrameLayout.LayoutParams(-1, -2)); defEditorPanel.setVisibility(View.GONE); 
 
+        // 🔥 打破 WebView 本地文件封印！支持 WebGL 加载 glb
         LinearLayout modelCenterPanel = new LinearLayout(getContext()); modelCenterPanel.setOrientation(LinearLayout.VERTICAL); modelCenterPanel.setVisibility(View.GONE);
-        final WebView modelWebView = new WebView(getContext()); modelWebView.getSettings().setJavaScriptEnabled(true); modelWebView.getSettings().setAllowFileAccess(true); modelWebView.setBackgroundColor(Color.parseColor("#121212"));
-        String defaultHtml = "<html><body style='background:#121212;color:white;display:flex;justify-content:center;align-items:center;height:100%;font-size:24px;'>等待导入 3D 模型 (.glb)</body></html>";
+        final WebView modelWebView = new WebView(getContext()); 
+        modelWebView.getSettings().setJavaScriptEnabled(true); 
+        modelWebView.getSettings().setAllowFileAccess(true); 
+        modelWebView.getSettings().setAllowFileAccessFromFileURLs(true);
+        modelWebView.getSettings().setAllowUniversalAccessFromFileURLs(true);
+        modelWebView.setBackgroundColor(Color.parseColor("#121212"));
+        String defaultHtml = "<html><body style='background:#121212;color:white;display:flex;justify-content:center;align-items:center;height:100%;font-size:24px;'>等待在左侧点击预览 3D 模型 (.glb)</body></html>";
         modelWebView.loadDataWithBaseURL(null, defaultHtml, "text/html", "utf-8", null);
         modelCenterPanel.addView(modelWebView, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -2399,9 +2423,24 @@ public class DesktopSystemView extends Dialog {
         panel3D.setVisibility(View.GONE); rightPanel.addView(panel3D);
         rightScroll.addView(rightPanel);
 
-        mainArea.addView(leftPanel, new LinearLayout.LayoutParams(0, -1, 1.3f)); mainArea.addView(centerContainer, new LinearLayout.LayoutParams(0, -1, 2f)); mainArea.addView(rightScroll, new LinearLayout.LayoutParams(0, -1, 1f));
+        mainArea.addView(leftPanel, new LinearLayout.LayoutParams(0, -1, 1.4f)); mainArea.addView(centerContainer, new LinearLayout.LayoutParams(0, -1, 2f)); mainArea.addView(rightScroll, new LinearLayout.LayoutParams(0, -1, 1f));
         root.addView(mainArea, new LinearLayout.LayoutParams(-1, -1));
 
+        // 刷新模型列表
+        Runnable refreshModelListUI = () -> {
+            modelNodeListLayout.removeAllViews();
+            for (StageModelInfo m : modelList) {
+                Button mBtn = createButton("📦 " + m.name, "#3F3F46"); mBtn.setGravity(Gravity.LEFT);
+                mBtn.setOnClickListener(v -> {
+                    String html = "<!DOCTYPE html><html><head><style>body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;}</style><script type=\"module\" src=\"https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js\"></script></head><body><model-viewer src=\"file://" + m.path + "\" camera-controls auto-rotate style=\"width:100%;height:100%;\"></model-viewer></body></html>";
+                    modelWebView.loadDataWithBaseURL("file://", html, "text/html", "utf-8", null);
+                    Toast.makeText(getContext(), "加载模型: " + m.name, Toast.LENGTH_SHORT).show();
+                });
+                modelNodeListLayout.addView(mBtn, new LinearLayout.LayoutParams(-1,-2));
+            }
+        };
+
+        // 刷新 SFF 图层列表，实现 Solo 独奏显示模式
         Runnable refreshLayerListUI = new Runnable() {
             @Override public void run() {
                 layerListLayout.removeAllViews();
@@ -2412,7 +2451,7 @@ public class DesktopSystemView extends Dialog {
                     row.setPadding((int)(5*density), (int)(8*density), (int)(5*density), (int)(8*density));
                     
                     Button btnVis = createButton(info.isVisible ? "👁️" : "❌", "#333333"); btnVis.setPadding(0,(int)(5*density),0,(int)(5*density));
-                    btnVis.setOnClickListener(v -> { info.isVisible = !info.isVisible; this.run(); viewportFrame.invalidate(); });
+                    btnVis.setOnClickListener(v -> { info.isVisible = !info.isVisible; info.manuallyVisible = info.isVisible; this.run(); viewportFrame.invalidate(); });
                     Button bLock = createButton(info.isLocked ? "🔒" : "🔓", "#333333"); bLock.setPadding(0,(int)(5*density),0,(int)(5*density));
                     bLock.setOnClickListener(v -> { info.isLocked = !info.isLocked; this.run(); });
                     TextView tName = new TextView(getContext()); tName.setText(" " + info.name); tName.setTextColor(info.isGhostGrid ? Color.parseColor("#8888FF") : Color.WHITE); applyGlobalFontSettings(tName, 0.9f, false);
@@ -2420,12 +2459,16 @@ public class DesktopSystemView extends Dialog {
                     row.addView(btnVis, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(bLock, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(tName, new LinearLayout.LayoutParams(0, -2, 1f));
                     
                     row.setOnClickListener(v -> { 
-                        selectedLayerIndex[0] = idx; 
-                        txtCoord.setText(String.format("  X: %.0f   Y: %.0f  ", info.startX, info.startY));
+                        selectedLayerIndex[0] = idx; txtCoord.setText(String.format("  X: %.0f   Y: %.0f  ", info.startX, info.startY));
+                        // 🔥 核心 Solo 逻辑：只显示当前选中的图层和强制显示的图层
+                        for (int j = 1; j < layerList.size(); j++) {
+                            StageLayerInfo l = layerList.get(j);
+                            if (j == idx) l.isVisible = true; else l.isVisible = l.manuallyVisible;
+                        }
                         if (!info.isGhostGrid && info.cacheBmp == null && !globalSffPath.isEmpty()) {
                             new Thread(() -> { byte[] bmpData = Api.decodeSffFrame(globalSffPath, info.group, info.item, ""); if (bmpData != null && bmpData.length > 0) { Bitmap bmp = BitmapFactory.decodeByteArray(bmpData, 0, bmpData.length); new Handler(Looper.getMainLooper()).post(() -> { info.cacheBmp = bmp; viewportFrame.invalidate(); }); } }).start();
                         }
-                        this.run(); 
+                        this.run(); viewportFrame.invalidate();
                     });
                     layerListLayout.addView(row, new LinearLayout.LayoutParams(-1, -2));
                 }
@@ -2456,20 +2499,25 @@ public class DesktopSystemView extends Dialog {
             Button iSff = createButton("🖼️ 载入 SFF 图集 (自动提取图层)", "#FF9800");
             iSff.setOnClickListener(bv -> { 
                 iDialog.dismiss(); 
-                showWin10FilePicker("选择 SFF 文件", 4, null, null, file -> {
-                    Toast.makeText(getContext(), "正在深度提取 SFF 图层，请稍候...", Toast.LENGTH_SHORT).show();
-                    globalSffPath = file.getAbsolutePath();
-                    new Thread(() -> {
-                        List<GoEngineBridge.SffFrame> frames = GoEngineBridge.getAllFrames(globalSffPath);
-                        new Handler(Looper.getMainLooper()).post(() -> {
-                            layerList.clear(); layerList.add(ghostGrid);
-                            for (GoEngineBridge.SffFrame f : frames) {
-                                StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]"; layer.group = f.group; layer.item = f.item; layerList.add(layer);
-                            }
-                            refreshLayerListUI.run();
-                            Toast.makeText(getContext(), "✅ SFF 解析完成！共生成 " + frames.size() + " 个图层", Toast.LENGTH_LONG).show();
-                        });
-                    }).start();
+                showWin10FilePicker("选择 SFF 文件或目录", 4, null, null, file -> {
+                    FileCallback extractAction = finalFile -> {
+                        Toast.makeText(getContext(), "正在深度提取 SFF 图层...", Toast.LENGTH_SHORT).show();
+                        globalSffPath = finalFile.getAbsolutePath();
+                        new Thread(() -> {
+                            List<GoEngineBridge.SffFrame> frames = GoEngineBridge.getAllFrames(globalSffPath);
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                layerList.clear(); layerList.add(ghostGrid);
+                                for (GoEngineBridge.SffFrame f : frames) {
+                                    StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]"; layer.group = f.group; layer.item = f.item; 
+                                    layer.isVisible = false; layer.manuallyVisible = false; // 默认闭眼隐藏
+                                    layerList.add(layer);
+                                }
+                                refreshLayerListUI.run();
+                                Toast.makeText(getContext(), "✅ SFF 解析完成！", Toast.LENGTH_LONG).show();
+                            });
+                        }).start();
+                    };
+                    if (file.isDirectory()) showSffGridPicker(file, extractAction); else extractAction.onFileSelected(file);
                 }); 
             });
             iBox.addView(iSff, new LinearLayout.LayoutParams(-1, -2));
@@ -2479,11 +2527,12 @@ public class DesktopSystemView extends Dialog {
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,(int)(10*density),0,0);
                 iMod.setOnClickListener(bv -> { 
                     iDialog.dismiss(); 
-                    showWin10FilePicker("选择 3D 模型工程", 11, null, null, file -> {
+                    showWin10FilePicker("选择 3D 模型", 11, null, null, file -> {
                         FileCallback onSelected = f -> {
-                            Toast.makeText(getContext(), "✅ 已挂载 3D 模型: " + f.getName() + "\n请切换至 3D 模型视口查看", Toast.LENGTH_LONG).show();
+                            StageModelInfo m = new StageModelInfo(); m.name = f.getName(); m.path = f.getAbsolutePath(); modelList.add(m); refreshModelListUI.run();
                             String html = "<!DOCTYPE html><html><head><style>body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;}</style><script type=\"module\" src=\"https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js\"></script></head><body><model-viewer src=\"file://" + f.getAbsolutePath() + "\" camera-controls auto-rotate style=\"width:100%;height:100%;\"></model-viewer></body></html>";
                             modelWebView.loadDataWithBaseURL("file://", html, "text/html", "utf-8", null);
+                            Toast.makeText(getContext(), "✅ 已挂载并渲染: " + f.getName(), Toast.LENGTH_LONG).show();
                         };
                         if(file.isDirectory()) showGenericFileListPicker(file, new String[]{".gltf", ".glb"}, "3D模型", "#0078D7", onSelected); else onSelected.onFileSelected(file);
                     }); 
@@ -2519,7 +2568,7 @@ public class DesktopSystemView extends Dialog {
             GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
             box.addView(createSubTitle("📂 工程管理"));
             Button btnNew = createButton("📄 新建空白地图", "#4CAF50");
-            btnNew.setOnClickListener(bv -> { globalDefPath = ""; globalIsEditMode = false; layerList.clear(); layerList.add(ghostGrid); refreshLayerListUI.run(); defCodeInput.setText("[Info]\nname = \"NewStage\"\n\n[BGdef]\nspr = stages/NewStage.sff\ndebugbg = 0"); Toast.makeText(getContext(), "已建立新工程", Toast.LENGTH_SHORT).show(); prompt.dismiss(); });
+            btnNew.setOnClickListener(bv -> { globalDefPath = ""; globalIsEditMode = false; layerList.clear(); layerList.add(ghostGrid); refreshLayerListUI.run(); modelList.clear(); refreshModelListUI.run(); defCodeInput.setText("[Info]\nname = \"NewStage\"\n\n[BGdef]\nspr = stages/NewStage.sff\ndebugbg = 0"); Toast.makeText(getContext(), "已建立新工程", Toast.LENGTH_SHORT).show(); prompt.dismiss(); });
             Button btnLoad = createButton("📂 读取现有 .def 地图", "#0078D7");
             btnLoad.setOnClickListener(bv -> {
                 prompt.dismiss();
@@ -2534,7 +2583,7 @@ public class DesktopSystemView extends Dialog {
                                 globalSffPath = sffFile.getAbsolutePath();
                                 new Thread(() -> {
                                     List<GoEngineBridge.SffFrame> frames = GoEngineBridge.getAllFrames(globalSffPath);
-                                    new Handler(Looper.getMainLooper()).post(() -> { layerList.clear(); layerList.add(ghostGrid); for (GoEngineBridge.SffFrame f : frames) { StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]"; layer.group = f.group; layer.item = f.item; layerList.add(layer); } refreshLayerListUI.run(); Toast.makeText(getContext(), "✅ 已载入 " + frames.size() + " 个图层", Toast.LENGTH_SHORT).show(); });
+                                    new Handler(Looper.getMainLooper()).post(() -> { layerList.clear(); layerList.add(ghostGrid); for (GoEngineBridge.SffFrame f : frames) { StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]"; layer.group = f.group; layer.item = f.item; layer.isVisible=false; layer.manuallyVisible=false; layerList.add(layer); } refreshLayerListUI.run(); Toast.makeText(getContext(), "✅ 已载入 " + frames.size() + " 个图层", Toast.LENGTH_SHORT).show(); });
                                 }).start();
                             }
                         };
@@ -2549,27 +2598,65 @@ public class DesktopSystemView extends Dialog {
             Button btnCancelMain = createButton("❌ 取消", "#333333"); btnCancelMain.setOnClickListener(bv -> prompt.dismiss()); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density)); box.addView(btnNew, lp); box.addView(btnLoad, lp); box.addView(btnCancelMain, lp); prompt.setContentView(box); prompt.show();
         });
 
+        // 🔥 防重名导出引擎
         btnSave.setOnClickListener(v -> {
-            Toast.makeText(getContext(), "正在执行底层编译打包...", Toast.LENGTH_SHORT).show();
-            new Thread(() -> {
-                try {
-                    StringBuilder jsonBGs = new StringBuilder();
-                    for (int i = 1; i < layerList.size(); i++) {
-                        StageLayerInfo info = layerList.get(i);
-                        jsonBGs.append("    {\"_name\": \"").append(info.name).append("\", \"type\": \"normal\", \"spriteno\": \"").append(info.group).append(",").append(info.item).append("\", \"start\": \"").append(info.startX).append(",").append(info.startY).append("\"}");
-                        if (i < layerList.size() - 1) jsonBGs.append(",\n");
-                    }
-                    String stageJson = "{\n  \"Info\": {\"name\": \"MyMobileStage\"},\n  \"BGs\": [\n" + jsonBGs.toString() + "\n  ]\n}";
-                    File exportDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports"); if (!exportDir.exists()) exportDir.mkdirs();
-                    String resultPath = Api.exportStageDef(exportDir.getAbsolutePath(), stageJson);
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        if (resultPath != null && !resultPath.isEmpty()) { Toast.makeText(getContext(), "✅ 打包成功：\n" + resultPath, Toast.LENGTH_LONG).show(); } else { Toast.makeText(getContext(), "❌ 编译失败", Toast.LENGTH_LONG).show(); }
-                    });
-                } catch (Throwable t) {}
-            }).start();
+            final Dialog exportDialog = new Dialog(getContext()); exportDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
+            
+            box.addView(createSubTitle("💾 导出地图工程"));
+            String defaultName = "NewStage";
+            if (globalIsEditMode && !globalDefPath.isEmpty()) defaultName = new File(globalDefPath).getName().replace(".def", "");
+            EditText nameInput = createInput("输入地图工程名", defaultName); box.addView(nameInput);
+
+            Button bConfirm = createButton("✔️ 确认打包导出", "#4CAF50");
+            bConfirm.setOnClickListener(bv -> {
+                exportDialog.dismiss(); Toast.makeText(getContext(), "📦 正在进行深度打包防覆盖导出...", Toast.LENGTH_SHORT).show();
+                new Thread(() -> {
+                    try {
+                        String baseName = nameInput.getText().toString().trim();
+                        if (baseName.isEmpty()) baseName = "NewStage";
+                        File rootExportDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports");
+                        File exportDir = new File(rootExportDir, baseName);
+                        int counter = 1;
+                        while (exportDir.exists()) { exportDir = new File(rootExportDir, baseName + "_" + counter); counter++; }
+                        exportDir.mkdirs();
+
+                        if (!globalSffPath.isEmpty()) { copyFileToSandbox(new File(globalSffPath), new File(exportDir, baseName + ".sff")); }
+
+                        StringBuilder modelJson = new StringBuilder();
+                        if (is3DMode[0] && !modelList.isEmpty()) {
+                            modelJson.append("  \"Model\": {\n");
+                            for (int i=0; i<modelList.size(); i++) {
+                                StageModelInfo m = modelList.get(i); File srcM = new File(m.path); File dstM = new File(exportDir, srcM.getName()); copyFileToSandbox(srcM, dstM);
+                                modelJson.append("    \"file").append(i).append("\": \"").append(dstM.getName()).append("\"");
+                                if (i < modelList.size() - 1) modelJson.append(",\n");
+                            }
+                            modelJson.append("\n  },\n");
+                        }
+
+                        StringBuilder jsonBGs = new StringBuilder();
+                        for (int i = 1; i < layerList.size(); i++) {
+                            StageLayerInfo info = layerList.get(i);
+                            jsonBGs.append("    {\"_name\": \"").append(info.name).append("\", \"type\": \"normal\", \"spriteno\": \"").append(info.group).append(",").append(info.item).append("\", \"start\": \"").append(info.startX).append(",").append(info.startY).append("\"}");
+                            if (i < layerList.size() - 1) jsonBGs.append(",\n");
+                        }
+                        String stageJson = "{\n  \"Info\": {\"name\": \"" + baseName + "\"},\n" + modelJson.toString() + "  \"BGs\": [\n" + jsonBGs.toString() + "\n  ]\n}";
+                        
+                        String resultPath = Api.exportStageDef(exportDir.getAbsolutePath(), stageJson);
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            if (resultPath != null && !resultPath.isEmpty()) { Toast.makeText(getContext(), "✅ 导出成功并放入专属文件夹：\n" + exportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); } 
+                            else { Toast.makeText(getContext(), "❌ 编译失败", Toast.LENGTH_LONG).show(); }
+                        });
+                    } catch (Throwable t) {}
+                }).start();
+            });
+            Button bCancel = createButton("❌ 取消", "#333333"); bCancel.setOnClickListener(bv -> exportDialog.dismiss());
+            LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0);
+            btnRow.addView(bConfirm, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); exportDialog.setContentView(box); exportDialog.show();
         });
 
-        updateViewState.run(); refreshLayerListUI.run(); return root;
+        updateViewState.run(); refreshLayerListUI.run(); refreshModelListUI.run(); return root;
     }
 
     // 🌉 Go 引擎底层抽象桥接
