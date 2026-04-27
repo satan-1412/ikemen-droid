@@ -2277,6 +2277,7 @@ public class DesktopSystemView extends Dialog {
         final List<StageLayerInfo> layerList = new ArrayList<>();
         final List<StageModelInfo> modelList = new ArrayList<>();
         final int[] selectedLayerIndex = {0}; final int[] selectedModelIndex = {-1}; // 记录当前选中的模型
+        final StageLayerInfo[] clipboardLayer = {null}; // 👈 核心修复：补回被误删的剪贴板容器！
         
         StageLayerInfo ghostGrid = new StageLayerInfo(); ghostGrid.name = "[系统] 蓝色参考网格"; ghostGrid.isGhostGrid = true; ghostGrid.isLocked = true; ghostGrid.isVisible = true; ghostGrid.manuallyVisible = true;
         layerList.add(ghostGrid);
@@ -2486,30 +2487,32 @@ public class DesktopSystemView extends Dialog {
         root.addView(mainArea, new LinearLayout.LayoutParams(-1, -1));
 
         // 刷新模型列表，实现类似图层的可见性控制
-        Runnable refreshModelListUI = () -> {
-            modelNodeListLayout.removeAllViews();
-            if (modelList.isEmpty()) { TextView t = new TextView(getContext()); t.setText("未导入任何模型"); t.setTextColor(Color.GRAY); modelNodeListLayout.addView(t); return; }
-            for (int i = 0; i < modelList.size(); i++) {
-                final int idx = i;
-                StageModelInfo m = modelList.get(i);
-                LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
-                row.setBackgroundColor(selectedModelIndex[0] == idx ? Color.parseColor("#0078D7") : Color.parseColor("#3F3F46"));
-                row.setPadding((int)(5*density), (int)(8*density), (int)(5*density), (int)(8*density));
-                
-                Button btnVis = createButton(m.isVisible ? "👁️" : "❌", "#333333"); btnVis.setPadding(0,(int)(5*density),0,(int)(5*density));
-                btnVis.setOnClickListener(v -> { m.isVisible = !m.isVisible; render3DScene.run(); this.run(); }); // 切换可见性并重绘3D
-                
-                TextView tName = new TextView(getContext()); tName.setText(" 📦 " + m.name); tName.setTextColor(Color.WHITE); applyGlobalFontSettings(tName, 0.9f, false);
-                
-                row.addView(btnVis, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(tName, new LinearLayout.LayoutParams(0, -2, 1f));
-                
-                row.setOnClickListener(v -> { 
-                    selectedModelIndex[0] = idx;
-                    offset3D.setText(String.format("%.1f,%.1f,%.1f", m.offsetX, m.offsetY, m.offsetZ));
-                    scale3D.setText(String.format("%.1f,%.1f,%.1f", m.scaleX, m.scaleY, m.scaleZ));
-                    this.run(); 
-                });
-                modelNodeListLayout.addView(row, new LinearLayout.LayoutParams(-1,-2));
+        Runnable refreshModelListUI = new Runnable() {
+            @Override public void run() {
+                modelNodeListLayout.removeAllViews();
+                if (modelList.isEmpty()) { TextView t = new TextView(getContext()); t.setText("未导入任何模型"); t.setTextColor(Color.GRAY); modelNodeListLayout.addView(t); return; }
+                for (int i = 0; i < modelList.size(); i++) {
+                    final int idx = i;
+                    StageModelInfo m = modelList.get(i);
+                    LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+                    row.setBackgroundColor(selectedModelIndex[0] == idx ? Color.parseColor("#0078D7") : Color.parseColor("#3F3F46"));
+                    row.setPadding((int)(5*density), (int)(8*density), (int)(5*density), (int)(8*density));
+                    
+                    Button btnVis = createButton(m.isVisible ? "👁️" : "❌", "#333333"); btnVis.setPadding(0,(int)(5*density),0,(int)(5*density));
+                    btnVis.setOnClickListener(v -> { m.isVisible = !m.isVisible; render3DScene.run(); this.run(); }); // 切换可见性并重绘3D
+                    
+                    TextView tName = new TextView(getContext()); tName.setText(" 📦 " + m.name); tName.setTextColor(Color.WHITE); applyGlobalFontSettings(tName, 0.9f, false);
+                    
+                    row.addView(btnVis, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(tName, new LinearLayout.LayoutParams(0, -2, 1f));
+                    
+                    row.setOnClickListener(v -> { 
+                        selectedModelIndex[0] = idx;
+                        offset3D.setText(String.format("%.1f,%.1f,%.1f", m.offsetX, m.offsetY, m.offsetZ));
+                        scale3D.setText(String.format("%.1f,%.1f,%.1f", m.scaleX, m.scaleY, m.scaleZ));
+                        this.run(); 
+                    });
+                    modelNodeListLayout.addView(row, new LinearLayout.LayoutParams(-1,-2));
+                }
             }
         };
         
