@@ -2617,18 +2617,20 @@ public class DesktopSystemView extends Dialog {
                         String baseName = nameInput.getText().toString().trim();
                         if (baseName.isEmpty()) baseName = "NewStage";
                         File rootExportDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports");
-                        File exportDir = new File(rootExportDir, baseName);
+                        File tempDir = new File(rootExportDir, baseName);
                         int counter = 1;
-                        while (exportDir.exists()) { exportDir = new File(rootExportDir, baseName + "_" + counter); counter++; }
-                        exportDir.mkdirs();
+                        while (tempDir.exists()) { tempDir = new File(rootExportDir, baseName + "_" + counter); counter++; }
+                        tempDir.mkdirs();
 
-                        if (!globalSffPath.isEmpty()) { copyFileToSandbox(new File(globalSffPath), new File(exportDir, baseName + ".sff")); }
+                        final File finalExportDir = tempDir; // 👈 核心修复：在这里锁定最终的文件夹路径，喂给 Lambda 回调！
+
+                        if (!globalSffPath.isEmpty()) { copyFileToSandbox(new File(globalSffPath), new File(finalExportDir, baseName + ".sff")); }
 
                         StringBuilder modelJson = new StringBuilder();
                         if (is3DMode[0] && !modelList.isEmpty()) {
                             modelJson.append("  \"Model\": {\n");
                             for (int i=0; i<modelList.size(); i++) {
-                                StageModelInfo m = modelList.get(i); File srcM = new File(m.path); File dstM = new File(exportDir, srcM.getName()); copyFileToSandbox(srcM, dstM);
+                                StageModelInfo m = modelList.get(i); File srcM = new File(m.path); File dstM = new File(finalExportDir, srcM.getName()); copyFileToSandbox(srcM, dstM);
                                 modelJson.append("    \"file").append(i).append("\": \"").append(dstM.getName()).append("\"");
                                 if (i < modelList.size() - 1) modelJson.append(",\n");
                             }
@@ -2643,9 +2645,9 @@ public class DesktopSystemView extends Dialog {
                         }
                         String stageJson = "{\n  \"Info\": {\"name\": \"" + baseName + "\"},\n" + modelJson.toString() + "  \"BGs\": [\n" + jsonBGs.toString() + "\n  ]\n}";
                         
-                        String resultPath = Api.exportStageDef(exportDir.getAbsolutePath(), stageJson);
+                        String resultPath = Api.exportStageDef(finalExportDir.getAbsolutePath(), stageJson);
                         new Handler(Looper.getMainLooper()).post(() -> {
-                            if (resultPath != null && !resultPath.isEmpty()) { Toast.makeText(getContext(), "✅ 导出成功并放入专属文件夹：\n" + exportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); } 
+                            if (resultPath != null && !resultPath.isEmpty()) { Toast.makeText(getContext(), "✅ 导出成功并放入专属文件夹：\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); } 
                             else { Toast.makeText(getContext(), "❌ 编译失败", Toast.LENGTH_LONG).show(); }
                         });
                     } catch (Throwable t) {}
