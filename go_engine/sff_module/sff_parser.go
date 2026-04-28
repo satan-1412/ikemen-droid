@@ -580,14 +580,10 @@ func ExtractFrameAsPng(filename string, targetGroup int32, targetItem int32, act
 
 		pcxDataStart := int64(target.DataOffset) + 128
 		
-		// 🚨【核心修复区】修复计算负数导致 RLE 截断画面的恶性 BUG 🚨
-		// 如果当前帧带有自己的色表，它的 PalOffset 会被记录在其数据块末尾
-		// 否则，它就是共享色表帧，直接用完整的 DataSize 减去头文件即可
 		var rleSize int64
 		if target.PalOffset > pcxDataStart && target.PalOffset <= int64(target.DataOffset+target.DataSize) {
 			rleSize = target.PalOffset - pcxDataStart
 		} else {
-			// 共享色表：没有挂载末尾的 769 字节，不能乱减！
 			rleSize = int64(target.DataSize) - 128
 		}
 		
@@ -1242,8 +1238,6 @@ func DeleteFrame(sffPath string, targetGroup int32, targetItem int32) error {
 	}
 	return fmt.Errorf("未找到需要删除的帧")
 }
-
-
 
 // ==========================================
 // 🎨 提取与注入内置色表 (原汁原味字节流安全版)
