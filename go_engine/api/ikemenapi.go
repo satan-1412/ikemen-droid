@@ -90,8 +90,18 @@ func DecodeSffFrame(sffPath string, group int32, item int32, actPath string) []b
 	return pngBytes
 }
 
-func ReplaceSffFrame(sffPath string, group int32, item int32, targetPngPath string) bool {
-	err := sff_module.ReplaceFrameWithPng(sffPath, group, item, targetPngPath)
+func ReplaceSffFrame(sffPath string, group int32, item int32, axisX int16, axisY int16, targetPngPath string) bool {
+	err := sff_module.ReplaceFrameWithPng(sffPath, group, item, axisX, axisY, targetPngPath)
+	return err == nil
+}
+
+func AddSffFrame(sffPath string, group int32, item int32, axisX int16, axisY int16, targetPngPath string) bool {
+	err := sff_module.AddFrameWithPng(sffPath, group, item, axisX, axisY, targetPngPath)
+	return err == nil
+}
+
+func DeleteSffFrame(sffPath string, group int32, item int32) bool {
+	err := sff_module.DeleteFrame(sffPath, group, item)
 	return err == nil
 }
 
