@@ -862,7 +862,9 @@ func ExportFrameNative(filename string, targetGroup int32, targetItem int32, act
 
 func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX int16, axisY int16, imagePath string) error {
 	fileData, err := os.ReadFile(imagePath)
-	if err != nil { return fmt.Errorf("读取图像失败: %v", err) }
+	if err != nil {
+		return fmt.Errorf("读取图像失败: %v", err)
+	}
 
 	isPcx := (len(fileData) > 0 && fileData[0] == 0x0A) || strings.HasSuffix(strings.ToLower(imagePath), ".pcx")
 	var finalData []byte
@@ -880,26 +882,36 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, ax
 		}
 	} else {
 		img, format, err := image.Decode(bytes.NewReader(fileData))
-		if err != nil { return fmt.Errorf("无效的图像格式: %v", err) }
+		if err != nil {
+			return fmt.Errorf("无效的图像格式: %v", err)
+		}
 		if format != "png" {
 			buf := new(bytes.Buffer)
 			png.Encode(buf, img)
 			finalData = buf.Bytes()
-		} else { finalData = fileData }
+		} else {
+			finalData = fileData
+		}
 		width = uint16(img.Bounds().Dx())
 		height = uint16(img.Bounds().Dy())
 	}
 
 	f, err := os.OpenFile(sffPath, os.O_RDWR, 0644)
-	if err != nil { return fmt.Errorf("无法打开SFF文件: %v", err) }
+	if err != nil {
+		return fmt.Errorf("无法打开SFF文件: %v", err)
+	}
 	defer f.Close()
 
 	var h SffHeader
 	var lofs, tofs uint32
-	if err := h.Read(f, &lofs, &tofs); err != nil { return fmt.Errorf("读取SFF头部失败: %v", err) }
+	if err := h.Read(f, &lofs, &tofs); err != nil {
+		return fmt.Errorf("读取SFF头部失败: %v", err)
+	}
 
 	if h.Version[0] == 1 {
-		if !isPcx { return errors.New("SFFv1 仅支持 PCX 格式替换") }
+		if !isPcx {
+			return errors.New("SFFv1 仅支持 PCX 格式替换")
+		}
 		shofs := int64(h.FirstSpriteHeaderOffset)
 		var prevShofs int64 = 0
 		for i := 0; i < int(h.NumberOfSprites); i++ {
@@ -936,13 +948,17 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, ax
 				}
 				return nil
 			}
-			if nextOffset == 0 { break }
+			if nextOffset == 0 {
+				break
+			}
 			prevShofs = shofs
 			shofs = int64(nextOffset)
 		}
 		return fmt.Errorf("在 SFF 中未找到 Group:%d Item:%d", targetGroup, targetItem)
 	} else {
-		if isPcx { return errors.New("SFFv2 请使用 PNG / JPG 等常见格式进行替换") }
+		if isPcx {
+			return errors.New("SFFv2 请使用 PNG / JPG 等常见格式进行替换")
+		}
 		shofs := int64(h.FirstSpriteHeaderOffset)
 		for i := 0; i < int(h.NumberOfSprites); i++ {
 			f.Seek(shofs, io.SeekStart)
@@ -955,32 +971,36 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, ax
 				appendOffset := fileInfo.Size()
 
 				f.Seek(0, io.SeekEnd)
+				dummyHeader := []byte{0, 0, 0, 0}
+				f.Write(dummyHeader)
 				_, err = f.Write(finalData)
-				if err != nil { return fmt.Errorf("写入数据失败: %v", err) }
+				if err != nil {
+					return fmt.Errorf("写入数据失败: %v", err)
+				}
 
 				f.Seek(shofs+4, io.SeekStart)
 				binary.Write(f, binary.LittleEndian, width)
 				binary.Write(f, binary.LittleEndian, height)
 				binary.Write(f, binary.LittleEndian, uint16(axisX))
 				binary.Write(f, binary.LittleEndian, uint16(axisY))
-				binary.Write(f, binary.LittleEndian, uint16(0))
 
 				f.Seek(shofs+14, io.SeekStart)
-				binary.Write(f, binary.LittleEndian, byte(12))
+				binary.Write(f, binary.LittleEndian, byte(11))
 				binary.Write(f, binary.LittleEndian, byte(32))
 				f.Seek(shofs+26, io.SeekStart)
 				binary.Write(f, binary.LittleEndian, uint16(0))
 
-				finalOffset := uint32(appendOffset) - tofs
+				finalOffset := uint32(appendOffset) - lofs
 				f.Seek(shofs+16, io.SeekStart)
 				binary.Write(f, binary.LittleEndian, finalOffset)
-				binary.Write(f, binary.LittleEndian, uint32(len(finalData)))
+				binary.Write(f, binary.LittleEndian, uint32(len(finalData)+4))
 
+				// 🔥 精准修复：写入准确的 52 (LData) 和 60 (TData) 长度
 				f.Seek(0, io.SeekEnd)
 				newEof, _ := f.Seek(0, io.SeekCurrent)
-				f.Seek(40, io.SeekStart)
+				f.Seek(52, io.SeekStart)
 				binary.Write(f, binary.LittleEndian, uint32(newEof)-lofs)
-				f.Seek(48, io.SeekStart)
+				f.Seek(60, io.SeekStart)
 				binary.Write(f, binary.LittleEndian, uint32(newEof)-tofs)
 
 				return nil
@@ -991,9 +1011,12 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, ax
 	}
 }
 
+// 🔥 物理追加帧：在 SFF 末尾安全分配全新区块，不再丢失数据
 func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX int16, axisY int16, imagePath string) error {
 	fileData, err := os.ReadFile(imagePath)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	isPcx := (len(fileData) > 0 && fileData[0] == 0x0A) || strings.HasSuffix(strings.ToLower(imagePath), ".pcx")
 	var finalData []byte
@@ -1007,17 +1030,24 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 		}
 	} else {
 		img, format, err := image.Decode(bytes.NewReader(fileData))
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		if format != "png" {
 			buf := new(bytes.Buffer)
 			png.Encode(buf, img)
 			finalData = buf.Bytes()
-		} else { finalData = fileData }
-		width = uint16(img.Bounds().Dx()); height = uint16(img.Bounds().Dy())
+		} else {
+			finalData = fileData
+		}
+		width = uint16(img.Bounds().Dx())
+		height = uint16(img.Bounds().Dy())
 	}
 
 	f, err := os.OpenFile(sffPath, os.O_RDWR, 0644)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer f.Close()
 
 	fileInfo, _ := f.Stat()
@@ -1027,31 +1057,39 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 		blankHeader[12] = 0
 		blankHeader[13] = 0
 		blankHeader[14] = 0
-		blankHeader[15] = 2 
+		blankHeader[15] = 2 // Version 2.0.0.0
 		blankHeader[24] = 0
 		blankHeader[25] = 0
 		blankHeader[26] = 0
-		blankHeader[27] = 2 
-		binary.LittleEndian.PutUint32(blankHeader[36:40], 512) 
-		binary.LittleEndian.PutUint32(blankHeader[44:48], 512) 
-		binary.LittleEndian.PutUint32(blankHeader[52:56], 512) 
-		binary.LittleEndian.PutUint32(blankHeader[60:64], 512) 
+		blankHeader[27] = 2 // Compat 2.0.0.0
+		binary.LittleEndian.PutUint32(blankHeader[32:36], 512) // Node Offset
+		binary.LittleEndian.PutUint32(blankHeader[36:40], 0)   // Num Sprites
+		binary.LittleEndian.PutUint32(blankHeader[40:44], 512) // Pal Offset
+		binary.LittleEndian.PutUint32(blankHeader[44:48], 0)   // Num Pals
+		binary.LittleEndian.PutUint32(blankHeader[48:52], 512) // LData Offset
+		binary.LittleEndian.PutUint32(blankHeader[52:56], 0)   // LData Length
+		binary.LittleEndian.PutUint32(blankHeader[56:60], 512) // TData Offset
+		binary.LittleEndian.PutUint32(blankHeader[60:64], 0)   // TData Length
 		f.Write(blankHeader)
 		f.Seek(0, io.SeekStart)
 	}
 
 	var h SffHeader
 	var lofs, tofs uint32
-	if err := h.Read(f, &lofs, &tofs); err != nil { return err }
+	if err := h.Read(f, &lofs, &tofs); err != nil {
+		return err
+	}
 
 	f.Seek(0, io.SeekEnd)
 	eofOffset, _ := f.Seek(0, io.SeekCurrent)
 
 	if h.Version[0] == 1 {
-		if !isPcx { return errors.New("SFFv1 仅支持 PCX 格式追加") }
-		
+		if !isPcx {
+			return errors.New("SFFv1 仅支持 PCX 格式追加")
+		}
+
 		newHeader := make([]byte, 32)
-		binary.LittleEndian.PutUint32(newHeader[0:4], 0) 
+		binary.LittleEndian.PutUint32(newHeader[0:4], 0)
 		binary.LittleEndian.PutUint32(newHeader[4:8], uint32(len(finalData)))
 		binary.LittleEndian.PutUint16(newHeader[8:10], uint16(axisX))
 		binary.LittleEndian.PutUint16(newHeader[10:12], uint16(axisY))
@@ -1069,7 +1107,10 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 			f.Seek(shofs, io.SeekStart)
 			var nextOffset uint32
 			binary.Read(f, binary.LittleEndian, &nextOffset)
-			if nextOffset == 0 { prevShofs = shofs; break }
+			if nextOffset == 0 {
+				prevShofs = shofs
+				break
+			}
 			shofs = int64(nextOffset)
 		}
 
@@ -1085,61 +1126,70 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 		binary.Write(f, binary.LittleEndian, h.NumberOfSprites)
 
 	} else {
-        if isPcx { return errors.New("SFFv2 请使用 PNG 追加") }
+		if isPcx {
+			return errors.New("SFFv2 请使用 PNG 追加")
+		}
 
-        f.Write(finalData)
-        
-        var oldHeadersData []byte
-        if h.NumberOfSprites > 0 {
-            oldHeadersData = make([]byte, int(h.NumberOfSprites)*28)
-            f.Seek(int64(h.FirstSpriteHeaderOffset), io.SeekStart)
-            f.Read(oldHeadersData)
-        }
+		dummyHeader := []byte{0, 0, 0, 0}
+		f.Write(dummyHeader)
+		f.Write(finalData)
 
-        newSpriteHeader := make([]byte, 28)
-        binary.LittleEndian.PutUint16(newSpriteHeader[0:2], uint16(targetGroup))
-        binary.LittleEndian.PutUint16(newSpriteHeader[2:4], uint16(targetItem))
-        binary.LittleEndian.PutUint16(newSpriteHeader[4:6], width)
-        binary.LittleEndian.PutUint16(newSpriteHeader[6:8], height)
-        binary.LittleEndian.PutUint16(newSpriteHeader[8:10], uint16(axisX))
-        binary.LittleEndian.PutUint16(newSpriteHeader[10:12], uint16(axisY))
-        binary.LittleEndian.PutUint16(newSpriteHeader[12:14], uint16(0))
-        newSpriteHeader[14] = 12 
-        newSpriteHeader[15] = 32
-        binary.LittleEndian.PutUint32(newSpriteHeader[16:20], uint32(eofOffset)-tofs)
-        binary.LittleEndian.PutUint32(newSpriteHeader[20:24], uint32(len(finalData)))
-        binary.LittleEndian.PutUint16(newSpriteHeader[24:26], 0)
+		var oldHeadersData []byte
+		if h.NumberOfSprites > 0 {
+			oldHeadersData = make([]byte, int(h.NumberOfSprites)*28)
+			f.Seek(int64(h.FirstSpriteHeaderOffset), io.SeekStart)
+			f.Read(oldHeadersData)
+		}
 
-        f.Seek(0, io.SeekEnd)
-        newHeaderListOffset, _ := f.Seek(0, io.SeekCurrent)
-        if len(oldHeadersData) > 0 {
-            f.Write(oldHeadersData)
-        }
-        f.Write(newSpriteHeader)
+		newSpriteHeader := make([]byte, 28)
+		binary.LittleEndian.PutUint16(newSpriteHeader[0:2], uint16(targetGroup))
+		binary.LittleEndian.PutUint16(newSpriteHeader[2:4], uint16(targetItem))
+		binary.LittleEndian.PutUint16(newSpriteHeader[4:6], width)
+		binary.LittleEndian.PutUint16(newSpriteHeader[6:8], height)
+		binary.LittleEndian.PutUint16(newSpriteHeader[8:10], uint16(axisX))
+		binary.LittleEndian.PutUint16(newSpriteHeader[10:12], uint16(axisY))
+		binary.LittleEndian.PutUint16(newSpriteHeader[12:14], uint16(h.NumberOfSprites))
+		newSpriteHeader[14] = 12
+		newSpriteHeader[15] = 32
+		binary.LittleEndian.PutUint32(newSpriteHeader[16:20], uint32(eofOffset)-tofs)
+		binary.LittleEndian.PutUint32(newSpriteHeader[20:24], uint32(len(finalData)))
+		binary.LittleEndian.PutUint16(newSpriteHeader[24:26], 0)
 
-        h.NumberOfSprites++
-        h.FirstSpriteHeaderOffset = uint32(newHeaderListOffset)
+		f.Seek(0, io.SeekEnd)
+		newHeaderListOffset, _ := f.Seek(0, io.SeekCurrent)
+		if len(oldHeadersData) > 0 {
+			f.Write(oldHeadersData)
+		}
+		f.Write(newSpriteHeader)
 
-		f.Seek(40, io.SeekStart)
+		h.NumberOfSprites++
+		h.FirstSpriteHeaderOffset = uint32(newHeaderListOffset)
+
+		// 🔥 精准修复：分别在 52 和 60 写入 LData / TData 长度，在 32 和 36 写入节点偏移和精灵总数
+		f.Seek(52, io.SeekStart)
 		binary.Write(f, binary.LittleEndian, uint32(newHeaderListOffset)-lofs)
-        f.Seek(48, io.SeekStart)
-        binary.Write(f, binary.LittleEndian, uint32(newHeaderListOffset)-tofs)
+		f.Seek(60, io.SeekStart)
+		binary.Write(f, binary.LittleEndian, uint32(newHeaderListOffset)-tofs)
 
-        f.Seek(52, io.SeekStart)
-        binary.Write(f, binary.LittleEndian, h.FirstSpriteHeaderOffset)
-        binary.Write(f, binary.LittleEndian, h.NumberOfSprites)
+		f.Seek(32, io.SeekStart)
+		binary.Write(f, binary.LittleEndian, h.FirstSpriteHeaderOffset)
+		binary.Write(f, binary.LittleEndian, h.NumberOfSprites)
 	}
 	return nil
 }
 
 func DeleteFrame(sffPath string, targetGroup int32, targetItem int32) error {
 	f, err := os.OpenFile(sffPath, os.O_RDWR, 0644)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer f.Close()
 
 	var h SffHeader
 	var lofs, tofs uint32
-	if err := h.Read(f, &lofs, &tofs); err != nil { return err }
+	if err := h.Read(f, &lofs, &tofs); err != nil {
+		return err
+	}
 
 	if h.Version[0] == 1 {
 		shofs := int64(h.FirstSpriteHeaderOffset)
@@ -1192,6 +1242,8 @@ func DeleteFrame(sffPath string, targetGroup int32, targetItem int32) error {
 	}
 	return fmt.Errorf("未找到需要删除的帧")
 }
+
+
 
 // ==========================================
 // 🎨 提取与注入内置色表 (原汁原味字节流安全版)
