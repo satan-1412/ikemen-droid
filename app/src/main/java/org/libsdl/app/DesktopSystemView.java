@@ -2871,7 +2871,7 @@ public class DesktopSystemView extends Dialog {
             Button btnCancelMain = createButton("❌ 取消", "#333333"); btnCancelMain.setOnClickListener(clickCanScan -> prompt.dismiss()); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density)); box.addView(btnNew, lp); box.addView(btnLoad, lp); box.addView(btnCancelMain, lp); svScan.addView(box); flScan.addView(svScan, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); prompt.setContentView(flScan); prompt.show();
         });
 
-        // 🔥 核心：无损导出 DEF，并将追加的外部 PNG 塞入 SFF
+        // 🔥 核心：物理修改 SFF，无损导出 DEF
         btnSave.setOnClickListener(clickSaveMain -> {
             final Dialog exportDialog = new Dialog(getContext()); exportDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
             FrameLayout flExp = new FrameLayout(getContext()); ScrollView svExp = new ScrollView(getContext());
@@ -2883,7 +2883,7 @@ public class DesktopSystemView extends Dialog {
             box.addView(createSubTitle("地图导出前缀名:")); EditText nameInput = createInput("(默认追加递增防重名)", defaultName); box.addView(nameInput);
             Button bConfirm = createButton("✔️ 确认打包生成", "#4CAF50");
             bConfirm.setOnClickListener(clickConfSave -> {
-                exportDialog.dismiss(); Toast.makeText(getContext(), "📦 引擎正在装箱...", Toast.LENGTH_SHORT).show();
+                exportDialog.dismiss(); Toast.makeText(getContext(), "📦 引擎正在物理装箱中...", Toast.LENGTH_SHORT).show();
                 new Thread(() -> {
                     try {
                         String baseName = nameInput.getText().toString().trim(); if (baseName.isEmpty()) baseName = "NewStage";
@@ -2892,18 +2892,57 @@ public class DesktopSystemView extends Dialog {
                         int counter = 1; while (tempDir.exists()) { tempDir = new File(rootExportDir, baseName + "_" + counter); counter++; }
                         tempDir.mkdirs(); final File finalExportDir = tempDir; 
                         
-                        // 1. 无损导出 DEF（用户在代码编辑器里怎么写的，这里就原样写入，一字不差！）
+                        // 1. 无损导出 DEF (原封不动保存一切注释和逻辑)
                         File defFile = new File(finalExportDir, baseName + ".def");
                         FileOutputStream defOut = new FileOutputStream(defFile); defOut.write(defCodeInput.getText().toString().getBytes("UTF-8")); defOut.close();
 
-                        // 2. 打包 SFF（将原版拷贝过来，把用户新增的外部图片统统塞进去）
+                        // 2. 打包 SFF（真·物理增删改与轴心保存）
                         File finalSffFile = new File(finalExportDir, baseName + ".sff");
                         if (!globalSffPath.isEmpty()) { copyFileToSandbox(new File(globalSffPath), finalSffFile); } 
-                        else { finalSffFile.createNewFile(); } // 若纯新建无SFF，创个空的以便底层写入
+                        else { finalSffFile.createNewFile(); } 
                         
-                        for (StageLayerInfo info : layerList) {
-                            if (!info.isGhostGrid && info.isExternal && !info.sourcePath.isEmpty()) {
-                                Api.replaceSffFrame(finalSffFile.getAbsolutePath(), info.group, info.item, info.sourcePath);
+                        if (finalSffFile.length() > 0) {
+                            // 物理删除被用户在 UI 中移除的图层
+                            List<GoEngineBridge.SffFrame> origFrames = GoEngineBridge.getAllFrames(finalSffFile.getAbsolutePath());
+                            for (GoEngineBridge.SffFrame f : origFrames) {
+                                boolean stillExists = false;
+                                for (StageLayerInfo layer : layerList) {
+                                    if (!layer.isGhostGrid && layer.originalGroup == f.group && layer.originalItem == f.item && !layer.isExternal) {
+                                        stillExists = true; break;
+                                    }
+                                }
+                                if (!stillExists) {
+                                    Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item);
+                                }
+                            }
+                        }
+
+                        // 物理新增与替换 (计算新轴心与生成新大小的 Bitmap)
+                        for (StageLayerInfo layer : layerList) {
+                            if (layer.isGhostGrid || layer.cacheBmp == null) continue;
+                            
+                            int newW = (int)(layer.cacheBmp.getWidth() * layer.scaleX);
+                            int newH = (int)(layer.cacheBmp.getHeight() * layer.scaleY);
+                            if (newW <= 0) newW = 1; if (newH <= 0) newH = 1;
+                            
+                            // MUGEN 的轴心机制：新轴心 = 原轴心 - 你移动的偏移量
+                            short newAxisX = (short)(layer.axisX - layer.startX);
+                            short newAxisY = (short)(layer.axisY - layer.startY);
+                            
+                            Bitmap targetBmp = layer.cacheBmp;
+                            if (layer.scaleX != 1.0f || layer.scaleY != 1.0f) {
+                                targetBmp = Bitmap.createScaledBitmap(layer.cacheBmp, newW, newH, true);
+                            }
+                            
+                            File tmpPng = new File(getContext().getCacheDir(), "exp_" + layer.group + "_" + layer.item + ".png");
+                            FileOutputStream fosPng = new FileOutputStream(tmpPng);
+                            targetBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng);
+                            fosPng.close();
+                            
+                            if (layer.isExternal) {
+                                Api.addSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, newAxisX, newAxisY, tmpPng.getAbsolutePath());
+                            } else {
+                                Api.replaceSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, newAxisX, newAxisY, tmpPng.getAbsolutePath());
                             }
                         }
 
@@ -2915,7 +2954,7 @@ public class DesktopSystemView extends Dialog {
                         }
                         
                         new Handler(Looper.getMainLooper()).post(() -> {
-                            Toast.makeText(getContext(), "✅ 无损导出成功！\n文件在:\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); 
+                            Toast.makeText(getContext(), "✅ SFF 无损物理生成成功！\n文件在:\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); 
                         });
                     } catch (Throwable t) {}
                 }).start();
