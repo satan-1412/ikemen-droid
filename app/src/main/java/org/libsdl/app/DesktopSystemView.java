@@ -506,33 +506,40 @@ public class DesktopSystemView extends Dialog {
         final String finalShortName = rawName.length() > 8 ? rawName.substring(0, 8) + ".." : rawName;
         TextView tbText = new TextView(getContext()); tbText.setText("▤ " + finalShortName); applyGlobalFontSettings(tbText, 1.1f, false); taskBtn.addView(tbText);
         
+        final boolean[] isBtnDragging = {false};
         taskBtn.setOnTouchListener(new View.OnTouchListener() {
-            float startX; float initialTranslation; boolean isDragging = false;
+            float startX; float initialTranslation; 
             @Override public boolean onTouch(View v, MotionEvent event) {
                 switch(event.getAction()) {
-                    case MotionEvent.ACTION_DOWN: startX = event.getRawX(); initialTranslation = v.getTranslationX(); isDragging = false; v.setBackgroundColor(Color.parseColor("#44FFFFFF")); return false; 
+                    case MotionEvent.ACTION_DOWN: startX = event.getRawX(); initialTranslation = v.getTranslationX(); isBtnDragging[0] = false; v.setBackgroundColor(Color.parseColor("#44FFFFFF")); return false; 
                     case MotionEvent.ACTION_MOVE: 
-                        float dx = event.getRawX() - startX; if (Math.abs(dx) > 10 * density) { isDragging = true; v.getParent().requestDisallowInterceptTouchEvent(true); }
-                        if (isDragging) { v.setTranslationX(initialTranslation + dx); v.bringToFront(); } return true;
+                        float dx = event.getRawX() - startX; 
+                        if (Math.abs(dx) > 10 * density) { isBtnDragging[0] = true; v.getParent().requestDisallowInterceptTouchEvent(true); v.cancelLongPress(); /* 🔥 移动时强制取消长按事件 */ }
+                        if (isBtnDragging[0]) { v.setTranslationX(initialTranslation + dx); v.bringToFront(); } return true;
                     case MotionEvent.ACTION_UP: case MotionEvent.ACTION_CANCEL:
                         v.setBackground(tbBg);
-                        if (isDragging) {
+                        if (isBtnDragging[0]) {
                             float currentCenter = v.getX() + v.getTranslationX() + v.getWidth() / 2f; int newIndex = taskbarAppsLayout.getChildCount() - 1;
                             for (int i = 0; i < taskbarAppsLayout.getChildCount(); i++) { View child = taskbarAppsLayout.getChildAt(i); if (child != v && currentCenter < child.getX() + child.getWidth() / 2f) { newIndex = i; break; } }
                             final int targetIndex = newIndex; taskbarAppsLayout.post(() -> { taskbarAppsLayout.removeView(v); v.setTranslationX(0); taskbarAppsLayout.addView(v, targetIndex); });
-                            return true;
+                            return true; // 🔥 吞噬拖拽结束的触控，防止触发 onClick
                         } return false; 
                 } return false;
             }
         });
 
         taskBtn.setOnClickListener(v -> {
+            if (isBtnDragging[0]) return; // 双重防走火
             if (windowFrame.getVisibility() == View.VISIBLE) {
-                if (windowFrame.getZ() == windowsLayer.getChildCount()) windowFrame.setVisibility(View.GONE); else windowFrame.bringToFront();
+                // 🔥 修复隐藏逻辑：通过 Index 精准判断它是否在最顶层
+                if (windowsLayer.indexOfChild(windowFrame) == windowsLayer.getChildCount() - 1) { windowFrame.setVisibility(View.GONE); } else { windowFrame.bringToFront(); }
             } else { windowFrame.setVisibility(View.VISIBLE); windowFrame.bringToFront(); }
         });
         
-        taskBtn.setOnLongClickListener(v -> { showContextMenu(v, finalShortName, () -> { if (onCloseInterceptor != null) onCloseInterceptor.run(); else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); } }); return true; });
+        taskBtn.setOnLongClickListener(v -> { 
+            if (isBtnDragging[0]) return false; // 拖动中绝不触发菜单
+            showContextMenu(v, finalShortName, () -> { if (onCloseInterceptor != null) onCloseInterceptor.run(); else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); } }); return true; 
+        });
         taskbarAppsLayout.addView(taskBtn, tbParams);
 
         // 动态获取当前设备真实的屏幕分辨率，杜绝 getWidth() 返回 0 的 Bug
@@ -2262,18 +2269,18 @@ public class DesktopSystemView extends Dialog {
     }
     
     // ======================================================================================
-    // 🗺️ 模块 5：全能地图编辑器 (原样导出DEF, 外部PNG注入SFF, 2D参数应用)
+    // 🗺️ 模块 5：全能地图编辑器 (防OOM极限引擎, 原理级分辨率分离, 物理导出)
     // ======================================================================================
     private static class StageLayerInfo {
         String name; boolean isVisible = false; boolean manuallyVisible = false; boolean isLocked = false; boolean isGhostGrid = false;
         int group = 0; int item = 0; float startX = 0; float startY = 0; 
-        // 2D 专属参数
         float scaleX = 1.0f; float scaleY = 1.0f; float deltaX = 1.0f; float deltaY = 1.0f; String trans = "none";
         int axisX = 0; int axisY = 0;
         
-        // 核心记忆锚点：防止追加进位后找不到原图
+        int origW = 0; int origH = 0; // 👈 核心参数：永不丢失的真实物理分辨率
+        
         int originalGroup = 0; int originalItem = 0;
-        String sourcePath = ""; boolean isExternal = false; // 是否是外部导入的(需压入SFF)
+        String sourcePath = ""; boolean isExternal = false;
         Bitmap cacheBmp = null;
         
         public StageLayerInfo cloneLayer() {
@@ -2281,8 +2288,35 @@ public class DesktopSystemView extends Dialog {
             copy.name = this.name + " (副本)"; copy.isVisible = this.isVisible; copy.manuallyVisible = this.manuallyVisible; copy.isLocked = this.isLocked;
             copy.group = this.group; copy.item = this.item; copy.startX = this.startX; copy.startY = this.startY;
             copy.scaleX = this.scaleX; copy.scaleY = this.scaleY; copy.deltaX = this.deltaX; copy.deltaY = this.deltaY; copy.trans = this.trans;
-            copy.axisX = this.axisX; copy.axisY = this.axisY; copy.originalGroup = this.originalGroup; copy.originalItem = this.originalItem;
+            copy.axisX = this.axisX; copy.axisY = this.axisY; copy.origW = this.origW; copy.origH = this.origH;
+            copy.originalGroup = this.originalGroup; copy.originalItem = this.originalItem;
             copy.sourcePath = this.sourcePath; copy.isExternal = this.isExternal; copy.cacheBmp = this.cacheBmp; return copy;
+        }
+
+        // 🔥 防 OOM 极限引擎：根据你的屏幕自动压缩预览图，但保留真实大小参数给打包用！
+        public static Bitmap safeDecode(String path, byte[] data, int[] outSize) {
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inJustDecodeBounds = true;
+            if (data != null) BitmapFactory.decodeByteArray(data, 0, data.length, opts);
+            else BitmapFactory.decodeFile(path, opts);
+            outSize[0] = opts.outWidth; outSize[1] = opts.outHeight;
+            
+            int inSampleSize = 1;
+            if (opts.outHeight > 1024 || opts.outWidth > 1024) {
+                final int halfH = opts.outHeight / 2; final int halfW = opts.outWidth / 2;
+                while ((halfH / inSampleSize) >= 1024 || (halfW / inSampleSize) >= 1024) inSampleSize *= 2;
+            }
+            opts.inJustDecodeBounds = false; opts.inSampleSize = inSampleSize;
+            try {
+                if (data != null) return BitmapFactory.decodeByteArray(data, 0, data.length, opts);
+                return BitmapFactory.decodeFile(path, opts);
+            } catch (OutOfMemoryError e) {
+                opts.inSampleSize *= 2; // 如果系统极烂，再缩小一倍自保
+                try {
+                    if (data != null) return BitmapFactory.decodeByteArray(data, 0, data.length, opts);
+                    return BitmapFactory.decodeFile(path, opts);
+                } catch(Exception e2) { return null; }
+            }
         }
     }
     
@@ -2387,9 +2421,11 @@ public class DesktopSystemView extends Dialog {
                     StageLayerInfo layer = layerList.get(i);
                     if (layer.isVisible && layer.cacheBmp != null) {
                         canvas.save(); canvas.concat(imageMatrix); 
-                        // 🔥 加入 2D 缩放渲染参数
                         canvas.translate(layer.startX - layer.axisX, layer.startY - layer.axisY); 
-                        canvas.scale(layer.scaleX, layer.scaleY);
+                        // 🔥 补齐渲染倍率：因为图被为了防 OOM 压缩了，所以在 UI 上把它强行拉伸回本来该有的大小！
+                        float uiScaleX = layer.origW > 0 ? (float)layer.origW / layer.cacheBmp.getWidth() : 1.0f;
+                        float uiScaleY = layer.origH > 0 ? (float)layer.origH / layer.cacheBmp.getHeight() : 1.0f;
+                        canvas.scale(layer.scaleX * uiScaleX, layer.scaleY * uiScaleY);
                         canvas.drawBitmap(layer.cacheBmp, 0, 0, null); 
                         canvas.restore();
                     }
@@ -2415,9 +2451,12 @@ public class DesktopSystemView extends Dialog {
         LinearLayout dpadAreaContainer = new LinearLayout(getContext()); dpadAreaContainer.setOrientation(LinearLayout.VERTICAL); dpadAreaContainer.setBackgroundColor(Color.parseColor("#1E1E1E")); dpadAreaContainer.setPadding(padS, padS, padS, padS);
         
         LinearLayout dpadRow1 = new LinearLayout(getContext()); dpadRow1.setOrientation(LinearLayout.HORIZONTAL); dpadRow1.setGravity(Gravity.CENTER); dpadRow1.setPadding(0, 0, 0, padS);
-        Button btnEditGI = createButton("⚙️ 编组", "#3F3F46"); TextView txtGI = new TextView(getContext()); txtGI.setText("  [0,0]  "); txtGI.setTextColor(Color.parseColor("#0078D7")); applyGlobalFontSettings(txtGI, 1.1f, true);
+        Button btnEditGI = createButton("⚙️ 编组", "#3F3F46"); 
+        TextView txtGI = new TextView(getContext()); txtGI.setText("  [0,0]  "); txtGI.setTextColor(Color.parseColor("#0078D7")); applyGlobalFontSettings(txtGI, 1.1f, true);
+        // 👈 新增参数：真实物理分辨率直显
+        TextView txtRes = new TextView(getContext()); txtRes.setText(" 📐 0x0 "); txtRes.setTextColor(Color.parseColor("#4CAF50")); applyGlobalFontSettings(txtRes, 1.0f, false);
         Button btnStep = createButton("👣 步长: 1", "#FF9800");
-        dpadRow1.addView(btnEditGI); dpadRow1.addView(txtGI); dpadRow1.addView(btnStep);
+        dpadRow1.addView(btnEditGI); dpadRow1.addView(txtGI); dpadRow1.addView(txtRes); dpadRow1.addView(btnStep);
         
         LinearLayout dpadRow2 = new LinearLayout(getContext()); dpadRow2.setOrientation(LinearLayout.HORIZONTAL); dpadRow2.setGravity(Gravity.CENTER);
         Button btnLeft = createButton("◀", "#333333"); Button btnUp = createButton("▲", "#333333"); Button btnDown = createButton("▼", "#333333"); Button btnRight = createButton("▶", "#333333");
@@ -2491,7 +2530,6 @@ public class DesktopSystemView extends Dialog {
         centerContainer.addView(defEditorPanel, new FrameLayout.LayoutParams(-1, -1));
         centerContainer.addView(modelCenterPanel, new FrameLayout.LayoutParams(-1, -1));
 
-        // ================== 5. 右侧属性面板 ==================
         ScrollView rightScroll = new ScrollView(getContext()); rightScroll.setBackgroundColor(Color.parseColor("#252526"));
         LinearLayout rightPanel = new LinearLayout(getContext()); rightPanel.setOrientation(LinearLayout.VERTICAL); rightPanel.setPadding(padS, padS, padS, padS);
         
@@ -2520,7 +2558,7 @@ public class DesktopSystemView extends Dialog {
         panel3D.addView(btnApply3D); panel3D.setVisibility(View.GONE); rightPanel.addView(panel3D);
         rightScroll.addView(rightPanel);
 
-        mainArea.addView(leftPanel, new LinearLayout.LayoutParams(0, -1, 1.3f)); mainArea.addView(centerContainer, new LinearLayout.LayoutParams(0, -1, 2.3f)); mainArea.addView(rightScroll, new LinearLayout.LayoutParams(0, -1, 1f));
+        mainArea.addView(leftPanel, new LinearLayout.LayoutParams(0, -1, 1.2f)); mainArea.addView(centerContainer, new LinearLayout.LayoutParams(0, -1, 2.5f)); mainArea.addView(rightScroll, new LinearLayout.LayoutParams(0, -1, 1f));
         root.addView(mainArea, new LinearLayout.LayoutParams(-1, -1));
 
         refreshModelListUI[0] = new Runnable() {
@@ -2577,23 +2615,31 @@ public class DesktopSystemView extends Dialog {
                     row.addView(btnVis, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(bLock, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(tName, new LinearLayout.LayoutParams(0, -2, 1f));
                     
                     row.setOnClickListener(clickRowLyr -> { 
-                        selectedLayerIndex[0] = idx; txtCoord.setText(String.format("  X: %.0f   Y: %.0f  ", info.startX, info.startY));
+                        selectedLayerIndex[0] = idx; txtCoord.setText(String.format(" X:%.0f Y:%.0f ", info.startX, info.startY));
                         if(!info.isGhostGrid) {
                             txtGI.setText(String.format(" [%d,%d] ", info.group, info.item));
+                            txtRes.setText(String.format(" 📐 %dx%d ", info.origW, info.origH));
                             scale2D.setText(info.scaleX + ", " + info.scaleY); delta2D.setText(info.deltaX + ", " + info.deltaY); trans2D.setText(info.trans);
-                        } else txtGI.setText(" [N/A] ");
+                        } else { txtGI.setText(" [N/A] "); txtRes.setText(" 📐 N/A "); }
                         
                         for (int j = 1; j < layerList.size(); j++) { StageLayerInfo l = layerList.get(j); if (j == idx) l.isVisible = true; else l.isVisible = l.manuallyVisible; }
                         
-                        // 🔥 核心：如果找不到缓存图，利用 originalGroup 找回被进位掩盖的源图片！
                         if (!info.isGhostGrid && info.cacheBmp == null && !info.sourcePath.isEmpty()) {
                             new Thread(() -> { 
-                                Bitmap bmp = null;
+                                Bitmap bmp = null; int[] sizeInfo = new int[2];
                                 if (!info.isExternal && info.sourcePath.toLowerCase().endsWith(".sff")) {
                                     byte[] bmpData = Api.decodeSffFrame(info.sourcePath, info.originalGroup, info.originalItem, ""); 
-                                    if (bmpData != null && bmpData.length > 0) bmp = BitmapFactory.decodeByteArray(bmpData, 0, bmpData.length);
-                                } else bmp = BitmapFactory.decodeFile(info.sourcePath);
-                                if (bmp != null) { final Bitmap fbm = bmp; new Handler(Looper.getMainLooper()).post(() -> { info.cacheBmp = fbm; viewportFrame.invalidate(); }); } 
+                                    bmp = StageLayerInfo.safeDecode(null, bmpData, sizeInfo);
+                                } else bmp = StageLayerInfo.safeDecode(info.sourcePath, null, sizeInfo);
+                                
+                                if (bmp != null) { 
+                                    info.origW = sizeInfo[0]; info.origH = sizeInfo[1];
+                                    final Bitmap fbm = bmp; 
+                                    new Handler(Looper.getMainLooper()).post(() -> { 
+                                        info.cacheBmp = fbm; viewportFrame.invalidate(); 
+                                        if (selectedLayerIndex[0] == idx) txtRes.setText(String.format(" 📐 %dx%d ", info.origW, info.origH));
+                                    }); 
+                                } 
                             }).start();
                         }
                         this.run(); viewportFrame.invalidate();
@@ -2670,8 +2716,8 @@ public class DesktopSystemView extends Dialog {
 
                             ImageView previewGif = new ImageView(getContext()); previewGif.setLayoutParams(new LinearLayout.LayoutParams(-1, (int)(150*density))); boxGif.addView(previewGif);
                             
-                            final int[] currentFrame = {0}; final Bitmap[] currentBmp = {null};
-                            Runnable updatePreviewGif = () -> { new Thread(() -> { byte[] b = Api.decodeGifFrame(imgFile44.getAbsolutePath(), currentFrame[0]); if(b != null) { currentBmp[0] = BitmapFactory.decodeByteArray(b, 0, b.length); new Handler(Looper.getMainLooper()).post(() -> previewGif.setImageBitmap(currentBmp[0])); } }).start(); };
+                            final int[] currentFrame = {0}; final Bitmap[] currentBmp = {null}; final int[] curSize = new int[2];
+                            Runnable updatePreviewGif = () -> { new Thread(() -> { byte[] b = Api.decodeGifFrame(imgFile44.getAbsolutePath(), currentFrame[0]); if(b != null) { currentBmp[0] = StageLayerInfo.safeDecode(null, b, curSize); new Handler(Looper.getMainLooper()).post(() -> previewGif.setImageBitmap(currentBmp[0])); } }).start(); };
 
                             TextView frameInfo = new TextView(getContext()); frameInfo.setTextColor(Color.WHITE); frameInfo.setGravity(Gravity.CENTER); boxGif.addView(frameInfo);
                             SeekBar slider = new SeekBar(getContext()); slider.setMax(totalFrames - 1);
@@ -2689,8 +2735,8 @@ public class DesktopSystemView extends Dialog {
                                 StageLayerInfo layer = new StageLayerInfo(); layer.name = nameInput.getText().toString() + " [帧" + currentFrame[0] + "]";
                                 int g = 0; try { g = Integer.parseInt(groupInput.getText().toString()); } catch(Exception e){}
                                 int[] gi = incrementer.getNext(g, currentFrame[0]); layer.group = gi[0]; layer.item = gi[1];
+                                layer.origW = curSize[0]; layer.origH = curSize[1];
                                 
-                                // 🔥 保存为独立外置图片，保证打包能找到
                                 try { File tmpF = new File(getContext().getCacheDir(), "gif_ext_" + System.currentTimeMillis() + ".png"); FileOutputStream fos = new FileOutputStream(tmpF); currentBmp[0].compress(Bitmap.CompressFormat.PNG, 100, fos); fos.close(); layer.sourcePath = tmpF.getAbsolutePath(); layer.isExternal = true; } catch(Exception e){}
                                 layer.cacheBmp = currentBmp[0]; layer.isVisible = false; layer.manuallyVisible = false;
                                 layerList.add(layer); refreshLayerListUI[0].run(); dGif.dismiss(); Toast.makeText(getContext(), "✅ 已添加单帧图层", Toast.LENGTH_SHORT).show();
@@ -2705,9 +2751,10 @@ public class DesktopSystemView extends Dialog {
                                     for (int i=0; i<totalFrames; i++) {
                                         byte[] b = Api.decodeGifFrame(imgFile44.getAbsolutePath(), i);
                                         if(b != null) {
-                                            Bitmap bmp = BitmapFactory.decodeByteArray(b, 0, b.length);
+                                            int[] sz = new int[2]; Bitmap bmp = StageLayerInfo.safeDecode(null, b, sz);
                                             StageLayerInfo layer = new StageLayerInfo(); layer.name = baseName + " [帧" + i + "]";
                                             int[] gi = incrementer.getNext(fGrp, i); layer.group = gi[0]; layer.item = gi[1];
+                                            layer.origW = sz[0]; layer.origH = sz[1];
                                             try { File tmpF = new File(getContext().getCacheDir(), "gif_ext_" + System.currentTimeMillis() + "_" + i + ".png"); FileOutputStream fos = new FileOutputStream(tmpF); bmp.compress(Bitmap.CompressFormat.PNG, 100, fos); fos.close(); layer.sourcePath = tmpF.getAbsolutePath(); layer.isExternal = true; } catch(Exception e){}
                                             layer.cacheBmp = bmp; layer.isVisible = false; layer.manuallyVisible = false; layerList.add(layer);
                                         }
@@ -2724,7 +2771,9 @@ public class DesktopSystemView extends Dialog {
                             GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); boxImg.setBackground(border);
                             boxImg.addView(createSubTitle("🖼️ 导入单张静态图像"));
                             ImageView previewImgView = new ImageView(getContext()); previewImgView.setLayoutParams(new LinearLayout.LayoutParams(-1, (int)(150*density)));
-                            Bitmap bmp = BitmapFactory.decodeFile(imgFile44.getAbsolutePath()); previewImgView.setImageBitmap(bmp); boxImg.addView(previewImgView);
+                            
+                            int[] sizeInfo = new int[2]; Bitmap bmp = StageLayerInfo.safeDecode(imgFile44.getAbsolutePath(), null, sizeInfo);
+                            previewImgView.setImageBitmap(bmp); boxImg.addView(previewImgView);
                             boxImg.addView(createSubTitle("自定义图层名称:")); EditText nameInput = createInput("", imgFile44.getName()); boxImg.addView(nameInput);
                             boxImg.addView(createSubTitle("设定 Group 编号 (默认0):")); EditText groupInput = createInput("", "0"); groupInput.setInputType(InputType.TYPE_CLASS_NUMBER); boxImg.addView(groupInput);
                             boxImg.addView(createSubTitle("设定 Item 编号 (默认0):")); EditText itemInput = createInput("", "0"); itemInput.setInputType(InputType.TYPE_CLASS_NUMBER); boxImg.addView(itemInput);
@@ -2736,6 +2785,7 @@ public class DesktopSystemView extends Dialog {
                                 int g = 0; try { g = Integer.parseInt(groupInput.getText().toString()); } catch(Exception e){}
                                 int i = 0; try { i = Integer.parseInt(itemInput.getText().toString()); } catch(Exception e){}
                                 int[] gi = incrementer.getNext(g, i); layer.group = gi[0]; layer.item = gi[1];
+                                layer.origW = sizeInfo[0]; layer.origH = sizeInfo[1];
                                 layer.sourcePath = imgFile44.getAbsolutePath(); layer.cacheBmp = bmp; layer.isVisible = false; layer.manuallyVisible = false; layer.isExternal = true;
                                 layerList.add(layer); refreshLayerListUI[0].run(); dImg.dismiss(); Toast.makeText(getContext(), "✅ 已追加新图层", Toast.LENGTH_SHORT).show();
                             });
@@ -2770,7 +2820,8 @@ public class DesktopSystemView extends Dialog {
                                 for (GoEngineBridge.SffFrame f : frames) {
                                     StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]";
                                     int[] gi = incrementer.getNext(f.group, f.item); layer.group = gi[0]; layer.item = gi[1]; 
-                                    layer.originalGroup = f.group; layer.originalItem = f.item; // 👈 记忆本源编号
+                                    layer.originalGroup = f.group; layer.originalItem = f.item; 
+                                    layer.origW = f.width; layer.origH = f.height; // SFF帧读取物理尺寸
                                     layer.axisX = f.x; layer.axisY = f.y; layer.sourcePath = currentPath; layer.isVisible = false; layer.manuallyVisible = false; layer.isExternal = false;
                                     layerList.add(layer);
                                 }
@@ -2856,7 +2907,7 @@ public class DesktopSystemView extends Dialog {
                                 globalSffPath = sffFile.getAbsolutePath();
                                 new Thread(() -> {
                                     List<GoEngineBridge.SffFrame> frames = GoEngineBridge.getAllFrames(globalSffPath);
-                                    new Handler(Looper.getMainLooper()).post(() -> { layerList.clear(); layerList.add(ghostGrid); for (GoEngineBridge.SffFrame f : frames) { StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]"; layer.group = f.group; layer.item = f.item; layer.originalGroup = f.group; layer.originalItem = f.item; layer.axisX = f.x; layer.axisY = f.y; layer.sourcePath = globalSffPath; layer.isExternal=false; layer.isVisible=false; layer.manuallyVisible=false; layerList.add(layer); } refreshLayerListUI[0].run(); Toast.makeText(getContext(), "✅ 已载入 " + frames.size() + " 个素材图层与关联模型", Toast.LENGTH_LONG).show(); });
+                                    new Handler(Looper.getMainLooper()).post(() -> { layerList.clear(); layerList.add(ghostGrid); for (GoEngineBridge.SffFrame f : frames) { StageLayerInfo layer = new StageLayerInfo(); layer.name = "Sprite [" + f.group + ", " + f.item + "]"; layer.group = f.group; layer.item = f.item; layer.originalGroup = f.group; layer.originalItem = f.item; layer.origW = f.width; layer.origH = f.height; layer.axisX = f.x; layer.axisY = f.y; layer.sourcePath = globalSffPath; layer.isExternal=false; layer.isVisible=false; layer.manuallyVisible=false; layerList.add(layer); } refreshLayerListUI[0].run(); Toast.makeText(getContext(), "✅ 已载入 " + frames.size() + " 个素材图层与关联模型", Toast.LENGTH_LONG).show(); });
                                 }).start();
                             }
                         };
@@ -2871,7 +2922,7 @@ public class DesktopSystemView extends Dialog {
             Button btnCancelMain = createButton("❌ 取消", "#333333"); btnCancelMain.setOnClickListener(clickCanScan -> prompt.dismiss()); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density)); box.addView(btnNew, lp); box.addView(btnLoad, lp); box.addView(btnCancelMain, lp); svScan.addView(box); flScan.addView(svScan, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); prompt.setContentView(flScan); prompt.show();
         });
 
-        // 🔥 核心：物理修改 SFF，无损导出 DEF
+        // 🔥 真·无损物理导出 (处理真实物理放大与轴心对齐)
         btnSave.setOnClickListener(clickSaveMain -> {
             final Dialog exportDialog = new Dialog(getContext()); exportDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
             FrameLayout flExp = new FrameLayout(getContext()); ScrollView svExp = new ScrollView(getContext());
@@ -2881,7 +2932,7 @@ public class DesktopSystemView extends Dialog {
             String defaultName = "NewStage";
             if (globalIsEditMode && !globalDefPath.isEmpty()) defaultName = new File(globalDefPath).getName().replace(".def", "");
             box.addView(createSubTitle("地图导出前缀名:")); EditText nameInput = createInput("(默认追加递增防重名)", defaultName); box.addView(nameInput);
-            Button bConfirm = createButton("✔️ 确认打包生成", "#4CAF50");
+            Button bConfirm = createButton("✔️ 确认物理打包生成", "#4CAF50");
             bConfirm.setOnClickListener(clickConfSave -> {
                 exportDialog.dismiss(); Toast.makeText(getContext(), "📦 引擎正在物理装箱中...", Toast.LENGTH_SHORT).show();
                 new Thread(() -> {
@@ -2892,70 +2943,77 @@ public class DesktopSystemView extends Dialog {
                         int counter = 1; while (tempDir.exists()) { tempDir = new File(rootExportDir, baseName + "_" + counter); counter++; }
                         tempDir.mkdirs(); final File finalExportDir = tempDir; 
                         
-                        // 1. 无损导出 DEF (原封不动保存一切注释和逻辑)
                         File defFile = new File(finalExportDir, baseName + ".def");
                         FileOutputStream defOut = new FileOutputStream(defFile); defOut.write(defCodeInput.getText().toString().getBytes("UTF-8")); defOut.close();
 
-                        // 2. 打包 SFF（真·物理增删改与轴心保存）
                         File finalSffFile = new File(finalExportDir, baseName + ".sff");
                         if (!globalSffPath.isEmpty()) { copyFileToSandbox(new File(globalSffPath), finalSffFile); } 
                         else { finalSffFile.createNewFile(); } 
                         
                         if (finalSffFile.length() > 0) {
-                            // 物理删除被用户在 UI 中移除的图层
                             List<GoEngineBridge.SffFrame> origFrames = GoEngineBridge.getAllFrames(finalSffFile.getAbsolutePath());
                             for (GoEngineBridge.SffFrame f : origFrames) {
                                 boolean stillExists = false;
                                 for (StageLayerInfo layer : layerList) {
-                                    if (!layer.isGhostGrid && layer.originalGroup == f.group && layer.originalItem == f.item && !layer.isExternal) {
-                                        stillExists = true; break;
-                                    }
+                                    if (!layer.isGhostGrid && layer.originalGroup == f.group && layer.originalItem == f.item && !layer.isExternal) { stillExists = true; break; }
                                 }
-                                if (!stillExists) {
-                                    Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item);
-                                }
+                                if (!stillExists) Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item);
                             }
                         }
 
-                        // 物理新增与替换 (计算新轴心与生成新大小的 Bitmap)
+                        // 🔥 后台真·物理重绘：真正改变尺寸并更新轴心
                         for (StageLayerInfo layer : layerList) {
-                            if (layer.isGhostGrid || layer.cacheBmp == null) continue;
+                            if (layer.isGhostGrid || layer.origW == 0) continue;
                             
-                            int newW = (int)(layer.cacheBmp.getWidth() * layer.scaleX);
-                            int newH = (int)(layer.cacheBmp.getHeight() * layer.scaleY);
+                            int newW = (int)(layer.origW * layer.scaleX);
+                            int newH = (int)(layer.origH * layer.scaleY);
                             if (newW <= 0) newW = 1; if (newH <= 0) newH = 1;
                             
-                            // MUGEN 的轴心机制：新轴心 = 原轴心 - 你移动的偏移量
                             short newAxisX = (short)(layer.axisX - layer.startX);
                             short newAxisY = (short)(layer.axisY - layer.startY);
                             
-                            Bitmap targetBmp = layer.cacheBmp;
-                            if (layer.scaleX != 1.0f || layer.scaleY != 1.0f) {
-                                targetBmp = Bitmap.createScaledBitmap(layer.cacheBmp, newW, newH, true);
+                            String targetExportPath = ""; File tmpDir = getContext().getCacheDir();
+                            Bitmap origFullBmp = null;
+                            try {
+                                if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) { origFullBmp = BitmapFactory.decodeFile(layer.sourcePath); } 
+                                else if (!layer.isExternal && layer.sourcePath != null && layer.sourcePath.toLowerCase().endsWith(".sff")) {
+                                    byte[] fullData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, "");
+                                    if (fullData != null) origFullBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length);
+                                }
+                                if (origFullBmp != null) {
+                                    Bitmap scaledBmp = origFullBmp;
+                                    if (layer.scaleX != 1.0f || layer.scaleY != 1.0f) scaledBmp = Bitmap.createScaledBitmap(origFullBmp, newW, newH, true);
+                                    File tmpPng = new File(tmpDir, "exp_" + layer.group + "_" + layer.item + ".png");
+                                    FileOutputStream fosPng = new FileOutputStream(tmpPng);
+                                    scaledBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); fosPng.close();
+                                    targetExportPath = tmpPng.getAbsolutePath();
+                                    if (scaledBmp != origFullBmp) scaledBmp.recycle(); origFullBmp.recycle();
+                                }
+                            } catch (OutOfMemoryError e) { }
+                            
+                            if (targetExportPath.isEmpty() && layer.isExternal && layer.sourcePath != null) { targetExportPath = layer.sourcePath; } 
+                            else if (targetExportPath.isEmpty() && !layer.isExternal) {
+                                byte[] fullData = Api.decodeSffFrame(finalSffFile.getAbsolutePath(), layer.originalGroup, layer.originalItem, "");
+                                if (fullData != null) {
+                                    Bitmap oBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length);
+                                    File tmpPng = new File(tmpDir, "exp_" + layer.group + "_" + layer.item + ".png");
+                                    FileOutputStream fosPng = new FileOutputStream(tmpPng);
+                                    oBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); fosPng.close(); oBmp.recycle();
+                                    targetExportPath = tmpPng.getAbsolutePath();
+                                }
                             }
                             
-                            File tmpPng = new File(getContext().getCacheDir(), "exp_" + layer.group + "_" + layer.item + ".png");
-                            FileOutputStream fosPng = new FileOutputStream(tmpPng);
-                            targetBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng);
-                            fosPng.close();
-                            
-                            if (layer.isExternal) {
-                                Api.addSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, newAxisX, newAxisY, tmpPng.getAbsolutePath());
-                            } else {
-                                Api.replaceSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, newAxisX, newAxisY, tmpPng.getAbsolutePath());
+                            if (!targetExportPath.isEmpty()) {
+                                if (layer.isExternal) Api.addSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, newAxisX, newAxisY, targetExportPath);
+                                else Api.replaceSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, newAxisX, newAxisY, targetExportPath);
                             }
                         }
 
-                        // 3. 拷贝模型
                         if (is3DMode[0] && !modelList.isEmpty()) {
-                            for (StageModelInfo m : modelList) {
-                                File srcM = new File(m.path); File dstM = new File(finalExportDir, srcM.getName()); copyFileToSandbox(srcM, dstM);
-                            }
+                            for (StageModelInfo m : modelList) { File srcM = new File(m.path); File dstM = new File(finalExportDir, srcM.getName()); copyFileToSandbox(srcM, dstM); }
                         }
                         
-                        new Handler(Looper.getMainLooper()).post(() -> {
-                            Toast.makeText(getContext(), "✅ SFF 无损物理生成成功！\n文件在:\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); 
-                        });
+                        new Handler(Looper.getMainLooper()).post(() -> { Toast.makeText(getContext(), "✅ SFF 无损物理生成成功！\n文件在:\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); });
                     } catch (Throwable t) {}
                 }).start();
             });
@@ -2966,6 +3024,7 @@ public class DesktopSystemView extends Dialog {
 
         updateViewState[0].run(); refreshLayerListUI[0].run(); refreshModelListUI[0].run(); return root;
     }
+
 
 
     // 🌉 Go 引擎底层抽象桥接
