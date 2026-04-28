@@ -955,8 +955,6 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, ax
 				appendOffset := fileInfo.Size()
 
 				f.Seek(0, io.SeekEnd)
-				dummyHeader := []byte{0, 0, 0, 0}
-				f.Write(dummyHeader)
 				_, err = f.Write(finalData)
 				if err != nil { return fmt.Errorf("写入数据失败: %v", err) }
 
@@ -965,17 +963,26 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, ax
 				binary.Write(f, binary.LittleEndian, height)
 				binary.Write(f, binary.LittleEndian, uint16(axisX))
 				binary.Write(f, binary.LittleEndian, uint16(axisY))
+				binary.Write(f, binary.LittleEndian, uint16(0))
 
 				f.Seek(shofs+14, io.SeekStart)
-				binary.Write(f, binary.LittleEndian, byte(11))
+				binary.Write(f, binary.LittleEndian, byte(12))
 				binary.Write(f, binary.LittleEndian, byte(32))
 				f.Seek(shofs+26, io.SeekStart)
 				binary.Write(f, binary.LittleEndian, uint16(0))
 
-				finalOffset := uint32(appendOffset) - lofs
+				finalOffset := uint32(appendOffset) - tofs
 				f.Seek(shofs+16, io.SeekStart)
 				binary.Write(f, binary.LittleEndian, finalOffset)
-				binary.Write(f, binary.LittleEndian, uint32(len(finalData)+4))
+				binary.Write(f, binary.LittleEndian, uint32(len(finalData)))
+
+				f.Seek(0, io.SeekEnd)
+				newEof, _ := f.Seek(0, io.SeekCurrent)
+				f.Seek(40, io.SeekStart)
+				binary.Write(f, binary.LittleEndian, uint32(newEof)-lofs)
+				f.Seek(48, io.SeekStart)
+				binary.Write(f, binary.LittleEndian, uint32(newEof)-tofs)
+
 				return nil
 			}
 			shofs += 28
@@ -984,7 +991,6 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, ax
 	}
 }
 
-// 🔥 物理追加帧：在 SFF 末尾安全分配全新区块，不再丢失数据
 func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX int16, axisY int16, imagePath string) error {
 	fileData, err := os.ReadFile(imagePath)
 	if err != nil { return err }
@@ -1014,7 +1020,6 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 	if err != nil { return err }
 	defer f.Close()
 
-	// 🔥 核心创世机制：如果检测到是 0 字节新建文件，立刻凭空注入标准的 512 字节 SFFv2 身份证！
 	fileInfo, _ := f.Stat()
 	if fileInfo.Size() == 0 {
 		blankHeader := make([]byte, 512)
@@ -1022,11 +1027,15 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 		blankHeader[12] = 0
 		blankHeader[13] = 0
 		blankHeader[14] = 0
-		blankHeader[15] = 2 // SFF v2.00 协议
-		binary.LittleEndian.PutUint32(blankHeader[36:40], 512) // ldata offset
-		binary.LittleEndian.PutUint32(blankHeader[44:48], 512) // tdata offset
-		binary.LittleEndian.PutUint32(blankHeader[52:56], 512) // node offset
-		binary.LittleEndian.PutUint32(blankHeader[60:64], 512) // pal offset
+		blankHeader[15] = 2 
+		blankHeader[24] = 0
+		blankHeader[25] = 0
+		blankHeader[26] = 0
+		blankHeader[27] = 2 
+		binary.LittleEndian.PutUint32(blankHeader[36:40], 512) 
+		binary.LittleEndian.PutUint32(blankHeader[44:48], 512) 
+		binary.LittleEndian.PutUint32(blankHeader[52:56], 512) 
+		binary.LittleEndian.PutUint32(blankHeader[60:64], 512) 
 		f.Write(blankHeader)
 		f.Seek(0, io.SeekStart)
 	}
@@ -1072,14 +1081,12 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 			binary.Write(f, binary.LittleEndian, uint32(eofOffset))
 		}
 		h.NumberOfSprites++
-		f.Seek(8, io.SeekStart)
+		f.Seek(20, io.SeekStart)
 		binary.Write(f, binary.LittleEndian, h.NumberOfSprites)
 
 	} else {
         if isPcx { return errors.New("SFFv2 请使用 PNG 追加") }
 
-        dummyHeader := []byte{0, 0, 0, 0}
-        f.Write(dummyHeader)
         f.Write(finalData)
         
         var oldHeadersData []byte
@@ -1096,11 +1103,11 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
         binary.LittleEndian.PutUint16(newSpriteHeader[6:8], height)
         binary.LittleEndian.PutUint16(newSpriteHeader[8:10], uint16(axisX))
         binary.LittleEndian.PutUint16(newSpriteHeader[10:12], uint16(axisY))
-        binary.LittleEndian.PutUint16(newSpriteHeader[12:14], uint16(h.NumberOfSprites))
-        newSpriteHeader[14] = 11 
+        binary.LittleEndian.PutUint16(newSpriteHeader[12:14], uint16(0))
+        newSpriteHeader[14] = 12 
         newSpriteHeader[15] = 32
-        binary.LittleEndian.PutUint32(newSpriteHeader[16:20], uint32(eofOffset)-lofs)
-        binary.LittleEndian.PutUint32(newSpriteHeader[20:24], uint32(len(finalData)+4))
+        binary.LittleEndian.PutUint32(newSpriteHeader[16:20], uint32(eofOffset)-tofs)
+        binary.LittleEndian.PutUint32(newSpriteHeader[20:24], uint32(len(finalData)))
         binary.LittleEndian.PutUint16(newSpriteHeader[24:26], 0)
 
         f.Seek(0, io.SeekEnd)
@@ -1113,6 +1120,11 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
         h.NumberOfSprites++
         h.FirstSpriteHeaderOffset = uint32(newHeaderListOffset)
 
+		f.Seek(40, io.SeekStart)
+		binary.Write(f, binary.LittleEndian, uint32(newHeaderListOffset)-lofs)
+        f.Seek(48, io.SeekStart)
+        binary.Write(f, binary.LittleEndian, uint32(newHeaderListOffset)-tofs)
+
         f.Seek(52, io.SeekStart)
         binary.Write(f, binary.LittleEndian, h.FirstSpriteHeaderOffset)
         binary.Write(f, binary.LittleEndian, h.NumberOfSprites)
@@ -1120,7 +1132,6 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 	return nil
 }
 
-// 🗑️ 物理删除帧：断开二进制链表，让其在 SFF 中不可见
 func DeleteFrame(sffPath string, targetGroup int32, targetItem int32) error {
 	f, err := os.OpenFile(sffPath, os.O_RDWR, 0644)
 	if err != nil { return err }
@@ -1153,7 +1164,7 @@ func DeleteFrame(sffPath string, targetGroup int32, targetItem int32) error {
 					binary.Write(f, binary.LittleEndian, nextOffset)
 				}
 				h.NumberOfSprites--
-				f.Seek(8, io.SeekStart)
+				f.Seek(20, io.SeekStart)
 				binary.Write(f, binary.LittleEndian, h.NumberOfSprites)
 				return nil
 			}
@@ -1169,7 +1180,6 @@ func DeleteFrame(sffPath string, targetGroup int32, targetItem int32) error {
 			binary.Read(f, binary.LittleEndian, &number)
 
 			if int32(group) == targetGroup && int32(number) == targetItem {
-				// SFFv2 伪删除：重置编号与尺寸为空，脱离引擎渲染队列
 				f.Seek(shofs, io.SeekStart)
 				binary.Write(f, binary.LittleEndian, uint16(0xFFFF))
 				binary.Write(f, binary.LittleEndian, uint16(0xFFFF))
