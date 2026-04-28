@@ -1129,14 +1129,14 @@ public class DesktopSystemView extends Dialog {
             showWin10FilePicker("选择替换用的图像或所在目录", 7, null, null, selectedFile -> {
                 FileCallback doReplace = finalFile -> {
                     new Thread(() -> {
-                        boolean success = Api.replaceSffFrame(sffPath, f.group, f.item, finalFile.getAbsolutePath());
+                        // 补齐 Go 引擎强制要求的 axisX 和 axisY 轴心点参数
+                        boolean success = Api.replaceSffFrame(sffPath, f.group, f.item, (short)f.x, (short)f.y, finalFile.getAbsolutePath());
                         uiHandler.post(() -> {
                             if (success) { Toast.makeText(getContext(), "✅ " + f.group + "-" + f.item + " 帧已替换！", Toast.LENGTH_SHORT).show(); updateFrameAction.run(); } 
                             else { Toast.makeText(getContext(), "❌ 替换失败：格式不兼容！SFFv1 只能使用 PCX，SFFv2 禁止使用 PCX！", Toast.LENGTH_LONG).show(); }
                         });
                     }).start();
                 };
-                // 如果选的是文件夹，打开网格图像扫描器；如果是文件，直接替换
                 if (selectedFile.isDirectory()) showImageGridPicker(selectedFile, doReplace); else doReplace.onFileSelected(selectedFile);
             });
         });
