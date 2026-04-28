@@ -1014,6 +1014,23 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 	if err != nil { return err }
 	defer f.Close()
 
+	// 🔥 核心创世机制：如果检测到是 0 字节新建文件，立刻凭空注入标准的 512 字节 SFFv2 身份证！
+	fileInfo, _ := f.Stat()
+	if fileInfo.Size() == 0 {
+		blankHeader := make([]byte, 512)
+		copy(blankHeader[0:12], "ElecbyteSpr\x00")
+		blankHeader[12] = 0
+		blankHeader[13] = 0
+		blankHeader[14] = 0
+		blankHeader[15] = 2 // SFF v2.00 协议
+		binary.LittleEndian.PutUint32(blankHeader[36:40], 512) // ldata offset
+		binary.LittleEndian.PutUint32(blankHeader[44:48], 512) // tdata offset
+		binary.LittleEndian.PutUint32(blankHeader[52:56], 512) // node offset
+		binary.LittleEndian.PutUint32(blankHeader[60:64], 512) // pal offset
+		f.Write(blankHeader)
+		f.Seek(0, io.SeekStart)
+	}
+
 	var h SffHeader
 	var lofs, tofs uint32
 	if err := h.Read(f, &lofs, &tofs); err != nil { return err }
@@ -1065,9 +1082,12 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
         f.Write(dummyHeader)
         f.Write(finalData)
         
-        oldHeadersData := make([]byte, int(h.NumberOfSprites)*28)
-        f.Seek(int64(h.FirstSpriteHeaderOffset), io.SeekStart)
-        f.Read(oldHeadersData)
+        var oldHeadersData []byte
+        if h.NumberOfSprites > 0 {
+            oldHeadersData = make([]byte, int(h.NumberOfSprites)*28)
+            f.Seek(int64(h.FirstSpriteHeaderOffset), io.SeekStart)
+            f.Read(oldHeadersData)
+        }
 
         newSpriteHeader := make([]byte, 28)
         binary.LittleEndian.PutUint16(newSpriteHeader[0:2], uint16(targetGroup))
@@ -1085,13 +1105,15 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 
         f.Seek(0, io.SeekEnd)
         newHeaderListOffset, _ := f.Seek(0, io.SeekCurrent)
-        f.Write(oldHeadersData)
+        if len(oldHeadersData) > 0 {
+            f.Write(oldHeadersData)
+        }
         f.Write(newSpriteHeader)
 
         h.NumberOfSprites++
         h.FirstSpriteHeaderOffset = uint32(newHeaderListOffset)
 
-        f.Seek(8, io.SeekStart)
+        f.Seek(52, io.SeekStart)
         binary.Write(f, binary.LittleEndian, h.FirstSpriteHeaderOffset)
         binary.Write(f, binary.LittleEndian, h.NumberOfSprites)
 	}
