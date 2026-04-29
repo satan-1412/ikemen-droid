@@ -293,6 +293,22 @@ func InjectSffPalette(sffPath string, actPath string) bool {
 }
 
 // ==========================================
+// 🔄 动作/图层双模式 API
+// ==========================================
+
+// OffsetSffCoords: 执行坐标移动。isLayerMode为true时单层移动，false时整组移动
+func OffsetSffCoords(sffPath string, group int32, item int32, dx int16, dy int16, isLayerMode bool) bool {
+	err := sff_module.OffsetSffCoords(sffPath, group, item, dx, dy, isLayerMode)
+	return err == nil
+}
+
+// SwapSffItem: 图层重排序互换
+func SwapSffItem(sffPath string, group int32, item1 int32, item2 int32) bool {
+	err := sff_module.SwapSffItem(sffPath, group, item1, item2)
+	return err == nil
+}
+
+// ==========================================
 // 🗺️ 地图编辑器：打包生成 DEF 核心工程
 // ==========================================
 
