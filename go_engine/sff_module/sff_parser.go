@@ -946,17 +946,32 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, ax
 				f.Seek(shofs+26, io.SeekStart)
 				binary.Write(f, binary.LittleEndian, uint16(0))
 				
-				finalOffset := uint32(appendOffset) - lofs
+				// 🟢 极其关键：读取原帧的 Flags 决定我们该使用哪个块的偏移
+				var origFlags uint16
+				f.Seek(shofs+26, io.SeekStart)
+				binary.Read(f, binary.LittleEndian, &origFlags)
+
+				var finalOffset uint32
+				if origFlags&1 == 0 {
+					finalOffset = uint32(appendOffset) - lofs
+				} else {
+					finalOffset = uint32(appendOffset) - tofs
+				}
+
 				f.Seek(shofs+16, io.SeekStart)
 				binary.Write(f, binary.LittleEndian, finalOffset)
 				binary.Write(f, binary.LittleEndian, uint32(len(finalData)+4))
 
+				// 🟢 极其关键：只更新对应的模块长度，杜绝双区块重叠引发闪退
 				f.Seek(0, io.SeekEnd)
 				newEof, _ := f.Seek(0, io.SeekCurrent)
-				f.Seek(52, io.SeekStart)
-				binary.Write(f, binary.LittleEndian, uint32(newEof)-lofs)
-				f.Seek(60, io.SeekStart)
-				binary.Write(f, binary.LittleEndian, uint32(newEof)-tofs)
+				if origFlags&1 == 0 {
+					f.Seek(52, io.SeekStart) // 仅覆盖 ldata
+					binary.Write(f, binary.LittleEndian, uint32(newEof)-lofs)
+				} else {
+					f.Seek(60, io.SeekStart) // 仅覆盖 tdata
+					binary.Write(f, binary.LittleEndian, uint32(newEof)-tofs)
+				}
 				return nil
 			}
 			shofs += 28
@@ -1082,9 +1097,13 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 		binary.LittleEndian.PutUint32(newSpriteHeader[16:20], uint32(eofOffset)-tofs)
 		binary.LittleEndian.PutUint32(newSpriteHeader[20:24], uint32(len(finalData)+4))
 		binary.LittleEndian.PutUint16(newSpriteHeader[24:26], 0)
+		binary.LittleEndian.PutUint16(newSpriteHeader[26:28], 1) // 🟢 极其关键：写入 Flags = 1，明确告诉引擎这是 tdata 数据
 
 		f.Seek(0, io.SeekEnd)
-		newHeaderListOffset, _ := f.Seek(0, io.SeekCurrent)
+		// 记录图片写完后的真实数据末尾，作为 tdata 的长度标尺
+		tdataEndOffset, _ := f.Seek(0, io.SeekCurrent)
+		newHeaderListOffset := tdataEndOffset
+
 		if len(oldHeadersData) > 0 {
 			f.Write(oldHeadersData)
 		}
@@ -1093,10 +1112,9 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 		h.NumberOfSprites++
 		h.FirstSpriteHeaderOffset = uint32(newHeaderListOffset)
 
-		f.Seek(52, io.SeekStart)
-		binary.Write(f, binary.LittleEndian, uint32(newHeaderListOffset)-lofs)
+		// 🟢 极其关键：由于我们注入的是 PNG(tdata)，绝对不能去拉长 ldata(52)！避免数据块重叠导致产生几十帧乱码
 		f.Seek(60, io.SeekStart)
-		binary.Write(f, binary.LittleEndian, uint32(newHeaderListOffset)-tofs)
+		binary.Write(f, binary.LittleEndian, uint32(tdataEndOffset)-tofs)
 
 		f.Seek(32, io.SeekStart)
 		binary.Write(f, binary.LittleEndian, h.FirstSpriteHeaderOffset)
