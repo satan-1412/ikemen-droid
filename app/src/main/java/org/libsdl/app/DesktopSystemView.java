@@ -2373,10 +2373,31 @@ public class DesktopSystemView extends Dialog {
         LinearLayout mainArea = new LinearLayout(getContext()); mainArea.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout leftPanel = new LinearLayout(getContext()); leftPanel.setOrientation(LinearLayout.VERTICAL); leftPanel.setBackgroundColor(Color.parseColor("#2D2D30")); leftPanel.setPadding(padS, padS, padS, padS);
         
+        final boolean[] isLayerMode = {false};
+
         LinearLayout titleRow = new LinearLayout(getContext()); titleRow.setOrientation(LinearLayout.HORIZONTAL); titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView layerTitle = createSubTitle("📑 元素大纲"); layerTitle.setTextColor(Color.WHITE);
-        Button btnSettings = createButton("⚙️ 设置", "#3F3F46"); 
-        titleRow.addView(layerTitle, new LinearLayout.LayoutParams(0, -2, 1f)); titleRow.addView(btnSettings, new LinearLayout.LayoutParams(-2, -2));
+        
+        Button btnModeAction = createButton("🎬 动作组", "#0078D7"); btnModeAction.setPadding((int)(8*density), (int)(5*density), (int)(8*density), (int)(5*density));
+        Button btnModeLayer = createButton("📑 图层组", "#333333"); btnModeLayer.setPadding((int)(8*density), (int)(5*density), (int)(8*density), (int)(5*density));
+        Button btnSettings = createButton("⚙️ 设置", "#3F3F46"); btnSettings.setPadding((int)(8*density), (int)(5*density), (int)(8*density), (int)(5*density));
+        
+        btnModeAction.setOnClickListener(v -> {
+            isLayerMode[0] = false;
+            btnModeAction.setBackgroundColor(Color.parseColor("#0078D7")); btnModeLayer.setBackgroundColor(Color.parseColor("#333333"));
+            if(refreshLayerListUI[0] != null) refreshLayerListUI[0].run();
+            Toast.makeText(getContext(), "✅ 动作编组模式 (显示全景, 整体移动, 独立编号)", Toast.LENGTH_SHORT).show();
+        });
+        
+        btnModeLayer.setOnClickListener(v -> {
+            isLayerMode[0] = true;
+            btnModeAction.setBackgroundColor(Color.parseColor("#333333")); btnModeLayer.setBackgroundColor(Color.parseColor("#0078D7"));
+            if(refreshLayerListUI[0] != null) refreshLayerListUI[0].run();
+            Toast.makeText(getContext(), "✅ 图层分组模式 (仅显当前编号, 独立移动, 同编号叠加)", Toast.LENGTH_SHORT).show();
+        });
+
+        titleRow.addView(btnModeAction, new LinearLayout.LayoutParams(0, -2, 1f)); 
+        titleRow.addView(btnModeLayer, new LinearLayout.LayoutParams(0, -2, 1f)); 
+        titleRow.addView(btnSettings, new LinearLayout.LayoutParams(-2, -2));
         leftPanel.addView(titleRow);
 
         LinearLayout psToolsRow = new LinearLayout(getContext()); psToolsRow.setOrientation(LinearLayout.HORIZONTAL); psToolsRow.setPadding(0, padS, 0, padS);
@@ -2505,13 +2526,13 @@ public class DesktopSystemView extends Dialog {
             if (clickPad == btnLeft) dx = -step; else if (clickPad == btnRight) dx = step; else if (clickPad == btnUp) dy = -step; else if (clickPad == btnDown) dy = step;
             
             if (isLayerMode[0]) {
-                // 🟢 图层模式：仅仅移动当前选中的图层
+                // 🟢 图层模式：只移动单个元素图层
                 curLayer.startX += dx; curLayer.startY += dy;
             } else {
-                // 🟢 动作模式：移动属于同一个 Group 的所有兄弟图层
-                int targetGroup = curLayer.group;
+                // 🟢 动作模式：移动该 动作(Group,Item) 下合并的所有图层
+                int targetGroup = curLayer.group; int targetItem = curLayer.item;
                 for (StageLayerInfo l : layerList) {
-                    if (!l.isGhostGrid && l.group == targetGroup) {
+                    if (!l.isGhostGrid && l.group == targetGroup && l.item == targetItem) {
                         l.startX += dx; l.startY += dy;
                     }
                 }
@@ -2631,8 +2652,20 @@ public class DesktopSystemView extends Dialog {
         refreshLayerListUI[0] = new Runnable() {
             @Override public void run() {
                 layerListLayout.removeAllViews();
+                int currentFilterGroup = -999; int currentFilterItem = -999;
+                if (isLayerMode[0] && selectedLayerIndex[0] > 0 && selectedLayerIndex[0] < layerList.size()) {
+                    currentFilterGroup = layerList.get(selectedLayerIndex[0]).group;
+                    currentFilterItem = layerList.get(selectedLayerIndex[0]).item;
+                }
+
                 for (int i = layerList.size() - 1; i >= 0; i--) { 
                     final int idx = i; final StageLayerInfo info = layerList.get(i);
+                    
+                    // 🟢 核心过滤：图层模式下，只渲染属于同一动作 [Group, Item] 的元素
+                    if (isLayerMode[0] && !info.isGhostGrid) {
+                        if (info.group != currentFilterGroup || info.item != currentFilterItem) continue;
+                    }
+
                     LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
                     row.setBackgroundColor(selectedLayerIndex[0] == idx ? Color.parseColor("#0078D7") : Color.parseColor("#3F3F46"));
                     row.setPadding((int)(5*density), (int)(8*density), (int)(5*density), (int)(8*density));
@@ -2785,17 +2818,29 @@ public class DesktopSystemView extends Dialog {
                             });
                             boxGif.addView(slider); frameInfo.setText("当前预览: 第 1 / " + totalFrames + " 帧"); updatePreviewGif.run();
 
-                            boxGif.addView(createSubTitle(isLayerMode[0] ? "图层名称:" : "动作图层前缀名称:")); 
-                            EditText nameInput = createInput("", imgFile44.getName().replace(".gif","")); boxGif.addView(nameInput);
-                            boxGif.addView(createSubTitle(isLayerMode[0] ? "加入到目标 Group 编号:" : "所属 Group 编号:")); 
-                            String defGrp = selectedLayerIndex[0] > 0 ? String.valueOf(layerList.get(selectedLayerIndex[0]).group) : "0";
-                            EditText groupInput = createInput("", defGrp); groupInput.setInputType(InputType.TYPE_CLASS_NUMBER); boxGif.addView(groupInput);
+                            boxGif.addView(createSubTitle("导入名称前缀:")); EditText nameInput = createInput("", imgFile44.getName().replace(".gif","")); boxGif.addView(nameInput);
+                            
+                            String defG2 = "0"; String defI2 = "0";
+                            if (selectedLayerIndex[0] > 0 && selectedLayerIndex[0] < layerList.size()) {
+                                defG2 = String.valueOf(layerList.get(selectedLayerIndex[0]).group);
+                                defI2 = String.valueOf(layerList.get(selectedLayerIndex[0]).item);
+                            }
+                            
+                            boxGif.addView(createSubTitle("所属 Group 编号:")); EditText groupInput = createInput("", isLayerMode[0] ? defG2 : "0"); groupInput.setInputType(InputType.TYPE_CLASS_NUMBER); boxGif.addView(groupInput);
+                            boxGif.addView(createSubTitle("所属 Item 编号:")); EditText itemInput = createInput("", isLayerMode[0] ? defI2 : "0"); itemInput.setInputType(InputType.TYPE_CLASS_NUMBER); 
+                            if (isLayerMode[0]) boxGif.addView(itemInput); // 仅图层模式需要强制输入Item进行堆叠
 
-                            Button btnSingle = createButton("🎯 仅导入当前帧为新图层", "#4CAF50");
+                            Button btnSingle = createButton(isLayerMode[0] ? "🎯 并入当前动作图层" : "🎯 导入为新动作", "#4CAF50");
                             btnSingle.setOnClickListener(clickSingleGif -> {
                                 StageLayerInfo layer = new StageLayerInfo(); layer.name = nameInput.getText().toString() + " [帧" + currentFrame[0] + "]";
                                 int g = 0; try { g = Integer.parseInt(groupInput.getText().toString()); } catch(Exception e){}
-                                int[] gi = incrementer.getNext(g, currentFrame[0]); layer.group = gi[0]; layer.item = gi[1];
+                                
+                                if (isLayerMode[0]) {
+                                    int i = 0; try { i = Integer.parseInt(itemInput.getText().toString()); } catch(Exception e){}
+                                    layer.group = g; layer.item = i;
+                                } else {
+                                    int[] gi = incrementer.getNext(g, currentFrame[0]); layer.group = gi[0]; layer.item = gi[1];
+                                }
                                 layer.origW = curSize[0]; layer.origH = curSize[1];
                                 
                                 try { File tmpF = new File(getContext().getCacheDir(), "gif_ext_" + System.currentTimeMillis() + ".png"); FileOutputStream fos = new FileOutputStream(tmpF); currentBmp[0].compress(Bitmap.CompressFormat.PNG, 100, fos); fos.close(); layer.sourcePath = tmpF.getAbsolutePath(); layer.isExternal = true; } catch(Exception e){}
@@ -2835,21 +2880,29 @@ public class DesktopSystemView extends Dialog {
                             
                             int[] sizeInfo = new int[2]; Bitmap bmp = StageLayerInfo.safeDecode(imgFile44.getAbsolutePath(), null, sizeInfo);
                             previewImgView.setImageBitmap(bmp); boxImg.addView(previewImgView);
-                            boxImg.addView(createSubTitle(isLayerMode[0] ? "图层名称:" : "动作图层名称:")); 
-                            EditText nameInput = createInput("", imgFile44.getName()); boxImg.addView(nameInput);
-                            String defGrp2 = selectedLayerIndex[0] > 0 ? String.valueOf(layerList.get(selectedLayerIndex[0]).group) : "0";
-                            boxImg.addView(createSubTitle(isLayerMode[0] ? "加入到目标 Group 编号:" : "设定 Group 编号:")); 
-                            EditText groupInput = createInput("", defGrp2); groupInput.setInputType(InputType.TYPE_CLASS_NUMBER); boxImg.addView(groupInput);
-                            boxImg.addView(createSubTitle(isLayerMode[0] ? "起始层深/Item编号:" : "设定 Item 编号:")); 
-                            EditText itemInput = createInput("", "0"); itemInput.setInputType(InputType.TYPE_CLASS_NUMBER); boxImg.addView(itemInput);
+                            boxImg.addView(createSubTitle("自定义名称:")); EditText nameInput = createInput("", imgFile44.getName()); boxImg.addView(nameInput);
+                            
+                            String defG = "0"; String defI = "0";
+                            if (selectedLayerIndex[0] > 0 && selectedLayerIndex[0] < layerList.size()) {
+                                defG = String.valueOf(layerList.get(selectedLayerIndex[0]).group);
+                                defI = String.valueOf(layerList.get(selectedLayerIndex[0]).item);
+                            }
+                            
+                            boxImg.addView(createSubTitle("设定 Group 编号:")); EditText groupInput = createInput("", isLayerMode[0] ? defG : "0"); groupInput.setInputType(InputType.TYPE_CLASS_NUMBER); boxImg.addView(groupInput);
+                            boxImg.addView(createSubTitle("设定 Item 编号:")); EditText itemInput = createInput("", isLayerMode[0] ? defI : "0"); itemInput.setInputType(InputType.TYPE_CLASS_NUMBER); boxImg.addView(itemInput);
 
                             LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL);
-                            Button btnAdd = createButton("✔️ 追加图层", "#4CAF50");
+                            Button btnAdd = createButton(isLayerMode[0] ? "✔️ 追加为当前图层" : "✔️ 独立追加新动作", "#4CAF50");
                             btnAdd.setOnClickListener(clickAddImg -> {
                                 StageLayerInfo layer = new StageLayerInfo(); layer.name = nameInput.getText().toString();
                                 int g = 0; try { g = Integer.parseInt(groupInput.getText().toString()); } catch(Exception e){}
                                 int i = 0; try { i = Integer.parseInt(itemInput.getText().toString()); } catch(Exception e){}
-                                int[] gi = incrementer.getNext(g, i); layer.group = gi[0]; layer.item = gi[1];
+                                
+                                if (isLayerMode[0]) {
+                                    layer.group = g; layer.item = i; // 强制堆叠在同一个位置
+                                } else {
+                                    int[] gi = incrementer.getNext(g, i); layer.group = gi[0]; layer.item = gi[1]; // 自动寻找空位
+                                }
                                 layer.origW = sizeInfo[0]; layer.origH = sizeInfo[1];
                                 layer.sourcePath = imgFile44.getAbsolutePath(); layer.cacheBmp = bmp; layer.isVisible = false; layer.manuallyVisible = false; layer.isExternal = true;
                                 layerList.add(layer); refreshLayerListUI[0].run(); dImg.dismiss(); Toast.makeText(getContext(), "✅ 已追加新图层", Toast.LENGTH_SHORT).show();
