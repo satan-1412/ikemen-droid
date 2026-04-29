@@ -3244,26 +3244,6 @@ nt) Math.ceil(maxX - minX);
                     }
                 }).start();
             });
-ewAxisY, tmpPng.getAbsolutePath());
-                                }
-                            } catch (OutOfMemoryError e) {
-                                // 内存溢出保护
-                            }
-                        }
-
-                        if (is3DMode[0] && !modelList.isEmpty()) {
-                            for (StageModelInfo m : modelList) { File srcM = new File(m.path); File dstM = new File(finalExportDir, srcM.getName()); copyFileToSandbox(srcM, dstM); }
-                        }
-                        
-                        new Handler(Looper.getMainLooper()).post(() -> { Toast.makeText(getContext(), "✅ SFF 无损物理生成成功！\n文件在:\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); });
-                    } catch (Throwable t) {}
-                }).start();
-            });
-            Button bCancel = createButton("❌ 取消", "#333333"); bCancel.setOnClickListener(clickCanSave -> exportDialog.dismiss());
-            LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0);
-            btnRow.addView(bConfirm, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); svExp.addView(box); flExp.addView(svExp, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); exportDialog.setContentView(flExp); exportDialog.show();
-        });
-
         updateViewState[0].run(); refreshLayerListUI[0].run(); refreshModelListUI[0].run(); return root;
     }
 
