@@ -3076,69 +3076,135 @@ public class DesktopSystemView extends Dialog {
             box.addView(createSubTitle("地图导出前缀名:")); EditText nameInput = createInput("(默认追加递增防重名)", defaultName); box.addView(nameInput);
             Button bConfirm = createButton("✔️ 确认物理打包生成", "#4CAF50");
             bConfirm.setOnClickListener(clickConfSave -> {
-                exportDialog.dismiss(); Toast.makeText(getContext(), "📦 引擎正在物理装箱中...", Toast.LENGTH_SHORT).show();
+                exportDialog.dismiss(); 
+                Toast.makeText(getContext(), "📦 引擎正在合并栅格化导出中...", Toast.LENGTH_SHORT).show();
+                
                 new Thread(() -> {
                     try {
-                        String baseName = nameInput.getText().toString().trim(); if (baseName.isEmpty()) baseName = "NewStage";
+                        String baseName = nameInput.getText().toString().trim(); 
+                        if (baseName.isEmpty()) baseName = "NewStage";
+                        
                         File rootExportDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports");
                         File tempDir = new File(rootExportDir, baseName);
-                        int counter = 1; while (tempDir.exists()) { tempDir = new File(rootExportDir, baseName + "_" + counter); counter++; }
-                        tempDir.mkdirs(); final File finalExportDir = tempDir; 
+                        int counter = 1; 
+                        while (tempDir.exists()) { 
+                            tempDir = new File(rootExportDir, baseName + "_" + counter); 
+                            counter++; 
+                        }
+                        tempDir.mkdirs(); 
+                        final File finalExportDir = tempDir; 
                         
-                        File defFile = new File(finalExportDir, baseName + ".def");
-                        FileOutputStream defOut = new FileOutputStream(defFile); defOut.write(defCodeInput.getText().toString().getBytes("UTF-8")); defOut.close();
+                        // 1. 清洗 DEF 并写入单层背景
+                        String rawDef = defCodeInput.getText().toString();
+                        String cleanedDef = rawDef.replaceAll("(?i)\\[BG\\s+.*?\\][\\s\\S]*?(?=\\[|$)", "");
+                        cleanedDef = cleanedDef.replaceAll("(?i)\\[BG\\][\\s\\S]*?(?=\\[|$)", "");
+                        cleanedDef += "\n[BG FlattenedBackground]\ntype = normal\nspriteno = 0, 0\nstart = 0, 0\nmask = 1\n";
 
+                        File defFile = new File(finalExportDir, baseName + ".def");
+                        FileOutputStream defOut = new FileOutputStream(defFile); 
+                        defOut.write(cleanedDef.getBytes("UTF-8")); 
+                        defOut.close();
+
+                        // 2. 清空并准备目标 SFF
                         File finalSffFile = new File(finalExportDir, baseName + ".sff");
-                        if (!globalSffPath.isEmpty()) { copyFileToSandbox(new File(globalSffPath), finalSffFile); } 
-                        else { finalSffFile.createNewFile(); } 
+                        if (!globalSffPath.isEmpty()) { 
+                            copyFileToSandbox(new File(globalSffPath), finalSffFile); 
+                        } else { 
+                            finalSffFile.createNewFile(); 
+                        } 
                         
                         if (finalSffFile.length() > 0) {
                             List<GoEngineBridge.SffFrame> origFrames = GoEngineBridge.getAllFrames(finalSffFile.getAbsolutePath());
                             for (GoEngineBridge.SffFrame f : origFrames) {
-                                boolean stillExists = false;
-                                for (StageLayerInfo layer : layerList) {
-                                    if (!layer.isGhostGrid && layer.originalGroup == f.group && layer.originalItem == f.item && !layer.isExternal) { stillExists = true; break; }
-                                }
-                                if (!stillExists) Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item);
+                                Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item); 
                             }
                         }
 
-                        // 🔥 独立图层物理打包：SFF 原生支持相同 Group/Item，完全按照 Photoshop 图层形式独立存储，绝不合并！
-                        for (int l_idx = 0; l_idx < layerList.size(); l_idx++) {
-                            StageLayerInfo layer = layerList.get(l_idx);
-                            // 被用户点掉眼睛隐藏的图层，绝对不导出
+                        // 3. Canvas 离屏栅格化渲染大图
+                        float minX = 99999, minY = 99999, maxX = -99999, maxY = -99999;
+                        boolean hasContent = false;
+                        
+                        for (StageLayerInfo layer : layerList) {
                             if (layer.isGhostGrid || layer.origW == 0 || (!layer.isVisible && !layer.manuallyVisible)) continue;
-                            
-                            int newW = (int)(layer.origW * layer.scaleX);
-                            int newH = (int)(layer.origH * layer.scaleY);
-                            if (newW <= 0) newW = 1; if (newH <= 0) newH = 1;
-                            
-                            short newAxisX = (short)(layer.axisX - layer.startX);
-                            short newAxisY = (short)(layer.axisY - layer.startY);
-                            
-                            // 加入 l_idx 防止临时文件重名互相覆盖
-                            File tmpPng = new File(getContext().getCacheDir(), "exp_" + layer.group + "_" + layer.item + "_" + l_idx + ".png");
-                            
-                            try {
-                                Bitmap layerFullBmp = null;
-                                if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) { 
-                                    layerFullBmp = BitmapFactory.decodeFile(layer.sourcePath); 
-                                } else if (!layer.isExternal && layer.sourcePath != null && layer.sourcePath.toLowerCase().endsWith(".sff")) {
-                                    byte[] fullData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, "");
-                                    if (fullData != null) layerFullBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length);
-                                }
+                            float left = layer.startX - layer.axisX;
+                            float top = layer.startY - layer.axisY;
+                            float right = left + layer.origW * Math.abs(layer.scaleX);
+                            float bottom = top + layer.origH * Math.abs(layer.scaleY);
+                            if (left < minX) minX = left; 
+                            if (top < minY) minY = top;
+                            if (right > maxX) maxX = right; 
+                            if (bottom > maxY) maxY = bottom;
+                            hasContent = true;
+                        }
+
+                        if (hasContent) {
+                            int outW = (int) Math.ceil(maxX - minX);
+                            int outH = (int) Math.ceil(maxY - minY);
+                            if (outW <= 0) outW = 1; if (outH <= 0) outH = 1;
+
+                            Bitmap mergedBmp = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888);
+                            Canvas mergedCanvas = new Canvas(mergedBmp);
+
+                            for (int l_idx = 1; l_idx < layerList.size(); l_idx++) {
+                                StageLayerInfo layer = layerList.get(l_idx);
+                                if (layer.isGhostGrid || layer.origW == 0 || (!layer.isVisible && !layer.manuallyVisible)) continue;
                                 
-                                if (layerFullBmp != null) {
-                                    Bitmap scaledBmp = layerFullBmp;
-                                    if (layer.scaleX != 1.0f || layer.scaleY != 1.0f) scaledBmp = Bitmap.createScaledBitmap(layerFullBmp, newW, newH, true);
-                                    FileOutputStream fosPng = new FileOutputStream(tmpPng);
-                                    scaledBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); 
-                                    fosPng.close();
-                                    if (scaledBmp != layerFullBmp) scaledBmp.recycle();
-                                    layerFullBmp.recycle();
+                                try {
+                                    Bitmap layerFullBmp = null;
+                                    if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) { 
+                                        layerFullBmp = BitmapFactory.decodeFile(layer.sourcePath); 
+                                    } else if (!layer.isExternal && layer.sourcePath != null && layer.sourcePath.toLowerCase().endsWith(".sff")) {
+                                        byte[] fullData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, "");
+                                        if (fullData != null) layerFullBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length);
+                                    }
                                     
-                                    // 🟢 永远使用 ADD 追加！这样就算是相同的 0,0 也会在 SFF 里创建独立的图层节点！
-                                    Api.addSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, newAxisX, newAxisY, tmpPng.getAbsolutePath());
+                                    if (layerFullBmp != null) {
+                                        Matrix m = new Matrix();
+                                        m.postScale(layer.scaleX, layer.scaleY);
+                                        float drawX = (layer.startX - layer.axisX) - minX;
+                                        float drawY = (layer.startY - layer.axisY) - minY;
+                                        m.postTranslate(drawX, drawY);
+                                        
+                                        Paint p = new Paint();
+                                        if ("add".equalsIgnoreCase(layer.trans != null ? layer.trans.trim() : "none")) {
+                                            p.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SCREEN));
+                                        }
+                                        mergedCanvas.drawBitmap(layerFullBmp, m, p);
+                                        layerFullBmp.recycle();
+                                    }
+                                } catch (OutOfMemoryError e) {
+                                    // 内存保护
+                                }
+                            }
+
+                            File tmpPng = new File(getContext().getCacheDir(), "merged_flatten_" + System.currentTimeMillis() + ".png");
+                            FileOutputStream fosPng = new FileOutputStream(tmpPng);
+                            mergedBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); 
+                            fosPng.close();
+                            mergedBmp.recycle();
+                            
+                            short newAxisX = (short) -minX;
+                            short newAxisY = (short) -minY;
+                            Api.addSffFrame(finalSffFile.getAbsolutePath(), 0, 0, newAxisX, newAxisY, tmpPng.getAbsolutePath());
+                        }
+
+                        if (is3DMode[0] && !modelList.isEmpty()) {
+                            for (StageModelInfo m : modelList) { 
+                                File srcM = new File(m.path); 
+                                File dstM = new File(finalExportDir, srcM.getName()); 
+                                copyFileToSandbox(srcM, dstM); 
+                            }
+                        }
+                        
+                        new Handler(Looper.getMainLooper()).post(() -> { 
+                            Toast.makeText(getContext(), "✅ 地图已合并栅格化导出成功！\n文件在:\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); 
+                        });
+                    } catch (Throwable t) {
+                        t.printStackTrace();
+                    }
+                }).start();
+            });
+ewAxisY, tmpPng.getAbsolutePath());
                                 }
                             } catch (OutOfMemoryError e) {
                                 // 内存溢出保护
