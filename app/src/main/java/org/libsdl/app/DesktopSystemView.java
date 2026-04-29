@@ -2650,25 +2650,29 @@ public class DesktopSystemView extends Dialog {
         refreshLayerListUI[0] = new Runnable() {
             @Override public void run() {
                 layerListLayout.removeAllViews();
-                int currentFilterGroup = -999; int currentFilterItem = -999;
-                if (selectedLayerIndex[0] > 0 && selectedLayerIndex[0] < layerList.size()) {
-                    currentFilterGroup = layerList.get(selectedLayerIndex[0]).group;
-                    currentFilterItem = layerList.get(selectedLayerIndex[0]).item;
-                }
                 
-                java.util.HashSet<String> seenActions = new java.util.HashSet<>();
+                int activeG = -999; int activeI = -999;
+                if (selectedLayerIndex[0] > 0 && selectedLayerIndex[0] < layerList.size()) {
+                    activeG = layerList.get(selectedLayerIndex[0]).group;
+                    activeI = layerList.get(selectedLayerIndex[0]).item;
+                }
 
-                for (int i = layerList.size() - 1; i >= 0; i--) { 
+                java.util.HashSet<String> seenContainers = new java.util.HashSet<>();
+
+                // 🟢 正向遍历：保证底图（通常是第一个加入的背景）被识别为动作组，防止上面叠的Logo鸠占鹊巢
+                for (int i = 0; i < layerList.size(); i++) { 
                     final int idx = i; final StageLayerInfo info = layerList.get(i);
                     
-                    if (isLayerMode[0] && !info.isGhostGrid) {
-                        // 🟢 图层模式：只显示当前选定动作(Group,Item)的内部子元素
-                        if (info.group != currentFilterGroup || info.item != currentFilterItem) continue;
-                    } else if (!isLayerMode[0] && !info.isGhostGrid) {
-                        // 🟢 动作模式：每个动作(Group,Item)只显示一次作为主容器，隐藏内部的其他堆叠图层
+                    if (info.isGhostGrid) {
+                        // 保持系统网格可见
+                    } else if (!isLayerMode[0]) {
+                        // 🟢 【动作模式】: 折叠内部图层！相同 [G, I] 的元素只显示第一次遇到的，充当动作组容器
                         String key = info.group + "_" + info.item;
-                        if (seenActions.contains(key)) continue;
-                        seenActions.add(key);
+                        if (seenContainers.contains(key)) continue; 
+                        seenContainers.add(key);
+                    } else {
+                        // 🟢 【图层模式】: 过滤掉不相干动作，只显示你当前点进去的这个 [G, I] 的内部叠加元素
+                        if (info.group != activeG || info.item != activeI) continue;
                     }
 
                     LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
@@ -2679,18 +2683,31 @@ public class DesktopSystemView extends Dialog {
                     btnVis.setOnClickListener(clickVisLyr -> { info.isVisible = !info.isVisible; info.manuallyVisible = info.isVisible; this.run(); viewportFrame.invalidate(); });
                     Button bLock = createButton(info.isLocked ? "🔒" : "🔓", "#333333"); bLock.setPadding(0,(int)(5*density),0,(int)(5*density));
                     bLock.setOnClickListener(clickLockLyr -> { info.isLocked = !info.isLocked; this.run(); });
-                    TextView tName = new TextView(getContext()); tName.setText(" " + info.name); tName.setTextColor(info.isGhostGrid ? Color.parseColor("#8888FF") : Color.WHITE); applyGlobalFontSettings(tName, 0.9f, false);
+                    
+                    TextView tName = new TextView(getContext()); 
+                    if (info.isGhostGrid) {
+                        tName.setText(" " + info.name);
+                    } else if (!isLayerMode[0]) {
+                        // 动作模式显示为容器样式，并计算该容器内打包了几个图层
+                        int subCount = 0; for (StageLayerInfo l : layerList) { if (!l.isGhostGrid && l.group == info.group && l.item == info.item) subCount++; }
+                        tName.setText(String.format(" 🎬 动作 [%d,%d] (%d层)", info.group, info.item, subCount));
+                    } else {
+                        // 图层模式显示具体的每个叠层名字（如：logo.png）
+                        tName.setText(" 📄 " + info.name);
+                    }
+                    tName.setTextColor(info.isGhostGrid ? Color.parseColor("#8888FF") : Color.WHITE); applyGlobalFontSettings(tName, 0.9f, false);
                     
                     row.addView(btnVis, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(bLock, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(tName, new LinearLayout.LayoutParams(0, -2, 1f));
                     
                     row.setOnClickListener(clickRowLyr -> { 
                         selectedLayerIndex[0] = idx; txtCoord.setText(String.format(" X:%.0f Y:%.0f ", info.startX, info.startY));
                         if(!info.isGhostGrid) {
-                            txtGI.setText(String.format(" [%d,%d] ", info.group, info.item));
+                            txtGI.setText(String.format(isLayerMode[0] ? " 图层%d|G%d " : " [%d,%d] ", info.item, info.group));
                             txtRes.setText(String.format(" 📐 %dx%d ", info.origW, info.origH));
                             scale2D.setText(info.scaleX + ", " + info.scaleY); delta2D.setText(info.deltaX + ", " + info.deltaY); trans2D.setText(info.trans);
                         } else { txtGI.setText(" [N/A] "); txtRes.setText(" 📐 N/A "); }
                         
+                        // 视觉孤立逻辑保持原样
                         for (int j = 1; j < layerList.size(); j++) { StageLayerInfo l = layerList.get(j); if (j == idx) l.isVisible = true; else l.isVisible = l.manuallyVisible; }
                         
                         if (!info.isGhostGrid && info.cacheBmp == null && !info.sourcePath.isEmpty()) {
@@ -2713,10 +2730,12 @@ public class DesktopSystemView extends Dialog {
                         }
                         this.run(); viewportFrame.invalidate();
                     });
-                    layerListLayout.addView(row, new LinearLayout.LayoutParams(-1, -2));
+                    // 由于改为正序遍历，需要把新构建的视图塞到列表最上面，保证符合视觉直觉
+                    layerListLayout.addView(row, 0, new LinearLayout.LayoutParams(-1, -2));
                 }
             }
         };
+
 
         updateViewState[0] = new Runnable() {
             @Override public void run() {
@@ -3084,64 +3103,42 @@ public class DesktopSystemView extends Dialog {
                             }
                         }
 
-                        // 🔥 真·图层合并与物理重绘引擎：将同一 (Group,Item) 容器下的所有元素合并为一张真正的背景图
-                        java.util.LinkedHashMap<String, List<StageLayerInfo>> actionGroups = new java.util.LinkedHashMap<>();
-                        for (StageLayerInfo layer : layerList) {
-                            if (layer.isGhostGrid || layer.origW == 0) continue;
-                            String key = layer.group + "_" + layer.item;
-                            if (!actionGroups.containsKey(key)) actionGroups.put(key, new ArrayList<>());
-                            actionGroups.get(key).add(layer);
-                        }
-
-                        for (String key : actionGroups.keySet()) {
-                            List<StageLayerInfo> layers = actionGroups.get(key);
-                            // 选取容器最底层的图片作为画布基准
-                            StageLayerInfo baseLayer = layers.get(0); 
+                        // 🔥 独立图层物理打包：SFF 原生支持相同 Group/Item，完全按照 Photoshop 图层形式独立存储，绝不合并！
+                        for (int l_idx = 0; l_idx < layerList.size(); l_idx++) {
+                            StageLayerInfo layer = layerList.get(l_idx);
+                            // 被用户点掉眼睛隐藏的图层，绝对不导出
+                            if (layer.isGhostGrid || layer.origW == 0 || (!layer.isVisible && !layer.manuallyVisible)) continue;
                             
-                            int newW = (int)(baseLayer.origW * baseLayer.scaleX);
-                            int newH = (int)(baseLayer.origH * baseLayer.scaleY);
+                            int newW = (int)(layer.origW * layer.scaleX);
+                            int newH = (int)(layer.origH * layer.scaleY);
                             if (newW <= 0) newW = 1; if (newH <= 0) newH = 1;
                             
-                            short newAxisX = (short)(baseLayer.axisX - baseLayer.startX);
-                            short newAxisY = (short)(baseLayer.axisY - baseLayer.startY);
+                            short newAxisX = (short)(layer.axisX - layer.startX);
+                            short newAxisY = (short)(layer.axisY - layer.startY);
                             
-                            File tmpPng = new File(getContext().getCacheDir(), "exp_" + key + ".png");
+                            // 加入 l_idx 防止临时文件重名互相覆盖
+                            File tmpPng = new File(getContext().getCacheDir(), "exp_" + layer.group + "_" + layer.item + "_" + l_idx + ".png");
                             
                             try {
-                                Bitmap mergedBmp = Bitmap.createBitmap(newW, newH, Bitmap.Config.ARGB_8888);
-                                Canvas mCanvas = new Canvas(mergedBmp);
-                                
-                                for (StageLayerInfo layer : layers) {
-                                    Bitmap layerFullBmp = null;
-                                    if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) { 
-                                        layerFullBmp = BitmapFactory.decodeFile(layer.sourcePath); 
-                                    } else if (!layer.isExternal && layer.sourcePath != null && layer.sourcePath.toLowerCase().endsWith(".sff")) {
-                                        byte[] fullData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, "");
-                                        if (fullData != null) layerFullBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length);
-                                    }
-                                    
-                                    if (layerFullBmp != null) {
-                                        mCanvas.save();
-                                        // 精准计算内部子元素相对于 Base 图片的相对位置偏移并绘制
-                                        float relX = (layer.startX - layer.axisX) - (baseLayer.startX - baseLayer.axisX);
-                                        float relY = (layer.startY - layer.axisY) - (baseLayer.startY - baseLayer.axisY);
-                                        mCanvas.translate(relX, relY);
-                                        mCanvas.scale(layer.scaleX, layer.scaleY);
-                                        mCanvas.drawBitmap(layerFullBmp, 0, 0, null);
-                                        mCanvas.restore();
-                                        layerFullBmp.recycle();
-                                    }
+                                Bitmap layerFullBmp = null;
+                                if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) { 
+                                    layerFullBmp = BitmapFactory.decodeFile(layer.sourcePath); 
+                                } else if (!layer.isExternal && layer.sourcePath != null && layer.sourcePath.toLowerCase().endsWith(".sff")) {
+                                    byte[] fullData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, "");
+                                    if (fullData != null) layerFullBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length);
                                 }
                                 
-                                FileOutputStream fosPng = new FileOutputStream(tmpPng);
-                                mergedBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); 
-                                fosPng.close(); 
-                                mergedBmp.recycle();
-                                
-                                if (baseLayer.isExternal) {
-                                    Api.addSffFrame(finalSffFile.getAbsolutePath(), baseLayer.group, baseLayer.item, newAxisX, newAxisY, tmpPng.getAbsolutePath());
-                                } else {
-                                    Api.replaceSffFrame(finalSffFile.getAbsolutePath(), baseLayer.group, baseLayer.item, newAxisX, newAxisY, tmpPng.getAbsolutePath());
+                                if (layerFullBmp != null) {
+                                    Bitmap scaledBmp = layerFullBmp;
+                                    if (layer.scaleX != 1.0f || layer.scaleY != 1.0f) scaledBmp = Bitmap.createScaledBitmap(layerFullBmp, newW, newH, true);
+                                    FileOutputStream fosPng = new FileOutputStream(tmpPng);
+                                    scaledBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); 
+                                    fosPng.close();
+                                    if (scaledBmp != layerFullBmp) scaledBmp.recycle();
+                                    layerFullBmp.recycle();
+                                    
+                                    // 🟢 永远使用 ADD 追加！这样就算是相同的 0,0 也会在 SFF 里创建独立的图层节点！
+                                    Api.addSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, newAxisX, newAxisY, tmpPng.getAbsolutePath());
                                 }
                             } catch (OutOfMemoryError e) {
                                 // 内存溢出保护
