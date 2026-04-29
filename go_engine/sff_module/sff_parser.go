@@ -1292,3 +1292,167 @@ func InjectInternalPalette(sffPath string, actPath string) error {
 		return errors.New("SFFv2 写入内置色表失败")
 	}
 }
+
+// ==========================================
+// 🚀 多模式支持：坐标批量偏移与图层编号交换
+// ==========================================
+
+// OffsetSffCoords: 根据不同模式移动坐标
+// isLayerMode 为 true 时只移动选中的单张图层；为 false 时移动整个动作分组(Group)
+func OffsetSffCoords(sffPath string, targetGroup int32, targetItem int32, deltaX int16, deltaY int16, isLayerMode bool) error {
+	f, err := os.OpenFile(sffPath, os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var h SffHeader
+	var lofs, tofs uint32
+	if err := h.Read(f, &lofs, &tofs); err != nil {
+		return err
+	}
+
+	if h.Version[0] == 1 {
+		shofs := int64(h.FirstSpriteHeaderOffset)
+		for i := 0; i < int(h.NumberOfSprites); i++ {
+			f.Seek(shofs, io.SeekStart)
+			var nextOffset uint32
+			binary.Read(f, binary.LittleEndian, &nextOffset)
+
+			f.Seek(shofs+12, io.SeekStart)
+			var group, number uint16
+			binary.Read(f, binary.LittleEndian, &group)
+			binary.Read(f, binary.LittleEndian, &number)
+
+			// 模式判断匹配逻辑
+			match := false
+			if isLayerMode {
+				match = (int32(group) == targetGroup && int32(number) == targetItem)
+			} else {
+				match = (int32(group) == targetGroup) // 命中整个组
+			}
+
+			if match {
+				f.Seek(shofs+8, io.SeekStart)
+				var curX, curY int16
+				binary.Read(f, binary.LittleEndian, &curX)
+				binary.Read(f, binary.LittleEndian, &curY)
+
+				f.Seek(shofs+8, io.SeekStart)
+				binary.Write(f, binary.LittleEndian, curX+deltaX)
+				binary.Write(f, binary.LittleEndian, curY+deltaY)
+			}
+			if nextOffset == 0 {
+				break
+			}
+			shofs = int64(nextOffset)
+		}
+	} else {
+		shofs := int64(h.FirstSpriteHeaderOffset)
+		for i := 0; i < int(h.NumberOfSprites); i++ {
+			f.Seek(shofs, io.SeekStart)
+			var group, number uint16
+			binary.Read(f, binary.LittleEndian, &group)
+			binary.Read(f, binary.LittleEndian, &number)
+
+			match := false
+			if isLayerMode {
+				match = (int32(group) == targetGroup && int32(number) == targetItem)
+			} else {
+				match = (int32(group) == targetGroup)
+			}
+
+			if match {
+				f.Seek(shofs+8, io.SeekStart)
+				var curX, curY int16
+				binary.Read(f, binary.LittleEndian, &curX)
+				binary.Read(f, binary.LittleEndian, &curY)
+
+				f.Seek(shofs+8, io.SeekStart)
+				binary.Write(f, binary.LittleEndian, curX+deltaX)
+				binary.Write(f, binary.LittleEndian, curY+deltaY)
+			}
+			shofs += 28
+		}
+	}
+	return nil
+}
+
+// SwapSffItem: 灵活图层互换机制
+// 当在图层模式修改编号重复时，互相交换其编号 (Item)
+func SwapSffItem(sffPath string, targetGroup int32, item1 int32, item2 int32) error {
+	f, err := os.OpenFile(sffPath, os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var h SffHeader
+	var lofs, tofs uint32
+	if err := h.Read(f, &lofs, &tofs); err != nil {
+		return err
+	}
+
+	var offset1, offset2 int64 = -1, -1
+
+	if h.Version[0] == 1 {
+		shofs := int64(h.FirstSpriteHeaderOffset)
+		for i := 0; i < int(h.NumberOfSprites); i++ {
+			f.Seek(shofs, io.SeekStart)
+			var nextOffset uint32
+			binary.Read(f, binary.LittleEndian, &nextOffset)
+
+			f.Seek(shofs+12, io.SeekStart)
+			var group, number uint16
+			binary.Read(f, binary.LittleEndian, &group)
+			binary.Read(f, binary.LittleEndian, &number)
+
+			if int32(group) == targetGroup {
+				if int32(number) == item1 {
+					offset1 = shofs + 14 // Item 所在的字节偏移
+				}
+				if int32(number) == item2 {
+					offset2 = shofs + 14
+				}
+			}
+			if nextOffset == 0 {
+				break
+			}
+			shofs = int64(nextOffset)
+		}
+	} else {
+		shofs := int64(h.FirstSpriteHeaderOffset)
+		for i := 0; i < int(h.NumberOfSprites); i++ {
+			f.Seek(shofs, io.SeekStart)
+			var group, number uint16
+			binary.Read(f, binary.LittleEndian, &group)
+			binary.Read(f, binary.LittleEndian, &number)
+
+			if int32(group) == targetGroup {
+				if int32(number) == item1 {
+					offset1 = shofs + 2
+				}
+				if int32(number) == item2 {
+					offset2 = shofs + 2
+				}
+			}
+			shofs += 28
+		}
+	}
+
+	// 互换或单方面修改逻辑
+	if offset1 != -1 && offset2 != -1 {
+		// 两个都存在，互相交换
+		f.Seek(offset1, io.SeekStart)
+		binary.Write(f, binary.LittleEndian, uint16(item2))
+		f.Seek(offset2, io.SeekStart)
+		binary.Write(f, binary.LittleEndian, uint16(item1))
+		return nil
+	} else if offset1 != -1 && offset2 == -1 {
+		// 目标编号为空，直接修改过去即可
+		f.Seek(offset1, io.SeekStart)
+		binary.Write(f, binary.LittleEndian, uint16(item2))
+		return nil
+	}
+	return fmt.Errorf("找不到源图层编号")
+}
