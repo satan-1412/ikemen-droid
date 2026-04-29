@@ -3064,17 +3064,18 @@ public class DesktopSystemView extends Dialog {
             Button btnCancelMain = createButton("❌ 取消", "#333333"); btnCancelMain.setOnClickListener(clickCanScan -> prompt.dismiss()); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density)); box.addView(btnNew, lp); box.addView(btnLoad, lp); box.addView(btnCancelMain, lp); svScan.addView(box); flScan.addView(svScan, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); prompt.setContentView(flScan); prompt.show();
         });
 
-        // 🔥 真·无损物理导出 (处理真实物理放大与轴心对齐)
+        // 🔥 真·合并栅格化导出
         btnSave.setOnClickListener(clickSaveMain -> {
             final Dialog exportDialog = new Dialog(getContext()); exportDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
             FrameLayout flExp = new FrameLayout(getContext()); ScrollView svExp = new ScrollView(getContext());
             LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding(padM,padM,padM,padM);
             GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
-            box.addView(createSubTitle("💾 执行防覆盖打包导出"));
+            box.addView(createSubTitle("💾 执行打包导出"));
             String defaultName = "NewStage";
             if (globalIsEditMode && !globalDefPath.isEmpty()) defaultName = new File(globalDefPath).getName().replace(".def", "");
             box.addView(createSubTitle("地图导出前缀名:")); EditText nameInput = createInput("(默认追加递增防重名)", defaultName); box.addView(nameInput);
-            Button bConfirm = createButton("✔️ 确认物理打包生成", "#4CAF50");
+            
+            Button bConfirm = createButton("✔️ 确认合并栅格化导出", "#4CAF50");
             bConfirm.setOnClickListener(clickConfSave -> {
                 exportDialog.dismiss(); 
                 Toast.makeText(getContext(), "📦 引擎正在合并栅格化导出中...", Toast.LENGTH_SHORT).show();
@@ -3087,10 +3088,7 @@ public class DesktopSystemView extends Dialog {
                         File rootExportDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports");
                         File tempDir = new File(rootExportDir, baseName);
                         int counter = 1; 
-                        while (tempDir.exists()) { 
-                            tempDir = new File(rootExportDir, baseName + "_" + counter); 
-                            counter++; 
-                        }
+                        while (tempDir.exists()) { tempDir = new File(rootExportDir, baseName + "_" + counter); counter++; }
                         tempDir.mkdirs(); 
                         final File finalExportDir = tempDir; 
                         
@@ -3102,22 +3100,16 @@ public class DesktopSystemView extends Dialog {
 
                         File defFile = new File(finalExportDir, baseName + ".def");
                         FileOutputStream defOut = new FileOutputStream(defFile); 
-                        defOut.write(cleanedDef.getBytes("UTF-8")); 
-                        defOut.close();
+                        defOut.write(cleanedDef.getBytes("UTF-8")); defOut.close();
 
                         // 2. 清空并准备目标 SFF
                         File finalSffFile = new File(finalExportDir, baseName + ".sff");
-                        if (!globalSffPath.isEmpty()) { 
-                            copyFileToSandbox(new File(globalSffPath), finalSffFile); 
-                        } else { 
-                            finalSffFile.createNewFile(); 
-                        } 
+                        if (!globalSffPath.isEmpty()) { copyFileToSandbox(new File(globalSffPath), finalSffFile); } 
+                        else { finalSffFile.createNewFile(); } 
                         
                         if (finalSffFile.length() > 0) {
                             List<GoEngineBridge.SffFrame> origFrames = GoEngineBridge.getAllFrames(finalSffFile.getAbsolutePath());
-                            for (GoEngineBridge.SffFrame f : origFrames) {
-                                Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item); 
-                            }
+                            for (GoEngineBridge.SffFrame f : origFrames) { Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item); }
                         }
 
                         // 3. Canvas 离屏栅格化渲染大图
@@ -3126,19 +3118,67 @@ public class DesktopSystemView extends Dialog {
                         
                         for (StageLayerInfo layer : layerList) {
                             if (layer.isGhostGrid || layer.origW == 0 || (!layer.isVisible && !layer.manuallyVisible)) continue;
-                            float left = layer.startX - layer.axisX;
-                            float top = layer.startY - layer.axisY;
-                            float right = left + layer.origW * Math.abs(layer.scaleX);
-                            float bottom = top + layer.origH * Math.abs(layer.scaleY);
-                            if (left < minX) minX = left; 
-                            if (top < minY) minY = top;
-                            if (right > maxX) maxX = right; 
-                            if (bottom > maxY) maxY = bottom;
+                            float left = layer.startX - layer.axisX; float top = layer.startY - layer.axisY;
+                            float right = left + layer.origW * Math.abs(layer.scaleX); float bottom = top + layer.origH * Math.abs(layer.scaleY);
+                            if (left < minX) minX = left; if (top < minY) minY = top;
+                            if (right > maxX) maxX = right; if (bottom > maxY) maxY = bottom;
                             hasContent = true;
                         }
 
                         if (hasContent) {
-                            int outW = (int) Math.ceil(maxX - minX);
+                            int outW = (int) Math.ceil(maxX - minX); int outH = (int) Math.ceil(maxY - minY);
+                            if (outW <= 0) outW = 1; if (outH <= 0) outH = 1;
+
+                            Bitmap mergedBmp = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888); Canvas mergedCanvas = new Canvas(mergedBmp);
+
+                            for (int l_idx = 1; l_idx < layerList.size(); l_idx++) {
+                                StageLayerInfo layer = layerList.get(l_idx);
+                                if (layer.isGhostGrid || layer.origW == 0 || (!layer.isVisible && !layer.manuallyVisible)) continue;
+                                
+                                try {
+                                    Bitmap layerFullBmp = null;
+                                    if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) { layerFullBmp = BitmapFactory.decodeFile(layer.sourcePath); } 
+                                    else if (!layer.isExternal && layer.sourcePath != null && layer.sourcePath.toLowerCase().endsWith(".sff")) {
+                                        byte[] fullData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, "");
+                                        if (fullData != null) layerFullBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length);
+                                    }
+                                    
+                                    if (layerFullBmp != null) {
+                                        Matrix m = new Matrix(); m.postScale(layer.scaleX, layer.scaleY);
+                                        float drawX = (layer.startX - layer.axisX) - minX; float drawY = (layer.startY - layer.axisY) - minY;
+                                        m.postTranslate(drawX, drawY);
+                                        
+                                        Paint p = new Paint();
+                                        if ("add".equalsIgnoreCase(layer.trans != null ? layer.trans.trim() : "none")) { p.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SCREEN)); }
+                                        mergedCanvas.drawBitmap(layerFullBmp, m, p);
+                                        layerFullBmp.recycle();
+                                    }
+                                } catch (OutOfMemoryError e) {}
+                            }
+
+                            File tmpPng = new File(getContext().getCacheDir(), "merged_flatten_" + System.currentTimeMillis() + ".png");
+                            FileOutputStream fosPng = new FileOutputStream(tmpPng); mergedBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); fosPng.close(); mergedBmp.recycle();
+                            
+                            short newAxisX = (short) -minX; short newAxisY = (short) -minY;
+                            Api.addSffFrame(finalSffFile.getAbsolutePath(), 0, 0, newAxisX, newAxisY, tmpPng.getAbsolutePath());
+                        }
+
+                        if (is3DMode[0] && !modelList.isEmpty()) {
+                            for (StageModelInfo m : modelList) { File srcM = new File(m.path); File dstM = new File(finalExportDir, srcM.getName()); copyFileToSandbox(srcM, dstM); }
+                        }
+                        
+                        new Handler(Looper.getMainLooper()).post(() -> { Toast.makeText(getContext(), "✅ 地图已合并栅格化导出成功！\n文件在:\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); });
+                    } catch (Throwable t) {
+                        t.printStackTrace();
+                    }
+                }).start();
+            });
+            
+            Button bCancel = createButton("❌ 取消", "#333333"); bCancel.setOnClickListener(clickCanSave -> exportDialog.dismiss());
+            LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0);
+            btnRow.addView(bConfirm, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); svExp.addView(box); flExp.addView(svExp, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); exportDialog.setContentView(flExp); exportDialog.show();
+        });
+nt) Math.ceil(maxX - minX);
                             int outH = (int) Math.ceil(maxY - minY);
                             if (outW <= 0) outW = 1; if (outH <= 0) outH = 1;
 
