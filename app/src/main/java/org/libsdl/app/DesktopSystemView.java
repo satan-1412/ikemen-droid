@@ -2651,17 +2651,24 @@ public class DesktopSystemView extends Dialog {
             @Override public void run() {
                 layerListLayout.removeAllViews();
                 int currentFilterGroup = -999; int currentFilterItem = -999;
-                if (isLayerMode[0] && selectedLayerIndex[0] > 0 && selectedLayerIndex[0] < layerList.size()) {
+                if (selectedLayerIndex[0] > 0 && selectedLayerIndex[0] < layerList.size()) {
                     currentFilterGroup = layerList.get(selectedLayerIndex[0]).group;
                     currentFilterItem = layerList.get(selectedLayerIndex[0]).item;
                 }
+                
+                java.util.HashSet<String> seenActions = new java.util.HashSet<>();
 
                 for (int i = layerList.size() - 1; i >= 0; i--) { 
                     final int idx = i; final StageLayerInfo info = layerList.get(i);
                     
-                    // 🟢 核心过滤：图层模式下，只渲染属于同一动作 [Group, Item] 的元素
                     if (isLayerMode[0] && !info.isGhostGrid) {
+                        // 🟢 图层模式：只显示当前选定动作(Group,Item)的内部子元素
                         if (info.group != currentFilterGroup || info.item != currentFilterItem) continue;
+                    } else if (!isLayerMode[0] && !info.isGhostGrid) {
+                        // 🟢 动作模式：每个动作(Group,Item)只显示一次作为主容器，隐藏内部的其他堆叠图层
+                        String key = info.group + "_" + info.item;
+                        if (seenActions.contains(key)) continue;
+                        seenActions.add(key);
                     }
 
                     LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
@@ -3077,51 +3084,67 @@ public class DesktopSystemView extends Dialog {
                             }
                         }
 
-                        // 🔥 后台真·物理重绘：真正改变尺寸并更新轴心
+                        // 🔥 真·图层合并与物理重绘引擎：将同一 (Group,Item) 容器下的所有元素合并为一张真正的背景图
+                        java.util.LinkedHashMap<String, List<StageLayerInfo>> actionGroups = new java.util.LinkedHashMap<>();
                         for (StageLayerInfo layer : layerList) {
                             if (layer.isGhostGrid || layer.origW == 0) continue;
+                            String key = layer.group + "_" + layer.item;
+                            if (!actionGroups.containsKey(key)) actionGroups.put(key, new ArrayList<>());
+                            actionGroups.get(key).add(layer);
+                        }
+
+                        for (String key : actionGroups.keySet()) {
+                            List<StageLayerInfo> layers = actionGroups.get(key);
+                            // 选取容器最底层的图片作为画布基准
+                            StageLayerInfo baseLayer = layers.get(0); 
                             
-                            int newW = (int)(layer.origW * layer.scaleX);
-                            int newH = (int)(layer.origH * layer.scaleY);
+                            int newW = (int)(baseLayer.origW * baseLayer.scaleX);
+                            int newH = (int)(baseLayer.origH * baseLayer.scaleY);
                             if (newW <= 0) newW = 1; if (newH <= 0) newH = 1;
                             
-                            short newAxisX = (short)(layer.axisX - layer.startX);
-                            short newAxisY = (short)(layer.axisY - layer.startY);
+                            short newAxisX = (short)(baseLayer.axisX - baseLayer.startX);
+                            short newAxisY = (short)(baseLayer.axisY - baseLayer.startY);
                             
-                            String targetExportPath = ""; File tmpDir = getContext().getCacheDir();
-                            Bitmap origFullBmp = null;
+                            File tmpPng = new File(getContext().getCacheDir(), "exp_" + key + ".png");
+                            
                             try {
-                                if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) { origFullBmp = BitmapFactory.decodeFile(layer.sourcePath); } 
-                                else if (!layer.isExternal && layer.sourcePath != null && layer.sourcePath.toLowerCase().endsWith(".sff")) {
-                                    byte[] fullData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, "");
-                                    if (fullData != null) origFullBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length);
+                                Bitmap mergedBmp = Bitmap.createBitmap(newW, newH, Bitmap.Config.ARGB_8888);
+                                Canvas mCanvas = new Canvas(mergedBmp);
+                                
+                                for (StageLayerInfo layer : layers) {
+                                    Bitmap layerFullBmp = null;
+                                    if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) { 
+                                        layerFullBmp = BitmapFactory.decodeFile(layer.sourcePath); 
+                                    } else if (!layer.isExternal && layer.sourcePath != null && layer.sourcePath.toLowerCase().endsWith(".sff")) {
+                                        byte[] fullData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, "");
+                                        if (fullData != null) layerFullBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length);
+                                    }
+                                    
+                                    if (layerFullBmp != null) {
+                                        mCanvas.save();
+                                        // 精准计算内部子元素相对于 Base 图片的相对位置偏移并绘制
+                                        float relX = (layer.startX - layer.axisX) - (baseLayer.startX - baseLayer.axisX);
+                                        float relY = (layer.startY - layer.axisY) - (baseLayer.startY - baseLayer.axisY);
+                                        mCanvas.translate(relX, relY);
+                                        mCanvas.scale(layer.scaleX, layer.scaleY);
+                                        mCanvas.drawBitmap(layerFullBmp, 0, 0, null);
+                                        mCanvas.restore();
+                                        layerFullBmp.recycle();
+                                    }
                                 }
-                                if (origFullBmp != null) {
-                                    Bitmap scaledBmp = origFullBmp;
-                                    if (layer.scaleX != 1.0f || layer.scaleY != 1.0f) scaledBmp = Bitmap.createScaledBitmap(origFullBmp, newW, newH, true);
-                                    File tmpPng = new File(tmpDir, "exp_" + layer.group + "_" + layer.item + ".png");
-                                    FileOutputStream fosPng = new FileOutputStream(tmpPng);
-                                    scaledBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); fosPng.close();
-                                    targetExportPath = tmpPng.getAbsolutePath();
-                                    if (scaledBmp != origFullBmp) scaledBmp.recycle(); origFullBmp.recycle();
+                                
+                                FileOutputStream fosPng = new FileOutputStream(tmpPng);
+                                mergedBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); 
+                                fosPng.close(); 
+                                mergedBmp.recycle();
+                                
+                                if (baseLayer.isExternal) {
+                                    Api.addSffFrame(finalSffFile.getAbsolutePath(), baseLayer.group, baseLayer.item, newAxisX, newAxisY, tmpPng.getAbsolutePath());
+                                } else {
+                                    Api.replaceSffFrame(finalSffFile.getAbsolutePath(), baseLayer.group, baseLayer.item, newAxisX, newAxisY, tmpPng.getAbsolutePath());
                                 }
-                            } catch (OutOfMemoryError e) { }
-                            
-                            if (targetExportPath.isEmpty() && layer.isExternal && layer.sourcePath != null) { targetExportPath = layer.sourcePath; } 
-                            else if (targetExportPath.isEmpty() && !layer.isExternal) {
-                                byte[] fullData = Api.decodeSffFrame(finalSffFile.getAbsolutePath(), layer.originalGroup, layer.originalItem, "");
-                                if (fullData != null) {
-                                    Bitmap oBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length);
-                                    File tmpPng = new File(tmpDir, "exp_" + layer.group + "_" + layer.item + ".png");
-                                    FileOutputStream fosPng = new FileOutputStream(tmpPng);
-                                    oBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); fosPng.close(); oBmp.recycle();
-                                    targetExportPath = tmpPng.getAbsolutePath();
-                                }
-                            }
-                            
-                            if (!targetExportPath.isEmpty()) {
-                                if (layer.isExternal) Api.addSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, newAxisX, newAxisY, targetExportPath);
-                                else Api.replaceSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, newAxisX, newAxisY, targetExportPath);
+                            } catch (OutOfMemoryError e) {
+                                // 内存溢出保护
                             }
                         }
 
