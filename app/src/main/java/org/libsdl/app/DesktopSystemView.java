@@ -3178,76 +3178,9 @@ public class DesktopSystemView extends Dialog {
             LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0);
             btnRow.addView(bConfirm, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); svExp.addView(box); flExp.addView(svExp, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); exportDialog.setContentView(flExp); exportDialog.show();
         });
-nt) Math.ceil(maxX - minX);
-                            int outH = (int) Math.ceil(maxY - minY);
-                            if (outW <= 0) outW = 1; if (outH <= 0) outH = 1;
 
-                            Bitmap mergedBmp = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888);
-                            Canvas mergedCanvas = new Canvas(mergedBmp);
-
-                            for (int l_idx = 1; l_idx < layerList.size(); l_idx++) {
-                                StageLayerInfo layer = layerList.get(l_idx);
-                                if (layer.isGhostGrid || layer.origW == 0 || (!layer.isVisible && !layer.manuallyVisible)) continue;
-                                
-                                try {
-                                    Bitmap layerFullBmp = null;
-                                    if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) { 
-                                        layerFullBmp = BitmapFactory.decodeFile(layer.sourcePath); 
-                                    } else if (!layer.isExternal && layer.sourcePath != null && layer.sourcePath.toLowerCase().endsWith(".sff")) {
-                                        byte[] fullData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, "");
-                                        if (fullData != null) layerFullBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length);
-                                    }
-                                    
-                                    if (layerFullBmp != null) {
-                                        Matrix m = new Matrix();
-                                        m.postScale(layer.scaleX, layer.scaleY);
-                                        float drawX = (layer.startX - layer.axisX) - minX;
-                                        float drawY = (layer.startY - layer.axisY) - minY;
-                                        m.postTranslate(drawX, drawY);
-                                        
-                                        Paint p = new Paint();
-                                        if ("add".equalsIgnoreCase(layer.trans != null ? layer.trans.trim() : "none")) {
-                                            p.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SCREEN));
-                                        }
-                                        mergedCanvas.drawBitmap(layerFullBmp, m, p);
-                                        layerFullBmp.recycle();
-                                    }
-                                } catch (OutOfMemoryError e) {
-                                    // 内存保护
-                                }
-                            }
-
-                            File tmpPng = new File(getContext().getCacheDir(), "merged_flatten_" + System.currentTimeMillis() + ".png");
-                            FileOutputStream fosPng = new FileOutputStream(tmpPng);
-                            mergedBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); 
-                            fosPng.close();
-                            mergedBmp.recycle();
-                            
-                            short newAxisX = (short) -minX;
-                            short newAxisY = (short) -minY;
-                            Api.addSffFrame(finalSffFile.getAbsolutePath(), 0, 0, newAxisX, newAxisY, tmpPng.getAbsolutePath());
-                        }
-
-                        if (is3DMode[0] && !modelList.isEmpty()) {
-                            for (StageModelInfo m : modelList) { 
-                                File srcM = new File(m.path); 
-                                File dstM = new File(finalExportDir, srcM.getName()); 
-                                copyFileToSandbox(srcM, dstM); 
-                            }
-                        }
-                        
-                        new Handler(Looper.getMainLooper()).post(() -> { 
-                            Toast.makeText(getContext(), "✅ 地图已合并栅格化导出成功！\n文件在:\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); 
-                        });
-                    } catch (Throwable t) {
-                        t.printStackTrace();
-                    }
-                }).start();
-            });
         updateViewState[0].run(); refreshLayerListUI[0].run(); refreshModelListUI[0].run(); return root;
     }
-
-
 
     // 🌉 Go 引擎底层抽象桥接
     // ======================================================================================
