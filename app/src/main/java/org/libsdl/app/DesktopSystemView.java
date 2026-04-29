@@ -2471,8 +2471,6 @@ public class DesktopSystemView extends Dialog {
 
         LinearLayout dpadAreaContainer = new LinearLayout(getContext()); dpadAreaContainer.setOrientation(LinearLayout.VERTICAL); dpadAreaContainer.setBackgroundColor(Color.parseColor("#1E1E1E")); dpadAreaContainer.setPadding(padS, padS, padS, padS);
         
-        final boolean[] isLayerMode = {false}; // 🟢 核心状态机：false=动作编组模式，true=图层模式
-
         LinearLayout dpadRow1 = new LinearLayout(getContext()); dpadRow1.setOrientation(LinearLayout.HORIZONTAL); dpadRow1.setGravity(Gravity.CENTER); dpadRow1.setPadding(0, 0, 0, padS);
         
         Button btnModeToggle = createButton("🎬 动作", "#9C27B0"); 
