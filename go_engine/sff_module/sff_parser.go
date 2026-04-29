@@ -962,14 +962,14 @@ func ReplaceFrameWithPng(sffPath string, targetGroup int32, targetItem int32, ax
 				binary.Write(f, binary.LittleEndian, finalOffset)
 				binary.Write(f, binary.LittleEndian, uint32(len(finalData)+4))
 
-				// 🟢 极其关键：只更新对应的模块长度，杜绝双区块重叠引发闪退
+				// 🟢 极其关键：必须向后移 4 个字节，写到表示 Length 的专属位置 (56 和 64)，绝对不能覆写起始坐标
 				f.Seek(0, io.SeekEnd)
 				newEof, _ := f.Seek(0, io.SeekCurrent)
 				if origFlags&1 == 0 {
-					f.Seek(52, io.SeekStart) // 仅覆盖 ldata
+					f.Seek(56, io.SeekStart) // 仅覆盖 ldata length
 					binary.Write(f, binary.LittleEndian, uint32(newEof)-lofs)
 				} else {
-					f.Seek(60, io.SeekStart) // 仅覆盖 tdata
+					f.Seek(64, io.SeekStart) // 仅覆盖 tdata length
 					binary.Write(f, binary.LittleEndian, uint32(newEof)-tofs)
 				}
 				return nil
@@ -1014,15 +1014,15 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 		blankHeader := make([]byte, 512)
 		copy(blankHeader[0:12], "ElecbyteSpr\x00")
 		blankHeader[12] = 0; blankHeader[13] = 0; blankHeader[14] = 0; blankHeader[15] = 2 
-		blankHeader[24] = 0; blankHeader[25] = 0; blankHeader[26] = 0; blankHeader[27] = 2 
-		binary.LittleEndian.PutUint32(blankHeader[32:36], 512) 
-		binary.LittleEndian.PutUint32(blankHeader[36:40], 0)   
-		binary.LittleEndian.PutUint32(blankHeader[40:44], 512) 
-		binary.LittleEndian.PutUint32(blankHeader[44:48], 0)   
-		binary.LittleEndian.PutUint32(blankHeader[48:52], 512) 
-		binary.LittleEndian.PutUint32(blankHeader[52:56], 0)   
-		binary.LittleEndian.PutUint32(blankHeader[56:60], 512) 
-		binary.LittleEndian.PutUint32(blankHeader[60:64], 0)   
+		// 🟢 极其关键：校准坐标！之前把512写到了[40:44]里，导致被引擎当做有512张图！
+		binary.LittleEndian.PutUint32(blankHeader[36:40], 512) // 首帧头部偏移量 (36)
+		binary.LittleEndian.PutUint32(blankHeader[40:44], 0)   // 真正的图片总数，设为0 (40)
+		binary.LittleEndian.PutUint32(blankHeader[44:48], 0)   // 色表偏移量 (44)
+		binary.LittleEndian.PutUint32(blankHeader[48:52], 0)   // 色表总数 (48)
+		binary.LittleEndian.PutUint32(blankHeader[52:56], 512) // ldata起始位置 (52)
+		binary.LittleEndian.PutUint32(blankHeader[56:60], 0)   // ldata长度 (56)
+		binary.LittleEndian.PutUint32(blankHeader[60:64], 512) // tdata起始位置 (60)
+		binary.LittleEndian.PutUint32(blankHeader[64:68], 0)   // tdata长度 (64)
 		f.Write(blankHeader)
 		f.Seek(0, io.SeekStart)
 	}
@@ -1112,11 +1112,12 @@ func AddFrameWithPng(sffPath string, targetGroup int32, targetItem int32, axisX 
 		h.NumberOfSprites++
 		h.FirstSpriteHeaderOffset = uint32(newHeaderListOffset)
 
-		// 🟢 极其关键：由于我们注入的是 PNG(tdata)，绝对不能去拉长 ldata(52)！避免数据块重叠导致产生几十帧乱码
-		f.Seek(60, io.SeekStart)
+		// 🟢 极其关键：更新 tdata 长度！(真正的长度字节在 64！之前的 60 把起始坐标给覆盖了，导致花屏)
+		f.Seek(64, io.SeekStart)
 		binary.Write(f, binary.LittleEndian, uint32(tdataEndOffset)-tofs)
 
-		f.Seek(32, io.SeekStart)
+		// 🟢 极其关键：Sprite 图片总数的更新必须从 36 开始写，而不是 32！
+		f.Seek(36, io.SeekStart)
 		binary.Write(f, binary.LittleEndian, h.FirstSpriteHeaderOffset)
 		binary.Write(f, binary.LittleEndian, h.NumberOfSprites)
 	}
