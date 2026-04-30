@@ -78,3 +78,46 @@ dependencies {
     // 👇 核心修改：让安卓能够读取我们未来用 Go 生成的 .aar 模块包
     implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')
 }
+
+// =========================================================
+// 🚀 极客扩展：构建前自动拉取 3D 引擎离线库和所需字体
+// =========================================================
+task downloadOfflineAssets {
+    doLast {
+        def jsDir = file("src/main/assets/js")
+        if (!jsDir.exists()) jsDir.mkdirs()
+        
+        def fontDir = file("src/main/assets/fonts")
+        if (!fontDir.exists()) fontDir.mkdirs()
+
+        def jsFiles = [
+            "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+            "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js",
+            "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js",
+            "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js",
+            "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js",
+            "https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js",
+            "https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"
+        ]
+
+        jsFiles.each { url ->
+            def fileName = url.tokenize('/').last()
+            def destFile = new File(jsDir, fileName)
+            if (!destFile.exists()) {
+                println "Downloading ${fileName} for offline 3D engine..."
+                new URL(url).withInputStream { i -> destFile.withOutputStream { it << i } }
+            }
+        }
+
+        // 自动拉取 Arial 字体 (使用了一个稳定的开源字库镜像源)
+        def fontUrl = "https://github.com/matomo-org/travis-scripts/raw/master/fonts/Arial.ttf"
+        def fontFile = new File(fontDir, "arial.ttf")
+        if (!fontFile.exists()) {
+            println "Downloading arial.ttf..."
+            new URL(fontUrl).withInputStream { i -> fontFile.withOutputStream { it << i } }
+        }
+    }
+}
+
+// 将下载任务绑定到预构建阶段
+preBuild.dependsOn downloadOfflineAssets
