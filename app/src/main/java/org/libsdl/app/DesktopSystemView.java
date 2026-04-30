@@ -2717,7 +2717,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             Button bCancel = createButton("❌ 取消", "#333333"); bCancel.setOnClickListener(clickCanSave -> exportDialog.dismiss()); LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0); btnRow.addView(bConfirm, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); svExp.addView(box); flExp.addView(svExp, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); exportDialog.setContentView(flExp); exportDialog.show();
         });
 
-        // 🚀 全新 3D 全屏沉浸式工作台入口 (满血 UI + 防断网拦截版)
+        // 🚀 全新 3D 全屏沉浸式工作台入口
         btnMode3D.setOnClickListener(clickM3 -> {
             final Dialog studioDialog = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
             studioDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
@@ -2730,14 +2730,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             modelWebView.getSettings().setAllowFileAccessFromFileURLs(true); 
             modelWebView.getSettings().setAllowUniversalAccessFromFileURLs(true); 
             modelWebView.getSettings().setDomStorageEnabled(true);
-            // 🚨 核心解除拦截：允许本地网页加载 HTTP/HTTPS 的外部脚本！
+            
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 modelWebView.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
             }
             modelWebView.setWebChromeClient(new android.webkit.WebChromeClient()); 
             modelWebView.setBackgroundColor(Color.parseColor("#121212"));
             
-            // 🌉 建立双向通信桥梁
             modelWebView.addJavascriptInterface(new Object() {
                 @android.webkit.JavascriptInterface public void closeStudio() { new Handler(Looper.getMainLooper()).post(() -> { studioDialog.dismiss(); is3DMode[0] = false; btnMode2D.performClick(); }); }
                 @android.webkit.JavascriptInterface public void saveGLB(String b64, String name) { new WebAppInterface(studioDialog).saveGLB(b64, name); }
@@ -2745,7 +2744,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         showWin10FilePicker("导入 3D 模型到沙盘", 11, null, null, fileMod -> {
                             StageModelInfo m = new StageModelInfo(); m.name = fileMod.getName(); m.path = fileMod.getAbsolutePath(); modelList.add(m);
-                            // 动态通知网页加载新模型
                             modelWebView.evaluateJavascript("javascript:loadExternalModel('file://" + m.path + "');", null);
                             Toast.makeText(getContext(), "✅ 模型已注入沙盘", Toast.LENGTH_SHORT).show();
                         });
@@ -2763,7 +2761,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             
             StringBuilder html = new StringBuilder();
             html.append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;}</style>");
-            // 🛡️ 核心修复 3：去掉 file:///android_asset/ 前缀，使用相对路径，彻底规避 Android 安全拦截！
+            
+            // 🛡️ 纯净离线加载，彻底避免跨域
             html.append("<script src=\"js/three.min.js\"></script>");
             html.append("<script src=\"js/GLTFLoader.js\"></script>");
             html.append("<script src=\"js/OrbitControls.js\"></script>");
@@ -2774,7 +2773,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             
             html.append("</head><body>");
             
-            // 🎨 满血 UI 布局：返回、打包、模式、动作控制、导入、基础构件
             html.append("<div id='topBar' style='position:absolute; top:20px; left:20px; z-index:1000; display:flex; gap:10px;'>");
             html.append("   <button onclick='StudioBridge.closeStudio()' style='padding:10px 15px; background:#E81123; color:white; border:none; border-radius:5px; font-weight:bold;'>⬅️ 返回 2D</button>");
             html.append("   <button onclick='exportAndExit()' style='padding:10px 15px; background:#4CAF50; color:white; border:none; border-radius:5px; font-weight:bold;'>💾 烘焙打包</button>");
@@ -2795,8 +2793,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("</div>");
 
             html.append("<script>");
-            // 🛡️ 防灰屏检测
-            html.append("setTimeout(function(){ if(typeof THREE === 'undefined') alert('⚠️ 3D 组件下载失败！请确保网络畅通或挂载代理后重新打开此界面。'); }, 3000);");
+            
+            html.append("setTimeout(function(){ if(typeof THREE === 'undefined') alert('⚠️ 3D 引擎加载失败！请检查 assets/js 目录。'); }, 2000);");
 
             html.append("var scene = new THREE.Scene();");
             html.append("var clock = new THREE.Clock();");
@@ -2810,10 +2808,12 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("scene.add(transformControl);");
             
             html.append("var joyZone = document.createElement('div'); joyZone.style.cssText = 'position:absolute; bottom:20px; left:20px; width:150px; height:150px; z-index:999; border-radius:50%; background:rgba(255,255,255,0.05); border:2px dashed rgba(255,255,255,0.2); touch-action:none;'; document.body.appendChild(joyZone);");
+            html.append("if(typeof nipplejs !== 'undefined') {");
             html.append("var manager = nipplejs.create({ zone: joyZone, mode: 'static', position: {left:'50%', top:'50%'}, color: '#0078D7' });");
             html.append("var moveVec = new THREE.Vector3(0,0,0);");
             html.append("manager.on('move', function(evt, data) { var force = Math.min(data.force, 2.0); moveVec.x = Math.cos(data.angle.radian) * force; moveVec.z = -Math.sin(data.angle.radian) * force; });");
             html.append("manager.on('end', function() { moveVec.set(0,0,0); });");
+            html.append("}");
 
             html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 2.5); scene.add(ambientLight); var hemiLight = new THREE.HemisphereLight( 0xffffff, 0x444444, 1.5 ); scene.add(hemiLight); var dirLight = new THREE.DirectionalLight(0xffffff, 2.0); dirLight.position.set(50, 100, 50); scene.add(dirLight);");
             html.append("var grid = new THREE.GridHelper(200, 20, 0x0078D7, 0x3F3F46); scene.add(grid);");
@@ -2832,7 +2832,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             
             html.append("var loader = new THREE.GLTFLoader(); var mixers = []; var allAnims = []; var isPlaying = true;");
             
-            // 🔄 动态加载外部模型的 JS 接口
             html.append("window.loadExternalModel = function(url) {");
             html.append("    loader.load(url, function(gltf) {");
             html.append("        var model = gltf.scene; model.userData.isRoot = true; scene.add(model); interactables.push(model);");
@@ -2851,9 +2850,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("window.togglePlay = function() { isPlaying = !isPlaying; document.getElementById('playBtn').innerHTML = isPlaying ? '▶️ 动作播放中' : '⏸️ 动作已暂停'; document.getElementById('playBtn').style.background = isPlaying ? '#0078D7' : '#E81123'; };");
             html.append("window.switchAnim = function(dir) { alert('多重骨骼节点已切换'); };");
 
-            html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); stats.update();");
+            html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); if(typeof stats !== 'undefined') stats.update();");
             html.append("    if(isPlaying) { mixers.forEach(function(m){ m.update(dt); }); }"); 
-            html.append("    if(moveVec.lengthSq() > 0) { var speed = 60 * dt; camera.translateX(moveVec.x * speed); camera.translateZ(moveVec.z * speed); }");
+            html.append("    if(typeof moveVec !== 'undefined' && moveVec.lengthSq() > 0) { var speed = 60 * dt; camera.translateX(moveVec.x * speed); camera.translateZ(moveVec.z * speed); }");
             html.append("    renderer.render(scene, camera); } animate();");
             
             html.append("var isViewMode = false;");
@@ -2863,7 +2862,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    if(isViewMode) transformControl.detach();");
             html.append("    document.getElementById('rightTools').style.display = isViewMode ? 'none' : 'flex';");
             html.append("    document.getElementById('animTools').style.display = isViewMode ? 'none' : 'flex';");
-            html.append("    stats.dom.style.display = isViewMode ? 'none' : 'block';"); 
+            html.append("    if(typeof stats !== 'undefined') stats.dom.style.display = isViewMode ? 'none' : 'block';"); 
             html.append("};");
 
             html.append("window.addBasicGeom = function(type) {");
@@ -2884,12 +2883,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    }, { binary: true, animations: allAnims });");
             html.append("};");
 
-            html.append("window.addEventListener('resize', function(){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });");
+            html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
             html.append("</script></body></html>");
             
-            // 全盘本地化，直接使用 assets 路径为基准
+            // 🛡️ 纯净本地加载
             modelWebView.loadDataWithBaseURL("file:///android_asset/", html.toString(), "text/html", "utf-8", null);
         });
+
 
 
 
