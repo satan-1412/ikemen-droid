@@ -83,36 +83,38 @@ dependencies {
 // 🚀 极客扩展：构建前自动拉取 3D 引擎离线库和所需字体
 // =========================================================
 task downloadOfflineAssets {
+    def targetDir = file("${project.buildDir}/generated/offline_assets")
+    outputs.dir targetDir
+    
     doLast {
-        // 🛡️ 核心修复 1：直接下载到真实的 assets 目录，保证百分之百被打包进 APK 肚子里！
-        def jsDir = file("src/main/assets/js")
-        def fontDir = file("src/main/assets/fonts")
+        def jsDir = new File(targetDir, "js")
+        def fontDir = new File(targetDir, "fonts")
         jsDir.mkdirs()
         fontDir.mkdirs()
 
-        // 🛡️ 核心修复 2：全面更换为无防爬虫限制的 unpkg.com，规避云端服务器被 Cloudflare 拦截导致下载到假代码！
+        // 🛡️ 终极修复：全部使用 GitHub 原生直链 (raw.githubusercontent)
+        // GitHub Runner 拉取自家直链，绝对没有任何 CDN 拦截，绝对不会 404！
         def downloads = [
-            "https://unpkg.com/three@0.128.0/build/three.min.js" : new File(jsDir, "three.min.js"),
-            "https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js" : new File(jsDir, "GLTFLoader.js"),
-            "https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js" : new File(jsDir, "OrbitControls.js"),
-            "https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js" : new File(jsDir, "TransformControls.js"),
-            "https://unpkg.com/three@0.128.0/examples/js/exporters/GLTFExporter.js" : new File(jsDir, "GLTFExporter.js"),
-            "https://unpkg.com/stats.js@0.17.0/build/stats.min.js" : new File(jsDir, "Stats.min.js"),
-            "https://unpkg.com/nipplejs@0.9.0/dist/nipplejs.min.js" : new File(jsDir, "nipplejs.min.js"),
-            // 使用 Google Fonts 原始库直链作为 Arial.ttf 的替代品，绝对防损坏！
+            "https://raw.githubusercontent.com/mrdoob/three.js/r128/build/three.min.js" : new File(jsDir, "three.min.js"),
+            "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/loaders/GLTFLoader.js" : new File(jsDir, "GLTFLoader.js"),
+            "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/controls/OrbitControls.js" : new File(jsDir, "OrbitControls.js"),
+            "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/controls/TransformControls.js" : new File(jsDir, "TransformControls.js"),
+            "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/exporters/GLTFExporter.js" : new File(jsDir, "GLTFExporter.js"),
+            "https://raw.githubusercontent.com/mrdoob/stats.js/r17/build/stats.min.js" : new File(jsDir, "Stats.min.js"),
+            "https://raw.githubusercontent.com/yoannmoinet/nipplejs/v0.9.0/dist/nipplejs.min.js" : new File(jsDir, "nipplejs.min.js"),
             "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf" : new File(fontDir, "arial.ttf")
         ]
         
         downloads.each { url, destFile ->
-            // 🛡️ 核心修复 3：强制删除旧的报错缓存文件，强制重新下载干净的真文件！打破 GitHub 的缓存死锁！
             if (destFile.exists()) {
                 destFile.delete()
             }
-            println "Downloading (Forced fresh): " + destFile.name
+            println "Downloading (GitHub Raw): " + destFile.name
             ant.get(src: url, dest: destFile)
         }
     }
 }
 
-// 将下载任务绑定到 preBuild
+// 动态将生成的目录挂载为应用的 Assets 文件夹
+android.sourceSets.main.assets.srcDirs += file("${project.buildDir}/generated/offline_assets")
 preBuild.dependsOn downloadOfflineAssets
