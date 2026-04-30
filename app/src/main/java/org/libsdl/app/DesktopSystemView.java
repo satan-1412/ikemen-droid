@@ -2726,16 +2726,17 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             FrameLayout studioRoot = new FrameLayout(getContext());
             final WebView modelWebView = new WebView(getContext()); 
             modelWebView.getSettings().setJavaScriptEnabled(true); modelWebView.getSettings().setAllowFileAccess(true); modelWebView.getSettings().setAllowFileAccessFromFileURLs(true); modelWebView.getSettings().setAllowUniversalAccessFromFileURLs(true); modelWebView.setWebChromeClient(new android.webkit.WebChromeClient()); modelWebView.setBackgroundColor(Color.parseColor("#121212"));
-            modelWebView.addJavascriptInterface(new WebAppInterface(studioDialog), "StudioBridge"); // 传入 dialog 引用以便 JS 可以关闭它
+            modelWebView.addJavascriptInterface(new WebAppInterface(studioDialog), "StudioBridge");
             
             studioRoot.addView(modelWebView, new FrameLayout.LayoutParams(-1, -1));
             studioDialog.setContentView(studioRoot);
             studioDialog.show();
             studioDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
             
-            // 注入包含摇杆、手柄、一键合并烘焙打包的三维世界
             StringBuilder html = new StringBuilder();
             html.append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;}</style>");
+            
+            // 引入外部引擎 (离线时这里会加载失败，但不影响 UI 按钮显示)
             html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js\"></script>");
             html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js\"></script>");
             html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js\"></script>");
@@ -2743,7 +2744,29 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js\"></script>");
             html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js\"></script>");
             html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js\"></script>");
-            html.append("</head><body><script>");
+            
+            html.append("</head><body>");
+            
+            // 🚀 核心修复：把 UI 直接写死在原生 HTML 里。不管有没有网，按钮必须出来！
+            html.append("<div style='position:absolute; top:20px; left:100px; z-index:1000; display:flex; gap:10px;'>");
+            html.append("   <button onclick='justExit()' style='padding:12px; background:#E81123; color:white; border:none; border-radius:8px; font-weight:bold;'>⬅️ 放弃并返回 2D</button>");
+            html.append("   <button onclick='exportAndExit()' style='padding:12px; background:#4CAF50; color:white; border:none; border-radius:8px; font-weight:bold;'>💾 烘焙打包</button>");
+            html.append("   <button id='viewModeBtn' onclick='toggleViewMode()' style='padding:12px; background:#FF9800; color:white; border:none; border-radius:8px; font-weight:bold;'>👁️ 纯净游览模式</button>");
+            html.append("</div>");
+            html.append("<div id='leftTools' style='position:absolute; top:80px; right:20px; display:flex; flex-direction:column; gap:10px; z-index:1000;'>");
+            html.append("   <button onclick='addBasicGeom(\"box\")' style='padding:10px; background:#0078D7; color:white; border:none; border-radius:5px;'>➕ 添加墙体方块</button>");
+            html.append("   <button onclick='addBasicGeom(\"plane\")' style='padding:10px; background:#0078D7; color:white; border:none; border-radius:5px;'>➕ 添加大地板</button>");
+            html.append("</div>");
+            
+            html.append("<script>");
+            html.append("window.justExit = function() { StudioBridge.closeStudio(); };");
+            
+            // 🚀 核心防护：如果检测到没有网（THREE 没加载出来），就弹窗提示，不执行后续代码，防止假死
+            html.append("if (typeof THREE === 'undefined') {");
+            html.append("    alert('⚠️ 3D 引擎未加载！\\n检测到您的设备处于离线状态。请连接网络以加载3D组件。');");
+            html.append("} else {");
+
+            // --- 正常联网状态下的 3D 逻辑 ---
             html.append("var scene = new THREE.Scene();");
             html.append("var clock = new THREE.Clock();");
             html.append("var stats = new Stats(); document.body.appendChild(stats.dom);");
@@ -2756,10 +2779,12 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("scene.add(transformControl);");
             
             html.append("var joyZone = document.createElement('div'); joyZone.style.cssText = 'position:absolute; bottom:20px; left:20px; width:150px; height:150px; z-index:999; border-radius:50%; background:rgba(255,255,255,0.05); border:2px dashed rgba(255,255,255,0.2); touch-action:none;'; document.body.appendChild(joyZone);");
+            html.append("if(typeof nipplejs !== 'undefined') {");
             html.append("var manager = nipplejs.create({ zone: joyZone, mode: 'static', position: {left:'50%', top:'50%'}, color: '#0078D7' });");
             html.append("var moveVec = new THREE.Vector3(0,0,0);");
             html.append("manager.on('move', function(evt, data) { var force = Math.min(data.force, 2.0); moveVec.x = Math.cos(data.angle.radian) * force; moveVec.z = -Math.sin(data.angle.radian) * force; });");
             html.append("manager.on('end', function() { moveVec.set(0,0,0); });");
+            html.append("}");
 
             html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 2.5); scene.add(ambientLight); var hemiLight = new THREE.HemisphereLight( 0xffffff, 0x444444, 1.5 ); scene.add(hemiLight); var dirLight = new THREE.DirectionalLight(0xffffff, 2.0); dirLight.position.set(50, 100, 50); scene.add(dirLight);");
             html.append("var grid = new THREE.GridHelper(200, 20, 0x0078D7, 0x3F3F46); scene.add(grid);");
@@ -2793,9 +2818,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 }
             }
             
-            html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); stats.update();");
+            html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); if(typeof stats !== 'undefined') stats.update();");
             html.append("    mixers.forEach(function(m){ m.update(dt); });"); 
-            html.append("    if(moveVec.lengthSq() > 0) { var speed = 60 * dt; camera.translateX(moveVec.x * speed); camera.translateZ(moveVec.z * speed); }");
+            html.append("    if(typeof moveVec !== 'undefined' && moveVec.lengthSq() > 0) { var speed = 60 * dt; camera.translateX(moveVec.x * speed); camera.translateZ(moveVec.z * speed); }");
             html.append("    renderer.render(scene, camera); } animate();");
             
             html.append("var isViewMode = false;");
@@ -2805,7 +2830,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    grid.visible = !isViewMode; transformControl.enabled = !isViewMode; transformControl.visible = !isViewMode;");
             html.append("    if(isViewMode) transformControl.detach();");
             html.append("    document.getElementById('leftTools').style.display = isViewMode ? 'none' : 'flex';");
-            html.append("    stats.dom.style.display = isViewMode ? 'none' : 'block';"); 
+            html.append("    if(typeof stats !== 'undefined') stats.dom.style.display = isViewMode ? 'none' : 'block';"); 
             html.append("};");
 
             html.append("window.addBasicGeom = function(type) {");
@@ -2822,28 +2847,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    exporter.parse(scene, function(result) {");
             html.append("        var blob = new Blob([result], {type: 'application/octet-stream'});");
             html.append("        var reader = new FileReader(); reader.readAsDataURL(blob);");
-            html.append("        reader.onloadend = function() { StudioBridge.saveGLB(reader.result, 'MyStage_3D'); }");
+            html.append("        reader.onloadend = function() { StudioBridge.saveGLB(reader.result, 'MyStage_3D'); StudioBridge.closeStudio(); }");
             html.append("    }, { binary: true, animations: allAnims });");
             html.append("};");
+            html.append("} // 结束网络校验");
 
-            html.append("window.justExit = function() { StudioBridge.closeStudio(); };");
-
-            html.append("var ui = document.createElement('div');");
-            html.append("ui.innerHTML = `");
-            html.append("<div style='position:absolute; top:20px; left:100px; z-index:1000; display:flex; gap:10px;'>");
-            html.append("   <button onclick='justExit()' style='padding:12px; background:#E81123; color:white; border:none; border-radius:8px; font-weight:bold;'>⬅️ 放弃并返回 2D</button>");
-            html.append("   <button onclick='exportAndExit()' style='padding:12px; background:#4CAF50; color:white; border:none; border-radius:8px; font-weight:bold;'>💾 烘焙打包</button>");
-            html.append("   <button id='viewModeBtn' onclick='toggleViewMode()' style='padding:12px; background:#FF9800; color:white; border:none; border-radius:8px; font-weight:bold;'>👁️ 纯净游览模式</button>");
-            html.append("</div>");
-            html.append("<div id='leftTools' style='position:absolute; top:80px; right:20px; display:flex; flex-direction:column; gap:10px; z-index:1000;'>");
-            html.append("   <button onclick='addBasicGeom(\"box\")' style='padding:10px; background:#0078D7; color:white; border:none; border-radius:5px;'>➕ 添加墙体方块</button>");
-            html.append("   <button onclick='addBasicGeom(\"plane\")' style='padding:10px; background:#0078D7; color:white; border:none; border-radius:5px;'>➕ 添加大地板</button>");
-            html.append("</div>`; document.body.appendChild(ui);");
-
-            html.append("window.addEventListener('resize', function(){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });");
+            html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
             html.append("</script></body></html>");
             modelWebView.loadDataWithBaseURL("file://", html.toString(), "text/html", "utf-8", null);
         });
+
 
         updateViewState[0].run(); refreshLayerListUI[0].run(); return root;
     }
