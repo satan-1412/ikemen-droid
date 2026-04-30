@@ -2763,14 +2763,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             
             StringBuilder html = new StringBuilder();
             html.append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;}</style>");
-            // 🚨 纯净离线版：直接读取被 Gradle 自动下载到 APK assets 里的文件
-            html.append("<script src=\"file:///android_asset/js/three.min.js\"></script>");
-            html.append("<script src=\"file:///android_asset/js/GLTFLoader.js\"></script>");
-            html.append("<script src=\"file:///android_asset/js/OrbitControls.js\"></script>");
-            html.append("<script src=\"file:///android_asset/js/TransformControls.js\"></script>");
-            html.append("<script src=\"file:///android_asset/js/GLTFExporter.js\"></script>");
-            html.append("<script src=\"file:///android_asset/js/Stats.min.js\"></script>");
-            html.append("<script src=\"file:///android_asset/js/nipplejs.min.js\"></script>");
+            // 🛡️ 核心修复 3：去掉 file:///android_asset/ 前缀，使用相对路径，彻底规避 Android 安全拦截！
+            html.append("<script src=\"js/three.min.js\"></script>");
+            html.append("<script src=\"js/GLTFLoader.js\"></script>");
+            html.append("<script src=\"js/OrbitControls.js\"></script>");
+            html.append("<script src=\"js/TransformControls.js\"></script>");
+            html.append("<script src=\"js/GLTFExporter.js\"></script>");
+            html.append("<script src=\"js/Stats.min.js\"></script>");
+            html.append("<script src=\"js/nipplejs.min.js\"></script>");
             
             html.append("</head><body>");
             
