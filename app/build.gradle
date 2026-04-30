@@ -101,8 +101,8 @@ task downloadOfflineAssets {
             "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js" : new File(jsDir, "GLTFExporter.js"),
             "https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js" : new File(jsDir, "Stats.min.js"),
             "https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js" : new File(jsDir, "nipplejs.min.js"),
-            // 🛡️ 核心修复 2：使用 raw.githubusercontent 直链，且 ant.get 完美支持重定向，字体绝不损坏！
-            "https://raw.githubusercontent.com/matomo-org/travis-scripts/master/fonts/Arial.ttf" : new File(fontDir, "arial.ttf")
+            // 🛡️ 核心修复：更换为绝对稳定、支持直链的开源字体源（伪装为arial.ttf，引擎完美识别）
+            "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf" : new File(fontDir, "arial.ttf")
         ]
         
         downloads.each { url, destFile ->
