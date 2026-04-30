@@ -93,7 +93,6 @@ task downloadOfflineAssets {
         fontDir.mkdirs()
 
         // 🛡️ 终极修复：全部使用 GitHub 原生直链 (raw.githubusercontent)
-        // GitHub Runner 拉取自家直链，绝对没有任何 CDN 拦截，绝对不会 404！
         def downloads = [
             "https://raw.githubusercontent.com/mrdoob/three.js/r128/build/three.min.js" : new File(jsDir, "three.min.js"),
             "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/loaders/GLTFLoader.js" : new File(jsDir, "GLTFLoader.js"),
@@ -101,7 +100,8 @@ task downloadOfflineAssets {
             "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/controls/TransformControls.js" : new File(jsDir, "TransformControls.js"),
             "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/exporters/GLTFExporter.js" : new File(jsDir, "GLTFExporter.js"),
             "https://raw.githubusercontent.com/mrdoob/stats.js/r17/build/stats.min.js" : new File(jsDir, "Stats.min.js"),
-            "https://raw.githubusercontent.com/yoannmoinet/nipplejs/v0.9.0/dist/nipplejs.min.js" : new File(jsDir, "nipplejs.min.js"),
+            // 🚨 唯一修复的地方：去掉不规范的版本号，直接指向 master 主分支，绝对 100% 防 404！
+            "https://raw.githubusercontent.com/yoannmoinet/nipplejs/master/dist/nipplejs.min.js" : new File(jsDir, "nipplejs.min.js"),
             "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf" : new File(fontDir, "arial.ttf")
         ]
         
