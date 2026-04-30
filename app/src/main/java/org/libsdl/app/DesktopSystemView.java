@@ -2746,50 +2746,14 @@ public class DesktopSystemView extends Dialog {
         });
         panel2D.addView(btnApply2D); rightPanel.addView(panel2D);
 
-        LinearLayout panel3D = new LinearLayout(getContext()); panel3D.setOrientation(LinearLayout.VERTICAL);
-        panel3D.addView(createSubTitle("🧊 模型 3D 矩阵")); panel3D.addView(createSubTitle("Offset X,Y,Z (位移):")); EditText offset3D = createInput("0, 0, 0", "0,0,0"); panel3D.addView(offset3D); panel3D.addView(createSubTitle("Scale X,Y,Z (缩放):")); EditText scale3D = createInput("1, 1, 1", "1,1,1"); panel3D.addView(scale3D);
-        Button btnApply3D = createButton("✔️ 应用并刷新视口", "#4CAF50");
-        panel3D.addView(btnApply3D); panel3D.setVisibility(View.GONE); rightPanel.addView(panel3D);
         rightScroll.addView(rightPanel);
 
         mainArea.addView(leftPanel, new LinearLayout.LayoutParams(0, -1, 1.2f)); mainArea.addView(centerContainer, new LinearLayout.LayoutParams(0, -1, 2.5f)); mainArea.addView(rightScroll, new LinearLayout.LayoutParams(0, -1, 1f));
         root.addView(mainArea, new LinearLayout.LayoutParams(-1, -1));
 
-        refreshModelListUI[0] = new Runnable() {
-            @Override public void run() {
-                modelNodeListLayout.removeAllViews();
-                if (modelList.isEmpty()) { TextView t = new TextView(getContext()); t.setText("未导入模型"); t.setTextColor(Color.GRAY); modelNodeListLayout.addView(t); return; }
-                for (int i = 0; i < modelList.size(); i++) {
-                    final int idx = i; StageModelInfo m = modelList.get(i);
-                    LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
-                    row.setBackgroundColor(selectedModelIndex[0] == idx ? Color.parseColor("#0078D7") : Color.parseColor("#3F3F46"));
-                    row.setPadding((int)(5*density), (int)(8*density), (int)(5*density), (int)(8*density));
-                    
-                    Button btnVis = createButton(m.isVisible ? "👁️" : "❌", "#333333"); btnVis.setPadding(0,(int)(5*density),0,(int)(5*density));
-                    btnVis.setOnClickListener(clickVisMod -> { m.isVisible = !m.isVisible; render3DScene[0].run(); this.run(); }); 
-                    TextView tName = new TextView(getContext()); tName.setText(" 📦 " + m.name); tName.setTextColor(Color.WHITE); applyGlobalFontSettings(tName, 0.9f, false);
-                    
-                    row.addView(btnVis, new LinearLayout.LayoutParams((int)(40*density), -2)); row.addView(tName, new LinearLayout.LayoutParams(0, -2, 1f));
-                    row.setOnClickListener(clickRowMod -> { 
-                        selectedModelIndex[0] = idx;
-                        offset3D.setText(String.format("%.1f,%.1f,%.1f", m.offsetX, m.offsetY, m.offsetZ)); scale3D.setText(String.format("%.1f,%.1f,%.1f", m.scaleX, m.scaleY, m.scaleZ));
-                        this.run(); 
-                    });
-                    modelNodeListLayout.addView(row, new LinearLayout.LayoutParams(-1,-2));
-                }
-            }
-        };
-        
-        btnApply3D.setOnClickListener(clickApp3D -> {
-            if(!modelList.isEmpty() && selectedModelIndex[0] >= 0){
-                StageModelInfo m = modelList.get(selectedModelIndex[0]); 
-                try {
-                    String[] o = offset3D.getText().toString().split(","); if(o.length==3){ m.offsetX=Float.parseFloat(o[0].trim()); m.offsetY=Float.parseFloat(o[1].trim()); m.offsetZ=Float.parseFloat(o[2].trim()); }
-                    String[] s = scale3D.getText().toString().split(","); if(s.length==3){ m.scaleX=Float.parseFloat(s[0].trim()); m.scaleY=Float.parseFloat(s[1].trim()); m.scaleZ=Float.parseFloat(s[2].trim()); }
-                    render3DScene[0].run(); Toast.makeText(getContext(), "✅ 3D 参数已应用到沙盘", Toast.LENGTH_SHORT).show();
-                } catch(Exception e){}
-            }
-        });
+        // 🔥 旧的 3D 参数操作面板已被废弃，转由全屏 3D Studio WebView 内部的 TransformControls 手柄全面接管。
+        // refreshModelListUI 仅保留一个空壳，防止旧逻辑空指针异常。
+        refreshModelListUI[0] = new Runnable() { @Override public void run() {} };
 
         refreshLayerListUI[0] = new Runnable() {
             @Override public void run() {
@@ -3244,7 +3208,7 @@ public class DesktopSystemView extends Dialog {
             Button btnCancelMain = createButton("❌ 取消", "#333333"); btnCancelMain.setOnClickListener(clickCanScan -> prompt.dismiss()); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0,0,0,(int)(10*density)); box.addView(btnNew, lp); box.addView(btnLoad, lp); box.addView(btnCancelMain, lp); svScan.addView(box); flScan.addView(svScan, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); prompt.setContentView(flScan); prompt.show();
         });
 
-        // 🔥 真·合并栅格化导出
+        // 🔥 真·合并栅格化导出 (仅针对 2D)
         btnSave.setOnClickListener(clickSaveMain -> {
             final Dialog exportDialog = new Dialog(getContext()); exportDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
             FrameLayout flExp = new FrameLayout(getContext()); ScrollView svExp = new ScrollView(getContext());
@@ -3255,18 +3219,9 @@ public class DesktopSystemView extends Dialog {
             if (globalIsEditMode && !globalDefPath.isEmpty()) defaultName = new File(globalDefPath).getName().replace(".def", "");
             box.addView(createSubTitle("地图导出前缀名:")); EditText nameInput = createInput("(默认追加递增防重名)", defaultName); box.addView(nameInput);
             
-            Button bConfirm = createButton(is3DMode[0] ? "✔️ 烘焙导出统一 3D 场景" : "✔️ 确认合并栅格化导出", "#4CAF50");
+            Button bConfirm = createButton("✔️ 确认合并栅格化导出", "#4CAF50");
             bConfirm.setOnClickListener(clickConfSave -> {
                 exportDialog.dismiss(); 
-                
-                if (is3DMode[0]) {
-                    Toast.makeText(getContext(), "📦 正在向 3D 引擎请求合并烘焙...", Toast.LENGTH_SHORT).show();
-                    String bName = nameInput.getText().toString().trim(); if(bName.isEmpty()) bName = "NewStage";
-                    // 触发 WebView 内部的纯血打包流
-                    modelWebView.evaluateJavascript("window.exportFinalGLB('" + bName + "');", null);
-                    return; // 截断：不执行后面的 2D 导出逻辑
-                }
-                
                 Toast.makeText(getContext(), "📦 引擎正在合并栅格化导出中...", Toast.LENGTH_SHORT).show();
                 
                 new Thread(() -> {
@@ -3352,11 +3307,7 @@ public class DesktopSystemView extends Dialog {
                             Api.addSffFrame(finalSffFile.getAbsolutePath(), 0, 0, newAxisX, newAxisY, tmpPng.getAbsolutePath());
                         }
 
-                        if (is3DMode[0] && !modelList.isEmpty()) {
-                            for (StageModelInfo m : modelList) { File srcM = new File(m.path); File dstM = new File(finalExportDir, srcM.getName()); copyFileToSandbox(srcM, dstM); }
-                        }
-                        
-                        new Handler(Looper.getMainLooper()).post(() -> { Toast.makeText(getContext(), "✅ 地图已合并栅格化导出成功！\n文件在:\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); });
+                        new Handler(Looper.getMainLooper()).post(() -> { Toast.makeText(getContext(), "✅ 2D 地图合并栅格化导出成功！\n文件在:\n" + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); });
                     } catch (Throwable t) {
                         t.printStackTrace();
                     }
@@ -3366,6 +3317,154 @@ public class DesktopSystemView extends Dialog {
             Button bCancel = createButton("❌ 取消", "#333333"); bCancel.setOnClickListener(clickCanSave -> exportDialog.dismiss());
             LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0);
             btnRow.addView(bConfirm, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); svExp.addView(box); flExp.addView(svExp, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); exportDialog.setContentView(flExp); exportDialog.show();
+        });
+
+        // 🚀 核心：将 3D 入口改为弹出全屏极客工作台！
+        btnMode3D.setOnClickListener(clickM3 -> {
+            is3DMode[0] = true;
+            btnMode3D.setBackgroundColor(Color.parseColor("#0078D7"));
+            btnMode2D.setBackgroundColor(Color.parseColor("#333333"));
+            
+            final Dialog studioDialog = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
+            studioDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+            applyImmersiveMode(studioDialog.getWindow());
+            
+            FrameLayout studioRoot = new FrameLayout(getContext());
+            if (modelWebView.getParent() != null) ((ViewGroup)modelWebView.getParent()).removeView(modelWebView);
+            studioRoot.addView(modelWebView, new FrameLayout.LayoutParams(-1, -1));
+            
+            // 建立 JS 强退通信通道
+            modelWebView.addJavascriptInterface(new Object() {
+                @android.webkit.JavascriptInterface
+                public void closeStudio() {
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        studioDialog.dismiss();
+                        is3DMode[0] = false;
+                        btnMode2D.performClick(); 
+                    });
+                }
+                @android.webkit.JavascriptInterface
+                public void saveGLB(String b64, String name) {
+                    new WebAppInterface().saveGLB(b64, name);
+                }
+            }, "StudioBridge");
+
+            studioDialog.setContentView(studioRoot);
+            studioDialog.show();
+            studioDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+            
+            // 执行注入拥有摇杆、骨骼动画解析、Transform 拖拽以及浮动 UI 的最终版 JS 引擎
+            StringBuilder html = new StringBuilder();
+            html.append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;}</style>");
+            html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js\"></script>");
+            html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js\"></script>");
+            html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js\"></script>");
+            html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js\"></script>");
+            html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js\"></script>");
+            html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js\"></script>");
+            html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js\"></script>");
+            html.append("</head><body><script>");
+            html.append("var scene = new THREE.Scene();");
+            html.append("var clock = new THREE.Clock();");
+            html.append("var stats = new Stats(); document.body.appendChild(stats.dom);");
+            html.append("var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 10000); camera.position.set(0, 20, 100);");
+            html.append("var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true}); renderer.setSize(window.innerWidth, window.innerHeight); renderer.outputEncoding = THREE.sRGBEncoding; document.body.appendChild(renderer.domElement);");
+            
+            // 🎮 控制器与摇杆
+            html.append("var orbit = new THREE.OrbitControls(camera, renderer.domElement); orbit.enablePan = false;");
+            html.append("var transformControl = new THREE.TransformControls(camera, renderer.domElement);");
+            html.append("transformControl.addEventListener('dragging-changed', function (event) { orbit.enabled = !event.value; });");
+            html.append("scene.add(transformControl);");
+            
+            html.append("var joyZone = document.createElement('div'); joyZone.style.cssText = 'position:absolute; bottom:20px; left:20px; width:150px; height:150px; z-index:999; border-radius:50%; background:rgba(255,255,255,0.05); border:2px dashed rgba(255,255,255,0.2); touch-action:none;'; document.body.appendChild(joyZone);");
+            html.append("var manager = nipplejs.create({ zone: joyZone, mode: 'static', position: {left:'50%', top:'50%'}, color: '#0078D7' });");
+            html.append("var moveVec = new THREE.Vector3(0,0,0);");
+            html.append("manager.on('move', function(evt, data) { var force = Math.min(data.force, 2.0); moveVec.x = Math.cos(data.angle.radian) * force; moveVec.z = -Math.sin(data.angle.radian) * force; });");
+            html.append("manager.on('end', function() { moveVec.set(0,0,0); });");
+
+            html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 2.5); scene.add(ambientLight); var hemiLight = new THREE.HemisphereLight( 0xffffff, 0x444444, 1.5 ); scene.add(hemiLight); var dirLight = new THREE.DirectionalLight(0xffffff, 2.0); dirLight.position.set(50, 100, 50); scene.add(dirLight);");
+            html.append("var grid = new THREE.GridHelper(200, 20, 0x0078D7, 0x3F3F46); scene.add(grid);");
+            
+            html.append("var raycaster = new THREE.Raycaster(); var mouse = new THREE.Vector2(); var interactables = [];");
+            html.append("window.addEventListener('pointerdown', function(e) {");
+            html.append("    if(e.clientX < 190 && e.clientY > window.innerHeight - 190) return;"); 
+            html.append("    mouse.x = (e.clientX / window.innerWidth) * 2 - 1; mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;");
+            html.append("    raycaster.setFromCamera(mouse, camera); var intersects = raycaster.intersectObjects(interactables, true);");
+            html.append("    if (intersects.length > 0) {");
+            html.append("        var obj = intersects[0].object;");
+            html.append("        while(obj.parent && obj.parent.type !== 'Scene' && obj.parent.userData.isRoot !== true) { obj = obj.parent; }");
+            html.append("        transformControl.attach(obj);");
+            html.append("    } else { transformControl.detach(); }");
+            html.append("});");
+            
+            html.append("var loader = new THREE.GLTFLoader(); var mixers = []; var allAnims = [];");
+            for (StageModelInfo m : modelList) {
+                if(m.isVisible) { 
+                    html.append("loader.load('file://").append(m.path).append("', function(gltf) { ");
+                    html.append("    var model = gltf.scene; model.userData.isRoot = true; ");
+                    html.append("    model.position.set(").append(m.offsetX).append(",").append(m.offsetY).append(",").append(m.offsetZ).append("); ");
+                    html.append("    model.scale.set(").append(m.scaleX).append(",").append(m.scaleY).append(",").append(m.scaleZ).append("); ");
+                    html.append("    scene.add(model); interactables.push(model);");
+                    html.append("    if(gltf.animations && gltf.animations.length > 0) {");
+                    html.append("        var mixer = new THREE.AnimationMixer(model);");
+                    html.append("        gltf.animations.forEach(function(clip) { mixer.clipAction(clip).play(); allAnims.push(clip); });");
+                    html.append("        mixers.push(mixer);");
+                    html.append("    }");
+                    html.append("});");
+                }
+            }
+            
+            html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); stats.update();");
+            html.append("    mixers.forEach(function(m){ m.update(dt); });"); 
+            html.append("    if(moveVec.lengthSq() > 0) { var speed = 60 * dt; camera.translateX(moveVec.x * speed); camera.translateZ(moveVec.z * speed); }");
+            html.append("    renderer.render(scene, camera); } animate();");
+            
+            // 🛠️ 终极全屏 UI 层与交互逻辑
+            html.append("var isViewMode = false;");
+            html.append("window.toggleViewMode = function() {");
+            html.append("    isViewMode = !isViewMode;");
+            html.append("    document.getElementById('viewModeBtn').innerHTML = isViewMode ? '🛠️ 返回编辑模式' : '👁️ 纯净游览模式';");
+            html.append("    grid.visible = !isViewMode; transformControl.enabled = !isViewMode; transformControl.visible = !isViewMode;");
+            html.append("    if(isViewMode) transformControl.detach();");
+            html.append("    document.getElementById('leftTools').style.display = isViewMode ? 'none' : 'flex';");
+            html.append("    stats.dom.style.display = isViewMode ? 'none' : 'block';"); // 隐藏FPS表
+            html.append("};");
+
+            html.append("window.addBasicGeom = function(type) {");
+            html.append("    var geo, mat = new THREE.MeshStandardMaterial({color: 0x888888, roughness: 0.8});");
+            html.append("    if(type === 'box') geo = new THREE.BoxGeometry(10, 10, 10);");
+            html.append("    if(type === 'plane') { geo = new THREE.PlaneGeometry(200, 200); geo.rotateX(-Math.PI/2); }");
+            html.append("    var mesh = new THREE.Mesh(geo, mat); mesh.position.set(0, type==='box'?5:0, 0);");
+            html.append("    mesh.userData.isRoot = true; scene.add(mesh); interactables.push(mesh);");
+            html.append("};");
+
+            html.append("window.exportAndExit = function() {");
+            html.append("    var exporter = new THREE.GLTFExporter();");
+            html.append("    scene.remove(grid); transformControl.detach(); scene.remove(transformControl);");
+            html.append("    exporter.parse(scene, function(result) {");
+            html.append("        var blob = new Blob([result], {type: 'application/octet-stream'});");
+            html.append("        var reader = new FileReader(); reader.readAsDataURL(blob);");
+            html.append("        reader.onloadend = function() { StudioBridge.saveGLB(reader.result, 'MyStage_3D'); StudioBridge.closeStudio(); }");
+            html.append("    }, { binary: true, animations: allAnims });");
+            html.append("};");
+
+            html.append("window.justExit = function() { StudioBridge.closeStudio(); };");
+
+            html.append("var ui = document.createElement('div');");
+            html.append("ui.innerHTML = `");
+            html.append("<div style='position:absolute; top:20px; left:100px; z-index:1000; display:flex; gap:10px;'>");
+            html.append("   <button onclick='justExit()' style='padding:12px; background:#E81123; color:white; border:none; border-radius:8px; font-weight:bold;'>⬅️ 放弃并返回 2D</button>");
+            html.append("   <button onclick='exportAndExit()' style='padding:12px; background:#4CAF50; color:white; border:none; border-radius:8px; font-weight:bold;'>💾 烘焙打包</button>");
+            html.append("   <button id='viewModeBtn' onclick='toggleViewMode()' style='padding:12px; background:#FF9800; color:white; border:none; border-radius:8px; font-weight:bold;'>👁️ 纯净游览模式</button>");
+            html.append("</div>");
+            html.append("<div id='leftTools' style='position:absolute; top:80px; right:20px; display:flex; flex-direction:column; gap:10px; z-index:1000;'>");
+            html.append("   <button onclick='addBasicGeom(\"box\")' style='padding:10px; background:#0078D7; color:white; border:none; border-radius:5px;'>➕ 添加墙体方块</button>");
+            html.append("   <button onclick='addBasicGeom(\"plane\")' style='padding:10px; background:#0078D7; color:white; border:none; border-radius:5px;'>➕ 添加大地板</button>");
+            html.append("</div>`; document.body.appendChild(ui);");
+
+            html.append("window.addEventListener('resize', function(){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });");
+            html.append("</script></body></html>");
+            modelWebView.loadDataWithBaseURL("file://", html.toString(), "text/html", "utf-8", null);
         });
 
         updateViewState[0].run(); refreshLayerListUI[0].run(); refreshModelListUI[0].run(); return root;
@@ -3423,7 +3522,7 @@ public class DesktopSystemView extends Dialog {
         }
     }
     
-        private void copyFileToSandbox(File src, File dst) throws Exception {
+    private void copyFileToSandbox(File src, File dst) throws Exception {
         try (InputStream in = new FileInputStream(src); FileOutputStream out = new FileOutputStream(dst)) {
             byte[] buf = new byte[8192]; int len;
             while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
