@@ -2763,13 +2763,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             
             StringBuilder html = new StringBuilder();
             html.append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;}</style>");
-            html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js\"></script>");
-            html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js\"></script>");
-            html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js\"></script>");
-            html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js\"></script>");
-            html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js\"></script>");
-            html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js\"></script>");
-            html.append("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js\"></script>");
+            // 🚨 纯净离线版：直接读取被 Gradle 自动下载到 APK assets 里的文件
+            html.append("<script src=\"file:///android_asset/js/three.min.js\"></script>");
+            html.append("<script src=\"file:///android_asset/js/GLTFLoader.js\"></script>");
+            html.append("<script src=\"file:///android_asset/js/OrbitControls.js\"></script>");
+            html.append("<script src=\"file:///android_asset/js/TransformControls.js\"></script>");
+            html.append("<script src=\"file:///android_asset/js/GLTFExporter.js\"></script>");
+            html.append("<script src=\"file:///android_asset/js/Stats.min.js\"></script>");
+            html.append("<script src=\"file:///android_asset/js/nipplejs.min.js\"></script>");
             
             html.append("</head><body>");
             
@@ -2886,8 +2887,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("window.addEventListener('resize', function(){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });");
             html.append("</script></body></html>");
             
-            // 🚨 核心解除拦截2：改用绝对安全的伪 HTTP 协议欺骗 WebView 进行跨域拉取！
-            modelWebView.loadDataWithBaseURL("https://ikemen.local", html.toString(), "text/html", "utf-8", null);
+            // 全盘本地化，直接使用 assets 路径为基准
+            modelWebView.loadDataWithBaseURL("file:///android_asset/", html.toString(), "text/html", "utf-8", null);
         });
 
 
