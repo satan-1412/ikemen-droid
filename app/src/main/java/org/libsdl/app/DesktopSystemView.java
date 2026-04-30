@@ -2641,7 +2641,7 @@ public class DesktopSystemView extends Dialog {
             }
         };
 
-        btnImportMenu.setOnClickListener(clickImpMenu -> {
+btnImportMenu.setOnClickListener(clickImpMenu -> {
             final Dialog iDialog = new Dialog(getContext()); iDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); 
             FrameLayout flMenu = new FrameLayout(getContext()); ScrollView svMenu = new ScrollView(getContext()); 
             LinearLayout iBox = new LinearLayout(getContext()); iBox.setOrientation(LinearLayout.VERTICAL); iBox.setBackgroundColor(Color.parseColor("#252526")); iBox.setPadding(padM,padM,padM,padM); 
@@ -2657,13 +2657,13 @@ public class DesktopSystemView extends Dialog {
             iImg.setOnClickListener(clickImpImg -> { iDialog.dismiss(); openImageImporter.run(); }); 
             iBox.addView(iImg, lpImg); 
 
-            // 🌟 核心修复：把丢失的 3D 模型导入按钮补回来！无视 2D/3D 模式永远显示！
+            // 🌟 永远允许导入 3D 模型，导入后进入 3D 全屏沙盘即可布置
             Button iMod = createButton("🧊 导入 3D 模型 (.glb / .gltf)", "#0078D7");
             iMod.setOnClickListener(clickImpMod -> { 
                 iDialog.dismiss(); 
                 showWin10FilePicker("选择 3D 模型", 11, null, null, fileMod -> {
                     FileCallback onSelected = fMod -> {
-                        StageModelInfo m = new StageModelInfo(); m.name = fMod.getName(); m.path = fMod.getAbsolutePath(); modelList.add(m); selectedModelIndex[0] = modelList.size() - 1; refreshModelListUI[0].run();
+                        StageModelInfo m = new StageModelInfo(); m.name = fMod.getName(); m.path = fMod.getAbsolutePath(); modelList.add(m); refreshModelListUI[0].run();
                         Toast.makeText(getContext(), "✅ 3D模型已添加入列！请进入【🧊 3D 全屏工作室】进行摆放", Toast.LENGTH_LONG).show();
                     };
                     if(fileMod.isDirectory()) showGenericFileListPicker(fileMod, new String[]{".gltf", ".glb"}, "3D模型", "#0078D7", onSelected); else onSelected.onFileSelected(fileMod);
