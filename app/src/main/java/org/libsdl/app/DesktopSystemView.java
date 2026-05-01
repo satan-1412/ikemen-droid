@@ -2717,7 +2717,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             Button bCancel = createButton("❌ 取消", "#333333"); bCancel.setOnClickListener(clickCanSave -> exportDialog.dismiss()); LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins((int)(2*density), (int)(10*density), (int)(2*density), 0); btnRow.addView(bConfirm, lp); btnRow.addView(bCancel, lp); box.addView(btnRow); svExp.addView(box); flExp.addView(svExp, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); exportDialog.setContentView(flExp); exportDialog.show();
         });
 
-        // 🚀 终极全自由 3D 全屏沉浸式工作台 (GMOD 漫游视角 + 上帝之手操控)
+        // 🚀 终极全自由 3D 全屏沉浸式工作台 (GMOD级准星选中 + 自定义拖拽UI + 实时光影设置)
         btnMode3D.setOnClickListener(clickM3 -> {
             final Dialog studioDialog = new Dialog(getContext(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
             studioDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
@@ -2757,137 +2757,176 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             studioDialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
             
             StringBuilder html = new StringBuilder();
-            html.append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;touch-action:none;user-select:none;}</style>");
+            html.append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>");
+            html.append("body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;touch-action:none;user-select:none;font-family:sans-serif;}");
+            html.append(".ui-btn{padding:12px; background:#333; color:white; border:none; border-radius:8px; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-bottom:8px; width:100%; text-align:center;}");
+            html.append(".ui-btn:active{background:#555;}");
+            html.append(".submenu{display:none; background:rgba(0,0,0,0.8); padding:10px; border-radius:8px; margin-bottom:8px;}");
+            html.append(".setting-row{display:flex; justify-content:space-between; margin-bottom:10px; color:white; font-size:14px; align-items:center;}");
+            html.append("input[type=range]{width:120px;}");
+            html.append("</style>");
             
-            // 🛡️ 本地离线引擎加载
             html.append("<script src=\"js/three.min.js\"></script>");
             html.append("<script src=\"js/GLTFLoader.js\"></script>");
             html.append("<script src=\"js/TransformControls.js\"></script>");
             html.append("<script src=\"js/GLTFExporter.js\"></script>");
             html.append("<script src=\"js/nipplejs.min.js\"></script>");
-            
             html.append("</head><body>");
+
+            // 🎯 屏幕中心准星
+            html.append("<div id='crosshair' style='position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:rgba(255,255,255,0.6); font-size:32px; font-weight:bold; pointer-events:none; z-index:50;'>+</div>");
+
+            // 🛠️ 编辑器核心 UI 层
+            html.append("<div id='editorUI'>");
             
-            // 🎨 极客级 UI 布局，彻底解决重叠，按功能分区
-            // 左上角：系统操作区
+            // 左上角系统级按钮
             html.append("<div style='position:absolute; top:20px; left:20px; z-index:1000; display:flex; gap:10px;'>");
-            html.append("   <button onclick='StudioBridge.closeStudio()' style='padding:12px 20px; background:#E81123; color:white; border:none; border-radius:8px; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>⬅️ 返回 2D</button>");
-            html.append("   <button onclick='exportAndExit()' style='padding:12px 20px; background:#4CAF50; color:white; border:none; border-radius:8px; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>💾 烘焙场景导出</button>");
+            html.append("   <button class='ui-btn' onclick='StudioBridge.closeStudio()' style='background:#E81123; width:auto;'>⬅️ 返回 2D</button>");
+            html.append("   <button class='ui-btn' onclick='exportAndExit()' style='background:#4CAF50; width:auto;'>💾 烘焙打包</button>");
+            html.append("   <button class='ui-btn' onclick='togglePreviewMode()' style='background:#FF9800; width:auto;'>👁️ 预览模式</button>");
             html.append("</div>");
 
-            // 右上角：对象操作区 (默认隐藏，选中时出现)
-            html.append("<div id='deleteZone' style='position:absolute; top:20px; right:20px; z-index:1000; display:none;'>");
-            html.append("   <button onclick='deleteSelected()' style='padding:12px 20px; background:#ff4444; color:white; border:none; border-radius:8px; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>🗑️ 删除选中模型</button>");
-            html.append("</div>");
-
-            // 左侧中央：建造/导入菜单
-            html.append("<div style='position:absolute; top:50%; left:20px; transform:translateY(-50%); z-index:1000; display:flex; flex-direction:column; gap:15px;'>");
-            html.append("   <button onclick='StudioBridge.triggerImport()' style='padding:15px; background:#0078D7; color:white; border:none; border-radius:8px; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>📥 导入 3D 模型</button>");
-            html.append("   <button onclick='addBasicGeom(\"box\")' style='padding:12px; background:#3F3F46; color:white; border:none; border-radius:8px;'>➕ 墙体方块</button>");
-            html.append("   <button onclick='addBasicGeom(\"plane\")' style='padding:12px; background:#3F3F46; color:white; border:none; border-radius:8px;'>➕ 延伸地板</button>");
-            html.append("</div>");
-
-            // 右侧中央：变换工具 (选中时高亮)
-            html.append("<div style='position:absolute; top:50%; right:20px; transform:translateY(-50%); z-index:1000; display:flex; flex-direction:column; gap:10px; background:rgba(30,30,30,0.7); padding:10px; border-radius:12px;'>");
-            html.append("   <button id='modeTrans' onclick='setTransformMode(\"translate\")' style='padding:15px; background:#0078D7; color:white; border:none; border-radius:8px; font-weight:bold;'>↕️ 移动</button>");
-            html.append("   <button id='modeRot' onclick='setTransformMode(\"rotate\")' style='padding:15px; background:#333; color:white; border:none; border-radius:8px; font-weight:bold;'>🔄 旋转</button>");
-            html.append("   <button id='modeScale' onclick='setTransformMode(\"scale\")' style='padding:15px; background:#333; color:white; border:none; border-radius:8px; font-weight:bold;'>📐 缩放</button>");
-            html.append("</div>");
-
-            // 底部中央：智能骨骼动画控制 (默认隐藏)
-            html.append("<div id='animTools' style='position:absolute; bottom:30px; left:50%; transform:translateX(-50%); z-index:1000; display:none; gap:15px; background:rgba(0,0,0,0.6); padding:15px; border-radius:15px; align-items:center;'>");
-            html.append("   <button onclick='switchAnim(-1)' style='padding:10px 20px; background:#333; color:white; border:none; border-radius:8px; font-size:18px;'>⏪</button>");
-            html.append("   <div style='display:flex; flex-direction:column; align-items:center; min-width:120px;'>");
-            html.append("       <span id='animName' style='color:#4CAF50; font-weight:bold; font-family:sans-serif; margin-bottom:5px;'>动作名称</span>");
-            html.append("       <button id='playBtn' onclick='togglePlay()' style='padding:8px 25px; background:#0078D7; color:white; border:none; border-radius:8px; font-weight:bold;'>暂停播放</button>");
+            // 🧲 右侧可拖拽整合工具箱
+            html.append("<div id='toolbox' style='position:absolute; top:80px; right:20px; width:160px; z-index:1000; background:rgba(30,30,30,0.85); border-radius:12px; padding:10px; border:1px solid #555;'>");
+            html.append("   <div id='dragHandle' style='text-align:center; color:#aaa; font-size:20px; cursor:move; padding-bottom:10px;'>=== 拖拽条 ===</div>");
+            
+            // 🎯 开火键 (选中物体)
+            html.append("   <button class='ui-btn' onclick='fireSelect()' style='background:#E81123; border:2px solid white;'>🎯 锁定选中</button>");
+            
+            // 📥 导入按钮
+            html.append("   <button class='ui-btn' onclick='StudioBridge.triggerImport()' style='background:#0078D7;'>📥 导入模型</button>");
+            
+            // ➕ 新建菜单
+            html.append("   <button class='ui-btn' onclick='toggleMenu(\"addMenu\")'>➕ 新建几何</button>");
+            html.append("   <div id='addMenu' class='submenu'>");
+            html.append("       <button class='ui-btn' onclick='addGeom(\"box\")'>方块 (墙)</button>");
+            html.append("       <button class='ui-btn' onclick='addGeom(\"plane\")'>平面 (地)</button>");
             html.append("   </div>");
-            html.append("   <button onclick='switchAnim(1)' style='padding:10px 20px; background:#333; color:white; border:none; border-radius:8px; font-size:18px;'>⏭️</button>");
+            
+            // 🔧 变换菜单
+            html.append("   <button class='ui-btn' onclick='toggleMenu(\"transMenu\")'>🔧 变换控制</button>");
+            html.append("   <div id='transMenu' class='submenu'>");
+            html.append("       <button class='ui-btn' onclick='setTransMode(\"translate\")' style='background:#0078D7'>↕️ 移动</button>");
+            html.append("       <button class='ui-btn' onclick='setTransMode(\"rotate\")'>🔄 旋转</button>");
+            html.append("       <button class='ui-btn' onclick='setTransMode(\"scale\")'>📐 缩放</button>");
+            html.append("   </div>");
+            
+            // ⚙️ 设置菜单
+            html.append("   <button class='ui-btn' onclick='toggleMenu(\"settingsMenu\")'>⚙️ 场景设置</button>");
+            
+            // 🗑️ 删除与取消 (选中后出现)
+            html.append("   <div id='objTools' style='display:none; margin-top:15px; border-top:1px solid #555; padding-top:10px;'>");
+            html.append("       <button class='ui-btn' onclick='deleteSelected()' style='background:#ff4444;'>🗑️ 删除选中</button>");
+            html.append("       <button class='ui-btn' onclick='clearSelection()' style='background:#777;'>❌ 取消选中</button>");
+            html.append("   </div>");
+            
+            html.append("</div>"); // toolbox end
+
+            // ⚙️ 设置弹窗面板 (独立在屏幕中间)
+            html.append("<div id='settingsMenu' style='display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(20,20,20,0.95); padding:20px; border-radius:12px; z-index:2000; border:2px solid #0078D7; width:280px;'>");
+            html.append("   <h3 style='color:white; text-align:center; margin-top:0;'>⚙️ 场景与灵敏度</h3>");
+            html.append("   <div class='setting-row'><span>摇杆移速:</span><input type='range' id='s_move' min='10' max='300' value='80' oninput='updateSettings()'></div>");
+            html.append("   <div class='setting-row'><span>划屏转速:</span><input type='range' id='s_look' min='1' max='20' value='6' oninput='updateSettings()'></div>");
+            html.append("   <hr style='border-color:#444'/>");
+            html.append("   <div class='setting-row'><span>环境光强度:</span><input type='range' id='s_ambInt' min='0' max='50' value='20' oninput='updateSettings()'></div>");
+            html.append("   <div class='setting-row'><span>主光源强度:</span><input type='range' id='s_dirInt' min='0' max='50' value='15' oninput='updateSettings()'></div>");
+            html.append("   <div class='setting-row'><span>背景颜色:</span><input type='color' id='s_bgCol' value='#121212' onchange='updateSettings()'></div>");
+            html.append("   <button class='ui-btn' onclick='toggleMenu(\"settingsMenu\")' style='margin-top:15px; background:#E81123;'>关闭设置</button>");
+            html.append("</div>");
+
+            // 底部骨骼动画控制
+            html.append("<div id='animTools' style='position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:1000; display:none; gap:10px; background:rgba(0,0,0,0.8); padding:10px; border-radius:10px; align-items:center;'>");
+            html.append("   <button onclick='switchAnim(-1)' class='ui-btn' style='width:auto; margin:0;'>⏪</button>");
+            html.append("   <span id='animName' style='color:#4CAF50; font-weight:bold; min-width:80px; text-align:center;'>动作 0</span>");
+            html.append("   <button id='playBtn' onclick='togglePlay()' class='ui-btn' style='background:#0078D7; width:auto; margin:0;'>▶️ 播放</button>");
+            html.append("   <button onclick='switchAnim(1)' class='ui-btn' style='width:auto; margin:0;'>⏭️</button>");
+            html.append("</div>");
+            
+            html.append("</div>"); // editorUI end
+
+            // 👁️ 纯净预览模式 UI (默认隐藏)
+            html.append("<div id='previewUI' style='display:none; position:absolute; top:20px; right:20px; z-index:3000;'>");
+            html.append("   <button class='ui-btn' onclick='togglePreviewMode()' style='background:#FF9800; opacity:0.7;'>❌ 退出预览</button>");
             html.append("</div>");
 
             html.append("<script>");
-            // 🛡️ 引擎就绪检测
-            html.append("setTimeout(function(){ if(typeof THREE === 'undefined') alert('⚠️ 引擎加载失败！请检查构建日志。'); }, 2000);");
+            html.append("setTimeout(function(){ if(typeof THREE === 'undefined') alert('⚠️ 引擎加载失败！'); }, 2000);");
 
+            // 全局变量与配置
             html.append("var scene = new THREE.Scene();");
             html.append("var clock = new THREE.Clock();");
             html.append("var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 10000);");
-            html.append("camera.position.set(0, 15, 30);"); // 初始高度和后退距离，更好的全局视野
+            html.append("camera.position.set(0, 15, 30);");
             html.append("var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});");
             html.append("renderer.setSize(window.innerWidth, window.innerHeight);");
             html.append("renderer.outputEncoding = THREE.sRGBEncoding;");
             html.append("document.body.appendChild(renderer.domElement);");
+
+            // 光影系统
+            html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 2.0); scene.add(ambientLight);");
+            html.append("var dirLight = new THREE.DirectionalLight(0xffffff, 1.5); dirLight.position.set(50, 100, 50); scene.add(dirLight);");
+            html.append("var grid = new THREE.GridHelper(200, 20, 0x0078D7, 0x3F3F46); scene.add(grid);");
             
-            // 💡 核心机制替换：废弃坑爹的 OrbitControls，引入真·自由漫游控制
+            // 灵敏度变量
+            html.append("var moveSpeed = 80; var lookSpeed = 0.006;");
+
+            // 📸 GMOD 级别自由视角控制 (仅右半屏响应划屏，避开左侧摇杆和按钮)
             html.append("var euler = new THREE.Euler(0, 0, 0, 'YXZ');");
             html.append("var isLooking = false, isTransforming = false;");
-            html.append("var lastTouchX = 0, lastTouchY = 0, touchMoved = false;");
+            html.append("var lastTouchX = 0, lastTouchY = 0;");
             
             html.append("var transformControl = new THREE.TransformControls(camera, renderer.domElement);");
             html.append("transformControl.addEventListener('dragging-changed', function(e) { isTransforming = e.value; });");
             html.append("scene.add(transformControl);");
 
-            // 右手划屏控制视角 (自由环顾四周)
             html.append("renderer.domElement.addEventListener('pointerdown', function(e) {");
-            html.append("    if(isTransforming) return;"); // 如果正在拖动红绿蓝轴，不转动视角
-            html.append("    isLooking = true; touchMoved = false;");
-            html.append("    lastTouchX = e.clientX; lastTouchY = e.clientY;");
+            html.append("    if(isTransforming || e.clientX < window.innerWidth * 0.4) return;"); // 只允许右侧半屏划动视角，防止和摇杆冲突
+            html.append("    isLooking = true; lastTouchX = e.clientX; lastTouchY = e.clientY;");
             html.append("});");
             html.append("renderer.domElement.addEventListener('pointermove', function(e) {");
-            html.append("    if(isTransforming || !isLooking) return;");
-            html.append("    touchMoved = true;");
+            html.append("    if(!isLooking || isTransforming) return;");
             html.append("    var dx = e.clientX - lastTouchX; var dy = e.clientY - lastTouchY;");
             html.append("    euler.setFromQuaternion(camera.quaternion);");
-            html.append("    euler.y -= dx * 0.006; euler.x -= dy * 0.006;");
-            html.append("    euler.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, euler.x));"); // 限制仰头低头幅度防翻转
+            html.append("    euler.y -= dx * lookSpeed; euler.x -= dy * lookSpeed;");
+            html.append("    euler.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, euler.x));");
             html.append("    camera.quaternion.setFromEuler(euler);");
             html.append("    lastTouchX = e.clientX; lastTouchY = e.clientY;");
             html.append("});");
+            html.append("renderer.domElement.addEventListener('pointerup', function() { isLooking = false; });");
 
-            // 射线检测：区分“滑动视角”与“点击选中物体”
+            // 🎯 核心逻辑：中心开火键锁定选中 (Raycast from Center)
             html.append("var raycaster = new THREE.Raycaster(); var interactables = []; var selectedObj = null;");
-            html.append("renderer.domElement.addEventListener('pointerup', function(e) {");
-            html.append("    isLooking = false;");
-            html.append("    if(!touchMoved && !isTransforming) {"); // 如果没有滑动，且没在拖拽轴，就判定为点击
-            html.append("        var mouse = new THREE.Vector2();");
-            html.append("        mouse.x = (e.clientX / window.innerWidth) * 2 - 1; mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;");
-            html.append("        raycaster.setFromCamera(mouse, camera);");
-            html.append("        var intersects = raycaster.intersectObjects(interactables, true);");
-            html.append("        if(intersects.length > 0) {");
-            html.append("            var obj = intersects[0].object;");
-            html.append("            while(obj.parent && obj.userData.isRoot !== true) { obj = obj.parent; }");
-            html.append("            transformControl.attach(obj);");
-            html.append("            selectedObj = obj;");
-            html.append("            document.getElementById('deleteZone').style.display = 'block';");
-            html.append("            checkAnimUI();");
-            html.append("        } else {");
-            html.append("            transformControl.detach(); selectedObj = null;"); // 点击空白处取消选中模型
-            html.append("            document.getElementById('deleteZone').style.display = 'none';");
-            html.append("            document.getElementById('animTools').style.display = 'none';");
-            html.append("        }");
+            html.append("window.fireSelect = function() {");
+            html.append("    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);"); // (0,0) 就是屏幕正中心
+            html.append("    var intersects = raycaster.intersectObjects(interactables, true);");
+            html.append("    if(intersects.length > 0) {");
+            html.append("        var obj = intersects[0].object;");
+            html.append("        while(obj.parent && obj.userData.isRoot !== true) { obj = obj.parent; }");
+            html.append("        transformControl.attach(obj); selectedObj = obj;");
+            html.append("        document.getElementById('objTools').style.display = 'block';");
+            html.append("        checkAnimUI();");
+            html.append("    } else {");
+            html.append("        clearSelection();");
             html.append("    }");
-            html.append("});");
-            
-            // 左下角：虚拟摇杆负责空间平移，彻底告别抽搐！
-            html.append("var joyZone = document.createElement('div'); joyZone.style.cssText = 'position:absolute; bottom:40px; left:40px; width:140px; height:140px; z-index:999; border-radius:50%; background:rgba(255,255,255,0.08); border:2px dashed rgba(255,255,255,0.2); touch-action:none;'; document.body.appendChild(joyZone);");
+            html.append("};");
+
+            html.append("window.clearSelection = function() {");
+            html.append("    transformControl.detach(); selectedObj = null;");
+            html.append("    document.getElementById('objTools').style.display = 'none';");
+            html.append("    document.getElementById('animTools').style.display = 'none';");
+            html.append("};");
+
+            // 🕹️ 左下角虚拟摇杆
+            html.append("var joyZone = document.createElement('div'); joyZone.style.cssText = 'position:absolute; bottom:40px; left:40px; width:140px; height:140px; z-index:999; border-radius:50%; background:rgba(255,255,255,0.08); border:2px dashed rgba(255,255,255,0.2); touch-action:none;'; document.getElementById('editorUI').appendChild(joyZone);");
             html.append("if(typeof nipplejs !== 'undefined') {");
             html.append("   var manager = nipplejs.create({ zone: joyZone, mode: 'static', position: {left:'50%', top:'50%'}, color: '#0078D7' });");
             html.append("   var moveVec = new THREE.Vector3(0,0,0);");
-            html.append("   manager.on('move', function(evt, data) {");
-            html.append("       var force = Math.min(data.force, 2.0);");
-            html.append("       moveVec.x = Math.cos(data.angle.radian) * force;"); // 相机本地 X 轴平移
-            html.append("       moveVec.z = -Math.sin(data.angle.radian) * force;"); // 相机本地 Z 轴平移
-            html.append("   });");
+            html.append("   manager.on('move', function(evt, data) { var f = Math.min(data.force, 2.0); moveVec.x = Math.cos(data.angle.radian)*f; moveVec.z = -Math.sin(data.angle.radian)*f; });");
             html.append("   manager.on('end', function() { moveVec.set(0,0,0); });");
             html.append("}");
 
-            // 基础环境
-            html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 2.0); scene.add(ambientLight);");
-            html.append("var dirLight = new THREE.DirectionalLight(0xffffff, 1.5); dirLight.position.set(50, 100, 50); scene.add(dirLight);");
-            html.append("var grid = new THREE.GridHelper(200, 20, 0x0078D7, 0x3F3F46); scene.add(grid);"); // 地面网格参照物
-            
+            // 模型与动画加载
             html.append("var loader = new THREE.GLTFLoader(); var mixers = [];");
-            
-            // 🔄 智能骨骼动画与模型加载
             html.append("window.loadExternalModel = function(url) {");
             html.append("    loader.load(url, function(gltf) {");
             html.append("        var model = gltf.scene; model.userData.isRoot = true;");
@@ -2905,74 +2944,89 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 if(m.isVisible) { html.append("window.loadExternalModel('file://").append(m.path).append("');"); }
             }
 
-            // 右侧变换工具功能交互
-            html.append("window.setTransformMode = function(mode) {");
+            // 🎛️ UI 功能函数
+            html.append("window.toggleMenu = function(id) { var el = document.getElementById(id); el.style.display = (el.style.display==='none'||el.style.display==='')?'block':'none'; };");
+            
+            html.append("window.setTransMode = function(mode) {");
             html.append("    transformControl.setMode(mode);");
-            html.append("    document.getElementById('modeTrans').style.background = mode === 'translate' ? '#0078D7' : '#333';");
-            html.append("    document.getElementById('modeRot').style.background = mode === 'rotate' ? '#0078D7' : '#333';");
-            html.append("    document.getElementById('modeScale').style.background = mode === 'scale' ? '#0078D7' : '#333';");
+            html.append("    var btns = document.getElementById('transMenu').children;");
+            html.append("    for(var i=0;i<btns.length;i++) btns[i].style.background='#333';");
+            html.append("    event.target.style.background='#0078D7';");
             html.append("};");
 
-            // 🗑️ 删除选中模型
+            html.append("window.addGeom = function(type) {");
+            html.append("    var geo, mat = new THREE.MeshStandardMaterial({color: 0x888888, roughness: 0.8});");
+            html.append("    if(type === 'box') geo = new THREE.BoxGeometry(10, 10, 10);");
+            html.append("    if(type === 'plane') { geo = new THREE.PlaneGeometry(100, 100); geo.rotateX(-Math.PI/2); }");
+            html.append("    var mesh = new THREE.Mesh(geo, mat);");
+            html.append("    // 出生在相机正前方一段距离");
+            html.append("    var dir = new THREE.Vector3(0,0,-20); dir.applyQuaternion(camera.quaternion);");
+            html.append("    mesh.position.copy(camera.position).add(dir);");
+            html.append("    mesh.userData.isRoot = true; mesh.userData.animations = []; scene.add(mesh); interactables.push(mesh);");
+            html.append("    document.getElementById('addMenu').style.display='none';");
+            html.append("};");
+
             html.append("window.deleteSelected = function() {");
-            html.append("    if(selectedObj) { scene.remove(selectedObj); interactables.splice(interactables.indexOf(selectedObj), 1);");
-            html.append("    transformControl.detach(); selectedObj = null;");
-            html.append("    document.getElementById('deleteZone').style.display = 'none';");
-            html.append("    document.getElementById('animTools').style.display = 'none'; }");
+            html.append("    if(selectedObj) { scene.remove(selectedObj); interactables.splice(interactables.indexOf(selectedObj), 1); clearSelection(); }");
             html.append("};");
 
-            // 底部动画面板逻辑
+            // ⚙️ 实时参数更新
+            html.append("window.updateSettings = function() {");
+            html.append("    moveSpeed = parseFloat(document.getElementById('s_move').value);");
+            html.append("    lookSpeed = parseFloat(document.getElementById('s_look').value) / 1000;");
+            html.append("    ambientLight.intensity = parseFloat(document.getElementById('s_ambInt').value) / 10;");
+            html.append("    dirLight.intensity = parseFloat(document.getElementById('s_dirInt').value) / 10;");
+            html.append("    var bgHex = document.getElementById('s_bgCol').value;");
+            html.append("    scene.background = new THREE.Color(bgHex);");
+            html.append("};");
+
+            // 👁️ 预览模式切换
+            html.append("var isPreview = false;");
+            html.append("window.togglePreviewMode = function() {");
+            html.append("    isPreview = !isPreview;");
+            html.append("    document.getElementById('editorUI').style.display = isPreview ? 'none' : 'block';");
+            html.append("    document.getElementById('previewUI').style.display = isPreview ? 'block' : 'none';");
+            html.append("    document.getElementById('crosshair').style.display = isPreview ? 'none' : 'block';");
+            html.append("    grid.visible = !isPreview; transformControl.visible = !isPreview; transformControl.enabled = !isPreview;");
+            html.append("    if(isPreview) clearSelection();");
+            html.append("};");
+
+            // 动画控制
             html.append("function checkAnimUI() {");
             html.append("    var ui = document.getElementById('animTools');");
             html.append("    if(selectedObj && selectedObj.userData.animations.length > 0) {");
             html.append("        ui.style.display = 'flex';");
-            html.append("        var animName = selectedObj.userData.animations[selectedObj.userData.animIndex].name || ('动作 ' + selectedObj.userData.animIndex);");
-            html.append("        document.getElementById('animName').innerText = animName;");
-            html.append("        document.getElementById('playBtn').innerText = selectedObj.userData.isPlaying ? '⏸️ 暂停' : '▶️ 播放';");
-            html.append("        document.getElementById('playBtn').style.background = selectedObj.userData.isPlaying ? '#E81123' : '#0078D7';");
+            html.append("        var ud = selectedObj.userData;");
+            html.append("        document.getElementById('animName').innerText = ud.animations[ud.animIndex].name || ('动作 '+ud.animIndex);");
+            html.append("        var pBtn = document.getElementById('playBtn');");
+            html.append("        pBtn.innerText = ud.isPlaying ? '⏸️ 暂停' : '▶️ 播放';");
+            html.append("        pBtn.style.background = ud.isPlaying ? '#E81123' : '#0078D7';");
             html.append("    } else { ui.style.display = 'none'; }");
             html.append("}");
-
             html.append("window.switchAnim = function(dir) {");
             html.append("    if(!selectedObj || selectedObj.userData.animations.length === 0) return;");
-            html.append("    var ud = selectedObj.userData;");
-            html.append("    ud.animIndex = (ud.animIndex + dir + ud.animations.length) % ud.animations.length;");
-            html.append("    ud.mixer.stopAllAction();");
-            html.append("    ud.action = ud.mixer.clipAction(ud.animations[ud.animIndex]);");
-            html.append("    if(ud.isPlaying) ud.action.play();");
-            html.append("    checkAnimUI();");
+            html.append("    var ud = selectedObj.userData; ud.animIndex = (ud.animIndex + dir + ud.animations.length) % ud.animations.length;");
+            html.append("    ud.mixer.stopAllAction(); ud.action = ud.mixer.clipAction(ud.animations[ud.animIndex]);");
+            html.append("    if(ud.isPlaying) ud.action.play(); checkAnimUI();");
             html.append("};");
-
             html.append("window.togglePlay = function() {");
-            html.append("    if(!selectedObj) return; var ud = selectedObj.userData;");
-            html.append("    ud.isPlaying = !ud.isPlaying;");
-            html.append("    if(ud.isPlaying) ud.action.play(); else ud.action.stop();");
-            html.append("    checkAnimUI();");
+            html.append("    if(!selectedObj) return; var ud = selectedObj.userData; ud.isPlaying = !ud.isPlaying;");
+            html.append("    if(ud.isPlaying) ud.action.play(); else ud.action.stop(); checkAnimUI();");
             html.append("};");
 
-            // 渲染主循环
+            // 主循环
             html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta();");
             html.append("    mixers.forEach(function(m){ m.update(dt); });"); 
             html.append("    if(typeof moveVec !== 'undefined' && moveVec.lengthSq() > 0) {");
-            html.append("        var speed = 80 * dt; camera.translateX(moveVec.x * speed); camera.translateZ(moveVec.z * speed);");
+            html.append("        camera.translateX(moveVec.x * moveSpeed * dt); camera.translateZ(moveVec.z * moveSpeed * dt);");
             html.append("    }");
             html.append("    renderer.render(scene, camera); } animate();");
 
-            // 添加几何体
-            html.append("window.addBasicGeom = function(type) {");
-            html.append("    var geo, mat = new THREE.MeshStandardMaterial({color: 0x888888, roughness: 0.8});");
-            html.append("    if(type === 'box') geo = new THREE.BoxGeometry(10, 10, 10);");
-            html.append("    if(type === 'plane') { geo = new THREE.PlaneGeometry(100, 100); geo.rotateX(-Math.PI/2); }");
-            html.append("    var mesh = new THREE.Mesh(geo, mat); mesh.position.set(0, type==='box'?5:0, -20);"); // 生成在镜头正前方
-            html.append("    mesh.userData.isRoot = true; mesh.userData.animations = []; scene.add(mesh); interactables.push(mesh);");
-            html.append("};");
-
-            // 智能导出：只打包你亲手加进去的物体，过滤掉环境网格
+            // 智能导出
             html.append("window.exportAndExit = function() {");
-            html.append("    var exporter = new THREE.GLTFExporter();");
-            html.append("    transformControl.detach();");
+            html.append("    var exporter = new THREE.GLTFExporter(); clearSelection();");
             html.append("    var exportScene = new THREE.Scene();");
-            html.append("    interactables.forEach(function(obj) { exportScene.add(obj.clone()); });"); // 仅克隆场景中的有效模型
+            html.append("    interactables.forEach(function(obj) { exportScene.add(obj.clone()); });");
             html.append("    var expAnims = []; interactables.forEach(function(o){ if(o.userData.animations) expAnims.push(...o.userData.animations); });");
             html.append("    exporter.parse(exportScene, function(result) {");
             html.append("        var blob = new Blob([result], {type: 'application/octet-stream'});");
@@ -2981,16 +3035,21 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    }, { binary: true, animations: expAnims });");
             html.append("};");
 
+            // 🖱️ 拖拽工具箱脚本 (神级实现)
+            html.append("function makeDraggable(elmnt, handle) {");
+            html.append("  var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;");
+            html.append("  handle.onpointerdown = dragMouseDown;");
+            html.append("  function dragMouseDown(e) { e.preventDefault(); pos3 = e.clientX; pos4 = e.clientY; document.onpointerup = closeDragElement; document.onpointermove = elementDrag; }");
+            html.append("  function elementDrag(e) { e.preventDefault(); pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY; pos3 = e.clientX; pos4 = e.clientY; elmnt.style.top = (elmnt.offsetTop - pos2) + 'px'; elmnt.style.left = (elmnt.offsetLeft - pos1) + 'px'; elmnt.style.right = 'auto'; }");
+            html.append("  function closeDragElement() { document.onpointerup = null; document.onpointermove = null; }");
+            html.append("}");
+            html.append("makeDraggable(document.getElementById('toolbox'), document.getElementById('dragHandle'));");
+
             html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
             html.append("</script></body></html>");
             
-            // 🛡️ 纯净本地加载
             modelWebView.loadDataWithBaseURL("file:///android_asset/", html.toString(), "text/html", "utf-8", null);
         });
-
-
-
-
 
         updateViewState[0].run(); refreshLayerListUI[0].run(); return root;
     }
