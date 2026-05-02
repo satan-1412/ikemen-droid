@@ -808,8 +808,12 @@ public class DesktopSystemView extends Dialog {
                                     else Toast.makeText(getContext(), "❌ 请选择 .def 地图配置文件", Toast.LENGTH_SHORT).show();
                                 }
                                 else if (targetType == 11) {
-                                    if (absPath.toLowerCase().endsWith(".gltf") || absPath.toLowerCase().endsWith(".glb")) { if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); }
-                                    else Toast.makeText(getContext(), "❌ 请选择 .gltf 或 .glb 模型文件", Toast.LENGTH_SHORT).show();
+                                    String lowerPath = absPath.toLowerCase();
+                                    if (lowerPath.endsWith(".gltf") || lowerPath.endsWith(".glb") || lowerPath.endsWith(".obj") || lowerPath.endsWith(".fbx") || lowerPath.endsWith(".3ds") || lowerPath.endsWith(".dae") || lowerPath.endsWith(".ply") || lowerPath.endsWith(".stl")) { 
+                                        if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); 
+                                    } else {
+                                        Toast.makeText(getContext(), "❌ 格式不支持，请选择支持的 3D 格式", Toast.LENGTH_SHORT).show();
+                                    }
                                 }
                                 else if (targetType == 1 || targetType == 2) { 
                                     if(targetType == 1) customDesktopBg = absPath; else customWindowBg = absPath;
@@ -2802,7 +2806,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         });
                         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, (int)(15*density), 0, 0); box.addView(btnConf, lp);
                         Button btnCancel = createButton("❌ 取消", "#E81123"); btnCancel.setOnClickListener(v -> expD.dismiss()); box.addView(btnCancel);
-                        expD.setContentView(box); expD.show();
+                        // 🛡️ 核心修复：套一层 ScrollView，完美支持上下滑动！
+                        ScrollView scrollWrap = new ScrollView(getContext());
+                        scrollWrap.addView(box);
+                        expD.setContentView(scrollWrap); 
+                        expD.show();
                     });
                 }
 
@@ -2911,8 +2919,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("           <div class='param-row'><span>范围</span><input type='number' id='l_dist' step='1' onchange='applyParams()'></div>");
             html.append("       </div>");
 
-            html.append("       <div style='display:flex; gap:5px; margin-top:5px;'><button class='ui-btn' onclick='mirrorObj(\"x\")' style='background:#1E88E5;'>↔️ X镜</button><button class='ui-btn' onclick='mirrorObj(\"y\")' style='background:#1E88E5;'>↕️ Y镜</button></div>");
-            html.append("       <div style='display:flex; gap:5px; margin-top:5px;'><button class='ui-btn' onclick='copyObj()' style='background:#43A047;'>📄 复制</button><button class='ui-btn' onclick='pasteObj()' style='background:#FDD835; color:black;'>📋 粘贴</button></div>");
+            // 🛡️ 加入 flex-wrap:wrap 让按钮自动换行，按钮宽度自动适应，不再超出屏幕
+            html.append("       <div style='display:flex; gap:5px; margin-top:5px; flex-wrap:wrap;'><button class='ui-btn' onclick='mirrorObj(\"x\")' style='background:#1E88E5; flex:1; min-width:70px;'>↔️ X镜</button><button class='ui-btn' onclick='mirrorObj(\"y\")' style='background:#1E88E5; flex:1; min-width:70px;'>↕️ Y镜</button></div>");
+            html.append("       <div style='display:flex; gap:5px; margin-top:5px; flex-wrap:wrap;'><button class='ui-btn' onclick='copyObj()' style='background:#43A047; flex:1; min-width:70px;'>📄 复制</button><button class='ui-btn' onclick='pasteObj()' style='background:#FDD835; color:black; flex:1; min-width:70px;'>📋 粘贴</button></div>");
 
             html.append("       <button class='ui-btn' onclick='StudioBridge.triggerTextureImport()' style='background:#9C27B0; margin-top:10px;'>🖼️ 替换贴图</button>");
             html.append("       <button class='ui-btn' onclick='deleteSelected()' style='background:#ff4444;'>🗑️ 删除对象</button>");
@@ -2978,7 +2987,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("var stlLoader = typeof THREE.STLLoader !== 'undefined' ? new THREE.STLLoader() : null;");
 
             html.append("window.loadExternalModel = function(url) {");
-            html.append("    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); var spawnPos = new THREE.Vector3(); raycaster.ray.at(30, spawnPos);");
+            html.append("    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);");
+            html.append("    var spawnPos = new THREE.Vector3();");
+            html.append("    var intersects = raycaster.intersectObject(grid);"); // 尝试检测地面网格
+            html.append("    if (intersects.length > 0) { spawnPos.copy(intersects[0].point); }"); // 如果准星看着地面，降落在地面
+            html.append("    else { spawnPos.set(0, 0, 0); }"); // 🛡️ 如果看着天空，直接降落在世界绝对中心 (0,0,0)
             html.append("    var ext = url.split('.').pop().toLowerCase();");
             html.append("    var onLoaded = function(obj) {");
             html.append("        var model = obj.scene || obj;");
@@ -3008,16 +3021,22 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    var geo, mat = new THREE.MeshStandardMaterial({color: 0xcccccc}); var mesh;");
             html.append("    if(t==='box') { geo=new THREE.BoxGeometry(10,10,10); mesh=new THREE.Mesh(geo,mat); }");
             html.append("    if(t==='plane') { geo=new THREE.PlaneGeometry(100,100); geo.rotateX(-Math.PI/2); mesh=new THREE.Mesh(geo,mat); }");
-            html.append("    if(t==='skydome') { geo=new THREE.SphereGeometry(1000, 32, 32); mat=new THREE.MeshBasicMaterial({color: 0x87CEEB, side: THREE.BackSide}); mesh=new THREE.Mesh(geo,mat); }");
-            html.append("    if(t!=='skydome') { raycaster.setFromCamera(new THREE.Vector2(0,0), camera); raycaster.ray.at(30, mesh.position); mesh.castShadow=true; mesh.receiveShadow=true; }");
+            // 🛡️ 天空盒现在初始半径为 100，并且可以被选中，你可以直接用右侧的“缩放轴”或精准参数调整它的大小！
+            html.append("    if(t==='skydome') { geo=new THREE.SphereGeometry(100, 32, 32); mat=new THREE.MeshBasicMaterial({color: 0x87CEEB, side: THREE.BackSide}); mesh=new THREE.Mesh(geo,mat); mesh.userData.isSkybox = true; }");
+            html.append("    if(t!=='skydome') {");
+            html.append("       var intersects = raycaster.intersectObject(grid); if(intersects.length>0) mesh.position.copy(intersects[0].point); else mesh.position.set(0,0,0);");
+            html.append("       mesh.castShadow=true; mesh.receiveShadow=true;");
+            html.append("    }");
             html.append("    mesh.userData.isRoot=true; scene.add(mesh); interactables.push(mesh);");
             html.append("};");
 
             html.append("window.addLight = function() {");
             html.append("    var light = new THREE.PointLight(0xffffff, 1, 100);");
-            html.append("    raycaster.setFromCamera(new THREE.Vector2(0,0), camera); raycaster.ray.at(20, light.position);");
+            html.append("    var intersects = raycaster.intersectObject(grid); if(intersects.length>0) light.position.copy(intersects[0].point); else light.position.set(0,10,0);");
             html.append("    light.userData.isRoot = true; light.userData.isLight = true;");
-            html.append("    var helper = new THREE.PointLightHelper(light, 2); light.add(helper);");
+            // 🛡️ 加入一个透明的球体作为点光源的物理载体，这样光点就可以被射线“点击选中”并实时预览拖拽了
+            html.append("    var helperMesh = new THREE.Mesh(new THREE.SphereGeometry(2,8,8), new THREE.MeshBasicMaterial({color: 0xffff00, wireframe: true}));");
+            html.append("    light.add(helperMesh);");
             html.append("    scene.add(light); interactables.push(light);");
             html.append("};");
 
