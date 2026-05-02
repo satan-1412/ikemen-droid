@@ -2847,14 +2847,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             StringBuilder html = new StringBuilder();
             html.append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>");
             html.append("body,html{margin:0;padding:0;width:100%;height:100%;background-color:#121212;overflow:hidden;touch-action:none;user-select:none;font-family:sans-serif;}");
-            html.append(".ui-btn{padding:10px; background:#333; color:white; border:none; border-radius:6px; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.5); touch-action:none;}");
+            html.append(".ui-btn{position:absolute; padding:10px; background:#333; color:white; border:none; border-radius:6px; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.5); z-index:1000;}");
             html.append(".ui-btn:active{background:#555;}");
-            html.append(".setting-row{display:flex; justify-content:space-between; margin-bottom:8px; color:white; font-size:12px; align-items:center;}");
-            html.append(".param-row { display:flex; gap:3px; margin-bottom:5px; align-items:center; color:white; font-size:12px; }");
+            html.append(".ui-panel{position:absolute; background:rgba(20,20,20,0.85); padding:10px; border-radius:10px; z-index:1000; color:white; font-size:12px;}");
+            html.append(".setting-row{display:flex; justify-content:space-between; margin-bottom:8px; align-items:center;}");
+            html.append(".param-row { display:flex; gap:3px; margin-bottom:5px; align-items:center; }");
             html.append(".param-row input { width:35px; background:#222; color:white; border:1px solid #555; text-align:center; font-size:12px; border-radius:3px; }");
             html.append(".err-log { position:absolute; top:80px; left:50%; transform:translateX(-50%); background:rgba(200,0,0,0.8); color:white; padding:5px 10px; border-radius:5px; z-index:9999; font-size:12px; pointer-events:none; }");
             html.append("</style>");
-            
             html.append("<script>window.onerror = function(msg, url, line) { var e = document.createElement('div'); e.className = 'err-log'; e.innerText = 'JS报错: ' + msg + ' (行 '+line+')'; document.body.appendChild(e); setTimeout(function(){e.remove();}, 5000); };</script>");
 
             html.append("<script src=\"js/three.min.js\"></script>");
@@ -2869,98 +2869,168 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("<script src=\"js/GLTFExporter.js\"></script>");
             html.append("<script src=\"js/nipplejs.min.js\"></script>");
             html.append("<script src=\"js/DRACOLoader.js\"></script>");
-            
             html.append("</head><body>");
             
             html.append("<div id='crosshair' style='position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:rgba(255,255,255,0.7); font-size:30px; pointer-events:none; z-index:50;'>+</div>");
 
-            // 🎯 顶部核心控制器
-            html.append("<button id='enterUIEditBtn' onclick='toggleUIEdit()' style='position:absolute; top:20px; left:50%; transform:translateX(-50%); z-index:9000; padding:10px 20px; background:#1E88E5; color:white; border-radius:8px; border:none; font-weight:bold; box-shadow:0 4px 6px rgba(0,0,0,0.5);'>🎨 编辑按键</button>");
+            // 左侧按键
+            html.append("<button id='btnReturn2D' class='ui-btn' onclick='StudioBridge.closeStudio()' style='top:20px; left:20px; background:#E81123;'>⬅️ 返回 2D</button>");
+            html.append("<button id='btnExportGLB' class='ui-btn' onclick='StudioBridge.triggerExportSettings()' style='top:70px; left:20px; background:#4CAF50;'>💾 烘焙打包</button>");
+            html.append("<button id='btnPreview' class='ui-btn' onclick='togglePreviewMode()' style='top:120px; left:20px; background:#FF9800;'>👁️ 预览模式</button>");
+            html.append("<button id='previewExit' class='ui-btn' onclick='togglePreviewMode()' style='display:none; top:20px; right:20px; background:#FF9800; z-index:3000;'>❌ 退出预览</button>");
 
-            // 🎯 扁平化、全部分离的独立功能按键！
-            html.append("<button id='btnReturn2D' class='ui-btn' onclick='StudioBridge.closeStudio()' style='position:absolute; top:20px; left:20px; width:100px; background:#E81123; z-index:1000;'>⬅️ 返回 2D</button>");
-            html.append("<button id='btnExportGLB' class='ui-btn' onclick='StudioBridge.triggerExportSettings()' style='position:absolute; top:70px; left:20px; width:100px; background:#4CAF50; z-index:1000;'>💾 烘焙打包</button>");
-            html.append("<button id='btnPreview' class='ui-btn' onclick='togglePreviewMode()' style='position:absolute; top:120px; left:20px; width:100px; background:#FF9800; z-index:1000;'>👁️ 预览模式</button>");
-            html.append("<button id='previewExit' onclick='togglePreviewMode()' style='display:none; position:absolute; top:20px; right:20px; z-index:3000; padding:15px; background:#FF9800; color:white; border-radius:8px; border:none; font-weight:bold;'>❌ 退出预览</button>");
+            // 右侧功能按键 (全部独立解绑)
+            html.append("<button id='btnImport' class='ui-btn' onclick='StudioBridge.triggerImport()' style='top:20px; right:20px; background:#0078D7;'>📥 导入模型</button>");
+            html.append("<button id='btnTexture' class='ui-btn' onclick='StudioBridge.triggerTextureImport()' style='top:70px; right:20px; background:#9C27B0;'>🖼️ 贴图/视频</button>");
+            html.append("<button id='btnAddBox' class='ui-btn' onclick='addGeom(\"box\")' style='top:120px; right:20px;'>➕ 方块墙</button>");
+            html.append("<button id='btnAddPlane' class='ui-btn' onclick='addGeom(\"plane\")' style='top:170px; right:20px;'>➕ 平底板</button>");
+            html.append("<button id='btnAddSky' class='ui-btn' onclick='addGeom(\"skydome\")' style='top:220px; right:20px; background:#9C27B0;'>🌌 天空盒</button>");
+            html.append("<button id='btnAddLight' class='ui-btn' onclick='addLight()' style='top:270px; right:20px; background:#E6C200; color:black;'>💡 点光源</button>");
+            html.append("<button id='btnTransMove' class='ui-btn' onclick='setTransMode(\"translate\")' style='top:320px; right:20px; background:#0078D7;'>↕️ 移动轴</button>");
+            html.append("<button id='btnTransRot' class='ui-btn' onclick='setTransMode(\"rotate\")' style='top:370px; right:20px;'>🔄 旋转轴</button>");
+            html.append("<button id='btnTransScale' class='ui-btn' onclick='setTransMode(\"scale\")' style='top:420px; right:20px;'>📐 缩放轴</button>");
+            html.append("<button id='btnToggleSys' class='ui-btn' onclick='toggleSub(\"lightSub\")' style='top:470px; right:20px; background:#3F3F46;'>⚙️ 环境/相机设置</button>");
 
-            html.append("<button id='btnImport' class='ui-btn' onclick='StudioBridge.triggerImport()' style='position:absolute; top:20px; right:20px; width:110px; background:#0078D7; z-index:1000;'>📥 导入模型</button>");
-            html.append("<button id='btnAddObj' class='ui-btn' onclick='addGeom(\"box\")' style='position:absolute; top:70px; right:20px; width:110px; z-index:1000;'>➕ 加方块墙</button>");
-            html.append("<button id='btnAddPlane' class='ui-btn' onclick='addGeom(\"plane\")' style='position:absolute; top:120px; right:20px; width:110px; z-index:1000;'>➕ 加平底板</button>");
-            html.append("<button id='btnTransMove' class='ui-btn' onclick='setTransMode(\"translate\")' style='position:absolute; top:170px; right:20px; width:110px; background:#0078D7; z-index:1000;'>↕️ 移动轴</button>");
-            html.append("<button id='btnTransRot' class='ui-btn' onclick='setTransMode(\"rotate\")' style='position:absolute; top:220px; right:20px; width:110px; background:#333333; z-index:1000;'>🔄 旋转轴</button>");
-            html.append("<button id='btnTransScale' class='ui-btn' onclick='setTransMode(\"scale\")' style='position:absolute; top:270px; right:20px; width:110px; background:#333333; z-index:1000;'>📐 缩放轴</button>");
-
-            // 🎯 新增：检测到动作后自动在此显示，包含上一帧、播放、下一帧 (水平居中排列)
-            html.append("<div id='animTools' style='display:none; position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:2000; flex-direction:row; gap:10px; background:rgba(0,0,0,0.7); padding:10px; border-radius:10px; touch-action:none;'>");
-            html.append("   <button class='ui-btn' onclick='switchAnim(-1)' style='margin:0; width:auto; padding:10px 15px;'>⏪ 上一帧</button>");
-            html.append("   <button class='ui-btn' id='playBtn' onclick='togglePlay()' style='margin:0; width:auto; padding:10px 15px; background:#E81123;'>⏸️ 暂停</button>");
-            html.append("   <button class='ui-btn' onclick='switchAnim(1)' style='margin:0; width:auto; padding:10px 15px;'>⏭️ 下一帧</button>");
+            // 系统环境光与摇杆设置面板 (恢复原貌)
+            html.append("<div id='lightSub' class='ui-panel' style='display:none; top:520px; right:20px; width:150px;'>");
+            html.append("   <div class='setting-row'><span>环境色</span><input type='color' id='l_ambC' value='#ffffff' onchange='updateSysLights()' style='width:50px;'></div>");
+            html.append("   <div class='setting-row'><span>环境强</span><input type='range' id='l_ambI' min='0' max='50' value='20' style='width:70px;' oninput='updateSysLights()'></div>");
+            html.append("   <div class='setting-row'><span>太阳色</span><input type='color' id='l_dirC' value='#ffffff' onchange='updateSysLights()' style='width:50px;'></div>");
+            html.append("   <div class='setting-row'><span>太阳强</span><input type='range' id='l_dirI' min='0' max='50' value='15' style='width:70px;' oninput='updateSysLights()'></div>");
+            html.append("   <div class='setting-row'><span>摇杆移速</span><input type='range' id='s_move' min='20' max='300' value='80' style='width:70px;' oninput='updateSettings()'></div>");
+            html.append("   <div class='setting-row'><span>滑动视角</span><input type='range' id='s_look' min='1' max='30' value='6' style='width:70px;' oninput='updateSettings()'></div>");
             html.append("</div>");
 
-            // 🎯 右下角属性面板 (可拖动独立区块)
-            html.append("<div id='objTools' style='display:none; position:absolute; bottom:20px; right:20px; width:160px; background:rgba(0,0,0,0.7); padding:10px; border-radius:8px; z-index:1000; touch-action:none;'>");
+            // 模型参数工具面板 (恢复位移/自转)
+            html.append("<div id='objTools' class='ui-panel' style='display:none; bottom:20px; right:20px; width:160px;'>");
             html.append("   <div style='color:#ccc; font-size:12px; margin-bottom:5px; text-align:center;'>精确参数 (X Y Z)</div>");
             html.append("   <div class='param-row'><span>移</span><input type='number' id='pX' onchange='applyParams()'><input type='number' id='pY' onchange='applyParams()'><input type='number' id='pZ' onchange='applyParams()'></div>");
             html.append("   <div class='param-row'><span>旋</span><input type='number' id='rX' onchange='applyParams()'><input type='number' id='rY' onchange='applyParams()'><input type='number' id='rZ' onchange='applyParams()'></div>");
             html.append("   <div class='param-row'><span>缩</span><input type='number' id='sX' step='0.1' onchange='applyParams()'><input type='number' id='sY' step='0.1' onchange='applyParams()'><input type='number' id='sZ' step='0.1' onchange='applyParams()'></div>");
-            html.append("   <div style='color:#4CAF50; font-size:12px; margin:5px 0; text-align:center;'>模型每帧位移/自转速</div>");
+            html.append("   <div style='color:#4CAF50; font-size:12px; margin:5px 0; text-align:center;'>模型每帧位移/自转</div>");
             html.append("   <div class='param-row'><span>移</span><input type='number' id='vX' step='0.1' onchange='applyParams()'><input type='number' id='vY' step='0.1' onchange='applyParams()'><input type='number' id='vZ' step='0.1' onchange='applyParams()'></div>");
             html.append("   <div class='param-row'><span>转</span><input type='number' id='rvX' step='0.01' onchange='applyParams()'><input type='number' id='rvY' step='0.01' onchange='applyParams()'><input type='number' id='rvZ' step='0.01' onchange='applyParams()'></div>");
-            html.append("   <button class='ui-btn' onclick='deleteSelected()' style='background:#E81123; margin-top:5px;'>🗑️ 删除选中</button>");
+            html.append("   <button class='ui-btn' onclick='deleteSelected()' style='position:relative; width:100%; padding:8px; margin-top:5px; background:#E81123;'>🗑️ 删除选中</button>");
             html.append("</div>");
 
-            // 🎯 极致防误触 UI 编辑器
-            html.append("<script>");
-            html.append("var isUIEditMode = false; var currentUI = null; var uiOrigProps = {}; var editBtnPressTimer = null;");
-            html.append("window.toggleUIEdit = function() { if(isUIEditMode) { isUIEditMode = false; document.getElementById('uiEditorPopup').style.display='none'; document.getElementById('enterUIEditBtn').style.background='#1E88E5'; document.getElementById('enterUIEditBtn').innerText='🎨 编辑按键'; transformControl.enabled = true; } else { isUIEditMode = true; document.getElementById('enterUIEditBtn').style.background='#E81123'; document.getElementById('enterUIEditBtn').innerText='🚪 退出编辑'; alert('【编辑模式已锁死屏幕】\\n1. 单击任何悬浮按键、面板或摇杆，即可弹出属性修改。\\n2. 在此模式下原按键功能完全屏蔽！\\n3. 在本红色按钮上长按，亦可调整本按钮自身位置！'); transformControl.enabled = false; } };");
+            // 动画工具面板
+            html.append("<div id='animTools' class='ui-panel' style='display:none; bottom:20px; left:50%; transform:translateX(-50%); flex-direction:row; gap:10px;'>");
+            html.append("   <button class='ui-btn' onclick='switchAnim(-1)' style='position:relative; padding:10px 15px;'>⏪ 上一帧</button>");
+            html.append("   <button class='ui-btn' id='playBtn' onclick='togglePlay()' style='position:relative; padding:10px 15px; background:#E81123;'>⏸️ 暂停</button>");
+            html.append("   <button class='ui-btn' onclick='switchAnim(1)' style='position:relative; padding:10px 15px;'>⏭️ 下一帧</button>");
+            html.append("</div>");
 
-            html.append("window.applyUI = function() { if(!currentUI) return; currentUI.style.position='absolute'; currentUI.style.left = document.getElementById('ui_x').value + 'px'; currentUI.style.top = document.getElementById('ui_y').value + 'px'; currentUI.style.width = document.getElementById('ui_w').value + 'px'; currentUI.style.height = document.getElementById('ui_h').value + 'px'; currentUI.style.opacity = document.getElementById('ui_a').value; if(currentUI.id!=='crosshair' && currentUI.id!=='animTools' && currentUI.id!=='objTools' && currentUI.id!=='joyZone') currentUI.style.background = document.getElementById('ui_c').value; };");
-            html.append("window.saveUI = function() { document.getElementById('uiEditorPopup').style.display='none'; if(currentUI) currentUI.style.boxShadow=''; currentUI=null; };");
-            html.append("window.cancelUI = function() { if(currentUI && uiOrigProps.left) { currentUI.style.left=uiOrigProps.left; currentUI.style.top=uiOrigProps.top; currentUI.style.width=uiOrigProps.width; currentUI.style.height=uiOrigProps.height; currentUI.style.opacity=uiOrigProps.opacity; currentUI.style.background=uiOrigProps.bg; } document.getElementById('uiEditorPopup').style.display='none'; if(currentUI) currentUI.style.boxShadow=''; currentUI=null; };");
-            
-            html.append("var popupHtml = \"<div id='uiEditorPopup' style='display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10000; background:rgba(30,30,30,0.95); padding:20px; border-radius:15px; width:260px; color:white; border:2px solid #0078D7; touch-action:none;'>\";");
-            html.append("popupHtml += \"<h3 style='margin:0 0 15px 0; font-size:16px; text-align:center; color:#0078D7;'>🛠️ 控件参数设置</h3>\";");
-            html.append("popupHtml += \"<div style='max-height:40vh; overflow-y:auto; overflow-x:hidden; padding-right:5px;'>\";"); 
-            html.append("popupHtml += \"<div class='setting-row'><span>X 轴位置</span><input type='number' id='ui_x' oninput='applyUI()' style='width:100px; background:#222; color:white;'></div>\";");
-            html.append("popupHtml += \"<div class='setting-row'><span>Y 轴位置</span><input type='number' id='ui_y' oninput='applyUI()' style='width:100px; background:#222; color:white;'></div>\";");
-            html.append("popupHtml += \"<div class='setting-row'><span>宽度(W)</span><input type='number' id='ui_w' oninput='applyUI()' style='width:100px; background:#222; color:white;'></div>\";");
-            html.append("popupHtml += \"<div class='setting-row'><span>高度(H)</span><input type='number' id='ui_h' oninput='applyUI()' style='width:100px; background:#222; color:white;'></div>\";");
-            html.append("popupHtml += \"<div class='setting-row'><span>透明度</span><input type='range' id='ui_a' min='0.1' max='1' step='0.1' oninput='applyUI()' style='width:100px;'></div>\";");
-            html.append("popupHtml += \"<div class='setting-row'><span>背景色</span><input type='color' id='ui_c' onchange='applyUI()' style='width:100px;'></div>\";");
-            html.append("popupHtml += \"</div>\";"); 
-            html.append("popupHtml += \"<div style='display:flex; gap:10px; margin-top:15px;'><button class='ui-btn' onclick='saveUI()' style='background:#4CAF50; flex:1;'>💾 保存</button><button class='ui-btn' onclick='cancelUI()' style='background:#333; flex:1;'>❌ 取消</button></div>\";");
+            // UI 自由排版开关
+            html.append("<button id='enterUIEditBtn' onclick='toggleUIEdit()' style='position:absolute; top:20px; left:50%; transform:translateX(-50%); z-index:9000; padding:10px 20px; background:#1E88E5; color:white; border-radius:8px; border:none; font-weight:bold; box-shadow:0 4px 6px rgba(0,0,0,0.5);'>🎨 排版模式</button>");
+
+            html.append("<script>");
+            html.append("var isUIEditMode = false; var currentUI = null;");
+            html.append("window.toggleUIEdit = function() {");
+            html.append("  isUIEditMode = !isUIEditMode;");
+            html.append("  var btn = document.getElementById('enterUIEditBtn');");
+            html.append("  if(isUIEditMode) {");
+            html.append("    btn.style.background='#E81123'; btn.innerText='🚪 退出排版 (点我退出)';");
+            html.append("    transformControl.enabled = false;");
+            html.append("  } else {");
+            html.append("    btn.style.background='#1E88E5'; btn.innerText='🎨 排版模式';");
+            html.append("    document.getElementById('uiEditorPopup').style.display='none';");
+            html.append("    transformControl.enabled = true; currentUI = null;");
+            html.append("  }");
+            html.append("};");
+
+            // 极致精简版排版弹窗 (仅保留宽高和透明度，不要颜色)
+            html.append("var popupHtml = \"<div id='uiEditorPopup' style='display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10000; background:rgba(30,30,30,0.95); padding:15px; border-radius:12px; width:180px; color:white; border:2px solid #0078D7; touch-action:none;'>\";");
+            html.append("popupHtml += \"<div id='uiPopupDrag' style='text-align:center; color:#ccc; margin-bottom:10px; cursor:move;'>⠿ 拖动属性窗 ⠿</div>\";");
+            html.append("popupHtml += \"<div class='setting-row'><span>宽(W)</span><input type='number' id='ui_w' oninput='applyUI()' style='width:60px;'></div>\";");
+            html.append("popupHtml += \"<div class='setting-row'><span>高(H)</span><input type='number' id='ui_h' oninput='applyUI()' style='width:60px;'></div>\";");
+            html.append("popupHtml += \"<div class='setting-row'><span>透明度</span><input type='range' id='ui_a' min='0.1' max='1' step='0.1' oninput='applyUI()' style='width:60px;'></div>\";");
+            html.append("popupHtml += \"<button class='ui-btn' onclick='closeUIPopup()' style='position:relative; width:100%; background:#4CAF50; margin-top:5px;'>✔️ 关闭属性</button>\";");
             html.append("popupHtml += \"</div>\"; document.body.insertAdjacentHTML('beforeend', popupHtml);");
 
-            html.append("window.openUIPopup = function(target) { if(currentUI) currentUI.style.boxShadow=''; currentUI = target; var comp = window.getComputedStyle(currentUI); uiOrigProps = { left: comp.left, top: comp.top, width: comp.width, height: comp.height, opacity: comp.opacity, bg: comp.backgroundColor }; document.getElementById('ui_x').value = parseInt(comp.left)||0; document.getElementById('ui_y').value = parseInt(comp.top)||0; document.getElementById('ui_w').value = parseInt(comp.width)||0; document.getElementById('ui_h').value = parseInt(comp.height)||0; document.getElementById('ui_a').value = comp.opacity || 1; var rgb = comp.backgroundColor.match(/\\d+/g); if(rgb && rgb.length>=3) document.getElementById('ui_c').value = '#' + ((1<<24) + (parseInt(rgb[0])<<16) + (parseInt(rgb[1])<<8) + parseInt(rgb[2])).toString(16).slice(1); else document.getElementById('ui_c').value = '#333333'; currentUI.style.boxShadow='0 0 20px yellow'; document.getElementById('uiEditorPopup').style.display='block'; };");
+            html.append("var pDrag = document.getElementById('uiPopupDrag'), pWin = document.getElementById('uiEditorPopup');");
+            html.append("pDrag.addEventListener('pointerdown', function(e){ e.preventDefault(); e.stopPropagation(); pDrag.setPointerCapture(e.pointerId); var startX = e.clientX, startY = e.clientY, startL = pWin.offsetLeft, startT = pWin.offsetTop; function onMove(ev){ pWin.style.left = (startL + ev.clientX - startX) + 'px'; pWin.style.top = (startT + ev.clientY - startY) + 'px'; } function onUp(ev){ pDrag.releasePointerCapture(e.pointerId); pDrag.removeEventListener('pointermove', onMove); pDrag.removeEventListener('pointerup', onUp); } pDrag.addEventListener('pointermove', onMove); pDrag.addEventListener('pointerup', onUp); });");
 
-            // 🔥 事件双重拦截墙：彻底吞噬点击，防止触发按钮原功能
-            html.append("document.addEventListener('click', function(e) { if(isUIEditMode && e.target.id !== 'enterUIEditBtn' && !e.target.closest('#uiEditorPopup')) { e.preventDefault(); e.stopPropagation(); } }, true);");
+            html.append("window.applyUI = function() { if(!currentUI) return; currentUI.style.width = document.getElementById('ui_w').value + 'px'; currentUI.style.height = document.getElementById('ui_h').value + 'px'; currentUI.style.opacity = document.getElementById('ui_a').value; };");
+            html.append("window.closeUIPopup = function() { document.getElementById('uiEditorPopup').style.display='none'; if(currentUI) currentUI.style.boxShadow=''; currentUI=null; };");
+
+            // 完美自由拖拽逻辑 + 功能拦截 (退出按键除外)
             html.append("document.addEventListener('pointerdown', function(e) {");
-            html.append("    if(!isUIEditMode) return;");
-            html.append("    var el = e.target;");
-            html.append("    if(el.closest('#uiEditorPopup')) return;"); 
-            html.append("    if(el.id==='enterUIEditBtn') { editBtnPressTimer = setTimeout(function(){ editBtnPressTimer=null; openUIPopup(el); }, 600); return; }");
+            html.append("  if(!isUIEditMode) return;");
+            html.append("  var el = e.target;");
+            html.append("  if(el.id === 'enterUIEditBtn' || el.closest('#uiEditorPopup')) return;");
+            html.append("  var target = el.closest('.ui-btn') || el.closest('.ui-panel') || (el.id==='joyZone'?el:null);");
+            html.append("  if(target && target.id !== 'enterUIEditBtn') {");
             html.append("    e.preventDefault(); e.stopPropagation();");
-            html.append("    var target = el;");
-            html.append("    if(el.closest('#joyZone')) target = document.getElementById('joyZone');");
-            html.append("    else if(el.closest('.ui-btn') || el.closest('#animTools') || el.closest('#objTools')) target = el.closest('.ui-btn') || el.closest('#animTools') || el.closest('#objTools') || el;");
-            html.append("    if(target && target.tagName !== 'CANVAS' && target.id !== '') openUIPopup(target);");
+            html.append("    if(currentUI) currentUI.style.boxShadow='';");
+            html.append("    currentUI = target; currentUI.style.boxShadow='0 0 20px yellow';");
+            html.append("    var comp = window.getComputedStyle(currentUI);");
+            html.append("    document.getElementById('ui_w').value = parseInt(comp.width)||0;");
+            html.append("    document.getElementById('ui_h').value = parseInt(comp.height)||0;");
+            html.append("    document.getElementById('ui_a').value = comp.opacity || 1;");
+            html.append("    document.getElementById('uiEditorPopup').style.display='block';");
+            html.append("    var startX = e.clientX, startY = e.clientY;");
+            html.append("    var startLeft = currentUI.offsetLeft, startTop = currentUI.offsetTop;");
+            html.append("    target.setPointerCapture(e.pointerId);");
+            html.append("    function onMove(ev) { currentUI.style.left = (startLeft + ev.clientX - startX) + 'px'; currentUI.style.top = (startTop + ev.clientY - startY) + 'px'; currentUI.style.right = 'auto'; currentUI.style.bottom = 'auto'; }");
+            html.append("    function onUp(ev) { target.releasePointerCapture(e.pointerId); target.removeEventListener('pointermove', onMove); target.removeEventListener('pointerup', onUp); }");
+            html.append("    target.addEventListener('pointermove', onMove); target.addEventListener('pointerup', onUp);");
+            html.append("  }");
             html.append("}, true);");
-            html.append("var editBtn = document.getElementById('enterUIEditBtn');");
-            html.append("document.addEventListener('pointerup', function(e) { if(editBtnPressTimer) { clearTimeout(editBtnPressTimer); editBtnPressTimer=null; if(e.target===editBtn) toggleUIEdit(); } }, true);");
+            html.append("document.addEventListener('click', function(e) { if(isUIEditMode && e.target.id !== 'enterUIEditBtn' && !e.target.closest('#uiEditorPopup')) { e.preventDefault(); e.stopPropagation(); } }, true);");
 
-            // 引擎工具
-            html.append("window.mirrorObj = function(axis) { if(!selectedObj) return; if(axis==='x') selectedObj.scale.x *= -1; else if(axis==='y') selectedObj.scale.y *= -1; updateParamUI(); };");
+            // 工具栏交互支持
+            html.append("window.toggleSub = function(id) { var e=document.getElementById(id); e.style.display=(e.style.display==='none'||e.style.display==='')?'block':'none'; };");
+            html.append("window.setTransMode = function(m) { transformControl.setMode(m); document.getElementById('btnTransMove').style.background='#333'; document.getElementById('btnTransRot').style.background='#333'; document.getElementById('btnTransScale').style.background='#333'; document.getElementById(m==='translate'?'btnTransMove':(m==='rotate'?'btnTransRot':'btnTransScale')).style.background='#0078D7'; };");
+
+            // 三维场景构建支持
+            html.append("window.addGeom = function(t) {");
+            html.append("    var geo, mat = new THREE.MeshStandardMaterial({color: 0xcccccc}); var mesh;");
+            html.append("    if(t==='box') { geo=new THREE.BoxGeometry(10,10,10); mesh=new THREE.Mesh(geo,mat); }");
+            html.append("    if(t==='plane') { geo=new THREE.PlaneGeometry(100,100); geo.rotateX(-Math.PI/2); mesh=new THREE.Mesh(geo,mat); }");
+            html.append("    if(t==='skydome') { geo=new THREE.SphereGeometry(100, 32, 32); mat=new THREE.MeshBasicMaterial({color: 0x87CEEB, side: THREE.BackSide}); mesh=new THREE.Mesh(geo,mat); mesh.userData.isSkybox = true; }");
+            html.append("    if(t!=='skydome') {");
+            html.append("       var intersects = raycaster.intersectObject(grid); if(intersects.length>0) mesh.position.copy(intersects[0].point); else mesh.position.set(0,0,0);");
+            html.append("       mesh.castShadow=true; mesh.receiveShadow=true;");
+            html.append("    }");
+            html.append("    mesh.userData.isRoot=true; scene.add(mesh); interactables.push(mesh);");
+            html.append("};");
+
+            html.append("window.addLight = function() {");
+            html.append("    var light = new THREE.PointLight(0xffffff, 1, 100);");
+            html.append("    var intersects = raycaster.intersectObject(grid); if(intersects.length>0) light.position.copy(intersects[0].point); else light.position.set(0,10,0);");
+            html.append("    light.userData.isRoot = true; light.userData.isLight = true;");
+            html.append("    var helperMesh = new THREE.Mesh(new THREE.SphereGeometry(2,8,8), new THREE.MeshBasicMaterial({color: 0xffff00, wireframe: true}));");
+            html.append("    light.add(helperMesh); scene.add(light); interactables.push(light);");
+            html.append("};");
+
+            html.append("window.deleteSelected = function() { if(selectedObj) { scene.remove(selectedObj); interactables.splice(interactables.indexOf(selectedObj),1); clearSelection(); document.getElementById('objTools').style.display='none'; }};");
+            
+            html.append("window.updateSysLights = function() { ambientLight.color.set(document.getElementById('l_ambC').value); ambientLight.intensity=parseFloat(document.getElementById('l_ambI').value)/10; dirLight.color.set(document.getElementById('l_dirC').value); dirLight.intensity=parseFloat(document.getElementById('l_dirI').value)/10; };");
+            html.append("window.updateSettings = function() { moveSpeed=parseFloat(document.getElementById('s_move').value); lookSpeed=parseFloat(document.getElementById('s_look').value)/1000; };");
+            
+            html.append("window.togglePreviewMode = function() { isPreview = !isPreview; ");
+            html.append("  var btns = document.querySelectorAll('.ui-btn, .ui-panel');");
+            html.append("  btns.forEach(function(b){ if(b.id!=='previewExit' && b.id!=='animTools') b.style.display = isPreview?'none':'block'; });");
+            html.append("  document.getElementById('enterUIEditBtn').style.display = isPreview?'none':'block';");
+            html.append("  document.getElementById('crosshair').style.display = isPreview?'none':'block';");
+            html.append("  document.getElementById('previewExit').style.display = isPreview?'block':'none';");
+            html.append("  document.getElementById('lightSub').style.display = 'none';");
+            html.append("  document.getElementById('objTools').style.display = 'none';");
+            html.append("  grid.visible = !isPreview; transformControl.visible = !isPreview; transformControl.enabled = !isPreview; if(isPreview){clearSelection();} ");
+            html.append("};");
+
+            html.append("window.checkAnimUI = function(obj) { var ui=document.getElementById('animTools'); if(obj && obj.userData.animations && obj.userData.animations.length>0) { ui.style.display='flex'; var p=document.getElementById('playBtn'); p.innerText=obj.userData.isPlaying?'⏸️ 暂停':'▶️ 播放'; p.style.background=obj.userData.isPlaying?'#E81123':'#0078D7'; } else { ui.style.display='none'; } };");
+            html.append("window.switchAnim = function(dir) { if(!selectedObj || !selectedObj.userData.animations) return; var ud=selectedObj.userData; ud.animIndex=(ud.animIndex+dir+ud.animations.length)%ud.animations.length; ud.mixer.stopAllAction(); ud.action=ud.mixer.clipAction(ud.animations[ud.animIndex]); if(ud.isPlaying) ud.action.play(); checkAnimUI(selectedObj); };");
+            html.append("window.togglePlay = function() { if(!selectedObj || !selectedObj.userData.animations) return; var ud=selectedObj.userData; ud.isPlaying=!ud.isPlaying; if(ud.isPlaying) ud.action.play(); else ud.action.stop(); checkAnimUI(selectedObj); };");
+
+            // 贴图与核心解析器
             html.append("var texLoader = new THREE.TextureLoader();");
             html.append("window.applyTexture = function(url) { if(!selectedObj) return; var isVid = url.match(/\\.(mp4|webm|mkv)$/i); var tex; if(isVid) { var vid = document.createElement('video'); vid.src=url; vid.loop=true; vid.muted=true; vid.play(); tex = new THREE.VideoTexture(vid); } else { tex = texLoader.load(url); } tex.encoding = THREE.sRGBEncoding; selectedObj.traverse(function(child) { if(child.isMesh) { child.material = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide }); child.material.needsUpdate=true; } }); };");
 
-            // NippleJS 摇杆
             html.append("var joyZone = document.createElement('div'); joyZone.id = 'joyZone'; joyZone.style.cssText = 'position:absolute; bottom:40px; left:40px; width:120px; height:120px; z-index:999; border-radius:50%; background:rgba(255,255,255,0.08); touch-action:none;'; document.body.appendChild(joyZone);");
             html.append("if(typeof nipplejs !== 'undefined') { var manager = nipplejs.create({ zone: joyZone, mode: 'static', position: {left:'50%', top:'50%'}, color: '#0078D7' }); var moveVec = new THREE.Vector3(0,0,0); manager.on('move', function(evt, data) { var f = Math.min(data.force, 2.0); moveVec.x = Math.cos(data.angle.radian)*f; moveVec.z = -Math.sin(data.angle.radian)*f; }); manager.on('end', function() { moveVec.set(0,0,0); }); }");
 
-            // Loaders 声明
             html.append("var gltfLoader = new THREE.GLTFLoader();");
-            // 🛡️ 强制绝对路径读取纯本地 DRACO，修复官方 GLB 报错转圈
             html.append("if(typeof THREE.DRACOLoader !== 'undefined') { var dracoLoader = new THREE.DRACOLoader(); dracoLoader.setDecoderPath('file:///android_asset/js/'); gltfLoader.setDRACOLoader(dracoLoader); }");
             html.append("var objLoader = typeof THREE.OBJLoader !== 'undefined' ? new THREE.OBJLoader() : null;");
             html.append("var fbxLoader = typeof THREE.FBXLoader !== 'undefined' ? new THREE.FBXLoader() : null;");
@@ -2969,7 +3039,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("var plyLoader = typeof THREE.PLYLoader !== 'undefined' ? new THREE.PLYLoader() : null;");
             html.append("var stlLoader = typeof THREE.STLLoader !== 'undefined' ? new THREE.STLLoader() : null;");
 
-            // 模型加载器
             html.append("window.loadExternalModel = function(url) {");
             html.append("    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); var spawnPos = new THREE.Vector3();");
             html.append("    var intersects = raycaster.intersectObject(grid); if(intersects.length>0) spawnPos.copy(intersects[0].point); else spawnPos.set(0,0,0);");
@@ -2981,14 +3050,12 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("            var model = obj.scene || obj;");
             html.append("            if(model.isBufferGeometry || model.isGeometry) { var mat = new THREE.MeshStandardMaterial({color:0xcccccc, side:THREE.DoubleSide}); model = new THREE.Mesh(model, mat); }");
             html.append("            model.userData.isRoot = true; model.position.copy(spawnPos);");
-            // 🛡️ 修复 3DS 黑模：全 0 黑材质直接拉白
             html.append("            model.traverse(function(n){ if(n.isMesh) { n.castShadow = true; n.receiveShadow = true; if(n.material) { if(Array.isArray(n.material)) { n.material.forEach(function(m){ m.side = THREE.DoubleSide; if(m.color && m.color.getHex() === 0) m.color.setHex(0xffffff); }); } else { n.material.side = THREE.DoubleSide; if(n.material.color && n.material.color.getHex() === 0) n.material.color.setHex(0xffffff); } } } });");
             html.append("            model.userData.velX = 0; model.userData.velY = 0; model.userData.velZ = 0;"); 
-            // 🛡️ 修复 3DS 解析动画空指针崩溃
             html.append("            var anims = obj.animations || (model.animations ? model.animations : []);");
             html.append("            if(anims && anims.length > 0) { model.userData.animations = anims; model.userData.animIndex = 0; model.userData.isPlaying = true; var mixer = new THREE.AnimationMixer(model); model.userData.mixer = mixer; mixers.push(mixer); model.userData.action = mixer.clipAction(anims[0]); model.userData.action.play(); }");
             html.append("            scene.add(model); interactables.push(model);");
-            html.append("            checkAnimUI(model);"); // 显示底部动画按键
+            html.append("            checkAnimUI(model);"); 
             html.append("        } catch(ex) { alert('模型渲染报错: ' + ex.message); }");
             html.append("    };");
             html.append("    try {");
@@ -3003,35 +3070,15 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    } catch(e) { alert('加载核心异常: ' + e.message); }");
             html.append("};");
 
-            html.append("window.setTransMode = function(m) { transformControl.setMode(m); document.getElementById('btnTransMove').style.background='#333'; document.getElementById('btnTransRot').style.background='#333'; document.getElementById('btnTransScale').style.background='#333'; document.getElementById(m==='translate'?'btnTransMove':(m==='rotate'?'btnTransRot':'btnTransScale')).style.background='#0078D7'; };");
-            
-            html.append("window.addGeom = function(t) {");
-            html.append("    var geo, mat = new THREE.MeshStandardMaterial({color: 0xcccccc}); var mesh;");
-            html.append("    if(t==='box') { geo=new THREE.BoxGeometry(10,10,10); mesh=new THREE.Mesh(geo,mat); }");
-            html.append("    if(t==='plane') { geo=new THREE.PlaneGeometry(100,100); geo.rotateX(-Math.PI/2); mesh=new THREE.Mesh(geo,mat); }");
-            html.append("    var intersects = raycaster.intersectObject(grid); if(intersects.length>0) mesh.position.copy(intersects[0].point); else mesh.position.set(0,0,0);");
-            html.append("    mesh.castShadow=true; mesh.receiveShadow=true;");
-            html.append("    mesh.userData.isRoot=true; scene.add(mesh); interactables.push(mesh);");
-            html.append("};");
-
-            html.append("window.deleteSelected = function() { if(selectedObj) { scene.remove(selectedObj); interactables.splice(interactables.indexOf(selectedObj),1); clearSelection(); }};");
-            
-            html.append("var isPreview = false; window.togglePreviewMode = function() { isPreview = !isPreview; document.getElementById('btnReturn2D').style.display = isPreview ? 'none' : 'block'; document.getElementById('btnExportGLB').style.display = isPreview ? 'none' : 'block'; document.getElementById('btnPreview').style.display = isPreview ? 'none' : 'block'; document.getElementById('btnImport').style.display = isPreview ? 'none' : 'block'; document.getElementById('btnAddObj').style.display = isPreview ? 'none' : 'block'; document.getElementById('btnAddPlane').style.display = isPreview ? 'none' : 'block'; document.getElementById('btnTransMove').style.display = isPreview ? 'none' : 'block'; document.getElementById('btnTransRot').style.display = isPreview ? 'none' : 'block'; document.getElementById('btnTransScale').style.display = isPreview ? 'none' : 'block'; document.getElementById('enterUIEditBtn').style.display = isPreview ? 'none' : 'block'; document.getElementById('crosshair').style.display = isPreview ? 'none' : 'block'; document.getElementById('previewExit').style.display = isPreview ? 'block' : 'none'; grid.visible = !isPreview; transformControl.visible = !isPreview; transformControl.enabled = !isPreview; if(isPreview){clearSelection();} };");
-
-            // 🛡️ 动画相关功能修复
-            html.append("window.checkAnimUI = function(obj) { var ui=document.getElementById('animTools'); if(obj && obj.userData.animations && obj.userData.animations.length>0) { ui.style.display='flex'; var p=document.getElementById('playBtn'); p.innerText=obj.userData.isPlaying?'⏸️ 暂停':'▶️ 播放'; p.style.background=obj.userData.isPlaying?'#E81123':'#0078D7'; } else { ui.style.display='none'; } };");
-            html.append("window.switchAnim = function(dir) { if(!selectedObj || !selectedObj.userData.animations) return; var ud=selectedObj.userData; ud.animIndex=(ud.animIndex+dir+ud.animations.length)%ud.animations.length; ud.mixer.stopAllAction(); ud.action=ud.mixer.clipAction(ud.animations[ud.animIndex]); if(ud.isPlaying) ud.action.play(); checkAnimUI(selectedObj); };");
-            html.append("window.togglePlay = function() { if(!selectedObj || !selectedObj.userData.animations) return; var ud=selectedObj.userData; ud.isPlaying=!ud.isPlaying; if(ud.isPlaying) ud.action.play(); else ud.action.stop(); checkAnimUI(selectedObj); };");
-
             html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); if(typeof mixers!=='undefined') mixers.forEach(function(m){m.update(dt);});");
             html.append("    interactables.forEach(function(obj) { if(obj.userData.velX) obj.position.x += obj.userData.velX; if(obj.userData.velY) obj.position.y += obj.userData.velY; if(obj.userData.velZ) obj.position.z += obj.userData.velZ; if(obj.userData.rVelX) obj.rotation.x += obj.userData.rVelX; if(obj.userData.rVelY) obj.rotation.y += obj.userData.rVelY; if(obj.userData.rVelZ) obj.rotation.z += obj.userData.rVelZ; });");
             html.append("    if(typeof moveVec!=='undefined' && moveVec.lengthSq()>0) { camera.translateX(moveVec.x*moveSpeed*dt); camera.translateZ(moveVec.z*moveSpeed*dt); } renderer.render(scene, camera); } animate();");
-            
-            // 🛡️ 完美修复的打包导出方法：加入 onError(err) 回调！
+
             html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); grid.visible = false; transformControl.visible = false; var helpers=[]; scene.traverse(function(c){if(c.type==='PointLightHelper'){c.visible=false;helpers.push(c);}}); var expAnims = []; interactables.forEach(function(o){ if(o.userData.animations) expAnims.push(...o.userData.animations); }); exporter.parse(scene, function(result) { grid.visible = true; helpers.forEach(function(h){h.visible=true;}); var blob = new Blob([result], {type: 'application/octet-stream'}); var reader = new FileReader(); reader.readAsDataURL(blob); reader.onloadend = function() { StudioBridge.saveGLB(reader.result, name, path); } }, function(err) { alert('GLB 导出失败: ' + err); grid.visible=true; }, { binary: true, animations: expAnims.length ? expAnims : null }); } catch(e) { alert('导出捕获崩溃: '+e.message); grid.visible=true; } };");
 
             html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
             html.append("</script></body></html>");
+
             
             modelWebView.loadDataWithBaseURL("file:///android_asset/", html.toString(), "text/html", "utf-8", null);
         });
