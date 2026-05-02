@@ -105,7 +105,12 @@ task downloadOfflineAssets {
             
             "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/controls/TransformControls.js" : new File(jsDir, "TransformControls.js"),
             "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/exporters/GLTFExporter.js" : new File(jsDir, "GLTFExporter.js"),
-            "https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js" : new File(jsDir, "nipplejs.min.js")
+            "https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js" : new File(jsDir, "nipplejs.min.js"),
+            // 🛡️ 补齐 Draco 极限压缩模型的纯离线解析文件 (JS 与 WASM 核心)
+            "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/loaders/DRACOLoader.js" : new File(jsDir, "DRACOLoader.js"),
+            "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/libs/draco/gltf/draco_decoder.wasm" : new File(jsDir, "draco_decoder.wasm"),
+            "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/libs/draco/gltf/draco_wasm_wrapper.js" : new File(jsDir, "draco_wasm_wrapper.js"),
+            "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/libs/draco/gltf/draco_decoder.js" : new File(jsDir, "draco_decoder.js")
         ]
         
         downloads.each { url, destFile ->
