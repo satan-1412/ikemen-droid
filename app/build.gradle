@@ -80,7 +80,7 @@ dependencies {
 }
 
 // =========================================================
-// 🚀 极客扩展：构建前自动拉取 3D 引擎离线库和所需字体
+// 🚀 极客扩展：构建前自动拉取 3D 引擎离线库 (多格式支持)
 // =========================================================
 task downloadOfflineAssets {
     def targetDir = file("${project.buildDir}/generated/offline_assets")
@@ -95,15 +95,14 @@ task downloadOfflineAssets {
         def downloads = [
             "https://raw.githubusercontent.com/mrdoob/three.js/r128/build/three.min.js" : new File(jsDir, "three.min.js"),
             "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/loaders/GLTFLoader.js" : new File(jsDir, "GLTFLoader.js"),
-            "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/controls/OrbitControls.js" : new File(jsDir, "OrbitControls.js"),
+            // 👇 新增：OBJ 和 FBX 格式的原生解析器
+            "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/loaders/OBJLoader.js" : new File(jsDir, "OBJLoader.js"),
+            "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/loaders/FBXLoader.js" : new File(jsDir, "FBXLoader.js"),
+            
             "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/controls/TransformControls.js" : new File(jsDir, "TransformControls.js"),
             "https://raw.githubusercontent.com/mrdoob/three.js/r128/examples/js/exporters/GLTFExporter.js" : new File(jsDir, "GLTFExporter.js"),
-            "https://raw.githubusercontent.com/mrdoob/stats.js/r17/build/stats.min.js" : new File(jsDir, "Stats.min.js"),
-            
-            // 🚨 终极修复：作者没把这文件传到 GitHub，我们单独走 cdnjs 的纯净直链！
-            "https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js" : new File(jsDir, "nipplejs.min.js"),
-            
-            "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf" : new File(fontDir, "arial.ttf")
+            "https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js" : new File(jsDir, "nipplejs.min.js")
+            // ⚠️ 字体和没用到的 Stats/OrbitControls 已经彻底干掉，防止云端下载失败导致打包翻车
         ]
         
         downloads.each { url, destFile ->
