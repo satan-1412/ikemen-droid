@@ -2791,7 +2791,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         box.addView(btnPickDir);
 
                         // 压缩选项
-                        CheckBox compressCheck = new CheckBox(getContext()); compressCheck.setText("开启 DRACO 极限压缩 (极小体积，可能会丢失微小细节)"); compressCheck.setTextColor(Color.WHITE); compressCheck.setChecked(true);
+                        android.widget.CheckBox compressCheck = new android.widget.CheckBox(getContext()); compressCheck.setText("开启 DRACO 极限压缩 (极小体积，可能会丢失微小细节)"); compressCheck.setTextColor(Color.WHITE); compressCheck.setChecked(true);
                         box.addView(compressCheck);
 
                         Button btnConf = createButton("✔️ 确认烘焙导出", "#4CAF50");
