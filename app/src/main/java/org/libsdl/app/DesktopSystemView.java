@@ -2862,6 +2862,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("<script src=\"js/TransformControls.js\"></script>");
             html.append("<script src=\"js/GLTFExporter.js\"></script>");
             html.append("<script src=\"js/nipplejs.min.js\"></script>");
+            html.append("<script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js\"></script>");
             
             html.append("</head><body>");
             
@@ -3050,8 +3051,6 @@ html.append("window.pasteObj = function() { if(clipboardObj) { var nObj = clipbo
             html.append("var joyZone = document.createElement('div'); joyZone.style.cssText = 'position:absolute; bottom:40px; left:40px; width:120px; height:120px; z-index:999; border-radius:50%; background:rgba(255,255,255,0.08); touch-action:none;'; document.body.appendChild(joyZone);");
             html.append("if(typeof nipplejs !== 'undefined') { var manager = nipplejs.create({ zone: joyZone, mode: 'static', position: {left:'50%', top:'50%'}, color: '#0078D7' }); var moveVec = new THREE.Vector3(0,0,0); manager.on('move', function(evt, data) { var f = Math.min(data.force, 2.0); moveVec.x = Math.cos(data.angle.radian)*f; moveVec.z = -Math.sin(data.angle.radian)*f; }); manager.on('end', function() { moveVec.set(0,0,0); }); }");
 
-            // 🛡️ 注入 Google 官方的 DRACO 解码器，用于强行解析官方超压模型
-            html.append("html.append(\"<script src='https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js'></script>\");");
             html.append("var gltfLoader = new THREE.GLTFLoader();");
             html.append("if(typeof THREE.DRACOLoader !== 'undefined') { var dracoLoader = new THREE.DRACOLoader(); dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.4.1/'); gltfLoader.setDRACOLoader(dracoLoader); }");
             html.append("var objLoader = typeof THREE.OBJLoader !== 'undefined' ? new THREE.OBJLoader() : null;");
@@ -3138,8 +3137,8 @@ html.append("window.pasteObj = function() { if(clipboardObj) { var nObj = clipbo
             html.append("makeDrag(document.getElementById('sysGroup'), document.getElementById('sysHandle'));");
             html.append("makeDrag(document.getElementById('rightMenu'), document.getElementById('rightHandle'));");
 
-            // 🛡️ 打包导出优化：修复 exporter.parse 的回调参数签名，彻底解决导出无反应与报错
-            html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); grid.visible = false; transformControl.visible = false; var helpers=[]; scene.traverse(function(c){if(c.type==='PointLightHelper'){c.visible=false;helpers.push(c);}}); var expAnims = []; interactables.forEach(function(o){ if(o.userData.animations) expAnims.push(...o.userData.animations); }); exporter.parse(scene, function(result) { grid.visible = true; helpers.forEach(function(h){h.visible=true;}); var blob = new Blob([result], {type: 'application/octet-stream'}); var reader = new FileReader(); reader.readAsDataURL(blob); reader.onloadend = function() { StudioBridge.saveGLB(reader.result, name, path); } }, function(err) { alert('导出引擎错误: '+err); grid.visible=true; }, { binary: true, animations: expAnims.length ? expAnims : null }); } catch(e) { alert('导出捕获错误: '+e.message); grid.visible=true; } };");
+            // 🛡️ 打包导出优化：严格适配 r128 API 签名 (input, onCompleted, options)，彻底解决导出报错
+            html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); grid.visible = false; transformControl.visible = false; var helpers=[]; scene.traverse(function(c){if(c.type==='PointLightHelper'){c.visible=false;helpers.push(c);}}); var expAnims = []; interactables.forEach(function(o){ if(o.userData.animations) expAnims.push(...o.userData.animations); }); exporter.parse(scene, function(result) { grid.visible = true; helpers.forEach(function(h){h.visible=true;}); var blob = new Blob([result], {type: 'application/octet-stream'}); var reader = new FileReader(); reader.readAsDataURL(blob); reader.onloadend = function() { StudioBridge.saveGLB(reader.result, name, path); } }, { binary: true, animations: expAnims.length ? expAnims : null }); } catch(e) { alert('导出捕获错误: '+e.message); grid.visible=true; } };");
 
             html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
             html.append("</script></body></html>");
