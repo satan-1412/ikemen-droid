@@ -3103,11 +3103,12 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             
             html.append("window.stepFrame = function(dir) { var ud=selectedObj.userData; if(ud.isPlaying){ alert('请先暂停播放再微调帧！'); return; } if(ud.action) { var clip=ud.action.getClip(); ud.action.time += dir * (1.0/30.0); if(ud.action.time < 0) ud.action.time = clip.duration; if(ud.action.time > clip.duration) ud.action.time = 0; ud.mixer.update(0); } };");
 
-            // 🛡️ 动画主循环：使用 Sin 函数实现平移与自转的“有来有回”预览效果
+            // 🛡️ 动画主循环：补齐缺失的渲染指令与函数闭合，彻底修复黑屏与 SyntaxError 报错
             html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); var time = clock.elapsedTime; if(typeof mixers!=='undefined') mixers.forEach(function(m){m.update(dt);});");
             html.append("    interactables.forEach(function(obj) { if(obj.userData.isPlaying!==false) { var factor = Math.sin(time); ");
             html.append("    if(obj.userData.velX) obj.position.x += obj.userData.velX * factor; if(obj.userData.velY) obj.position.y += obj.userData.velY * factor; if(obj.userData.velZ) obj.position.z += obj.userData.velZ * factor; ");
             html.append("    if(obj.userData.rVelX) obj.rotation.x += obj.userData.rVelX; if(obj.userData.rVelY) obj.rotation.y += obj.userData.rVelY; if(obj.userData.rVelZ) obj.rotation.z += obj.userData.rVelZ; } });");
+            html.append("    if(typeof moveVec!=='undefined' && moveVec.lengthSq()>0) { camera.translateX(moveVec.x*moveSpeed*dt); camera.translateZ(moveVec.z*moveSpeed*dt); } renderer.render(scene, camera); } animate();");
 
             // 🛡️ 顶级烘焙引擎：修复堆栈溢出，保存环境光/太阳光，物理刻录“有来有回”动画轨道
             html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); transformControl.visible=false; grid.visible=false; ");
