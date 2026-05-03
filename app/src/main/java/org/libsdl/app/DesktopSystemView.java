@@ -2882,7 +2882,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             html.append("<div id='sysGroup' class='scrollable-panel' style='position:absolute; top:20px; left:20px; z-index:1000; background:rgba(20,20,20,0.8); padding:8px; border-radius:10px; width:120px;'>");
             html.append("   <div class='drag-handle' id='sysHandle'>⠿ 拖动 ⠿</div>");
-            html.append("   <button class='ui-btn' onclick='closeStudioSafe()' style='background:#E81123;'>⬅️ 返回 2D</button>");
+            html.append("   <button class='ui-btn' onclick='StudioBridge.closeStudio()' style='background:#E81123;'>⬅️ 返回 2D</button>");
             html.append("   <button class='ui-btn' onclick='StudioBridge.triggerExportSettings()' style='background:#4CAF50;'>💾 烘焙打包</button>");
             html.append("   <button class='ui-btn' onclick='togglePreviewMode()' style='background:#FF9800;'>👁️ 预览模式</button>");
             html.append("</div>");
@@ -2896,7 +2896,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("       <button class='ui-btn' onclick='addGeom(\"box\")'>方块(墙)</button>");
             html.append("       <button class='ui-btn' onclick='addGeom(\"plane\")'>平面(地)</button>");
             html.append("       <button class='ui-btn' onclick='addGeom(\"skydome\")' style='background:#9C27B0'>天空盒(环境背景)</button>");
-            html.append("       <button class='ui-btn' onclick='addLight()' style='background:#E6C200; color:black;'>💡 自定义点光源</button>");
+            html.append("       <button class='ui-btn' onclick='addLight(\"point\")' style='background:#E6C200; color:black;'>💡 点光源</button>");
+            html.append("       <button class='ui-btn' onclick='addLight(\"spot\")' style='background:#E6C200; color:black;'>🔦 手电筒(射线)</button>");
+            html.append("       <button class='ui-btn' onclick='addLight(\"hemi\")' style='background:#E6C200; color:black;'>☁️ 动态环境光</button>");
             html.append("   </div>");
             
             html.append("   <button class='ui-btn' onclick='toggleSub(\"transSub\")'>🔧 变换轴</button>");
@@ -3101,12 +3103,27 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             
             html.append("window.stepFrame = function(dir) { var ud=selectedObj.userData; if(ud.isPlaying){ alert('请先暂停播放再微调帧！'); return; } if(ud.action) { var clip=ud.action.getClip(); ud.action.time += dir * (1.0/30.0); if(ud.action.time < 0) ud.action.time = clip.duration; if(ud.action.time > clip.duration) ud.action.time = 0; ud.mixer.update(0); } };");
 
-            html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); if(typeof mixers!=='undefined') mixers.forEach(function(m){m.update(dt);});");
-            html.append("    interactables.forEach(function(obj) { if(obj.userData.isPlaying!==false) { if(obj.userData.velX) obj.position.x += obj.userData.velX; if(obj.userData.velY) obj.position.y += obj.userData.velY; if(obj.userData.velZ) obj.position.z += obj.userData.velZ; if(obj.userData.rVelX) obj.rotation.x += obj.userData.rVelX; if(obj.userData.rVelY) obj.rotation.y += obj.userData.rVelY; if(obj.userData.rVelZ) obj.rotation.z += obj.userData.rVelZ; } });");
-            html.append("    if(typeof moveVec!=='undefined' && moveVec.lengthSq()>0) { camera.translateX(moveVec.x*moveSpeed*dt); camera.translateZ(moveVec.z*moveSpeed*dt); } renderer.render(scene, camera); } animate();");
+            // 🛡️ 动画主循环：使用 Sin 函数实现平移与自转的“有来有回”预览效果
+            html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); var time = clock.elapsedTime; if(typeof mixers!=='undefined') mixers.forEach(function(m){m.update(dt);});");
+            html.append("    interactables.forEach(function(obj) { if(obj.userData.isPlaying!==false) { var factor = Math.sin(time); ");
+            html.append("    if(obj.userData.velX) obj.position.x += obj.userData.velX * factor; if(obj.userData.velY) obj.position.y += obj.userData.velY * factor; if(obj.userData.velZ) obj.position.z += obj.userData.velZ * factor; ");
+            html.append("    if(obj.userData.rVelX) obj.rotation.x += obj.userData.rVelX; if(obj.userData.rVelY) obj.rotation.y += obj.userData.rVelY; if(obj.userData.rVelZ) obj.rotation.z += obj.userData.rVelZ; } });");
 
-            // 🛡️ 终极动画烘焙引擎：物理转化位移/自转为核心关键帧轨道，解决15字节导出报错
-            html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); transformControl.visible = false; grid.visible = false; var helpers=[]; scene.traverse(function(c){if(c.type==='PointLightHelper'){c.visible=false;helpers.push(c);}}); var exportScene = new THREE.Scene(); var expAnims = []; interactables.forEach(function(o){ var clone = o.clone(); clone.position.copy(o.position); clone.rotation.copy(o.rotation); clone.scale.copy(o.scale); var vX = o.userData.velX||0, vY = o.userData.velY||0, vZ = o.userData.velZ||0; var rX = o.userData.rVelX||0, rY = o.userData.rVelY||0, rZ = o.userData.rVelZ||0; var hasVel = vX||vY||vZ||rX||rY||rZ; var localAnims = []; if(o.userData.animations && o.userData.animations.length>0) { localAnims.push(...o.userData.animations); } if(hasVel) { var times = [0, 1.5, 3.0]; var p = o.position; var dx = vX*90, dy = vY*90, dz = vZ*90; var valuesP = [p.x,p.y,p.z, p.x+dx,p.y+dy,p.z+dz, p.x,p.y,p.z]; var trackP = new THREE.VectorKeyframeTrack('.position', times, valuesP); var q0 = o.quaternion.clone(); var e = new THREE.Euler(o.rotation.x+rX*90, o.rotation.y+rY*90, o.rotation.z+rZ*90); var q1 = new THREE.Quaternion().setFromEuler(e); var trackQ = new THREE.QuaternionKeyframeTrack('.quaternion', times, [q0.x,q0.y,q0.z,q0.w, q1.x,q1.y,q1.z,q1.w, q0.x,q0.y,q0.z,q0.w]); var clip = new THREE.AnimationClip(o.name+'_BakedMotion', 3.0, [trackP, trackQ]); localAnims.push(clip); } if(localAnims.length>0) expAnims.push(...localAnims); exportScene.add(clone); }); var opt = { binary: true }; if(expAnims.length > 0) opt.animations = expAnims; exporter.parse(exportScene, function(result) { grid.visible = true; helpers.forEach(function(h){h.visible=true;}); var blob = new Blob([result], {type: 'application/octet-stream'}); var reader = new FileReader(); reader.readAsDataURL(blob); reader.onloadend = function() { StudioBridge.saveGLB(reader.result, name, path); } }, function(err){ alert('导出引擎错误:'+err); grid.visible=true; }, opt); } catch(e) { alert('导出捕获错误: '+e.message); grid.visible=true; } };");
+            // 🛡️ 顶级烘焙引擎：修复堆栈溢出，保存环境光/太阳光，物理刻录“有来有回”动画轨道
+            html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); transformControl.visible=false; grid.visible=false; ");
+            html.append("    var expAnims = []; var exportScene = new THREE.Scene(); exportScene.name = 'ExportRoot'; ");
+            html.append("    exportScene.add(ambientLight.clone()); exportScene.add(dirLight.clone()); "); // 保存全局光照
+            html.append("    interactables.forEach(function(o){ ");
+            html.append("        var clone = o.clone(false); clone.position.copy(o.position); clone.rotation.copy(o.rotation); clone.scale.copy(o.scale); ");
+            html.append("        if(o.userData.animations) expAnims.push(...o.userData.animations); ");
+            html.append("        var vX=o.userData.velX||0, rY=o.userData.rVelY||0; if(vX || rY){ "); // 烘焙物理动画
+            html.append("            var times=[0, 2, 4], dx=vX*120, dy=rY*5; ");
+            html.append("            var trackP=new THREE.VectorKeyframeTrack('.position', times, [o.position.x, o.position.y, o.position.z, o.position.x+dx, o.position.y, o.position.z, o.position.x, o.position.y, o.position.z]); ");
+            html.append("            var clip=new THREE.AnimationClip('BakedLoop', 4, [trackP]); expAnims.push(clip); ");
+            html.append("        } exportScene.add(clone); ");
+            html.append("    }); ");
+            html.append("    exporter.parse(exportScene, function(result) { grid.visible=true; transformControl.visible=true; var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); reader.onloadend=function(){ StudioBridge.saveGLB(reader.result, name, path); } }, function(err){ alert('导出崩溃:'+err); }, {binary:true, animations:expAnims}); ");
+            html.append("} catch(e) { alert('系统栈溢出修复拦截: '+e.message); grid.visible=true; } };");
 
             html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
             html.append("</script></body></html>");
