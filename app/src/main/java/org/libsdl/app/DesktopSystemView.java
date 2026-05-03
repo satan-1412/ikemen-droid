@@ -2872,6 +2872,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("<script src=\"js/GLTFExporter.js\"></script>");
             html.append("<script src=\"js/nipplejs.min.js\"></script>");
             html.append("<script src=\"js/DRACOLoader.js\"></script>"); // 🛡️ 纯离线读取 Draco 解码器
+            html.append("<script src=\"js/fflate.min.js\"></script>"); // 🛡️ 引入 FBX 解压模块
             
             html.append("</head><body>");
             
@@ -2881,7 +2882,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             html.append("<div id='sysGroup' class='scrollable-panel' style='position:absolute; top:20px; left:20px; z-index:1000; background:rgba(20,20,20,0.8); padding:8px; border-radius:10px; width:120px;'>");
             html.append("   <div class='drag-handle' id='sysHandle'>⠿ 拖动 ⠿</div>");
-            html.append("   <button class='ui-btn' onclick='StudioBridge.closeStudio()' style='background:#E81123;'>⬅️ 返回 2D</button>");
+            html.append("   <button class='ui-btn' onclick='closeStudioSafe()' style='background:#E81123;'>⬅️ 返回 2D</button>");
             html.append("   <button class='ui-btn' onclick='StudioBridge.triggerExportSettings()' style='background:#4CAF50;'>💾 烘焙打包</button>");
             html.append("   <button class='ui-btn' onclick='togglePreviewMode()' style='background:#FF9800;'>👁️ 预览模式</button>");
             html.append("</div>");
@@ -2921,11 +2922,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("       <div class='param-row'><span>旋</span><input type='number' id='rX' onchange='applyParams()'><input type='number' id='rY' onchange='applyParams()'><input type='number' id='rZ' onchange='applyParams()'></div>");
             html.append("       <div class='param-row'><span>缩</span><input type='number' id='sX' step='0.1' onchange='applyParams()'><input type='number' id='sY' step='0.1' onchange='applyParams()'><input type='number' id='sZ' step='0.1' onchange='applyParams()'></div>");
             
-            // 🎬 加入动态位移与自转参数输入框 (彻底修复之前缺少转速参数导致的崩溃红字)
+            // 🎬 加入动态位移与自转输入框 (彻底修复找不到 rvX 导致的崩溃红字)
             html.append("       <div style='color:#4CAF50; font-size:12px; margin:5px 0; text-align:center;'>模型持续位移/自转速 (每帧)</div>");
             html.append("       <div class='param-row'><span>移</span><input type='number' id='vX' step='0.1' onchange='applyParams()'><input type='number' id='vY' step='0.1' onchange='applyParams()'><input type='number' id='vZ' step='0.1' onchange='applyParams()'></div>");
-            html.append("       <div class='param-row'><span>转</span><input type='number' id='rvX' step='0.01' onchange='applyParams()'><input type='number' id='rvY' step='0.01' onchange='applyParams()'><input type='number' id='rvZ' step='0.01' onchange='applyParams()'></div>");
-            
+            html.append("       <div class='param-row'><span>转</span><input type='number' id='rvX' step='0.01' onchange='applyParams()'><input type='number' id='rvY' step='0.01' onchange='applyParams()'><input type='number' id='rvZ' step='0.01' onchange='applyParams()'></div>");          
             html.append("       <div id='lightParams' style='display:none; margin-top:5px; border-top:1px dashed #555; padding-top:5px;'>");
             html.append("           <div style='color:#E6C200; font-size:12px; margin-bottom:5px;'>💡 自定义光源参数</div>");
             html.append("           <div class='param-row'><span>颜色</span><input type='color' id='l_col' onchange='applyParams()' style='width:60px; height:20px; padding:0;'></div>");
@@ -3038,9 +3038,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("var joyZone = document.createElement('div'); joyZone.id = 'joyZone'; joyZone.style.cssText = 'position:absolute; bottom:40px; left:40px; width:120px; height:120px; z-index:999; border-radius:50%; background:rgba(255,255,255,0.08); touch-action:none;'; document.body.appendChild(joyZone);");
             html.append("if(typeof nipplejs !== 'undefined') { var manager = nipplejs.create({ zone: joyZone, mode: 'static', position: {left:'50%', top:'50%'}, color: '#0078D7' }); var moveVec = new THREE.Vector3(0,0,0); manager.on('move', function(evt, data) { var f = Math.min(data.force, 2.0); moveVec.x = Math.cos(data.angle.radian)*f; moveVec.z = -Math.sin(data.angle.radian)*f; }); manager.on('end', function() { moveVec.set(0,0,0); }); }");
 
+            html.append("window.closeStudioSafe = function() { if(confirm('⚠️ 确定要退出 3D 工作室吗？\\n如果没有点击【💾 烘焙打包】，当前的场景布置将会丢失！')) { StudioBridge.closeStudio(); } };");
+
             html.append("var gltfLoader = new THREE.GLTFLoader();");
-            // 🛡️ 纯本地离线加载 Draco 解码器 (打包时务必在 build.gradle 下载进 js 目录)
-            html.append("if(typeof THREE.DRACOLoader !== 'undefined') { var dracoLoader = new THREE.DRACOLoader(); dracoLoader.setDecoderPath('js/'); gltfLoader.setDRACOLoader(dracoLoader); }");
+            // 🛡️ 离线加载 Draco 并强制禁用 WebWorker，彻底解决安卓本地 file:// 协议拦截多线程的闪退！
+            html.append("if(typeof THREE.DRACOLoader !== 'undefined') { var dracoLoader = new THREE.DRACOLoader(); dracoLoader.setDecoderPath('js/'); dracoLoader.setDecoderConfig({type: 'js'}); dracoLoader.setWorkerLimit(0); gltfLoader.setDRACOLoader(dracoLoader); }");
             html.append("var objLoader = typeof THREE.OBJLoader !== 'undefined' ? new THREE.OBJLoader() : null;");
             html.append("var fbxLoader = typeof THREE.FBXLoader !== 'undefined' ? new THREE.FBXLoader() : null;");
             html.append("var tdsLoader = typeof THREE.TDSLoader !== 'undefined' ? new THREE.TDSLoader() : null;");
@@ -3059,7 +3061,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("            var model = obj.scene || obj;");
             html.append("            if(model.isBufferGeometry) { var mat = new THREE.MeshStandardMaterial({color:0xcccccc, side:THREE.DoubleSide}); model = new THREE.Mesh(model, mat); }");
             html.append("            model.userData.isRoot = true; model.position.copy(spawnPos);");
-            // 🛡️ 修复 3DS 模型导入纯黑的问题：强行将色值为 0 的黑材质提亮为白色，让它接受光照！
             html.append("            model.traverse(function(n){ if(n.isMesh) { n.castShadow = true; n.receiveShadow = true; if(n.material) { n.material.side = THREE.DoubleSide; if(n.material.color && n.material.color.getHex() === 0) n.material.color.setHex(0xffffff); } } });");
             html.append("            model.userData.velX = 0; model.userData.velY = 0; model.userData.velZ = 0;"); 
             html.append("            var anims = obj.animations || [];");
@@ -3069,9 +3070,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("        } catch(ex) { alert('模型渲染报错: ' + ex.message); }");
             html.append("    };");
             html.append("    try {");
-            html.append("        if((ext==='gltf'||ext==='glb') && gltfLoader) gltfLoader.load(url, onLoaded, null, function(err){ alert('模型加载失败(Draco解压/语法错误): '+err); });");
+            html.append("        if((ext==='gltf'||ext==='glb') && gltfLoader) gltfLoader.load(url, onLoaded, null, function(err){ alert('加载失败: '+err); });");
             html.append("        else if(ext==='obj' && objLoader) objLoader.load(url, onLoaded);");
-            html.append("        else if(ext==='fbx' && fbxLoader) fbxLoader.load(url, onLoaded);");
+            html.append("        else if(ext==='fbx' && fbxLoader) fbxLoader.load(url, onLoaded, null, function(err){ alert('FBX错误(可能缺fflate): '+err); });");
             html.append("        else if(ext==='3ds' && tdsLoader) tdsLoader.load(url, onLoaded);");
             html.append("        else if(ext==='dae' && daeLoader) daeLoader.load(url, function(c){ onLoaded(c.scene); });");
             html.append("        else if(ext==='stl' && stlLoader) stlLoader.load(url, onLoaded);");
@@ -3115,19 +3116,41 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("window.switchAnim = function(dir) { var ud=selectedObj.userData; ud.animIndex=(ud.animIndex+dir+ud.animations.length)%ud.animations.length; ud.mixer.stopAllAction(); ud.action=ud.mixer.clipAction(ud.animations[ud.animIndex]); if(ud.isPlaying) ud.action.play(); checkAnimUI(); };");
             html.append("window.togglePlay = function() { var ud=selectedObj.userData; ud.isPlaying=!ud.isPlaying; if(ud.isPlaying) ud.action.play(); else ud.action.stop(); checkAnimUI(); };");
 
+            // 🛡️ 动画主循环：同时执行持续位移 (vel) 和 持续自转 (rVel)
             html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); if(typeof mixers!=='undefined') mixers.forEach(function(m){m.update(dt);});");
             html.append("    interactables.forEach(function(obj) { if(obj.userData.velX) obj.position.x += obj.userData.velX; if(obj.userData.velY) obj.position.y += obj.userData.velY; if(obj.userData.velZ) obj.position.z += obj.userData.velZ; if(obj.userData.rVelX) obj.rotation.x += obj.userData.rVelX; if(obj.userData.rVelY) obj.rotation.y += obj.userData.rVelY; if(obj.userData.rVelZ) obj.rotation.z += obj.userData.rVelZ; });");
             html.append("    if(typeof moveVec!=='undefined' && moveVec.lengthSq()>0) { camera.translateX(moveVec.x*moveSpeed*dt); camera.translateZ(moveVec.z*moveSpeed*dt); } renderer.render(scene, camera); } animate();");
             
-            html.append("function makeDrag(el, hd) { hd.style.touchAction='none'; hd.addEventListener('pointerdown', function(e){ if(isUIEditMode) return; e.preventDefault(); e.target.setPointerCapture(e.pointerId); var startX=e.clientX, startY=e.clientY, startLeft=el.offsetLeft, startTop=el.offsetTop; function onMove(ev){ el.style.left=(startLeft+ev.clientX-startX)+'px'; el.style.top=(startTop+ev.clientY-startY)+'px'; el.style.right='auto'; el.style.bottom='auto'; } function onUp(ev){ e.target.releasePointerCapture(e.pointerId); hd.removeEventListener('pointermove', onMove); hd.removeEventListener('pointerup', onUp); } hd.addEventListener('pointermove', onMove); hd.addEventListener('pointerup', onUp); }); }");
-            html.append("makeDrag(document.getElementById('sysGroup'), document.getElementById('sysHandle'));");
-            html.append("makeDrag(document.getElementById('rightMenu'), document.getElementById('rightHandle'));");
+            // 🛡️ UI 独立排版护盾系统 (全透明全屏遮罩拦截)
+            html.append("var isUIEditMode = false; var currentUI = null; var uiOrigProps = {}; var longPressTimer = null; var dragStartX=0, dragStartY=0, uiStartX=0, uiStartY=0, isDraggingUI=false;");
+            html.append("var uiOverlay = document.createElement('div'); uiOverlay.style.cssText='position:absolute;top:0;left:0;width:100%;height:100%;z-index:9998;display:none;touch-action:none;'; document.body.appendChild(uiOverlay);");
+            
+            html.append("window.toggleUIEdit = function() { isUIEditMode = !isUIEditMode; if(isUIEditMode) { uiOverlay.style.display='block'; document.getElementById('enterUIEditBtn').innerText='🚪 退出排版'; document.getElementById('enterUIEditBtn').style.background='#E81123'; alert('【排版模式开启】\\n1. 直接拖动屏幕上的任意控件即可移动。\\n2. 单击选中控件，长按弹出修改窗口。\\n3. 在此状态下其余所有原功能已被彻底冻结！'); transformControl.enabled=false; clearSelection(); } else { uiOverlay.style.display='none'; document.getElementById('enterUIEditBtn').innerText='🎨 编辑按键'; document.getElementById('enterUIEditBtn').style.background='#1E88E5'; if(currentUI) currentUI.style.boxShadow=''; currentUI=null; document.getElementById('uiEditorPopup').style.display='none'; transformControl.enabled=true; } };");
+            
+            html.append("window.applyUI = function() { if(!currentUI) return; currentUI.style.width = document.getElementById('ui_w').value + 'px'; currentUI.style.height = document.getElementById('ui_h').value + 'px'; currentUI.style.opacity = document.getElementById('ui_a').value; };");
+            html.append("window.saveUI = function() { document.getElementById('uiEditorPopup').style.display='none'; if(currentUI) currentUI.style.boxShadow=''; currentUI=null; };");
+            html.append("window.cancelUI = function() { if(currentUI && uiOrigProps.left) { currentUI.style.left=uiOrigProps.left; currentUI.style.top=uiOrigProps.top; currentUI.style.width=uiOrigProps.width; currentUI.style.height=uiOrigProps.height; currentUI.style.opacity=uiOrigProps.opacity; } document.getElementById('uiEditorPopup').style.display='none'; if(currentUI) currentUI.style.boxShadow=''; currentUI=null; };");
+            
+            html.append("var popupHtml = \"<div id='uiEditorPopup' style='display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10000; background:rgba(30,30,30,0.95); padding:20px; border-radius:15px; width:260px; color:white; border:2px solid #0078D7; touch-action:none;'>\";");
+            html.append("popupHtml += \"<h3 style='margin:0 0 15px 0; font-size:16px; text-align:center; color:#0078D7;'>🛠️ 大小与透明度</h3>\";");
+            html.append("popupHtml += \"<div class='setting-row'><span>宽度(W)</span><input type='number' id='ui_w' oninput='applyUI()' style='width:100px; background:#222; color:white;'></div>\";");
+            html.append("popupHtml += \"<div class='setting-row'><span>高度(H)</span><input type='number' id='ui_h' oninput='applyUI()' style='width:100px; background:#222; color:white;'></div>\";");
+            html.append("popupHtml += \"<div class='setting-row'><span>透明度</span><input type='range' id='ui_a' min='0.1' max='1' step='0.1' oninput='applyUI()' style='width:100px;'></div>\";");
+            html.append("popupHtml += \"<div style='display:flex; gap:10px; margin-top:15px;'><button class='ui-btn' onclick='saveUI()' style='background:#4CAF50; flex:1;'>💾 保存</button><button class='ui-btn' onclick='cancelUI()' style='background:#333; flex:1;'>❌ 取消</button></div>\";");
+            html.append("popupHtml += \"</div>\"; document.body.insertAdjacentHTML('beforeend', popupHtml);");
 
-            // 🛡️ 打包导出优化：修复 exporter.parse 回调，恢复 r128 原生支持的严格3参数机制，杜绝导出报错卡死
-            html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); grid.visible = false; transformControl.visible = false; var helpers=[]; scene.traverse(function(c){if(c.type==='PointLightHelper'){c.visible=false;helpers.push(c);}}); var expAnims = []; interactables.forEach(function(o){ if(o.userData.animations) expAnims.push(...o.userData.animations); }); exporter.parse(scene, function(result) { grid.visible = true; helpers.forEach(function(h){h.visible=true;}); var blob = new Blob([result], {type: 'application/octet-stream'}); var reader = new FileReader(); reader.readAsDataURL(blob); reader.onloadend = function() { StudioBridge.saveGLB(reader.result, name, path); } }, { binary: true, animations: expAnims.length ? expAnims : null }); } catch(e) { alert('导出捕获错误: '+e.message); grid.visible=true; } };");
+            html.append("window.openUIPopup = function(target) { var comp = window.getComputedStyle(target); document.getElementById('ui_w').value = parseInt(comp.width)||0; document.getElementById('ui_h').value = parseInt(comp.height)||0; document.getElementById('ui_a').value = comp.opacity || 1; document.getElementById('uiEditorPopup').style.display='block'; };");
+
+            html.append("uiOverlay.addEventListener('pointerdown', function(e) { if(!isUIEditMode || e.target.closest('#uiEditorPopup')) return; uiOverlay.style.display='none'; var el = document.elementFromPoint(e.clientX, e.clientY); uiOverlay.style.display='block'; if(!el) return; var target = el.closest('button, #sysGroup, #rightMenu, #joyZone, #animTools, #objTools, #fireBtn'); if(target && target.id !== 'enterUIEditBtn') { if(currentUI) currentUI.style.boxShadow=''; currentUI=target; currentUI.style.boxShadow='0 0 15px yellow'; var rect = currentUI.getBoundingClientRect(); var comp = window.getComputedStyle(currentUI); uiOrigProps = { left: comp.left, top: comp.top, width: comp.width, height: comp.height, opacity: comp.opacity }; uiStartX = rect.left; uiStartY = rect.top; dragStartX = e.clientX; dragStartY = e.clientY; isDraggingUI = true; longPressTimer = setTimeout(function(){ isDraggingUI = false; openUIPopup(currentUI); }, 600); } else { if(currentUI) currentUI.style.boxShadow=''; currentUI=null; } });");
+            html.append("uiOverlay.addEventListener('pointermove', function(e) { if(isDraggingUI && currentUI) { var dx = e.clientX - dragStartX; var dy = e.clientY - dragStartY; if(Math.abs(dx)>5 || Math.abs(dy)>5) { clearTimeout(longPressTimer); currentUI.style.position='absolute'; currentUI.style.left = (uiStartX+dx)+'px'; currentUI.style.top = (uiStartY+dy)+'px'; currentUI.style.bottom='auto'; currentUI.style.right='auto'; } } });");
+            html.append("uiOverlay.addEventListener('pointerup', function(e) { clearTimeout(longPressTimer); isDraggingUI = false; });");
+
+            // 导出逻辑剥离辅助网格，纯净克隆导出防止报错
+            html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); transformControl.visible = false; var exportScene = new THREE.Scene(); var expAnims = []; interactables.forEach(function(o){ var clone = o.clone(); clone.position.copy(o.position); clone.rotation.copy(o.rotation); clone.scale.copy(o.scale); exportScene.add(clone); if(o.userData.animations) expAnims.push(...o.userData.animations); }); exporter.parse(exportScene, function(result) { var blob = new Blob([result], {type: 'application/octet-stream'}); var reader = new FileReader(); reader.readAsDataURL(blob); reader.onloadend = function() { StudioBridge.saveGLB(reader.result, name, path); } }, { binary: true, animations: expAnims.length ? expAnims : null }); } catch(e) { alert('导出捕获错误: '+e.message); } };");
 
             html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
             html.append("</script></body></html>");
+
 
             
             modelWebView.loadDataWithBaseURL("file:///android_asset/", html.toString(), "text/html", "utf-8", null);
