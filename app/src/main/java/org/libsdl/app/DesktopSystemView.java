@@ -2983,8 +2983,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("window.fireSelect = function() { if (lockEvents || isUIEditMode) return; raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); var intersects = raycaster.intersectObjects(interactables, true); if(intersects.length > 0) { var obj = intersects[0].object; while(obj.parent && obj.userData.isRoot !== true) { obj = obj.parent; } transformControl.attach(obj); selectedObj = obj; document.getElementById('objTools').style.display='block'; updateParamUI(); checkAnimUI(); } else { clearSelection(); } };");
             html.append("window.clearSelection = function() { transformControl.detach(); selectedObj = null; document.getElementById('objTools').style.display='none'; document.getElementById('animTools').style.display='none'; };");
 
-            html.append("window.updateParamUI = function() { if(!selectedObj) return; document.getElementById('pX').value=selectedObj.position.x.toFixed(2); document.getElementById('pY').value=selectedObj.position.y.toFixed(2); document.getElementById('pZ').value=selectedObj.position.z.toFixed(2); document.getElementById('rX').value=(selectedObj.rotation.x*180/Math.PI).toFixed(1); document.getElementById('rY').value=(selectedObj.rotation.y*180/Math.PI).toFixed(1); document.getElementById('rZ').value=(selectedObj.rotation.z*180/Math.PI).toFixed(1); document.getElementById('sX').value=selectedObj.scale.x.toFixed(2); document.getElementById('sY').value=selectedObj.scale.y.toFixed(2); document.getElementById('sZ').value=selectedObj.scale.z.toFixed(2); document.getElementById('vX').value=selectedObj.userData.velX||0; document.getElementById('vY').value=selectedObj.userData.velY||0; document.getElementById('vZ').value=selectedObj.userData.velZ||0; document.getElementById('rvX').value=selectedObj.userData.rVelX||0; document.getElementById('rvY').value=selectedObj.userData.rVelY||0; document.getElementById('rvZ').value=selectedObj.userData.rVelZ||0; if(selectedObj.userData.isLight){ document.getElementById('lightParams').style.display='block'; document.getElementById('l_col').value='#'+selectedObj.color.getHexString(); document.getElementById('l_int').value=selectedObj.intensity; document.getElementById('l_dist').value=selectedObj.distance; }else{ document.getElementById('lightParams').style.display='none'; } };");
-            html.append("window.applyParams = function() { if(!selectedObj) return; selectedObj.position.set(parseFloat(document.getElementById('pX').value)||0, parseFloat(document.getElementById('pY').value)||0, parseFloat(document.getElementById('pZ').value)||0); selectedObj.rotation.set((parseFloat(document.getElementById('rX').value)||0)*Math.PI/180, (parseFloat(document.getElementById('rY').value)||0)*Math.PI/180, (parseFloat(document.getElementById('rZ').value)||0)*Math.PI/180); selectedObj.scale.set(parseFloat(document.getElementById('sX').value)||1, parseFloat(document.getElementById('sY').value)||1, parseFloat(document.getElementById('sZ').value)||1); selectedObj.userData.velX=parseFloat(document.getElementById('vX').value)||0; selectedObj.userData.velY=parseFloat(document.getElementById('vY').value)||0; selectedObj.userData.velZ=parseFloat(document.getElementById('vZ').value)||0; selectedObj.userData.rVelX=parseFloat(document.getElementById('rvX').value)||0; selectedObj.userData.rVelY=parseFloat(document.getElementById('rvY').value)||0; selectedObj.userData.rVelZ=parseFloat(document.getElementById('rvZ').value)||0; if(selectedObj.userData.isLight){ selectedObj.color.set(document.getElementById('l_col').value); selectedObj.intensity=parseFloat(document.getElementById('l_int').value); selectedObj.distance=parseFloat(document.getElementById('l_dist').value); } };");
+            html.append("window.updateParamUI = function() { if(!selectedObj) return; document.getElementById('pX').value=selectedObj.position.x.toFixed(2); document.getElementById('pY').value=selectedObj.position.y.toFixed(2); document.getElementById('pZ').value=selectedObj.position.z.toFixed(2); document.getElementById('rX').value=(selectedObj.rotation.x*180/Math.PI).toFixed(1); document.getElementById('rY').value=(selectedObj.rotation.y*180/Math.PI).toFixed(1); document.getElementById('rZ').value=(selectedObj.rotation.z*180/Math.PI).toFixed(1); document.getElementById('sX').value=selectedObj.scale.x.toFixed(2); document.getElementById('sY').value=selectedObj.scale.y.toFixed(2); document.getElementById('sZ').value=selectedObj.scale.z.toFixed(2); document.getElementById('vX').value=selectedObj.userData.velX||0; document.getElementById('vY').value=selectedObj.userData.velY||0; document.getElementById('vZ').value=selectedObj.userData.velZ||0; document.getElementById('rvX').value=selectedObj.userData.rVelX||0; document.getElementById('rvY').value=selectedObj.userData.rVelY||0; document.getElementById('rvZ').value=selectedObj.userData.rVelZ||0; if(selectedObj.userData.isLight){ document.getElementById('lightParams').style.display='block'; if(selectedObj.color) document.getElementById('l_col').value='#'+selectedObj.color.getHexString(); document.getElementById('l_int').value=selectedObj.intensity||1; document.getElementById('l_dist').value=selectedObj.distance||0; }else{ document.getElementById('lightParams').style.display='none'; } };");
+            html.append("window.applyParams = function() { if(!selectedObj) return; selectedObj.position.set(parseFloat(document.getElementById('pX').value)||0, parseFloat(document.getElementById('pY').value)||0, parseFloat(document.getElementById('pZ').value)||0); selectedObj.rotation.set((parseFloat(document.getElementById('rX').value)||0)*Math.PI/180, (parseFloat(document.getElementById('rY').value)||0)*Math.PI/180, (parseFloat(document.getElementById('rZ').value)||0)*Math.PI/180); selectedObj.scale.set(parseFloat(document.getElementById('sX').value)||1, parseFloat(document.getElementById('sY').value)||1, parseFloat(document.getElementById('sZ').value)||1); selectedObj.userData.velX=parseFloat(document.getElementById('vX').value)||0; selectedObj.userData.velY=parseFloat(document.getElementById('vY').value)||0; selectedObj.userData.velZ=parseFloat(document.getElementById('vZ').value)||0; selectedObj.userData.rVelX=parseFloat(document.getElementById('rvX').value)||0; selectedObj.userData.rVelY=parseFloat(document.getElementById('rvY').value)||0; selectedObj.userData.rVelZ=parseFloat(document.getElementById('rvZ').value)||0; if(selectedObj.userData.isLight){ if(selectedObj.color) selectedObj.color.set(document.getElementById('l_col').value); selectedObj.intensity=parseFloat(document.getElementById('l_int').value); selectedObj.distance=parseFloat(document.getElementById('l_dist').value); } if(selectedObj.children && selectedObj.children[0] && selectedObj.children[0].update) selectedObj.children[0].update(); };");
 
             // 🎨 终极全透明护盾 UI 排版器 (拖拽移动、长按属性、绝对防误触)
             html.append("var isUIEditMode = false; var currentUI = null; var uiOrigProps = {}; var longPressTimer = null; var dragStartX = 0, dragStartY = 0, uiStartX = 0, uiStartY = 0, isDraggingUI = false;");
@@ -3079,16 +3079,19 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    mesh.userData.isRoot=true; scene.add(mesh); interactables.push(mesh);");
             html.append("};");
 
-            html.append("window.addLight = function() {");
-            html.append("    var light = new THREE.PointLight(0xffffff, 1, 100);");
+            html.append("window.checkDefaultLights = function() { var c=0; interactables.forEach(function(o){if(o.userData.isLight) c++;}); var show = (c===0); ambientLight.visible=show; dirLight.visible=show; };");
+            
+            html.append("window.addLight = function(type) {");
+            html.append("    var light, helper;");
+            html.append("    if(type==='spot') { light = new THREE.SpotLight(0xffffff, 2, 200, Math.PI/6, 0.5, 1); light.target.position.set(0,-10,0); light.add(light.target); helper = new THREE.SpotLightHelper(light); }");
+            html.append("    else if(type==='hemi') { light = new THREE.HemisphereLight(0x87CEEB, 0x444444, 1); helper = new THREE.HemisphereLightHelper(light, 5); }");
+            html.append("    else { light = new THREE.PointLight(0xffffff, 1, 100); helper = new THREE.PointLightHelper(light, 5); }");
             html.append("    var intersects = raycaster.intersectObject(grid); if(intersects.length>0) light.position.copy(intersects[0].point); else light.position.set(0,10,0);");
-            html.append("    light.userData.isRoot = true; light.userData.isLight = true;");
-            html.append("    var helperMesh = new THREE.Mesh(new THREE.SphereGeometry(2,8,8), new THREE.MeshBasicMaterial({color: 0xffff00, wireframe: true}));");
-            html.append("    light.add(helperMesh);");
-            html.append("    scene.add(light); interactables.push(light);");
+            html.append("    light.userData.isRoot = true; light.userData.isLight = true; light.userData.lType = type || 'point';");
+            html.append("    light.add(helper); scene.add(light); interactables.push(light); checkDefaultLights();");
             html.append("};");
 
-            html.append("window.deleteSelected = function() { if(selectedObj) { scene.remove(selectedObj); interactables.splice(interactables.indexOf(selectedObj),1); clearSelection(); }};");
+            html.append("window.deleteSelected = function() { if(selectedObj) { scene.remove(selectedObj); interactables.splice(interactables.indexOf(selectedObj),1); clearSelection(); checkDefaultLights(); }};");
             
             html.append("window.updateSysLights = function() { ambientLight.color.set(document.getElementById('l_ambC').value); ambientLight.intensity=parseFloat(document.getElementById('l_ambI').value)/10; dirLight.color.set(document.getElementById('l_dirC').value); dirLight.intensity=parseFloat(document.getElementById('l_dirI').value)/10; };");
             html.append("window.updateSettings = function() { moveSpeed=parseFloat(document.getElementById('s_move').value); lookSpeed=parseFloat(document.getElementById('s_look').value)/1000; };");
@@ -3103,28 +3106,34 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             
             html.append("window.stepFrame = function(dir) { var ud=selectedObj.userData; if(ud.isPlaying){ alert('请先暂停播放再微调帧！'); return; } if(ud.action) { var clip=ud.action.getClip(); ud.action.time += dir * (1.0/30.0); if(ud.action.time < 0) ud.action.time = clip.duration; if(ud.action.time > clip.duration) ud.action.time = 0; ud.mixer.update(0); } };");
 
-            // 🛡️ 动画主循环：补齐缺失的渲染指令与函数闭合，彻底修复黑屏与 SyntaxError 报错
+            // 🛡️ 动画主循环：补充光源辅助器更新逻辑，保持 Sin 有来有回
             html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); var time = clock.elapsedTime; if(typeof mixers!=='undefined') mixers.forEach(function(m){m.update(dt);});");
             html.append("    interactables.forEach(function(obj) { if(obj.userData.isPlaying!==false) { var factor = Math.sin(time); ");
             html.append("    if(obj.userData.velX) obj.position.x += obj.userData.velX * factor; if(obj.userData.velY) obj.position.y += obj.userData.velY * factor; if(obj.userData.velZ) obj.position.z += obj.userData.velZ * factor; ");
-            html.append("    if(obj.userData.rVelX) obj.rotation.x += obj.userData.rVelX; if(obj.userData.rVelY) obj.rotation.y += obj.userData.rVelY; if(obj.userData.rVelZ) obj.rotation.z += obj.userData.rVelZ; } });");
+            html.append("    if(obj.userData.rVelX) obj.rotation.x += obj.userData.rVelX; if(obj.userData.rVelY) obj.rotation.y += obj.userData.rVelY; if(obj.userData.rVelZ) obj.rotation.z += obj.userData.rVelZ; } ");
+            html.append("    if(obj.userData.isLight && obj.children.length > 0 && obj.children[0].update) obj.children[0].update(); });"); // 动态更新光照辅助线方向/范围
             html.append("    if(typeof moveVec!=='undefined' && moveVec.lengthSq()>0) { camera.translateX(moveVec.x*moveSpeed*dt); camera.translateZ(moveVec.z*moveSpeed*dt); } renderer.render(scene, camera); } animate();");
 
-            // 🛡️ 顶级烘焙引擎：修复堆栈溢出，保存环境光/太阳光，物理刻录“有来有回”动画轨道
+            // 🛡️ 顶级烘焙引擎：彻底清除 userData 避免循环引用栈溢出，导出所有用户设置的光照及混合动画
             html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); transformControl.visible=false; grid.visible=false; ");
-            html.append("    var expAnims = []; var exportScene = new THREE.Scene(); exportScene.name = 'ExportRoot'; ");
-            html.append("    exportScene.add(ambientLight.clone()); exportScene.add(dirLight.clone()); "); // 保存全局光照
+            html.append("    var expAnims = []; var objsToExport = []; ");
+            html.append("    if(ambientLight.visible) objsToExport.push(new THREE.AmbientLight(ambientLight.color, ambientLight.intensity)); ");
+            html.append("    if(dirLight.visible) { var dl = new THREE.DirectionalLight(dirLight.color, dirLight.intensity); dl.position.copy(dirLight.position); objsToExport.push(dl); } ");
             html.append("    interactables.forEach(function(o){ ");
-            html.append("        var clone = o.clone(false); clone.position.copy(o.position); clone.rotation.copy(o.rotation); clone.scale.copy(o.scale); ");
+            html.append("        var clone = o.clone(); "); 
+            html.append("        clone.traverse(function(child) { child.userData = {}; if(child.isLight && child.children.length>0) child.children[0].visible = false; }); "); // 核心：彻底清空userData拦截 JSON 循环引用，隐藏多余光照辅助线
             html.append("        if(o.userData.animations) expAnims.push(...o.userData.animations); ");
-            html.append("        var vX=o.userData.velX||0, rY=o.userData.rVelY||0; if(vX || rY){ "); // 烘焙物理动画
-            html.append("            var times=[0, 2, 4], dx=vX*120, dy=rY*5; ");
-            html.append("            var trackP=new THREE.VectorKeyframeTrack('.position', times, [o.position.x, o.position.y, o.position.z, o.position.x+dx, o.position.y, o.position.z, o.position.x, o.position.y, o.position.z]); ");
-            html.append("            var clip=new THREE.AnimationClip('BakedLoop', 4, [trackP]); expAnims.push(clip); ");
-            html.append("        } exportScene.add(clone); ");
+            html.append("        var vX=o.userData.velX||0, vY=o.userData.velY||0, vZ=o.userData.velZ||0, rX=o.userData.rVelX||0, rY=o.userData.rVelY||0, rZ=o.userData.rVelZ||0; ");
+            html.append("        if(vX||vY||vZ||rX||rY||rZ){ ");
+            html.append("            var times=[0, 2, 4]; var p = o.position; var dx=vX*120, dy=vY*120, dz=vZ*120; ");
+            html.append("            var trackP=new THREE.VectorKeyframeTrack('.position', times, [p.x,p.y,p.z, p.x+dx,p.y+dy,p.z+dz, p.x,p.y,p.z]); ");
+            html.append("            var e = new THREE.Euler(o.rotation.x+rX*10, o.rotation.y+rY*10, o.rotation.z+rZ*10); var q1 = new THREE.Quaternion().setFromEuler(e); ");
+            html.append("            var trackQ=new THREE.QuaternionKeyframeTrack('.quaternion', times, [o.quaternion.x,o.quaternion.y,o.quaternion.z,o.quaternion.w, q1.x,q1.y,q1.z,q1.w, o.quaternion.x,o.quaternion.y,o.quaternion.z,o.quaternion.w]); ");
+            html.append("            expAnims.push(new THREE.AnimationClip(o.name+'_Action', 4, [trackP, trackQ])); ");
+            html.append("        } objsToExport.push(clone); ");
             html.append("    }); ");
-            html.append("    exporter.parse(exportScene, function(result) { grid.visible=true; transformControl.visible=true; var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); reader.onloadend=function(){ StudioBridge.saveGLB(reader.result, name, path); } }, function(err){ alert('导出崩溃:'+err); }, {binary:true, animations:expAnims}); ");
-            html.append("} catch(e) { alert('系统栈溢出修复拦截: '+e.message); grid.visible=true; } };");
+            html.append("    exporter.parse(objsToExport, function(result) { grid.visible=true; transformControl.visible=true; var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); reader.onloadend=function(){ StudioBridge.saveGLB(reader.result, name, path); } }, function(err){ alert('导出崩溃:'+err); }, {binary:true, animations:expAnims.length?expAnims:null}); ");
+            html.append("} catch(e) { alert('系统栈溢出修复拦截: '+e.message); grid.visible=true; transformControl.visible=true; } };");
 
             html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
             html.append("</script></body></html>");
