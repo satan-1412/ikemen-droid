@@ -3159,19 +3159,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("        }; ");
             html.append("    }, {binary:true, animations:expAnims.length?expAnims:null}); ");
             html.append("} catch(e) { alert('打包拦截异常: '+e.message); scene.add(grid); scene.add(transformControl); if(document.getElementById('exp-prog')) document.body.removeChild(document.getElementById('exp-prog')); } };");
-old;box-shadow:0 0 20px rgba(0,0,0,0.5);'; document.body.appendChild(pb); pb.innerText='光照烘焙与准备打包中...'; ");
-            html.append("    exporter.parse(scene, function(result) { ");
-            html.append("        grid.visible=true; transformControl.visible=true; hiddenGizmos.forEach(function(g){ g.visible = true; }); ");
-            html.append("        bakedMats.forEach(function(m){ if(m.userData.oldEmissive){ m.emissive.copy(m.userData.oldEmissive); delete m.userData.oldEmissive; } if(m.userData.oldColor){ m.color.copy(m.userData.oldColor); delete m.userData.oldColor; } m.emissiveMap = m.userData.oldEmissiveMap; delete m.userData.oldEmissiveMap; }); ");
-            html.append("        skyboxes.forEach(function(s){ s.scale.x = s.userData.oldScaleX; delete s.userData.oldScaleX; var sm = Array.isArray(s.material)?s.material:[s.material]; sm.forEach(function(m){ m.side = m.userData.oldSide; delete m.userData.oldSide; }); }); ");
-            html.append("        var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); ");
-            html.append("        reader.onloadend=function(){ ");
-            html.append("            var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; var t = b64.length; var i = 0; ");
-            html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; pb.innerText='光子烘焙写入与模型压缩进度: '+Math.min(100, Math.round((i/t)*100))+'%'; setTimeout(nextChunk, 5); } else { document.body.removeChild(pb); StudioBridge.endExport(name, path); } } ");
-            html.append("            nextChunk(); ");
-            html.append("        }; ");
-            html.append("    }, {binary:true, animations:expAnims.length?expAnims:null}); ");
-            html.append("} catch(e) { alert('系统栈溢出修复拦截: '+e.message); grid.visible=true; transformControl.visible=true; if(document.getElementById('exp-prog')) document.body.removeChild(document.getElementById('exp-prog')); } };");
+
 
             html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
             html.append("window.makeDraggable = function(handleId, popupId) { var pos1=0, pos2=0, pos3=0, pos4=0; var elmnt = document.getElementById(popupId); var handle = document.getElementById(handleId); if(!handle) return; handle.onpointerdown = function(e) { e.preventDefault(); pos3 = e.clientX; pos4 = e.clientY; document.onpointerup = function() { document.onpointerup = null; document.onpointermove = null; }; document.onpointermove = function(e) { e.preventDefault(); pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY; pos3 = e.clientX; pos4 = e.clientY; elmnt.style.top = (elmnt.offsetTop - pos2) + 'px'; elmnt.style.left = (elmnt.offsetLeft - pos1) + 'px'; }; }; };");
