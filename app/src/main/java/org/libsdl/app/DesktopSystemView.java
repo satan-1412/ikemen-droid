@@ -3109,29 +3109,20 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    if(obj.userData.rVelX) obj.rotation.x += obj.userData.rVelX; if(obj.userData.rVelY) obj.rotation.y += obj.userData.rVelY; if(obj.userData.rVelZ) obj.rotation.z += obj.userData.rVelZ; } });");
             html.append("    if(typeof moveVec!=='undefined' && moveVec.lengthSq()>0) { camera.translateX(moveVec.x*moveSpeed*dt); camera.translateZ(moveVec.z*moveSpeed*dt); } renderer.render(scene, camera); } animate();");
 
-            // 🛡️ 终极物理打包引擎：严格对齐GLTF协议，完美实现所见即所得
+            // 🛡️ 修复4KB导出与Length报错专用代码
             html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); scene.remove(grid); scene.remove(transformControl); ");
             html.append("    scene.updateMatrixWorld(true); ");
-            html.append("    var expAnims = []; var hiddenGizmos = []; var bakedMats = []; ");
-            html.append("    var ambR=0, ambG=0, ambB=0; ");
-            html.append("    scene.traverse(function(l) { if(l.visible) { if(l.isAmbientLight) { ambR+=l.color.r*l.intensity; ambG+=l.color.g*l.intensity; ambB+=l.color.b*l.intensity; } else if(l.isHemisphereLight) { ambR+=(l.color.r+l.groundColor.r)*0.5*l.intensity; ambG+=(l.color.g+l.groundColor.g)*0.5*l.intensity; ambB+=(l.color.b+l.groundColor.b)*0.5*l.intensity; } } }); ");
+            html.append("    var expAnims = []; var hiddenGizmos = []; var udCache = []; ");
             html.append("    scene.traverse(function(child) { ");
             html.append("        if(child.type === 'LineSegments' || child.type === 'Line' || (child.material && child.material.wireframe) || child.type === 'ArrowHelper') { hiddenGizmos.push({obj: child, vis: child.visible}); child.visible = false; } ");
-            html.append("        if(child.isDirectionalLight || child.isSpotLight) { var tPos = new THREE.Vector3(); child.target.getWorldPosition(tPos); child.lookAt(tPos); } ");
-            html.append("        if(child.isMesh && child.material && !child.userData.isSkybox) { ");
-            html.append("            var mats = Array.isArray(child.material) ? child.material : [child.material]; ");
-            html.append("            mats.forEach(function(m){ ");
-            html.append("                if(m.isMeshStandardMaterial && !m.userData.baked) { ");
-            html.append("                    m.userData.origEmissive = m.emissive ? m.emissive.clone() : new THREE.Color(0,0,0); ");
-            html.append("                    var e = m.userData.origEmissive; ");
-            html.append("                    m.emissive = new THREE.Color(Math.min(1, e.r+ambR), Math.min(1, e.g+ambG), Math.min(1, e.b+ambB)); ");
-            html.append("                    m.userData.baked = true; bakedMats.push(m); ");
-            html.append("                } ");
-            html.append("            }); ");
+            html.append("        if(child.userData) { ");
+            html.append("            udCache.push({obj: child, mixer: child.userData.mixer, action: child.userData.action, animations: child.userData.animations}); ");
+            html.append("            delete child.userData.mixer; delete child.userData.action; delete child.userData.animations; ");
             html.append("        } ");
             html.append("    }); ");
             html.append("    interactables.forEach(function(o){ ");
-            html.append("        if(o.userData.animations && o.userData.animations.length > 0) o.userData.animations.forEach(function(a){ expAnims.push(a); }); ");
+            html.append("        var cache = null; for(var i=0; i<udCache.length; i++){ if(udCache[i].obj === o){ cache = udCache[i]; break; } } ");
+            html.append("        if(cache && cache.animations && cache.animations.length > 0) { cache.animations.forEach(function(a){ expAnims.push(a); }); } ");
             html.append("        var vX=o.userData.velX||0, vY=o.userData.velY||0, vZ=o.userData.velZ||0, rX=o.userData.rVelX||0, rY=o.userData.rVelY||0, rZ=o.userData.rVelZ||0; ");
             html.append("        if(vX||vY||vZ||rX||rY||rZ){ ");
             html.append("            var times=[0, 2, 4]; var p = o.position; var dx=vX*120, dy=vY*120, dz=vZ*120; ");
@@ -3141,20 +3132,21 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("            expAnims.push(new THREE.AnimationClip(o.name+'_Action', 4, [trackP, trackQ])); ");
             html.append("        } ");
             html.append("    }); ");
-            html.append("    var pb = document.createElement('div'); pb.id='exp-prog'; pb.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,120,215,0.9);padding:20px 40px;color:white;z-index:9999;border-radius:10px;text-align:center;font-size:18px;font-weight:bold;box-shadow:0 0 20px rgba(0,0,0,0.5);'; document.body.appendChild(pb); pb.innerText='正在执行100%所见即所得导出...'; ");
+            html.append("    var pb = document.createElement('div'); pb.id='exp-prog'; pb.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,120,215,0.9);padding:20px 40px;color:white;z-index:9999;border-radius:10px;text-align:center;font-size:18px;font-weight:bold;box-shadow:0 0 20px rgba(0,0,0,0.5);'; document.body.appendChild(pb); pb.innerText='正在执行无损打包...'; ");
             html.append("    var opt = { binary: true }; if(expAnims.length > 0) opt.animations = expAnims; ");
             html.append("    exporter.parse(scene, function(result) { ");
             html.append("        scene.add(grid); scene.add(transformControl); ");
             html.append("        hiddenGizmos.forEach(function(g){ g.obj.visible = g.vis; }); ");
-            html.append("        bakedMats.forEach(function(m){ m.emissive.copy(m.userData.origEmissive); delete m.userData.origEmissive; m.userData.baked = false; }); ");
+            html.append("        udCache.forEach(function(c){ if(c.mixer) c.obj.userData.mixer = c.mixer; if(c.action) c.obj.userData.action = c.action; if(c.animations) c.obj.userData.animations = c.animations; }); ");
             html.append("        var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); ");
             html.append("        reader.onloadend=function(){ ");
             html.append("            var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; var t = b64.length; var i = 0; ");
-            html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; pb.innerText='导出进度: '+Math.min(100, Math.round((i/t)*100))+'%'; setTimeout(nextChunk, 5); } else { document.body.removeChild(pb); StudioBridge.endExport(name, path); } } ");
+            html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; pb.innerText='保存进度: '+Math.min(100, Math.round((i/t)*100))+'%'; setTimeout(nextChunk, 5); } else { document.body.removeChild(pb); StudioBridge.endExport(name, path); } } ");
             html.append("            nextChunk(); ");
             html.append("        }; ");
-            html.append("    }, function(err) { alert('导出核心错误: '+err); document.body.removeChild(pb); scene.add(grid); scene.add(transformControl); bakedMats.forEach(function(m){ m.emissive.copy(m.userData.origEmissive); delete m.userData.origEmissive; m.userData.baked = false; }); }, opt); ");
+            html.append("    }, function(err) { alert('导出错误: '+err.message); document.body.removeChild(pb); scene.add(grid); scene.add(transformControl); udCache.forEach(function(c){ if(c.mixer) c.obj.userData.mixer = c.mixer; if(c.action) c.obj.userData.action = c.action; if(c.animations) c.obj.userData.animations = c.animations; }); }, opt); ");
             html.append("} catch(e) { alert('打包拦截异常: '+e.message); scene.add(grid); scene.add(transformControl); if(document.getElementById('exp-prog')) document.body.removeChild(document.getElementById('exp-prog')); } };");
+
 
 
 
