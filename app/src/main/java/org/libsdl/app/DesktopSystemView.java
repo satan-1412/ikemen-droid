@@ -2899,9 +2899,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("       <button class='ui-btn' onclick='addGeom(\"box\")'>方块(墙)</button>");
             html.append("       <button class='ui-btn' onclick='addGeom(\"plane\")'>平面(地)</button>");
             html.append("       <button class='ui-btn' onclick='addGeom(\"skydome\")' style='background:#9C27B0'>天空盒(环境背景)</button>");
-            html.append("       <button class='ui-btn' onclick='addLight(\"point\")' style='background:#E6C200; color:black;'>💡 点光源(范围照亮)</button>");
-            html.append("       <button class='ui-btn' onclick='addLight(\"spot\")' style='background:#E6C200; color:black;'>🔦 手电筒(单向射线)</button>");
-            html.append("       <button class='ui-btn' onclick='addLight(\"hemi\")' style='background:#E6C200; color:black;'>☁️ 动态环境光(天光)</button>");
+          html.append("       <button class='ui-btn' onclick='addLight(\"dir\")' style='background:#E6C200; color:black;'>☀️ 平行光(太阳/全局阴影)</button>");
+        html.append("       <button class='ui-btn' onclick='addLight(\"point\")' style='background:#E6C200; color:black;'>💡 点光源(范围照亮)</button>");
+        html.append("       <button class='ui-btn' onclick='addLight(\"spot\")' style='background:#E6C200; color:black;'>🔦 手电筒(单向射线)</button>");
+        html.append("       <button class='ui-btn' onclick='addLight(\"hemi\")' style='background:#E6C200; color:black;'>☁️ 动态环境光(天光)</button>");
             html.append("   </div>");
             
             html.append("   <button class='ui-btn' onclick='toggleSub(\"transSub\")'>🔧 变换轴</button>");
@@ -2961,12 +2962,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("<script>");
             html.append("var scene = new THREE.Scene(); var clock = new THREE.Clock();");
             html.append("var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 10000); camera.position.set(0, 15, 30);");
-            html.append("var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true}); renderer.setSize(window.innerWidth, window.innerHeight);");
-            html.append("renderer.outputEncoding = THREE.sRGBEncoding; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;");
+            html.append("var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, powerPreference:'high-performance'}); renderer.setSize(window.innerWidth, window.innerHeight);");
+            html.append("renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;");
             html.append("document.body.appendChild(renderer.domElement);");
             
-            html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 2.0); scene.add(ambientLight);");
-            html.append("var dirLight = new THREE.DirectionalLight(0xffffff, 1.5); dirLight.position.set(50, 100, 50); dirLight.castShadow = true; scene.add(dirLight);");
+            html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 0.6); scene.add(ambientLight);");
+            html.append("var dirLight = new THREE.DirectionalLight(0xffffff, 2.0); dirLight.position.set(100, 200, 100); dirLight.castShadow = true;");
+            html.append("dirLight.shadow.mapSize.width = 4096; dirLight.shadow.mapSize.height = 4096; dirLight.shadow.camera.near = 0.5; dirLight.shadow.camera.far = 1000; dirLight.shadow.camera.left = -200; dirLight.shadow.camera.right = 200; dirLight.shadow.camera.top = 200; dirLight.shadow.camera.bottom = -200; dirLight.shadow.bias = -0.0005; scene.add(dirLight);");
             html.append("var grid = new THREE.GridHelper(200, 20, 0x0078D7, 0x3F3F46); scene.add(grid);");
 
             html.append("var euler = new THREE.Euler(0, 0, 0, 'YXZ'); var isLooking = false; var lastTouchX = 0, lastTouchY = 0;");
@@ -3064,14 +3066,17 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             
             html.append("window.addLight = function(type) {");
             html.append("    var group = new THREE.Group(); var light, gizmo;");
-            html.append("    if(type==='spot') {");
-            html.append("        light = new THREE.SpotLight(0xffffff, 15, 300, Math.PI/6, 0.5, 1); light.position.set(0,0,0); light.target.position.set(0,-1,0); group.add(light); group.add(light.target);");
+            html.append("    if(type==='dir') {");
+            html.append("        light = new THREE.DirectionalLight(0xffffff, 2.0); light.castShadow = true; light.shadow.mapSize.width = 4096; light.shadow.mapSize.height = 4096; light.shadow.camera.left = -200; light.shadow.camera.right = 200; light.shadow.camera.top = 200; light.shadow.camera.bottom = -200; light.shadow.bias = -0.0005; group.add(light);");
+            html.append("        gizmo = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true}));");
+            html.append("    } else if(type==='spot') {");
+            html.append("        light = new THREE.SpotLight(0xffffff, 15, 300, Math.PI/6, 0.5, 1); light.position.set(0,0,0); light.target.position.set(0,-1,0); light.castShadow = true; light.shadow.mapSize.width = 2048; light.shadow.mapSize.height = 2048; light.shadow.bias = -0.0005; group.add(light); group.add(light.target);");
             html.append("        gizmo = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 1.5, 2.5, 8), new THREE.MeshBasicMaterial({color:0x555555, wireframe:true})); gizmo.position.y = -1.25;");
             html.append("    } else if(type==='hemi') {");
             html.append("        light = new THREE.HemisphereLight(0x87CEEB, 0x444444, 2); group.add(light);");
             html.append("        gizmo = new THREE.Mesh(new THREE.OctahedronGeometry(2, 0), new THREE.MeshBasicMaterial({color:0x00aaff, wireframe:true}));");
             html.append("    } else {");
-            html.append("        light = new THREE.PointLight(0xffffff, 10, 200, 1); group.add(light);");
+            html.append("        light = new THREE.PointLight(0xffffff, 10, 200, 1); light.castShadow = true; light.shadow.mapSize.width = 2048; light.shadow.mapSize.height = 2048; light.shadow.bias = -0.0005; group.add(light);");
             html.append("        gizmo = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), new THREE.MeshBasicMaterial({color:0xffff00, wireframe:true}));");
             html.append("    }");
             html.append("    group.add(gizmo);");
@@ -3111,17 +3116,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("        if(child.isMesh && child.material && !child.userData.oldMaterial) { ");
             html.append("            var mats = Array.isArray(child.material) ? child.material : [child.material]; var newMats = []; ");
             html.append("            mats.forEach(function(m){ ");
-            html.append("                var r = m.color ? m.color.r : 1; var g = m.color ? m.color.g : 1; var b = m.color ? m.color.b : 1; ");
             html.append("                var ar = ambientLight.visible ? (ambientLight.color.r * ambientLight.intensity) : 0; ");
             html.append("                var ag = ambientLight.visible ? (ambientLight.color.g * ambientLight.intensity) : 0; ");
             html.append("                var ab = ambientLight.visible ? (ambientLight.color.b * ambientLight.intensity) : 0; ");
-            html.append("                var dr = dirLight.visible ? (dirLight.color.r * dirLight.intensity * 0.5) : 0; ");
-            html.append("                var dg = dirLight.visible ? (dirLight.color.g * dirLight.intensity * 0.5) : 0; ");
-            html.append("                var db = dirLight.visible ? (dirLight.color.b * dirLight.intensity * 0.5) : 0; ");
-            html.append("                var finalR = Math.min(1, r * (ar + dr)); var finalG = Math.min(1, g * (ag + dg)); var finalB = Math.min(1, b * (ab + db)); ");
-            html.append("                if(child.userData.isSkybox || m.isMeshBasicMaterial) { finalR = r; finalG = g; finalB = b; } ");
-            html.append("                var basicMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(finalR, finalG, finalB), map: m.map, alphaMap: m.alphaMap, transparent: m.transparent, opacity: m.opacity, alphaTest: m.alphaTest, side: child.userData.isSkybox ? THREE.FrontSide : m.side, wireframe: false, skinning: m.skinning, morphTargets: m.morphTargets }); ");
-            html.append("                newMats.push(basicMat); ");
+            html.append("                var newMat = m.clone(); ");
+            html.append("                if(!child.userData.isSkybox && newMat.isMeshStandardMaterial) { ");
+            html.append("                    var curE = newMat.emissive || new THREE.Color(0,0,0); ");
+            html.append("                    newMat.emissive = new THREE.Color(Math.min(1, curE.r + ar * 0.6), Math.min(1, curE.g + ag * 0.6), Math.min(1, curE.b + ab * 0.6)); ");
+            html.append("                    newMat.emissiveIntensity = 1.0; ");
+            html.append("                } ");
+            html.append("                newMats.push(newMat); ");
             html.append("            }); ");
             html.append("            child.userData.oldMaterial = child.material; child.material = Array.isArray(child.material) ? newMats : newMats[0]; ");
             html.append("            if(child.userData.isSkybox) { child.userData.oldScaleX = child.scale.x; child.scale.x *= -1; } ");
