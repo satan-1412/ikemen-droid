@@ -2823,15 +2823,18 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     });
                 }
 
-                @android.webkit.JavascriptInterface public void saveGLB(String b64, String name, String pathStr) {
+                private StringBuilder b64Buf = new StringBuilder();
+                @android.webkit.JavascriptInterface public void beginExport() { b64Buf.setLength(0); }
+                @android.webkit.JavascriptInterface public void chunkExport(String chunk) { b64Buf.append(chunk); }
+                @android.webkit.JavascriptInterface public void endExport(String name, String pathStr) {
+                    final String fullB64 = b64Buf.toString();
                     new Thread(() -> {
                         try {
-                            String cleanBase64 = b64.replaceFirst("^data:.*;base64,", "");
-                            byte[] data = android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT);
+                            byte[] data = android.util.Base64.decode(fullB64, android.util.Base64.DEFAULT);
                             File outDir = new File(pathStr); outDir.mkdirs();
                             File glbFile = new File(outDir, name + ".glb");
                             FileOutputStream fos = new FileOutputStream(glbFile); fos.write(data); fos.close();
-                            new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(getContext(), "✅ 导出成功: " + glbFile.getAbsolutePath(), Toast.LENGTH_LONG).show());
+                            new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(getContext(), "✅ 完美导出! 模型大小: " + (data.length / 1024) + " KB\n保存至: " + glbFile.getAbsolutePath(), Toast.LENGTH_LONG).show());
                         } catch(Exception e) { 
                             new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(getContext(), "❌ 写入失败: " + e.getMessage(), Toast.LENGTH_LONG).show());
                         }
@@ -3009,8 +3012,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("var stlLoader = typeof THREE.STLLoader !== 'undefined' ? new THREE.STLLoader() : null;");
 
             html.append("window.loadExternalModel = function(url) {");
-            html.append("    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); var spawnPos = new THREE.Vector3();");
-            html.append("    var intersects = raycaster.intersectObject(grid); if(intersects.length>0) spawnPos.copy(intersects[0].point); else spawnPos.set(0,0,0);");
+            html.append("    var mathPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); var spawnPos = new THREE.Vector3();");
+            html.append("    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);");
+            html.append("    raycaster.ray.intersectPlane(mathPlane, spawnPos); if(!spawnPos) spawnPos = new THREE.Vector3(0,0,0);");
             html.append("    var ext = url.split('.').pop().toLowerCase();");
             html.append("    var basePath = url.substring(0, url.lastIndexOf('/') + 1);"); 
             html.append("    if(tdsLoader) tdsLoader.setResourcePath(basePath);"); 
@@ -3048,33 +3052,34 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    if(t==='plane') { geo=new THREE.PlaneGeometry(100,100); geo.rotateX(-Math.PI/2); mesh=new THREE.Mesh(geo,mat); }");
             html.append("    if(t==='skydome') { geo=new THREE.SphereGeometry(100, 32, 32); mat=new THREE.MeshBasicMaterial({color: 0x87CEEB, side: THREE.BackSide}); mesh=new THREE.Mesh(geo,mat); mesh.userData.isSkybox = true; }");
             html.append("    if(t!=='skydome') {");
-            html.append("       var intersects = raycaster.intersectObject(grid); if(intersects.length>0) mesh.position.copy(intersects[0].point); else mesh.position.set(0,0,0);");
+            html.append("       var mathPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); var spawnPos = new THREE.Vector3();");
+            html.append("       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); raycaster.ray.intersectPlane(mathPlane, spawnPos);");
+            html.append("       mesh.position.copy(spawnPos || new THREE.Vector3(0,0,0));");
             html.append("       mesh.castShadow=true; mesh.receiveShadow=true;");
             html.append("    }");
             html.append("    mesh.userData.isRoot=true; scene.add(mesh); interactables.push(mesh);");
             html.append("};");
 
-            html.append("window.checkDefaultLights = function() { var c=0; interactables.forEach(function(o){if(o.userData.isLight) c++;}); var show = (c===0); ambientLight.visible=show; dirLight.visible=show; };");
+            html.append("window.checkDefaultLights = function() {};");
             
             html.append("window.addLight = function(type) {");
+            html.append("    if(type==='hemi') { toggleSub('lightSub'); return; }");
             html.append("    var group = new THREE.Group(); var light, gizmo;");
             html.append("    if(type==='spot') {");
-            html.append("        light = new THREE.SpotLight(0xffffff, 2, 200, Math.PI/6, 0.5, 2.0); light.position.set(0,0,0); light.target.position.set(0,-1,0); group.add(light); group.add(light.target);");
+            html.append("        light = new THREE.SpotLight(0xffffff, 15, 300, Math.PI/6, 0.5, 1); light.position.set(0,0,0); light.target.position.set(0,-1,0); group.add(light); group.add(light.target);");
             html.append("        gizmo = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.5, 2.5, 8), new THREE.MeshBasicMaterial({color:0x555555, wireframe:true})); gizmo.rotation.x = Math.PI/2;");
-            html.append("    } else if(type==='hemi') {");
-            html.append("        light = new THREE.HemisphereLight(0x87CEEB, 0x444444, 1); group.add(light);");
-            html.append("        gizmo = new THREE.Mesh(new THREE.OctahedronGeometry(2, 0), new THREE.MeshBasicMaterial({color:0x00aaff, wireframe:true}));");
             html.append("    } else {");
-            html.append("        light = new THREE.PointLight(0xffffff, 1, 100, 2.0); group.add(light);");
+            html.append("        light = new THREE.PointLight(0xffffff, 10, 200, 1); group.add(light);");
             html.append("        gizmo = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), new THREE.MeshBasicMaterial({color:0xffff00, wireframe:true}));");
             html.append("    }");
             html.append("    group.add(gizmo);");
-            html.append("    var intersects = raycaster.intersectObject(grid); if(intersects.length>0) group.position.copy(intersects[0].point); else group.position.set(0,10,0);");
+            html.append("    var mathPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); var spawnPos = new THREE.Vector3(); raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); raycaster.ray.intersectPlane(mathPlane, spawnPos);");
+            html.append("    group.position.copy(spawnPos || new THREE.Vector3(0,0,0)); group.position.y += 15;");
             html.append("    group.userData.isRoot = true; group.userData.isLight = true; group.userData.lType = type || 'point';");
-            html.append("    scene.add(group); interactables.push(group); checkDefaultLights();");
+            html.append("    scene.add(group); interactables.push(group);");
             html.append("};");
 
-            html.append("window.deleteSelected = function() { if(selectedObj) { scene.remove(selectedObj); interactables.splice(interactables.indexOf(selectedObj),1); clearSelection(); checkDefaultLights(); }};");
+            html.append("window.deleteSelected = function() { if(selectedObj) { scene.remove(selectedObj); interactables.splice(interactables.indexOf(selectedObj),1); clearSelection(); }};");
             
             html.append("window.updateSysLights = function() { ambientLight.color.set(document.getElementById('l_ambC').value); ambientLight.intensity=parseFloat(document.getElementById('l_ambI').value)/10; dirLight.color.set(document.getElementById('l_dirC').value); dirLight.intensity=parseFloat(document.getElementById('l_dirI').value)/10; };");
             html.append("window.updateSettings = function() { moveSpeed=parseFloat(document.getElementById('s_move').value); lookSpeed=parseFloat(document.getElementById('s_look').value)/1000; };");
@@ -3097,13 +3102,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    if(typeof moveVec!=='undefined' && moveVec.lengthSq()>0) { camera.translateX(moveVec.x*moveSpeed*dt); camera.translateZ(moveVec.z*moveSpeed*dt); } renderer.render(scene, camera); } animate();");
 
             // 🛡️ 终极物理打包引擎：彻底物理切除 userData 拦截 JSON 死循环溢出，保留所有灯光与有来有回轨道
-            html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); ");
-            html.append("    var expAnims = []; var hiddenGizmos = []; var exportArray = []; ");
-            html.append("    if(ambientLight.visible) exportArray.push(ambientLight); ");
-            html.append("    if(dirLight.visible) exportArray.push(dirLight); ");
+            html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); transformControl.visible=false; grid.visible=false; ");
+            html.append("    var expAnims = []; var hiddenGizmos = []; ");
+            html.append("    scene.traverse(function(child) { if(child.type === 'Mesh' && child.material && child.material.wireframe) { child.visible = false; hiddenGizmos.push(child); } }); ");
             html.append("    interactables.forEach(function(o){ ");
-            html.append("        exportArray.push(o); ");
-            html.append("        o.traverse(function(child) { if(child.type === 'Mesh' && child.material && child.material.wireframe) { child.visible = false; hiddenGizmos.push(child); } }); ");
             html.append("        if(o.userData.animations) expAnims.push(...o.userData.animations); ");
             html.append("        var vX=o.userData.velX||0, vY=o.userData.velY||0, vZ=o.userData.velZ||0, rX=o.userData.rVelX||0, rY=o.userData.rVelY||0, rZ=o.userData.rVelZ||0; ");
             html.append("        if(vX||vY||vZ||rX||rY||rZ){ ");
@@ -3114,9 +3116,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("            expAnims.push(new THREE.AnimationClip(o.name+'_Action', 4, [trackP, trackQ])); ");
             html.append("        } ");
             html.append("    }); ");
-            html.append("    var cleanup = function() { hiddenGizmos.forEach(function(g){ g.visible = true; }); }; ");
-            html.append("    exporter.parse(exportArray, function(result) { cleanup(); var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); reader.onloadend=function(){ StudioBridge.saveGLB(reader.result, name, path); } }, function(err){ alert('导出崩溃:'+err); cleanup(); }, {binary:true, animations:expAnims.length?expAnims:null}); ");
-            html.append("} catch(e) { alert('系统栈溢出修复拦截: '+e.message); } };");
+            html.append("    exporter.parse(scene, function(result) { grid.visible=true; transformControl.visible=true; hiddenGizmos.forEach(function(g){ g.visible = true; }); var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); reader.onloadend=function(){ var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; for(var i=0; i<b64.length; i+=chunk) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); } StudioBridge.endExport(name, path); } }, function(err){ alert('导出崩溃:'+err); grid.visible=true; transformControl.visible=true; hiddenGizmos.forEach(function(g){ g.visible = true; }); }, {binary:true, animations:expAnims.length?expAnims:null}); ");
+            html.append("} catch(e) { alert('系统栈溢出修复拦截: '+e.message); grid.visible=true; transformControl.visible=true; } };");
 
             html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
             html.append("</script></body></html>");
