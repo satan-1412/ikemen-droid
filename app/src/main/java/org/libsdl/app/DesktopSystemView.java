@@ -3134,17 +3134,20 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    }); ");
             html.append("    var pb = document.createElement('div'); pb.id='exp-prog'; pb.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,120,215,0.9);padding:20px 40px;color:white;z-index:9999;border-radius:10px;text-align:center;font-size:18px;font-weight:bold;box-shadow:0 0 20px rgba(0,0,0,0.5);'; document.body.appendChild(pb); pb.innerText='正在执行无损打包...'; ");
             html.append("    var opt = { binary: true }; if(expAnims.length > 0) opt.animations = expAnims; ");
-            html.append("    exporter.parse(scene, function(result) { ");
+            html.append("    var onDone = function(result) { ");
             html.append("        scene.add(grid); scene.add(transformControl); ");
             html.append("        hiddenGizmos.forEach(function(g){ g.obj.visible = g.vis; }); ");
             html.append("        udCache.forEach(function(c){ if(c.mixer) c.obj.userData.mixer = c.mixer; if(c.action) c.obj.userData.action = c.action; if(c.animations) c.obj.userData.animations = c.animations; }); ");
-            html.append("        var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); ");
+            html.append("        var finalRes = (result instanceof ArrayBuffer) ? result : JSON.stringify(result); ");
+            html.append("        var blob=new Blob([finalRes], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); ");
             html.append("        reader.onloadend=function(){ ");
             html.append("            var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; var t = b64.length; var i = 0; ");
             html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; pb.innerText='保存进度: '+Math.min(100, Math.round((i/t)*100))+'%'; setTimeout(nextChunk, 5); } else { document.body.removeChild(pb); StudioBridge.endExport(name, path); } } ");
             html.append("            nextChunk(); ");
             html.append("        }; ");
-            html.append("    }, function(err) { alert('导出错误: '+err.message); document.body.removeChild(pb); scene.add(grid); scene.add(transformControl); udCache.forEach(function(c){ if(c.mixer) c.obj.userData.mixer = c.mixer; if(c.action) c.obj.userData.action = c.action; if(c.animations) c.obj.userData.animations = c.animations; }); }, opt); ");
+            html.append("    }; ");
+            html.append("    var onError = function(err) { alert('导出错误: '+err.message); document.body.removeChild(pb); scene.add(grid); scene.add(transformControl); udCache.forEach(function(c){ if(c.mixer) c.obj.userData.mixer = c.mixer; if(c.action) c.obj.userData.action = c.action; if(c.animations) c.obj.userData.animations = c.animations; }); }; ");
+            html.append("    if(exporter.parse.length === 3) exporter.parse(scene, onDone, opt); else exporter.parse(scene, onDone, onError, opt); ");
             html.append("} catch(e) { alert('打包拦截异常: '+e.message); scene.add(grid); scene.add(transformControl); if(document.getElementById('exp-prog')) document.body.removeChild(document.getElementById('exp-prog')); } };");
 
 
