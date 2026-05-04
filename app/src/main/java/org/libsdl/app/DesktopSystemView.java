@@ -3173,21 +3173,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("        }; ");
             html.append("    }, {binary:true, animations:expAnims.length?expAnims:null}); ");
             html.append("} catch(e) { alert('打包拦截异常: '+e.message); scene.add(grid); scene.add(transformControl); if(document.getElementById('exp-prog')) document.body.removeChild(document.getElementById('exp-prog')); } };");
-(grid); scene.add(transformControl); ");
-            html.append("        hiddenGizmos.forEach(function(g){ g.obj.visible = g.vis; }); ");
-            html.append("        scene.traverse(function(child) { ");
-            html.append("            if(child.isMesh && child.userData.oldMaterial) { child.material = child.userData.oldMaterial; delete child.userData.oldMaterial; } ");
-            html.append("            if(child.userData.isSkybox && child.userData.oldScaleX !== undefined) { child.scale.x = child.userData.oldScaleX; delete child.userData.oldScaleX; } ");
-            html.append("            if(child.userData.oldGeo) { child.geometry = child.userData.oldGeo; child.scale.copy(child.userData.oldScale); delete child.userData.oldGeo; delete child.userData.oldScale; } ");
-            html.append("        }); ");
-            html.append("        var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); ");
-            html.append("        reader.onloadend=function(){ ");
-            html.append("            var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; var t = b64.length; var i = 0; ");
-            html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; pb.innerText='强制无光材质转换与打包进度: '+Math.min(100, Math.round((i/t)*100))+'%'; setTimeout(nextChunk, 5); } else { document.body.removeChild(pb); StudioBridge.endExport(name, path); } } ");
-            html.append("            nextChunk(); ");
-            html.append("        }; ");
-            html.append("    }, {binary:true, animations:expAnims.length?expAnims:null}); ");
-            html.append("} catch(e) { alert('打包拦截异常: '+e.message); scene.add(grid); scene.add(transformControl); if(document.getElementById('exp-prog')) document.body.removeChild(document.getElementById('exp-prog')); } };");
+
 
 
             html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
