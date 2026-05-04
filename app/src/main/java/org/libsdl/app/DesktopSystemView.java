@@ -3050,9 +3050,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             
             html.append("window.addGeom = function(t) {");
             html.append("    var geo, mat = new THREE.MeshStandardMaterial({color: 0xcccccc}); var mesh;");
-            html.append("    if(t==='box') { geo=new THREE.BoxGeometry(10,10,10); mesh=new THREE.Mesh(geo,mat); }");
-            html.append("    if(t==='plane') { geo=new THREE.PlaneGeometry(100,100); geo.rotateX(-Math.PI/2); mesh=new THREE.Mesh(geo,mat); }");
-            html.append("    if(t==='skydome') { geo=new THREE.SphereGeometry(100, 32, 32); mat=new THREE.MeshBasicMaterial({color: 0x87CEEB, side: THREE.BackSide}); mesh=new THREE.Mesh(geo,mat); mesh.userData.isSkybox = true; }");
+            html.append("    if(t==='box') { geo=new THREE.BoxBufferGeometry(10,10,10); mesh=new THREE.Mesh(geo,mat); }");
+            html.append("    if(t==='plane') { geo=new THREE.PlaneBufferGeometry(100,100); geo.rotateX(-Math.PI/2); mesh=new THREE.Mesh(geo,mat); }");
+            html.append("    if(t==='skydome') { geo=new THREE.SphereBufferGeometry(100, 32, 32); mat=new THREE.MeshBasicMaterial({color: 0x87CEEB, side: THREE.BackSide}); mesh=new THREE.Mesh(geo,mat); mesh.userData.isSkybox = true; }");
             html.append("    if(t!=='skydome') {");
             html.append("       var mathPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); var spawnPos = new THREE.Vector3();");
             html.append("       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); raycaster.ray.intersectPlane(mathPlane, spawnPos);");
@@ -3115,6 +3115,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    var expAnims = []; var hiddenGizmos = []; ");
             html.append("    scene.traverse(function(child) { ");
             html.append("        if(child.type === 'LineSegments' || child.type === 'Line' || (child.material && child.material.wireframe) || child.type === 'ArrowHelper') { hiddenGizmos.push({obj: child, vis: child.visible}); child.visible = false; } ");
+            html.append("        if(compress && child.isMesh && child.geometry && !child.userData.isSkybox && (child.scale.x !== 1 || child.scale.y !== 1 || child.scale.z !== 1)) { ");
+            html.append("            child.userData.oldGeoForBake = child.geometry; child.userData.oldScale = child.scale.clone(); ");
+            html.append("            child.geometry = child.geometry.clone(); child.geometry.scale(child.scale.x, child.scale.y, child.scale.z); child.scale.set(1,1,1); ");
+            html.append("        } ");
             html.append("    }); ");
             html.append("    interactables.forEach(function(o){ ");
             html.append("        if(o.userData.animations && o.userData.animations.length > 0) o.userData.animations.forEach(function(a){ expAnims.push(a); }); ");
@@ -3132,13 +3136,17 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    exporter.parse(scene, function(result) { ");
             html.append("        scene.add(grid); scene.add(transformControl); ");
             html.append("        hiddenGizmos.forEach(function(g){ g.obj.visible = g.vis; }); ");
+            html.append("        scene.traverse(function(child) { ");
+            html.append("            if(child.userData.oldGeoForBake) { child.geometry = child.userData.oldGeoForBake; delete child.userData.oldGeoForBake; } ");
+            html.append("            if(child.userData.oldScale) { child.scale.copy(child.userData.oldScale); delete child.userData.oldScale; } ");
+            html.append("        }); ");
             html.append("        var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); ");
             html.append("        reader.onloadend=function(){ ");
             html.append("            var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; var t = b64.length; var i = 0; ");
             html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; pb.innerText='原生无损导出进度: '+Math.min(100, Math.round((i/t)*100))+'%'; setTimeout(nextChunk, 5); } else { document.body.removeChild(pb); StudioBridge.endExport(name, path); } } ");
             html.append("            nextChunk(); ");
             html.append("        }; ");
-            html.append("    }, function(err) { alert('导出核心错误: '+err); document.body.removeChild(pb); scene.add(grid); scene.add(transformControl); }, opt); ");
+            html.append("    }, opt); ");
             html.append("} catch(e) { alert('打包拦截异常: '+e.message); scene.add(grid); scene.add(transformControl); if(document.getElementById('exp-prog')) document.body.removeChild(document.getElementById('exp-prog')); } };");
 
 
