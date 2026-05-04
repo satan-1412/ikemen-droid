@@ -2990,7 +2990,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("window.applyParams = function() { if(!selectedObj) return; selectedObj.position.set(parseFloat(document.getElementById('pX').value)||0, parseFloat(document.getElementById('pY').value)||0, parseFloat(document.getElementById('pZ').value)||0); selectedObj.rotation.set((parseFloat(document.getElementById('rX').value)||0)*Math.PI/180, (parseFloat(document.getElementById('rY').value)||0)*Math.PI/180, (parseFloat(document.getElementById('rZ').value)||0)*Math.PI/180); selectedObj.scale.set(parseFloat(document.getElementById('sX').value)||1, parseFloat(document.getElementById('sY').value)||1, parseFloat(document.getElementById('sZ').value)||1); selectedObj.userData.velX=parseFloat(document.getElementById('vX').value)||0; selectedObj.userData.velY=parseFloat(document.getElementById('vY').value)||0; selectedObj.userData.velZ=parseFloat(document.getElementById('vZ').value)||0; selectedObj.userData.rVelX=parseFloat(document.getElementById('rvX').value)||0; selectedObj.userData.rVelY=parseFloat(document.getElementById('rvY').value)||0; selectedObj.userData.rVelZ=parseFloat(document.getElementById('rvZ').value)||0; if(selectedObj.userData.isLight){ var l = selectedObj.children[0]; if(l.color) l.color.set(document.getElementById('l_col').value); l.intensity=parseFloat(document.getElementById('l_int').value); l.distance=parseFloat(document.getElementById('l_dist').value); } };");
 
             html.append("window.mirrorObj = function(axis) { if(!selectedObj) return; if(axis==='x') selectedObj.scale.x *= -1; else if(axis==='y') selectedObj.scale.y *= -1; updateParamUI(); };");
-            html.append("window.copyObj = function() { if(selectedObj) { clipboardObj = selectedObj.clone(); alert('已复制该对象'); } };");
+            html.append("window.copyObj = function() { if(selectedObj) { var cache = []; selectedObj.traverse(function(c){ cache.push({m:c.userData.mixer, a:c.userData.action}); delete c.userData.mixer; delete c.userData.action; }); clipboardObj = selectedObj.clone(); var i=0; selectedObj.traverse(function(c){ c.userData.mixer=cache[i].m; c.userData.action=cache[i].a; i++; }); alert('已复制该对象'); } };");
             html.append("window.pasteObj = function() { if(clipboardObj) { var nObj = clipboardObj.clone(); nObj.position.x += 5; scene.add(nObj); interactables.push(nObj); alert('粘贴成功'); } };");
 
             html.append("var texLoader = new THREE.TextureLoader();");
@@ -3105,8 +3105,18 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             // 🛡️ 终极物理打包引擎：彻底物理切除 userData 拦截 JSON 死循环溢出，保留所有灯光与有来有回轨道
             html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); transformControl.visible=false; grid.visible=false; ");
-            html.append("    var expAnims = []; var hiddenGizmos = []; ");
-            html.append("    scene.traverse(function(child) { if(child.type === 'Mesh' && child.material && child.material.wireframe) { child.visible = false; hiddenGizmos.push(child); } }); ");
+            html.append("    var expAnims = []; var hiddenGizmos = []; var bakedMats = []; ");
+            html.append("    scene.traverse(function(child) { ");
+            html.append("        if(child.type === 'Mesh' && child.material && child.material.wireframe) { child.visible = false; hiddenGizmos.push(child); } ");
+            html.append("        if(child.isMesh && child.material) { ");
+            html.append("            var mats = Array.isArray(child.material) ? child.material : [child.material]; ");
+            html.append("            mats.forEach(function(m){ if(m.emissive){ m.userData.oldEmissive = m.emissive.clone(); m.emissive.add(ambientLight.color.clone().multiplyScalar(ambientLight.intensity)); bakedMats.push(m); } }); ");
+            html.append("        } ");
+            html.append("        if(compress && child.isMesh && child.geometry && child.scale.x < 1 && child.scale.y < 1 && child.scale.z < 1) { ");
+            html.append("            child.geometry = child.geometry.clone(); child.geometry.applyMatrix4(new THREE.Matrix4().makeScale(child.scale.x, child.scale.y, child.scale.z)); child.scale.set(1,1,1); ");
+            html.append("            if(child.geometry.attributes.position){ var pos = child.geometry.attributes.position.array; for(var k=0; k<pos.length; k++) pos[k] = Math.round(pos[k]*1000)/1000; } ");
+            html.append("        } ");
+            html.append("    }); ");
             html.append("    interactables.forEach(function(o){ ");
             html.append("        if(o.userData.animations) expAnims.push(...o.userData.animations); ");
             html.append("        var vX=o.userData.velX||0, vY=o.userData.velY||0, vZ=o.userData.velZ||0, rX=o.userData.rVelX||0, rY=o.userData.rVelY||0, rZ=o.userData.rVelZ||0; ");
@@ -3118,10 +3128,22 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("            expAnims.push(new THREE.AnimationClip(o.name+'_Action', 4, [trackP, trackQ])); ");
             html.append("        } ");
             html.append("    }); ");
-            html.append("    exporter.parse(scene, function(result) { grid.visible=true; transformControl.visible=true; hiddenGizmos.forEach(function(g){ g.visible = true; }); var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); reader.onloadend=function(){ var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; for(var i=0; i<b64.length; i+=chunk) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); } StudioBridge.endExport(name, path); } }, {binary:true, animations:expAnims.length?expAnims:null}); ");
-            html.append("} catch(e) { alert('系统栈溢出修复拦截: '+e.message); grid.visible=true; transformControl.visible=true; } };");
+            html.append("    var pb = document.createElement('div'); pb.id='exp-prog'; pb.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,120,215,0.9);padding:20px 40px;color:white;z-index:9999;border-radius:10px;text-align:center;font-size:18px;font-weight:bold;box-shadow:0 0 20px rgba(0,0,0,0.5);'; document.body.appendChild(pb); pb.innerText='准备打包中...'; ");
+            html.append("    exporter.parse(scene, function(result) { ");
+            html.append("        grid.visible=true; transformControl.visible=true; hiddenGizmos.forEach(function(g){ g.visible = true; }); ");
+            html.append("        bakedMats.forEach(function(m){ m.emissive.copy(m.userData.oldEmissive); delete m.userData.oldEmissive; }); ");
+            html.append("        var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); ");
+            html.append("        reader.onloadend=function(){ ");
+            html.append("            var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; var t = b64.length; var i = 0; ");
+            html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; pb.innerText='模型压缩打包进度: '+Math.min(100, Math.round((i/t)*100))+'%'; setTimeout(nextChunk, 5); } else { document.body.removeChild(pb); StudioBridge.endExport(name, path); } } ");
+            html.append("            nextChunk(); ");
+            html.append("        }; ");
+            html.append("    }, {binary:true, animations:expAnims.length?expAnims:null}); ");
+            html.append("} catch(e) { alert('系统栈溢出修复拦截: '+e.message); grid.visible=true; transformControl.visible=true; if(document.getElementById('exp-prog')) document.body.removeChild(document.getElementById('exp-prog')); } };");
 
             html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
+            html.append("window.makeDraggable = function(handleId, popupId) { var pos1=0, pos2=0, pos3=0, pos4=0; var elmnt = document.getElementById(popupId); var handle = document.getElementById(handleId); if(!handle) return; handle.onpointerdown = function(e) { e.preventDefault(); pos3 = e.clientX; pos4 = e.clientY; document.onpointerup = function() { document.onpointerup = null; document.onpointermove = null; }; document.onpointermove = function(e) { e.preventDefault(); pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY; pos3 = e.clientX; pos4 = e.clientY; elmnt.style.top = (elmnt.offsetTop - pos2) + 'px'; elmnt.style.left = (elmnt.offsetLeft - pos1) + 'px'; }; }; };");
+            html.append("setTimeout(function(){ makeDraggable('sysHandle', 'sysGroup'); makeDraggable('rightHandle', 'rightMenu'); }, 500);");
             html.append("</script></body></html>");
            
             modelWebView.loadDataWithBaseURL("file:///android_asset/", html.toString(), "text/html", "utf-8", null);
