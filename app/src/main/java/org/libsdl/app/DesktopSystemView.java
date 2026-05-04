@@ -3068,11 +3068,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    var group = new THREE.Group(); var light, gizmo;");
             html.append("    if(type==='dir') {");
             html.append("        light = new THREE.DirectionalLight(0xffffff, 2.0); light.castShadow = true; light.shadow.mapSize.width = 4096; light.shadow.mapSize.height = 4096; light.shadow.camera.left = -200; light.shadow.camera.right = 200; light.shadow.camera.top = 200; light.shadow.camera.bottom = -200; light.shadow.bias = -0.0005; ");
-            html.append("        light.target.position.set(0,-10,0); group.add(light); group.add(light.target);");
-            html.append("        gizmo = new THREE.Mesh(new THREE.CylinderGeometry(0, 2, 5, 4), new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true})); gizmo.position.y = -2.5;");
+            html.append("        light.position.set(0,0,0); light.target.position.set(0,0,-1); group.add(light); group.add(light.target);");
+            html.append("        gizmo = new THREE.Group(); gizmo.add(new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true}))); var dirObj = new THREE.Mesh(new THREE.CylinderGeometry(0, 1, 4, 4), new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true})); dirObj.rotation.x = -Math.PI/2; dirObj.position.z = -3; gizmo.add(dirObj);");
             html.append("    } else if(type==='spot') {");
-            html.append("        light = new THREE.SpotLight(0xffffff, 15, 300, Math.PI/6, 0.5, 1); light.position.set(0,0,0); light.target.position.set(0,-10,0); light.castShadow = true; light.shadow.mapSize.width = 2048; light.shadow.mapSize.height = 2048; light.shadow.bias = -0.0005; group.add(light); group.add(light.target);");
-            html.append("        gizmo = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 2, 5, 8), new THREE.MeshBasicMaterial({color:0x55ff55, wireframe:true})); gizmo.position.y = -2.5;");
+            html.append("        light = new THREE.SpotLight(0xffffff, 15, 300, Math.PI/6, 0.5, 1); light.position.set(0,0,0); light.target.position.set(0,0,-1); light.castShadow = true; light.shadow.mapSize.width = 2048; light.shadow.mapSize.height = 2048; light.shadow.bias = -0.0005; group.add(light); group.add(light.target);");
+            html.append("        gizmo = new THREE.Group(); gizmo.add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 1.5, 2.5, 8), new THREE.MeshBasicMaterial({color:0x55ff55, wireframe:true}))); gizmo.children[0].rotation.x = -Math.PI/2; gizmo.children[0].position.z = -1.25;");
             html.append("    } else if(type==='hemi') {");
             html.append("        light = new THREE.HemisphereLight(0x87CEEB, 0x444444, 2); group.add(light);");
             html.append("        gizmo = new THREE.Mesh(new THREE.OctahedronGeometry(2, 0), new THREE.MeshBasicMaterial({color:0x00aaff, wireframe:true}));");
@@ -3111,13 +3111,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             // 🛡️ 终极物理打包引擎：放弃所有画蛇添足的烘焙，真正做到100%原生输出，彻底解决光照偏差和报错崩溃
             html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); scene.remove(grid); scene.remove(transformControl); ");
+            html.append("    scene.updateMatrixWorld(true); ");
             html.append("    var expAnims = []; var hiddenGizmos = []; ");
             html.append("    scene.traverse(function(child) { ");
-            html.append("        if(child.type === 'LineSegments' || child.type === 'Line' || (child.material && child.material.wireframe)) { hiddenGizmos.push({obj: child, vis: child.visible}); child.visible = false; } ");
-            html.append("        if(compress && child.isMesh && child.geometry && (child.scale.x !== 1 || child.scale.y !== 1 || child.scale.z !== 1) && !child.userData.isSkybox) { ");
-            html.append("            child.userData.oldGeoForBake = child.geometry; child.userData.oldScale = child.scale.clone(); ");
-            html.append("            child.geometry = child.geometry.clone(); child.geometry.scale(child.scale.x, child.scale.y, child.scale.z); child.scale.set(1,1,1); ");
-            html.append("        } ");
+            html.append("        if(child.type === 'LineSegments' || child.type === 'Line' || (child.material && child.material.wireframe) || child.type === 'ArrowHelper') { hiddenGizmos.push({obj: child, vis: child.visible}); child.visible = false; } ");
             html.append("    }); ");
             html.append("    interactables.forEach(function(o){ ");
             html.append("        if(o.userData.animations && o.userData.animations.length > 0) o.userData.animations.forEach(function(a){ expAnims.push(a); }); ");
@@ -3131,20 +3128,17 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("        } ");
             html.append("    }); ");
             html.append("    var pb = document.createElement('div'); pb.id='exp-prog'; pb.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,120,215,0.9);padding:20px 40px;color:white;z-index:9999;border-radius:10px;text-align:center;font-size:18px;font-weight:bold;box-shadow:0 0 20px rgba(0,0,0,0.5);'; document.body.appendChild(pb); pb.innerText='正在执行原生无损打包...'; ");
+            html.append("    var opt = { binary: true }; if(expAnims.length > 0) opt.animations = expAnims; ");
             html.append("    exporter.parse(scene, function(result) { ");
             html.append("        scene.add(grid); scene.add(transformControl); ");
             html.append("        hiddenGizmos.forEach(function(g){ g.obj.visible = g.vis; }); ");
-            html.append("        scene.traverse(function(child) { ");
-            html.append("            if(child.userData.oldGeoForBake) { child.geometry = child.userData.oldGeoForBake; delete child.userData.oldGeoForBake; } ");
-            html.append("            if(child.userData.oldScale) { child.scale.copy(child.userData.oldScale); delete child.userData.oldScale; } ");
-            html.append("        }); ");
             html.append("        var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); ");
             html.append("        reader.onloadend=function(){ ");
             html.append("            var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; var t = b64.length; var i = 0; ");
             html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; pb.innerText='原生无损导出进度: '+Math.min(100, Math.round((i/t)*100))+'%'; setTimeout(nextChunk, 5); } else { document.body.removeChild(pb); StudioBridge.endExport(name, path); } } ");
             html.append("            nextChunk(); ");
             html.append("        }; ");
-            html.append("    }, {binary:true, animations:expAnims.length > 0 ? expAnims : null}); ");
+            html.append("    }, function(err) { alert('导出核心错误: '+err); document.body.removeChild(pb); scene.add(grid); scene.add(transformControl); }, opt); ");
             html.append("} catch(e) { alert('打包拦截异常: '+e.message); scene.add(grid); scene.add(transformControl); if(document.getElementById('exp-prog')) document.body.removeChild(document.getElementById('exp-prog')); } };");
 
 
