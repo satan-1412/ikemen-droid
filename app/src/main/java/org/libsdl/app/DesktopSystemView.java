@@ -3023,7 +3023,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("            var model = obj.scene || obj;");
             html.append("            if(model.isBufferGeometry) { var mat = new THREE.MeshStandardMaterial({color:0xcccccc, side:THREE.DoubleSide}); model = new THREE.Mesh(model, mat); }");
             html.append("            model.userData.isRoot = true; model.position.copy(spawnPos);");
-            html.append("            model.traverse(function(n){ if(n.isMesh) { n.castShadow = true; n.receiveShadow = true; if(n.material) { n.material.side = THREE.DoubleSide; if(n.material.color && n.material.color.getHex() === 0) n.material.color.setHex(0xffffff); } } });");
+            html.append("            model.traverse(function(n){ if(n.isMesh) { n.castShadow = true; n.receiveShadow = true; if(n.material) { var mats = Array.isArray(n.material) ? n.material : [n.material]; mats.forEach(function(m, i){ if(!m.isMeshStandardMaterial && !m.isMeshPhongMaterial){ var nm = new THREE.MeshStandardMaterial({map:m.map, color:m.color||0xffffff, transparent:m.transparent, opacity:m.opacity, alphaTest:m.alphaTest}); if(Array.isArray(n.material)) n.material[i]=nm; else n.material=nm; m=nm; } m.side = THREE.DoubleSide; if(m.emissive) m.emissive.setHex(0x000000); m.needsUpdate=true; }); } } });");
             html.append("            model.userData.velX = 0; model.userData.velY = 0; model.userData.velZ = 0;"); 
             html.append("            var anims = obj.animations || [];");
             html.append("            if(anims && anims.length > 0) { model.userData.animations = anims; model.userData.animIndex = 0; model.userData.isPlaying = true; var mixer = new THREE.AnimationMixer(model); model.userData.mixer = mixer; mixers.push(mixer); model.userData.action = mixer.clipAction(anims[0]); model.userData.action.play(); }");
@@ -3060,14 +3060,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    mesh.userData.isRoot=true; scene.add(mesh); interactables.push(mesh);");
             html.append("};");
 
-            html.append("window.checkDefaultLights = function() {};");
+            html.append("window.checkDefaultLights = function() { var c=0; interactables.forEach(function(o){if(o.userData.isLight) c++;}); if(c>0){ambientLight.visible=false; dirLight.visible=false;}else{ambientLight.visible=true; dirLight.visible=true;} };");
             
             html.append("window.addLight = function(type) {");
-            html.append("    if(type==='hemi') { toggleSub('lightSub'); return; }");
             html.append("    var group = new THREE.Group(); var light, gizmo;");
             html.append("    if(type==='spot') {");
             html.append("        light = new THREE.SpotLight(0xffffff, 15, 300, Math.PI/6, 0.5, 1); light.position.set(0,0,0); light.target.position.set(0,-1,0); group.add(light); group.add(light.target);");
-            html.append("        gizmo = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.5, 2.5, 8), new THREE.MeshBasicMaterial({color:0x555555, wireframe:true})); gizmo.rotation.x = Math.PI/2;");
+            html.append("        gizmo = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 1.5, 2.5, 8), new THREE.MeshBasicMaterial({color:0x555555, wireframe:true})); gizmo.position.y = -1.25;");
+            html.append("    } else if(type==='hemi') {");
+            html.append("        light = new THREE.HemisphereLight(0x87CEEB, 0x444444, 2); group.add(light);");
+            html.append("        gizmo = new THREE.Mesh(new THREE.OctahedronGeometry(2, 0), new THREE.MeshBasicMaterial({color:0x00aaff, wireframe:true}));");
             html.append("    } else {");
             html.append("        light = new THREE.PointLight(0xffffff, 10, 200, 1); group.add(light);");
             html.append("        gizmo = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), new THREE.MeshBasicMaterial({color:0xffff00, wireframe:true}));");
@@ -3076,10 +3078,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    var mathPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); var spawnPos = new THREE.Vector3(); raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); raycaster.ray.intersectPlane(mathPlane, spawnPos);");
             html.append("    group.position.copy(spawnPos || new THREE.Vector3(0,0,0)); group.position.y += 15;");
             html.append("    group.userData.isRoot = true; group.userData.isLight = true; group.userData.lType = type || 'point';");
-            html.append("    scene.add(group); interactables.push(group);");
+            html.append("    scene.add(group); interactables.push(group); checkDefaultLights();");
             html.append("};");
 
-            html.append("window.deleteSelected = function() { if(selectedObj) { scene.remove(selectedObj); interactables.splice(interactables.indexOf(selectedObj),1); clearSelection(); }};");
+            html.append("window.deleteSelected = function() { if(selectedObj) { scene.remove(selectedObj); interactables.splice(interactables.indexOf(selectedObj),1); clearSelection(); checkDefaultLights(); }};");
             
             html.append("window.updateSysLights = function() { ambientLight.color.set(document.getElementById('l_ambC').value); ambientLight.intensity=parseFloat(document.getElementById('l_ambI').value)/10; dirLight.color.set(document.getElementById('l_dirC').value); dirLight.intensity=parseFloat(document.getElementById('l_dirI').value)/10; };");
             html.append("window.updateSettings = function() { moveSpeed=parseFloat(document.getElementById('s_move').value); lookSpeed=parseFloat(document.getElementById('s_look').value)/1000; };");
@@ -3116,7 +3118,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("            expAnims.push(new THREE.AnimationClip(o.name+'_Action', 4, [trackP, trackQ])); ");
             html.append("        } ");
             html.append("    }); ");
-            html.append("    exporter.parse(scene, function(result) { grid.visible=true; transformControl.visible=true; hiddenGizmos.forEach(function(g){ g.visible = true; }); var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); reader.onloadend=function(){ var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; for(var i=0; i<b64.length; i+=chunk) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); } StudioBridge.endExport(name, path); } }, function(err){ alert('导出崩溃:'+err); grid.visible=true; transformControl.visible=true; hiddenGizmos.forEach(function(g){ g.visible = true; }); }, {binary:true, animations:expAnims.length?expAnims:null}); ");
+            html.append("    exporter.parse(scene, function(result) { grid.visible=true; transformControl.visible=true; hiddenGizmos.forEach(function(g){ g.visible = true; }); var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); reader.onloadend=function(){ var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; for(var i=0; i<b64.length; i+=chunk) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); } StudioBridge.endExport(name, path); } }, {binary:true, animations:expAnims.length?expAnims:null}); ");
             html.append("} catch(e) { alert('系统栈溢出修复拦截: '+e.message); grid.visible=true; transformControl.visible=true; } };");
 
             html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
