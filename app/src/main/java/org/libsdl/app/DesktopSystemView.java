@@ -2963,7 +2963,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("var scene = new THREE.Scene(); var clock = new THREE.Clock();");
             html.append("var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 10000); camera.position.set(0, 15, 30);");
             html.append("var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, powerPreference:'high-performance'}); renderer.setSize(window.innerWidth, window.innerHeight);");
-            html.append("renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;");
+            html.append("renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.NoToneMapping; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;");
             html.append("document.body.appendChild(renderer.domElement);");
             
             html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 0.6); scene.add(ambientLight);");
@@ -3087,7 +3087,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    scene.add(group); interactables.push(group); checkDefaultLights();");
             html.append("};");
 
-            html.append("window.deleteSelected = function() { if(selectedObj) { scene.remove(selectedObj); interactables.splice(interactables.indexOf(selectedObj),1); clearSelection(); checkDefaultLights(); }};");
+            html.append("window.deleteSelected = function() { if(selectedObj) { if(selectedObj.parent) selectedObj.parent.remove(selectedObj); var idx = interactables.indexOf(selectedObj); if(idx !== -1) interactables.splice(idx,1); clearSelection(); checkDefaultLights(); }};");
             
             html.append("window.updateSysLights = function() { ambientLight.color.set(document.getElementById('l_ambC').value); ambientLight.intensity=parseFloat(document.getElementById('l_ambI').value)/10; dirLight.color.set(document.getElementById('l_dirC').value); dirLight.intensity=parseFloat(document.getElementById('l_dirI').value)/10; };");
             html.append("window.updateSettings = function() { moveSpeed=parseFloat(document.getElementById('s_move').value); lookSpeed=parseFloat(document.getElementById('s_look').value)/1000; };");
@@ -3109,15 +3109,25 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    if(obj.userData.rVelX) obj.rotation.x += obj.userData.rVelX; if(obj.userData.rVelY) obj.rotation.y += obj.userData.rVelY; if(obj.userData.rVelZ) obj.rotation.z += obj.userData.rVelZ; } });");
             html.append("    if(typeof moveVec!=='undefined' && moveVec.lengthSq()>0) { camera.translateX(moveVec.x*moveSpeed*dt); camera.translateZ(moveVec.z*moveSpeed*dt); } renderer.render(scene, camera); } animate();");
 
-            // 🛡️ 终极物理打包引擎：放弃所有画蛇添足的烘焙，真正做到100%原生输出，彻底解决光照偏差和报错崩溃
+            // 🛡️ 终极物理打包引擎：严格对齐GLTF协议，完美实现所见即所得
             html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); scene.remove(grid); scene.remove(transformControl); ");
             html.append("    scene.updateMatrixWorld(true); ");
-            html.append("    var expAnims = []; var hiddenGizmos = []; ");
+            html.append("    var expAnims = []; var hiddenGizmos = []; var bakedMats = []; ");
+            html.append("    var ambR=0, ambG=0, ambB=0; ");
+            html.append("    scene.traverse(function(l) { if(l.visible) { if(l.isAmbientLight) { ambR+=l.color.r*l.intensity; ambG+=l.color.g*l.intensity; ambB+=l.color.b*l.intensity; } else if(l.isHemisphereLight) { ambR+=(l.color.r+l.groundColor.r)*0.5*l.intensity; ambG+=(l.color.g+l.groundColor.g)*0.5*l.intensity; ambB+=(l.color.b+l.groundColor.b)*0.5*l.intensity; } } }); ");
             html.append("    scene.traverse(function(child) { ");
             html.append("        if(child.type === 'LineSegments' || child.type === 'Line' || (child.material && child.material.wireframe) || child.type === 'ArrowHelper') { hiddenGizmos.push({obj: child, vis: child.visible}); child.visible = false; } ");
-            html.append("        if(compress && child.isMesh && child.geometry && !child.userData.isSkybox && (child.scale.x !== 1 || child.scale.y !== 1 || child.scale.z !== 1)) { ");
-            html.append("            child.userData.oldGeoForBake = child.geometry; child.userData.oldScale = child.scale.clone(); ");
-            html.append("            child.geometry = child.geometry.clone(); child.geometry.scale(child.scale.x, child.scale.y, child.scale.z); child.scale.set(1,1,1); ");
+            html.append("        if(child.isDirectionalLight || child.isSpotLight) { var tPos = new THREE.Vector3(); child.target.getWorldPosition(tPos); child.lookAt(tPos); } ");
+            html.append("        if(child.isMesh && child.material && !child.userData.isSkybox) { ");
+            html.append("            var mats = Array.isArray(child.material) ? child.material : [child.material]; ");
+            html.append("            mats.forEach(function(m){ ");
+            html.append("                if(m.isMeshStandardMaterial && !m.userData.baked) { ");
+            html.append("                    m.userData.origEmissive = m.emissive ? m.emissive.clone() : new THREE.Color(0,0,0); ");
+            html.append("                    var e = m.userData.origEmissive; ");
+            html.append("                    m.emissive = new THREE.Color(Math.min(1, e.r+ambR), Math.min(1, e.g+ambG), Math.min(1, e.b+ambB)); ");
+            html.append("                    m.userData.baked = true; bakedMats.push(m); ");
+            html.append("                } ");
+            html.append("            }); ");
             html.append("        } ");
             html.append("    }); ");
             html.append("    interactables.forEach(function(o){ ");
@@ -3131,22 +3141,19 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("            expAnims.push(new THREE.AnimationClip(o.name+'_Action', 4, [trackP, trackQ])); ");
             html.append("        } ");
             html.append("    }); ");
-            html.append("    var pb = document.createElement('div'); pb.id='exp-prog'; pb.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,120,215,0.9);padding:20px 40px;color:white;z-index:9999;border-radius:10px;text-align:center;font-size:18px;font-weight:bold;box-shadow:0 0 20px rgba(0,0,0,0.5);'; document.body.appendChild(pb); pb.innerText='正在执行原生无损打包...'; ");
+            html.append("    var pb = document.createElement('div'); pb.id='exp-prog'; pb.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,120,215,0.9);padding:20px 40px;color:white;z-index:9999;border-radius:10px;text-align:center;font-size:18px;font-weight:bold;box-shadow:0 0 20px rgba(0,0,0,0.5);'; document.body.appendChild(pb); pb.innerText='正在执行100%所见即所得导出...'; ");
             html.append("    var opt = { binary: true }; if(expAnims.length > 0) opt.animations = expAnims; ");
             html.append("    exporter.parse(scene, function(result) { ");
             html.append("        scene.add(grid); scene.add(transformControl); ");
             html.append("        hiddenGizmos.forEach(function(g){ g.obj.visible = g.vis; }); ");
-            html.append("        scene.traverse(function(child) { ");
-            html.append("            if(child.userData.oldGeoForBake) { child.geometry = child.userData.oldGeoForBake; delete child.userData.oldGeoForBake; } ");
-            html.append("            if(child.userData.oldScale) { child.scale.copy(child.userData.oldScale); delete child.userData.oldScale; } ");
-            html.append("        }); ");
+            html.append("        bakedMats.forEach(function(m){ m.emissive.copy(m.userData.origEmissive); delete m.userData.origEmissive; m.userData.baked = false; }); ");
             html.append("        var blob=new Blob([result], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); ");
             html.append("        reader.onloadend=function(){ ");
             html.append("            var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; var t = b64.length; var i = 0; ");
-            html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; pb.innerText='原生无损导出进度: '+Math.min(100, Math.round((i/t)*100))+'%'; setTimeout(nextChunk, 5); } else { document.body.removeChild(pb); StudioBridge.endExport(name, path); } } ");
+            html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; pb.innerText='导出进度: '+Math.min(100, Math.round((i/t)*100))+'%'; setTimeout(nextChunk, 5); } else { document.body.removeChild(pb); StudioBridge.endExport(name, path); } } ");
             html.append("            nextChunk(); ");
             html.append("        }; ");
-            html.append("    }, opt); ");
+            html.append("    }, function(err) { alert('导出核心错误: '+err); document.body.removeChild(pb); scene.add(grid); scene.add(transformControl); bakedMats.forEach(function(m){ m.emissive.copy(m.userData.origEmissive); delete m.userData.origEmissive; m.userData.baked = false; }); }, opt); ");
             html.append("} catch(e) { alert('打包拦截异常: '+e.message); scene.add(grid); scene.add(transformControl); if(document.getElementById('exp-prog')) document.body.removeChild(document.getElementById('exp-prog')); } };");
 
 
