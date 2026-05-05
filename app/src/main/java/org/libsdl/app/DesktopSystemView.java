@@ -2902,7 +2902,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
           html.append("       <button class='ui-btn' onclick='addLight(\"dir\")' style='background:#E6C200; color:black;'>☀️ 平行光(太阳/全局阴影)</button>");
         html.append("       <button class='ui-btn' onclick='addLight(\"point\")' style='background:#E6C200; color:black;'>💡 点光源(范围照亮)</button>");
         html.append("       <button class='ui-btn' onclick='addLight(\"spot\")' style='background:#E6C200; color:black;'>🔦 手电筒(单向射线)</button>");
-        html.append("       <button class='ui-btn' onclick='addLight(\"hemi\")' style='background:#E6C200; color:black;'>☁️ 动态环境光(天光)</button>");
             html.append("   </div>");
             
             html.append("   <button class='ui-btn' onclick='toggleSub(\"transSub\")'>🔧 变换轴</button>");
@@ -2914,10 +2913,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             html.append("   <button class='ui-btn' onclick='toggleSub(\"lightSub\")'>⚙️ 系统光与灵敏度</button>");
             html.append("   <div id='lightSub' style='display:none; padding:10px; background:rgba(0,0,0,0.5); border-radius:8px;'>");
-            html.append("       <div class='setting-row'><span>环境色</span><input type='color' id='l_ambC' value='#ffffff' onchange='updateSysLights()' style='width:50px;'></div>");
-            html.append("       <div class='setting-row'><span>环境强</span><input type='range' id='l_ambI' min='0' max='50' value='20' style='width:70px;' oninput='updateSysLights()'></div>");
-            html.append("       <div class='setting-row'><span>太阳色</span><input type='color' id='l_dirC' value='#ffffff' onchange='updateSysLights()' style='width:50px;'></div>");
-            html.append("       <div class='setting-row'><span>太阳强</span><input type='range' id='l_dirI' min='0' max='50' value='15' style='width:70px;' oninput='updateSysLights()'></div>");
+            html.append("       <div class='setting-row'><span>补光颜色</span><input type='color' id='l_ambC' value='#ffffff' onchange='updateSysLights()' style='width:50px;'></div>");
+            html.append("       <div class='setting-row'><span>补光强度</span><input type='range' id='l_ambI' min='0' max='50' value='6' style='width:70px;' oninput='updateSysLights()'></div>");
+            html.append("       <div class='setting-row'><span>太阳颜色</span><input type='color' id='l_dirC' value='#ffffff' onchange='updateSysLights()' style='width:50px;'></div>");
+            html.append("       <div class='setting-row'><span>太阳强度</span><input type='range' id='l_dirI' min='0' max='50' value='20' style='width:70px;' oninput='updateSysLights()'></div>");
             html.append("       <div class='setting-row'><span>移速</span><input type='range' id='s_move' min='20' max='300' value='80' style='width:70px;' oninput='updateSettings()'></div>");
             html.append("       <div class='setting-row'><span>视角</span><input type='range' id='s_look' min='1' max='30' value='6' style='width:70px;' oninput='updateSettings()'></div>");
             html.append("   </div>");
@@ -2966,9 +2965,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.NoToneMapping; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;");
             html.append("document.body.appendChild(renderer.domElement);");
             
-            html.append("var ambientLight = new THREE.AmbientLight(0xffffff, 0.6); scene.add(ambientLight);");
-            html.append("var dirLight = new THREE.DirectionalLight(0xffffff, 2.0); dirLight.position.set(100, 200, 100); dirLight.castShadow = true;");
-            html.append("dirLight.shadow.mapSize.width = 4096; dirLight.shadow.mapSize.height = 4096; dirLight.shadow.camera.near = 0.5; dirLight.shadow.camera.far = 1000; dirLight.shadow.camera.left = -200; dirLight.shadow.camera.right = 200; dirLight.shadow.camera.top = 200; dirLight.shadow.camera.bottom = -200; dirLight.shadow.bias = -0.0005; scene.add(dirLight);");
+            html.append("var defaultSun = new THREE.DirectionalLight(0xffffff, 2.0); defaultSun.position.set(100, 200, 100); defaultSun.castShadow = true;");
+            html.append("defaultSun.shadow.mapSize.width = 4096; defaultSun.shadow.mapSize.height = 4096; defaultSun.shadow.camera.near = 0.5; defaultSun.shadow.camera.far = 1000; defaultSun.shadow.camera.left = -200; defaultSun.shadow.camera.right = 200; defaultSun.shadow.camera.top = 200; defaultSun.shadow.camera.bottom = -200; defaultSun.shadow.bias = -0.0005; scene.add(defaultSun);");
+            html.append("var defaultFill = new THREE.DirectionalLight(0xffffff, 0.6); defaultFill.position.set(-100, -50, -100); scene.add(defaultFill);");
+            html.append("window.modelNativeLights = [];");
             html.append("var grid = new THREE.GridHelper(200, 20, 0x0078D7, 0x3F3F46); scene.add(grid);");
 
             html.append("var euler = new THREE.Euler(0, 0, 0, 'YXZ'); var isLooking = false; var lastTouchX = 0, lastTouchY = 0;");
@@ -3025,12 +3025,15 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("            var model = obj.scene || obj;");
             html.append("            if(model.isBufferGeometry) { var mat = new THREE.MeshStandardMaterial({color:0xcccccc, side:THREE.DoubleSide}); model = new THREE.Mesh(model, mat); }");
             html.append("            model.userData.isRoot = true; model.position.copy(spawnPos);");
-            html.append("            model.traverse(function(n){ if(n.isMesh) { n.castShadow = true; n.receiveShadow = true; if(n.material) { var mats = Array.isArray(n.material) ? n.material : [n.material]; mats.forEach(function(m, i){ if(!m.isMeshStandardMaterial && !m.isMeshPhongMaterial){ var nm = new THREE.MeshStandardMaterial({map:m.map, color:m.color||0xffffff, transparent:m.transparent, opacity:m.opacity, alphaTest:m.alphaTest}); if(Array.isArray(n.material)) n.material[i]=nm; else n.material=nm; m=nm; } m.side = THREE.DoubleSide; if(m.emissive) m.emissive.setHex(0x000000); m.needsUpdate=true; }); } } });");
+            html.append("            model.traverse(function(n){ ");
+            html.append("                if(n.isLight) { window.modelNativeLights.push(n); } ");
+            html.append("                if(n.isMesh) { n.castShadow = true; n.receiveShadow = true; if(n.material) { var mats = Array.isArray(n.material) ? n.material : [n.material]; mats.forEach(function(m, i){ if(!m.isMeshStandardMaterial && !m.isMeshPhongMaterial){ var nm = new THREE.MeshStandardMaterial({map:m.map, color:m.color||0xffffff, transparent:m.transparent, opacity:m.opacity, alphaTest:m.alphaTest}); if(Array.isArray(n.material)) n.material[i]=nm; else n.material=nm; m=nm; } m.side = THREE.DoubleSide; if(m.emissive) m.emissive.setHex(0x000000); m.needsUpdate=true; }); } } ");
+            html.append("            });");
             html.append("            model.userData.velX = 0; model.userData.velY = 0; model.userData.velZ = 0;"); 
             html.append("            var anims = obj.animations || [];");
             html.append("            if(anims && anims.length > 0) { model.userData.animations = anims; model.userData.animIndex = 0; model.userData.isPlaying = true; var mixer = new THREE.AnimationMixer(model); model.userData.mixer = mixer; mixers.push(mixer); model.userData.action = mixer.clipAction(anims[0]); model.userData.action.play(); }");
             html.append("            scene.add(model); interactables.push(model);");
-            html.append("            checkAnimUI();");
+            html.append("            checkDefaultLights(); checkAnimUI();");
             html.append("        } catch(ex) { alert('模型渲染报错: ' + ex.message); }");
             html.append("    };");
             html.append("    try {");
@@ -3062,7 +3065,21 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    mesh.userData.isRoot=true; scene.add(mesh); interactables.push(mesh);");
             html.append("};");
 
-            html.append("window.checkDefaultLights = function() { var c=0; interactables.forEach(function(o){if(o.userData.isLight) c++;}); if(c>0){ambientLight.visible=false; dirLight.visible=false;}else{ambientLight.visible=true; dirLight.visible=true;} };");
+            html.append("window.checkDefaultLights = function() { ");
+            html.append("    var c = 0; interactables.forEach(function(o){ if(o.userData.isLight) c++; }); ");
+            html.append("    if(c > 0) { ");
+            html.append("        defaultSun.visible = false; defaultFill.visible = false; ");
+            html.append("        window.modelNativeLights.forEach(function(l){ l.visible = false; }); ");
+            html.append("    } else { ");
+            html.append("        if (window.modelNativeLights.length > 0) { ");
+            html.append("            defaultSun.visible = false; defaultFill.visible = false; ");
+            html.append("            window.modelNativeLights.forEach(function(l){ l.visible = true; }); ");
+            html.append("        } else { ");
+            html.append("            defaultSun.visible = true; defaultFill.visible = true; ");
+            html.append("            window.modelNativeLights.forEach(function(l){ l.visible = true; }); ");
+            html.append("        } ");
+            html.append("    } ");
+            html.append("};");
             
             html.append("window.addLight = function(type) {");
             html.append("    var group = new THREE.Group(); var light, gizmo;");
@@ -3073,9 +3090,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    } else if(type==='spot') {");
             html.append("        light = new THREE.SpotLight(0xffffff, 15, 300, Math.PI/6, 0.5, 1); light.position.set(0,0,0); light.target.position.set(0,0,-1); light.castShadow = true; light.shadow.mapSize.width = 2048; light.shadow.mapSize.height = 2048; light.shadow.bias = -0.0005; group.add(light); group.add(light.target);");
             html.append("        gizmo = new THREE.Group(); gizmo.add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 1.5, 2.5, 8), new THREE.MeshBasicMaterial({color:0x55ff55, wireframe:true}))); gizmo.children[0].rotation.x = -Math.PI/2; gizmo.children[0].position.z = -1.25;");
-            html.append("    } else if(type==='hemi') {");
-            html.append("        light = new THREE.HemisphereLight(0x87CEEB, 0x444444, 2); group.add(light);");
-            html.append("        gizmo = new THREE.Mesh(new THREE.OctahedronGeometry(2, 0), new THREE.MeshBasicMaterial({color:0x00aaff, wireframe:true}));");
             html.append("    } else {");
             html.append("        light = new THREE.PointLight(0xffffff, 10, 200, 1); light.castShadow = true; light.shadow.mapSize.width = 2048; light.shadow.mapSize.height = 2048; light.shadow.bias = -0.0005; group.add(light);");
             html.append("        gizmo = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), new THREE.MeshBasicMaterial({color:0xffff00, wireframe:true}));");
@@ -3089,7 +3103,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             html.append("window.deleteSelected = function() { if(selectedObj) { if(selectedObj.parent) selectedObj.parent.remove(selectedObj); var idx = interactables.indexOf(selectedObj); if(idx !== -1) interactables.splice(idx,1); clearSelection(); checkDefaultLights(); }};");
             
-            html.append("window.updateSysLights = function() { ambientLight.color.set(document.getElementById('l_ambC').value); ambientLight.intensity=parseFloat(document.getElementById('l_ambI').value)/10; dirLight.color.set(document.getElementById('l_dirC').value); dirLight.intensity=parseFloat(document.getElementById('l_dirI').value)/10; };");
+            html.append("window.updateSysLights = function() { defaultFill.color.set(document.getElementById('l_ambC').value); defaultFill.intensity=parseFloat(document.getElementById('l_ambI').value)/10; defaultSun.color.set(document.getElementById('l_dirC').value); defaultSun.intensity=parseFloat(document.getElementById('l_dirI').value)/10; };");
             html.append("window.updateSettings = function() { moveSpeed=parseFloat(document.getElementById('s_move').value); lookSpeed=parseFloat(document.getElementById('s_look').value)/1000; };");
             
             html.append("var isPreview = false; window.togglePreviewMode = function() { isPreview = !isPreview; lockEvents = true; setTimeout(function(){lockEvents=false;}, 500); document.getElementById('sysGroup').style.display = isPreview ? 'none' : 'flex'; document.getElementById('rightMenu').style.display = isPreview ? 'none' : 'flex'; document.getElementById('fireBtn').style.display = isPreview ? 'none' : 'flex'; document.getElementById('crosshair').style.display = isPreview ? 'none' : 'block'; document.getElementById('previewExit').style.display = isPreview ? 'block' : 'none'; grid.visible = !isPreview; transformControl.visible = !isPreview; transformControl.enabled = !isPreview; if(isPreview){clearSelection();} };");
@@ -3111,6 +3125,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             // 🛡️ 修复4KB导出与Length报错专用代码
             html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); scene.remove(grid); scene.remove(transformControl); ");
+            html.append("    var removedLights = []; ");
+            html.append("    if(!defaultSun.visible) { scene.remove(defaultSun); removedLights.push({light: defaultSun, parent: scene}); } ");
+            html.append("    if(!defaultFill.visible) { scene.remove(defaultFill); removedLights.push({light: defaultFill, parent: scene}); } ");
+            html.append("    window.modelNativeLights.forEach(function(l){ if(!l.visible && l.parent){ l.parent.remove(l); removedLights.push({light: l, parent: l.parent}); } }); ");
             html.append("    scene.updateMatrixWorld(true); ");
             html.append("    var expAnims = []; var hiddenGizmos = []; var udCache = []; ");
             html.append("    scene.traverse(function(child) { ");
@@ -3136,6 +3154,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    var opt = { binary: true }; if(expAnims.length > 0) opt.animations = expAnims; ");
             html.append("    var onDone = function(result) { ");
             html.append("        scene.add(grid); scene.add(transformControl); ");
+            html.append("        removedLights.forEach(function(item){ if(item.light) item.parent.add(item.light); }); ");
             html.append("        hiddenGizmos.forEach(function(g){ g.obj.visible = g.vis; }); ");
             html.append("        udCache.forEach(function(c){ if(c.mixer) c.obj.userData.mixer = c.mixer; if(c.action) c.obj.userData.action = c.action; if(c.animations) c.obj.userData.animations = c.animations; }); ");
             html.append("        var finalRes = (result instanceof ArrayBuffer) ? result : JSON.stringify(result); ");
@@ -3254,13 +3273,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     FileOutputStream fos = new FileOutputStream(glbFile);
                     fos.write(data); fos.close();
                     
-                    File defFile = new File(tempDir, baseName + ".def");
-                    FileOutputStream defOut = new FileOutputStream(defFile);
-                    defOut.write(("[Info]\nname = \"" + baseName + "\"\n\n[BGdef]\n\n[Model " + baseName + "整合场景]\nfile = " + baseName + "_3DStage.glb\nposition = 0,0,0\nscale = 1,1,1\n").getBytes("UTF-8"));
-                    defOut.close();
-
                     new Handler(Looper.getMainLooper()).post(() -> {
-                        Toast.makeText(getContext(), "✅ 3D场景与动画已烘焙导出！\n文件在:\n" + glbFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
+                        Toast.makeText(getContext(), "✅ 3D场景已烘焙导出(纯模型模式)！\n文件在:\n" + glbFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
                         if(parentDialog != null) parentDialog.dismiss(); // 导出成功后自动退出全屏
                     });
                 } catch(Exception e) { e.printStackTrace(); }
