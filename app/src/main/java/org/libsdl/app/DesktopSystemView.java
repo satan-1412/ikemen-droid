@@ -3126,8 +3126,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             // 🛡️ 修复4KB导出与Length报错专用代码
             html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); scene.remove(grid); scene.remove(transformControl); ");
             html.append("    var removedLights = []; ");
-            html.append("    if(!defaultSun.visible) { scene.remove(defaultSun); removedLights.push({light: defaultSun, parent: scene}); } ");
-            html.append("    if(!defaultFill.visible) { scene.remove(defaultFill); removedLights.push({light: defaultFill, parent: scene}); } ");
+            html.append("    var hasCustom = false; interactables.forEach(function(o){if(o.userData.isLight) hasCustom=true;}); ");
+            html.append("    if(defaultFill.parent) { scene.remove(defaultFill); removedLights.push({light: defaultFill, parent: scene}); } ");
+            html.append("    if(hasCustom) { ");
+            html.append("        if(defaultSun.parent) { scene.remove(defaultSun); removedLights.push({light: defaultSun, parent: scene}); } ");
+            html.append("    } else { ");
+            html.append("        if(!defaultSun.parent) { scene.add(defaultSun); } ");
+            html.append("    } ");
             html.append("    window.modelNativeLights.forEach(function(l){ if(!l.visible && l.parent){ l.parent.remove(l); removedLights.push({light: l, parent: l.parent}); } }); ");
             html.append("    scene.updateMatrixWorld(true); ");
             html.append("    var expAnims = []; var hiddenGizmos = []; var udCache = []; ");
@@ -3151,7 +3156,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("        } ");
             html.append("    }); ");
             html.append("    var pb = document.createElement('div'); pb.id='exp-prog'; pb.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,120,215,0.9);padding:20px 40px;color:white;z-index:9999;border-radius:10px;text-align:center;font-size:18px;font-weight:bold;box-shadow:0 0 20px rgba(0,0,0,0.5);'; document.body.appendChild(pb); pb.innerText='正在执行无损打包...'; ");
-            html.append("    var opt = { binary: true }; if(expAnims.length > 0) opt.animations = expAnims; ");
+            html.append("    var opt = { binary: true, includeCustomExtensions: true }; if(expAnims.length > 0) opt.animations = expAnims; ");
             html.append("    var onDone = function(result) { ");
             html.append("        scene.add(grid); scene.add(transformControl); ");
             html.append("        removedLights.forEach(function(item){ if(item.light) item.parent.add(item.light); }); ");
