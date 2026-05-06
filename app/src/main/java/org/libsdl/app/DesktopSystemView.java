@@ -2755,12 +2755,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 
                 @android.webkit.JavascriptInterface public void triggerImport() {
                     new Handler(Looper.getMainLooper()).post(() -> {
-                        // 🔓 支持 8 种主流 3D 格式
                         showWin10FilePicker("导入 3D 模型", 11, null, null, fileMod -> {
                             FileCallback processModel = fMod -> {
                                 StageModelInfo m = new StageModelInfo(); m.name = fMod.getName(); m.path = fMod.getAbsolutePath(); modelList.add(m);
                                 modelWebView.evaluateJavascript("javascript:loadExternalModel('file://" + m.path + "');", null);
-                                Toast.makeText(getContext(), "✅ 模型开始解析并注入准星位置", Toast.LENGTH_SHORT).show();
+                                Toast.makeText(getContext(), "✅ 模型开始解析并自动分配独立命名", Toast.LENGTH_SHORT).show();
                             };
                             if (fileMod.isDirectory()) showGenericFileListPicker(fileMod, new String[]{".gltf", ".glb", ".obj", ".fbx", ".3ds", ".dae", ".ply", ".stl"}, "3D模型", "#0078D7", processModel); else processModel.onFileSelected(fileMod);
                         });
@@ -2769,10 +2768,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
                 @android.webkit.JavascriptInterface public void triggerTextureImport() {
                     new Handler(Looper.getMainLooper()).post(() -> {
-                        showWin10FilePicker("选择贴图 (支持图片/GIF/视频)", 7, null, null, fileTex -> {
+                        showWin10FilePicker("选择贴图", 7, null, null, fileTex -> {
                             FileCallback processTex = fTex -> {
                                 modelWebView.evaluateJavascript("javascript:applyTexture('file://" + fTex.getAbsolutePath() + "');", null);
-                                Toast.makeText(getContext(), "✅ 贴图/视频已应用至模型", Toast.LENGTH_SHORT).show();
+                                Toast.makeText(getContext(), "✅ 贴图已应用", Toast.LENGTH_SHORT).show();
                             };
                             if (fileTex.isDirectory()) showImageGridPicker(fileTex, processTex); else processTex.onFileSelected(fileTex);
                         });
@@ -2786,40 +2785,23 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
                         GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
 
-                        box.addView(createSubTitle("💾 场景烘焙 (统一输出 GLB)"));
+                        box.addView(createSubTitle("💾 场景烘焙 (仅导出 GLB 模型)"));
                         box.addView(createSubTitle("自定义场景名称:"));
                         EditText nameInput = createInput("例如: MyStage_3D", "MyStage_3D"); box.addView(nameInput);
-
-                        box.addView(createSubTitle("保存路径:"));
-                        TextView pathTxt = new TextView(getContext());
-                        String defaultPath = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports").getAbsolutePath();
-                        pathTxt.setText(defaultPath); pathTxt.setTextColor(Color.LTGRAY); pathTxt.setPadding(0, (int)(5*density), 0, (int)(10*density)); applyGlobalFontSettings(pathTxt, 0.9f, false); box.addView(pathTxt);
-
-                        Button btnPickDir = createButton("📂 选择其他文件夹", "#3F3F46");
-                        btnPickDir.setOnClickListener(v -> showWin10FilePicker("选择导出目录", 10, null, null, dir -> pathTxt.setText(dir.getAbsolutePath())));
-                        box.addView(btnPickDir);
-
-                        // 🛡️ 使用全路径避免导包错误
-                        android.widget.CheckBox compressCheck = new android.widget.CheckBox(getContext());
-                        compressCheck.setText("开启极限体积压缩优化 (合并节点)");
-                        compressCheck.setTextColor(Color.WHITE); compressCheck.setChecked(true);
-                        box.addView(compressCheck);
 
                         Button btnConf = createButton("✔️ 确认打包导出", "#4CAF50");
                         btnConf.setOnClickListener(v -> {
                             String n = nameInput.getText().toString().trim(); if(n.isEmpty()) n = "MyStage_3D";
-                            String p = pathTxt.getText().toString().replace("\\", "\\\\");
-                            modelWebView.evaluateJavascript("javascript:executeGLBExport('" + n + "', '" + p + "', " + compressCheck.isChecked() + ");", null);
+                            String p = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports").getAbsolutePath().replace("\\", "\\\\");
+                            modelWebView.evaluateJavascript("javascript:executeGLBExport('" + n + "', '" + p + "', true);", null);
                             expD.dismiss();
                             Toast.makeText(getContext(), "📦 正在执行烘焙打包压缩...", Toast.LENGTH_LONG).show();
                         });
                         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, (int)(15*density), 0, 0); box.addView(btnConf, lp);
                         Button btnCancel = createButton("❌ 取消", "#E81123"); btnCancel.setOnClickListener(v -> expD.dismiss()); box.addView(btnCancel);
-                        // 🛡️ 核心修复：套一层 ScrollView，完美支持上下滑动！
-                        ScrollView scrollWrap = new ScrollView(getContext());
-                        scrollWrap.addView(box);
-                        expD.setContentView(scrollWrap); 
-                        expD.show();
+                        
+                        ScrollView scrollWrap = new ScrollView(getContext()); scrollWrap.addView(box);
+                        expD.setContentView(scrollWrap); expD.show();
                     });
                 }
 
@@ -2834,7 +2816,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             File outDir = new File(pathStr); outDir.mkdirs();
                             File glbFile = new File(outDir, name + ".glb");
                             FileOutputStream fos = new FileOutputStream(glbFile); fos.write(data); fos.close();
-                            new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(getContext(), "✅ 完美导出! 模型大小: " + (data.length / 1024) + " KB\n保存至: " + glbFile.getAbsolutePath(), Toast.LENGTH_LONG).show());
+                            new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(getContext(), "✅ 完美导出! 模型大小: " + (data.length / 1024) + " KB\n已保存至 IkemenExports 目录", Toast.LENGTH_LONG).show());
                         } catch(Exception e) { 
                             new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(getContext(), "❌ 写入失败: " + e.getMessage(), Toast.LENGTH_LONG).show());
                         }
@@ -2855,209 +2837,227 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append(".ui-btn{padding:10px; background:#333; color:white; border:none; border-radius:6px; font-weight:bold; width:100%; margin-bottom:5px; flex-shrink:0;}");
             html.append(".ui-btn:active{background:#555;}");
             html.append(".drag-handle{width:100%;text-align:center;color:#aaa;font-size:12px;cursor:move;padding:10px 0;margin-bottom:5px;border-bottom:1px solid #444; flex-shrink:0; touch-action:none;}");
-            html.append(".setting-row{display:flex; justify-content:space-between; margin-bottom:8px; color:white; font-size:12px; align-items:center;}");
-            html.append(".param-row { display:flex; gap:3px; margin-bottom:5px; align-items:center; color:white; font-size:12px; }");
-            html.append(".param-row input { width:35px; background:#222; color:white; border:1px solid #555; text-align:center; font-size:12px; border-radius:3px; }");
+            html.append(".param-row { display:flex; gap:3px; margin-bottom:5px; align-items:center; color:white; font-size:12px; white-space:nowrap; }");
+            html.append(".param-row input { flex:1; min-width:30px; background:#222; color:white; border:1px solid #555; text-align:center; font-size:12px; border-radius:3px; padding:2px; }");
             html.append(".err-log { position:absolute; bottom:10px; left:10px; color:red; z-index:9999; font-size:12px; pointer-events:none; }");
             html.append("</style>");
             
-            html.append("<script>window.onerror = function(msg, url, line) { var e = document.createElement('div'); e.className = 'err-log'; e.innerText = 'JS报错: ' + msg + ' (行 '+line+')'; document.body.appendChild(e); };</script>");
-
             html.append("<script src=\"js/three.min.js\"></script>");
             html.append("<script src=\"js/GLTFLoader.js\"></script>");
             html.append("<script src=\"js/OBJLoader.js\"></script>");
             html.append("<script src=\"js/FBXLoader.js\"></script>");
-            html.append("<script src=\"js/TDSLoader.js\"></script>");
-            html.append("<script src=\"js/ColladaLoader.js\"></script>");
-            html.append("<script src=\"js/STLLoader.js\"></script>");
-            html.append("<script src=\"js/PLYLoader.js\"></script>");
             html.append("<script src=\"js/TransformControls.js\"></script>");
             html.append("<script src=\"js/GLTFExporter.js\"></script>");
             html.append("<script src=\"js/nipplejs.min.js\"></script>");
-            html.append("<script src=\"js/DRACOLoader.js\"></script>"); // 🛡️ 纯离线读取 Draco 解码器
-            html.append("<script src=\"js/fflate.min.js\"></script>"); // 🛡️ 引入 FBX 解压模块
+            html.append("<script src=\"js/DRACOLoader.js\"></script>");
+            html.append("<script src=\"js/fflate.min.js\"></script>");
             
             html.append("</head><body>");
             
-            html.append("<div id='crosshair' style='position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:rgba(255,255,255,0.7); font-size:30px; pointer-events:none; z-index:50;'>+</div>");
-
-            html.append("<button id='previewExit' onclick='togglePreviewMode()' style='display:none; position:absolute; top:20px; right:20px; z-index:3000; padding:15px; background:#FF9800; color:white; border-radius:8px; border:none; font-weight:bold;'>❌ 退出预览</button>");
-
             html.append("<div id='outlinerGroup' class='scrollable-panel' style='position:absolute; top:190px; left:20px; z-index:1000; background:rgba(20,20,20,0.85); padding:8px; border-radius:10px; width:160px; max-height:45vh; border:1px solid #444;'>");
-            html.append("   <div class='drag-handle' id='outlinerHandle'>📑 3D 图层管理器</div>");
+            html.append("   <div class='drag-handle' id='outlinerHandle'>📑 图层(精准选中)</div>");
             html.append("   <div id='outlinerList' style='display:flex; flex-direction:column; gap:4px;'></div>");
             html.append("</div>");
+
             html.append("<div id='sysGroup' class='scrollable-panel' style='position:absolute; top:20px; left:20px; z-index:1000; background:rgba(20,20,20,0.8); padding:8px; border-radius:10px; width:120px;'>");
             html.append("   <div class='drag-handle' id='sysHandle'>⠿ 拖动 ⠿</div>");
-            html.append("   <button class='ui-btn' onclick='StudioBridge.closeStudio()' style='background:#E81123;'>⬅️ 返回 2D</button>");
+            html.append("   <button class='ui-btn' onclick='StudioBridge.closeStudio()' style='background:#E81123;'>⬅️ 返回</button>");
             html.append("   <button class='ui-btn' onclick='StudioBridge.triggerExportSettings()' style='background:#4CAF50;'>💾 烘焙打包</button>");
-            html.append("   <button class='ui-btn' onclick='togglePreviewMode()' style='background:#FF9800;'>👁️ 预览模式</button>");
             html.append("</div>");
 
-            html.append("<div id='rightMenu' class='scrollable-panel' style='position:absolute; top:20px; right:20px; z-index:1000; background:rgba(20,20,20,0.85); padding:8px; border-radius:10px; width:180px;'>");
+            html.append("<div id='rightMenu' class='scrollable-panel' style='position:absolute; top:20px; right:20px; z-index:1000; background:rgba(20,20,20,0.85); padding:8px; border-radius:10px; width:190px;'>");
             html.append("   <div class='drag-handle' id='rightHandle'>⠿ 拖动 ⠿</div>");
             html.append("   <button class='ui-btn' onclick='StudioBridge.triggerImport()' style='background:#0078D7;'>📥 导入模型</button>");
-            
-            html.append("   <button class='ui-btn' onclick='toggleSub(\"buildSub\")'>➕ 新建几何/环境/光</button>");
+            html.append("   <button class='ui-btn' onclick='toggleSub(\"buildSub\")'>➕ 创建 光源/形体</button>");
             html.append("   <div id='buildSub' style='display:none; padding-left:10px;'>");
+            html.append("       <button class='ui-btn' onclick='addLight(\"dir\")' style='background:#E6C200; color:black;'>☀️ 平行光 (全局投影)</button>");
+            html.append("       <button class='ui-btn' onclick='addLight(\"point\")' style='background:#E6C200; color:black;'>💡 点光源 (范围光)</button>");
+            html.append("       <button class='ui-btn' onclick='addLight(\"spot\")' style='background:#E6C200; color:black;'>🔦 聚光灯</button>");
             html.append("       <button class='ui-btn' onclick='addGeom(\"box\")'>方块(墙)</button>");
             html.append("       <button class='ui-btn' onclick='addGeom(\"plane\")'>平面(地)</button>");
-            html.append("       <button class='ui-btn' onclick='addGeom(\"skydome\")' style='background:#9C27B0'>天空盒(环境背景)</button>");
-          html.append("       <button class='ui-btn' onclick='addLight(\"dir\")' style='background:#E6C200; color:black;'>☀️ 平行光(太阳/全局阴影)</button>");
-        html.append("       <button class='ui-btn' onclick='addLight(\"point\")' style='background:#E6C200; color:black;'>💡 点光源(范围照亮)</button>");
-        html.append("       <button class='ui-btn' onclick='addLight(\"spot\")' style='background:#E6C200; color:black;'>🔦 手电筒(单向射线)</button>");
             html.append("   </div>");
-            
-            html.append("   <button class='ui-btn' onclick='toggleSub(\"transSub\")'>🔧 变换轴</button>");
+            html.append("   <button class='ui-btn' onclick='toggleSub(\"transSub\")'>🔧 变换控制轴</button>");
             html.append("   <div id='transSub' style='display:none; padding-left:10px;'>");
             html.append("       <button class='ui-btn' id='m_trans' onclick='setTransMode(\"translate\")' style='background:#0078D7'>↕️ 移动</button>");
             html.append("       <button class='ui-btn' id='m_rot' onclick='setTransMode(\"rotate\")'>🔄 旋转</button>");
             html.append("       <button class='ui-btn' id='m_scale' onclick='setTransMode(\"scale\")'>📐 缩放</button>");
             html.append("   </div>");
-
-            html.append("   <button class='ui-btn' onclick='toggleSub(\"lightSub\")'>⚙️ 系统光与灵敏度</button>");
-            html.append("   <div id='lightSub' style='display:none; padding:10px; background:rgba(0,0,0,0.5); border-radius:8px;'>");
-            html.append("       <div class='setting-row'><span>补光颜色</span><input type='color' id='l_ambC' value='#ffffff' onchange='updateSysLights()' style='width:50px;'></div>");
-            html.append("       <div class='setting-row'><span>补光强度</span><input type='range' id='l_ambI' min='0' max='50' value='6' style='width:70px;' oninput='updateSysLights()'></div>");
-            html.append("       <div class='setting-row'><span>太阳颜色</span><input type='color' id='l_dirC' value='#ffffff' onchange='updateSysLights()' style='width:50px;'></div>");
-            html.append("       <div class='setting-row'><span>太阳强度</span><input type='range' id='l_dirI' min='0' max='50' value='20' style='width:70px;' oninput='updateSysLights()'></div>");
-            html.append("       <div class='setting-row'><span>移速</span><input type='range' id='s_move' min='20' max='300' value='80' style='width:70px;' oninput='updateSettings()'></div>");
-            html.append("       <div class='setting-row'><span>视角</span><input type='range' id='s_look' min='1' max='30' value='6' style='width:70px;' oninput='updateSettings()'></div>");
-            html.append("   </div>");
             
+            // 🔥 全新优化的属性面板
             html.append("   <div id='objTools' style='display:none; margin-top:10px; border-top:1px solid #555; padding-top:10px;'>");
-            html.append("       <div style='color:#ccc; font-size:12px; margin-bottom:5px; text-align:center;'>精确参数 (X Y Z)</div>");
-            html.append("       <div class='param-row'><span>移</span><input type='number' id='pX' onchange='applyParams()'><input type='number' id='pY' onchange='applyParams()'><input type='number' id='pZ' onchange='applyParams()'></div>");
+            html.append("       <div class='param-row'><span>名称</span><input type='text' id='objName' onchange='applyParams()' style='text-align:left;'></div>");
+            html.append("       <div class='param-row'><span>位</span><input type='number' id='pX' onchange='applyParams()'><input type='number' id='pY' onchange='applyParams()'><input type='number' id='pZ' onchange='applyParams()'></div>");
             html.append("       <div class='param-row'><span>旋</span><input type='number' id='rX' onchange='applyParams()'><input type='number' id='rY' onchange='applyParams()'><input type='number' id='rZ' onchange='applyParams()'></div>");
             html.append("       <div class='param-row'><span>缩</span><input type='number' id='sX' step='0.1' onchange='applyParams()'><input type='number' id='sY' step='0.1' onchange='applyParams()'><input type='number' id='sZ' step='0.1' onchange='applyParams()'></div>");
             
-            // 🎬 加入动态位移与自转输入框 (彻底修复找不到 rvX 导致的崩溃红字)
-            html.append("       <div style='color:#4CAF50; font-size:12px; margin:5px 0; text-align:center;'>模型持续位移/自转速 (每帧)</div>");
-            html.append("       <div class='param-row'><span>移</span><input type='number' id='vX' step='0.1' onchange='applyParams()'><input type='number' id='vY' step='0.1' onchange='applyParams()'><input type='number' id='vZ' step='0.1' onchange='applyParams()'></div>");
-            html.append("       <div class='param-row'><span>转</span><input type='number' id='rvX' step='0.01' onchange='applyParams()'><input type='number' id='rvY' step='0.01' onchange='applyParams()'><input type='number' id='rvZ' step='0.01' onchange='applyParams()'></div>");          
+            // 🎨 PBR 材质核心系统
             html.append("       <div id='matParams' style='display:none; margin-top:5px; border-top:1px dashed #555; padding-top:5px;'>");
-            html.append("           <div style='color:#4CAF50; font-size:12px; margin-bottom:5px;'>🎨 材质 (光影感应)</div>");
-            html.append("           <div style='display:flex; gap:5px;'><button class='ui-btn' onclick='setMat(\"basic\")' style='background:#333;font-size:10px;padding:5px;'>🚫不受光</button><button class='ui-btn' onclick='setMat(\"pbr\")' style='background:#0078D7;font-size:10px;padding:5px;'>☀️受光 (PBR)</button></div>");
+            html.append("           <div style='color:#4CAF50; font-size:12px; margin-bottom:5px;'>🎨 PBR 材质参数</div>");
+            html.append("           <div class='param-row'><span>色</span><input type='color' id='m_col' onchange='applyParams()' style='padding:0;'> <span>光</span><input type='color' id='m_em' onchange='applyParams()' style='padding:0;'></div>");
+            html.append("           <div class='param-row'><span>金</span><input type='number' id='m_met' step='0.1' min='0' max='1' onchange='applyParams()'> <span>糙</span><input type='number' id='m_rou' step='0.1' min='0' max='1' onchange='applyParams()'></div>");
+            html.append("           <div style='display:flex; gap:2px; margin-top:5px;'><button class='ui-btn' onclick='setMat(\"basic\")' style='background:#333;font-size:10px;padding:5px;'>🚫无光</button><button class='ui-btn' onclick='setMat(\"pbr\")' style='background:#0078D7;font-size:10px;padding:5px;'>☀️受光</button></div>");
             html.append("       </div>");
+            
+            // 💡 光源扩展属性
             html.append("       <div id='lightParams' style='display:none; margin-top:5px; border-top:1px dashed #555; padding-top:5px;'>");
-            html.append("           <div style='color:#E6C200; font-size:12px; margin-bottom:5px;'>💡 自定义光源参数</div>");
-            html.append("           <div class='param-row'><span>颜色</span><input type='color' id='l_col' onchange='applyParams()' style='width:60px; height:20px; padding:0;'></div>");
-            html.append("           <div class='param-row'><span>强度</span><input type='number' id='l_int' step='0.1' onchange='applyParams()'></div>");
-            html.append("           <div class='param-row'><span>范围</span><input type='number' id='l_dist' step='1' onchange='applyParams()'></div>");
+            html.append("           <div style='color:#E6C200; font-size:12px; margin-bottom:5px;'>💡 光源参数</div>");
+            html.append("           <div class='param-row'><span>颜色</span><input type='color' id='l_col' onchange='applyParams()' style='padding:0;'></div>");
+            html.append("           <div class='param-row'><span>强度</span><input type='number' id='l_int' step='0.1' onchange='applyParams()'> <span>范围</span><input type='number' id='l_dist' step='1' onchange='applyParams()'></div>");
             html.append("       </div>");
-
-            html.append("       <div style='display:flex; gap:5px; margin-top:5px; flex-wrap:wrap;'><button class='ui-btn' onclick='mirrorObj(\"x\")' style='background:#1E88E5; flex:1; min-width:70px;'>↔️ X镜</button><button class='ui-btn' onclick='mirrorObj(\"y\")' style='background:#1E88E5; flex:1; min-width:70px;'>↕️ Y镜</button></div>");
-            html.append("       <div style='display:flex; gap:5px; margin-top:5px; flex-wrap:wrap;'><button class='ui-btn' onclick='copyObj()' style='background:#43A047; flex:1; min-width:70px;'>📄 复制</button><button class='ui-btn' onclick='pasteObj()' style='background:#FDD835; color:black; flex:1; min-width:70px;'>📋 粘贴</button></div>");
 
             html.append("       <button class='ui-btn' onclick='StudioBridge.triggerTextureImport()' style='background:#9C27B0; margin-top:10px;'>🖼️ 替换贴图</button>");
-            html.append("       <button class='ui-btn' onclick='deleteSelected()' style='background:#ff4444;'>🗑️ 删除对象</button>");
+            html.append("       <button class='ui-btn' onclick='deleteSelected()' style='background:#ff4444;'>🗑️ 删除选中项</button>");
             html.append("       <button class='ui-btn' onclick='clearSelection()' style='background:#777;'>❌ 取消选中</button>");
             html.append("   </div>");
             html.append("</div>");
 
             html.append("<div id='fireBtn' style='position:absolute; bottom:60px; right:60px; width:70px; height:70px; border-radius:50%; background:rgba(232,17,35,0.7); border:3px solid rgba(255,255,255,0.6); display:flex; justify-content:center; align-items:center; font-size:28px; z-index:1000; box-shadow:0 0 15px rgba(232,17,35,0.8); touch-action:none;' onpointerdown='fireSelect()'>🎯</div>");
 
-            // 🎬 5按键独立动画控制台 (任意模型选中即显示，包含逐帧调整)
-            html.append("<div id='animTools' style='position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:9999; display:none; gap:8px; background:rgba(0,0,0,0.8); padding:10px; border-radius:10px; align-items:center; white-space:nowrap;'>");
-            html.append("   <button onclick='switchAnim(-1)' class='ui-btn' style='width:auto; margin:0; padding:8px 12px;'>⏪ 上动作</button>");
-            html.append("   <button onclick='stepFrame(-1)' class='ui-btn' style='width:auto; margin:0; padding:8px 12px;'>◀ 上一帧</button>");
-            html.append("   <button id='playBtn' onclick='togglePlay()' class='ui-btn' style='background:#0078D7; width:auto; margin:0; padding:8px 20px;'>▶️ 播放</button>");
-            html.append("   <button onclick='stepFrame(1)' class='ui-btn' style='width:auto; margin:0; padding:8px 12px;'>下一帧 ▶</button>");
-            html.append("   <button onclick='switchAnim(1)' class='ui-btn' style='width:auto; margin:0; padding:8px 12px;'>下动作 ⏭️</button>");
-            html.append("</div>");
-
             html.append("<script>");
             html.append("var scene = new THREE.Scene(); var clock = new THREE.Clock();");
             html.append("var camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 10000); camera.position.set(0, 15, 30);");
             html.append("var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, powerPreference:'high-performance'}); renderer.setSize(window.innerWidth, window.innerHeight);");
+            // 🛡️ 匹配 Ikemen GO 渲染色彩空间
             html.append("renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.NoToneMapping; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;");
             html.append("document.body.appendChild(renderer.domElement);");
             
-            html.append("var defaultSun = new THREE.DirectionalLight(0xffffff, 2.0); defaultSun.position.set(100, 200, 100); defaultSun.castShadow = true;");
-            html.append("defaultSun.shadow.mapSize.width = 4096; defaultSun.shadow.mapSize.height = 4096; defaultSun.shadow.camera.near = 0.5; defaultSun.shadow.camera.far = 1000; defaultSun.shadow.camera.left = -200; defaultSun.shadow.camera.right = 200; defaultSun.shadow.camera.top = 200; defaultSun.shadow.camera.bottom = -200; defaultSun.shadow.bias = -0.0005; scene.add(defaultSun);");
-            html.append("var defaultFill = new THREE.DirectionalLight(0xffffff, 0.6); defaultFill.position.set(-100, -50, -100); scene.add(defaultFill);");
-            html.append("window.modelNativeLights = [];");
+            // 初始环境默认光 (防止载入黑屏，但导出时如果没有自定义光源会自动导出它们)
+            html.append("var defaultSun = new THREE.DirectionalLight(0xffffff, 1.5); defaultSun.position.set(100, 200, 100); defaultSun.castShadow = true;");
+            html.append("defaultSun.shadow.mapSize.width = 4096; defaultSun.shadow.mapSize.height = 4096; defaultSun.shadow.bias = -0.0005; scene.add(defaultSun);");
+            html.append("var defaultFill = new THREE.DirectionalLight(0xaabbff, 0.5); defaultFill.position.set(-100, -50, -100); scene.add(defaultFill);");
+            
             html.append("var grid = new THREE.GridHelper(200, 20, 0x0078D7, 0x3F3F46); scene.add(grid);");
 
             html.append("var euler = new THREE.Euler(0, 0, 0, 'YXZ'); var isLooking = false; var lastTouchX = 0, lastTouchY = 0;");
-            html.append("var moveSpeed = 80; var lookSpeed = 0.006; var lockEvents = false; var clipboardObj = null; var isUIEditMode = false;");
+            html.append("var moveSpeed = 80; var lookSpeed = 0.006; var selectedObj = null; var interactables = [];");
             
             html.append("var transformControl = new THREE.TransformControls(camera, renderer.domElement);");
             html.append("transformControl.addEventListener('dragging-changed', function(e) { isLooking = false; });");
-            html.append("transformControl.addEventListener('change', function() { updateParamUI(); });");
-            html.append("scene.add(transformControl);");
+            html.append("transformControl.addEventListener('change', function() { updateParamUI(); }); scene.add(transformControl);");
 
-            html.append("renderer.domElement.addEventListener('pointerdown', function(e) { if(isUIEditMode) return; if(lockEvents || e.clientX < window.innerWidth * 0.4 || transformControl.dragging) return; isLooking = true; lastTouchX = e.clientX; lastTouchY = e.clientY; });");
-            html.append("renderer.domElement.addEventListener('pointermove', function(e) { if(isUIEditMode) return; if(!isLooking || transformControl.dragging) return; var dx = e.clientX - lastTouchX; var dy = e.clientY - lastTouchY; euler.setFromQuaternion(camera.quaternion); euler.y -= dx * lookSpeed; euler.x -= dy * lookSpeed; euler.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, euler.x)); camera.quaternion.setFromEuler(euler); lastTouchX = e.clientX; lastTouchY = e.clientY; });");
+            html.append("renderer.domElement.addEventListener('pointerdown', function(e) { if(e.clientX < window.innerWidth * 0.4 || transformControl.dragging) return; isLooking = true; lastTouchX = e.clientX; lastTouchY = e.clientY; });");
+            html.append("renderer.domElement.addEventListener('pointermove', function(e) { if(!isLooking || transformControl.dragging) return; var dx = e.clientX - lastTouchX; var dy = e.clientY - lastTouchY; euler.setFromQuaternion(camera.quaternion); euler.y -= dx * lookSpeed; euler.x -= dy * lookSpeed; euler.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, euler.x)); camera.quaternion.setFromEuler(euler); lastTouchX = e.clientX; lastTouchY = e.clientY; });");
             html.append("renderer.domElement.addEventListener('pointerup', function() { isLooking = false; });");
 
-            // 🛡️ 补齐动画混合器全局声明，彻底解决 mixers 报错和动画按键不显示的问题！
-            html.append("var raycaster = new THREE.Raycaster(); var interactables = []; var selectedObj = null; window.mixers = window.mixers || [];");
-            html.append("window.fireSelect = function() { if (lockEvents || isUIEditMode) return; raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); var intersects = raycaster.intersectObjects(interactables, true); if(intersects.length > 0) { var obj = intersects[0].object; while(obj.parent && obj.userData.isRoot !== true) { obj = obj.parent; } transformControl.attach(obj); selectedObj = obj; document.getElementById('objTools').style.display='block'; updateParamUI(); checkAnimUI(); buildOutliner(); } else { clearSelection(); } };");
-            html.append("window.buildOutliner = function() { var list = document.getElementById('outlinerList'); list.innerHTML = ''; var traverseNode = function(node, depth) { if(!node.userData.isHierarchyNode && !node.userData.isRoot) return; var div = document.createElement('div'); var icon = node.isLight ? '💡' : (node.isMesh ? '🧊' : '📁'); div.innerText = ' '.repeat(depth*2) + icon + ' ' + (node.name || '未命名'); div.style.cssText = 'color:white; font-size:12px; cursor:pointer; padding:6px; border-radius:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:2px;'; if(selectedObj === node) div.style.background = '#0078D7'; else div.style.background = 'rgba(255,255,255,0.1)'; div.onclick = function(e) { e.stopPropagation(); selectNode(node); }; list.appendChild(div); if(node.children) node.children.forEach(function(c) { traverseNode(c, depth+1); }); }; interactables.forEach(function(rootObj) { traverseNode(rootObj, 0); }); };");
-            html.append("window.selectNode = function(node) { if(lockEvents || isUIEditMode) return; transformControl.attach(node); selectedObj = node; document.getElementById('objTools').style.display='block'; updateParamUI(); checkAnimUI(); buildOutliner(); };");
-            html.append("window.setMat = function(t) { if(!selectedObj || !selectedObj.isMesh) return; var m = selectedObj.material; var map = m.map, col = m.color, alpha = m.transparent, opa = m.opacity; if(t==='pbr'){ var nm = new THREE.MeshStandardMaterial({map:map, color:col, transparent:alpha, opacity:opa, side:THREE.DoubleSide}); if(!selectedObj.geometry.attributes.normal) selectedObj.geometry.computeVertexNormals(); selectedObj.material=nm; }else{ selectedObj.material = new THREE.MeshBasicMaterial({map:map, color:col, transparent:alpha, opacity:opa, side:THREE.DoubleSide}); } updateParamUI(); };");
+            html.append("var raycaster = new THREE.Raycaster();");
+            html.append("window.fireSelect = function() {");
+            html.append("  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);");
+            html.append("  var intersects = raycaster.intersectObjects(interactables, true);");
+            html.append("  if(intersects.length > 0) {");
+            html.append("    var obj = intersects[0].object;");
+            html.append("    while(obj.parent && obj.userData.isRoot !== true) { obj = obj.parent; }"); // 向上追溯寻找 Root
+            html.append("    selectNode(obj);");
+            html.append("  } else { clearSelection(); }");
+            html.append("};");
+
+            // 🌳 图层管理器：精准点击选中子网格
+            html.append("window.buildOutliner = function() {");
+            html.append("  var list = document.getElementById('outlinerList'); list.innerHTML = '';");
+            html.append("  var traverseNode = function(node, depth) {");
+            html.append("    if(!node.userData.isHierarchyNode && !node.userData.isRoot) return;");
+            html.append("    var div = document.createElement('div'); div.id = 'node_' + node.uuid;");
+            html.append("    var icon = node.isLight ? '💡' : (node.isMesh ? '🧊' : '📁');");
+            html.append("    div.innerText = ' '.repeat(depth*2) + icon + ' ' + (node.name || '未命名');");
+            html.append("    div.style.cssText = 'color:white; font-size:12px; cursor:pointer; padding:6px; border-radius:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:2px;';");
+            html.append("    div.dataset.depth = depth;");
+            html.append("    if(selectedObj === node) div.style.background = '#0078D7'; else div.style.background = 'rgba(255,255,255,0.1)';");
+            html.append("    div.onclick = function(e) { e.stopPropagation(); selectNode(node); };");
+            html.append("    list.appendChild(div);");
+            html.append("    if(node.children) node.children.forEach(function(c) { traverseNode(c, depth+1); });");
+            html.append("  };");
+            html.append("  interactables.forEach(function(rootObj) { traverseNode(rootObj, 0); });");
+            html.append("};");
+
+            html.append("window.selectNode = function(node) {");
+            html.append("  transformControl.attach(node); selectedObj = node;");
+            html.append("  document.getElementById('objTools').style.display='block';");
+            html.append("  updateParamUI(); buildOutliner();");
+            html.append("};");
             
-            html.append("window.clearSelection = function() { transformControl.detach(); selectedObj = null; document.getElementById('objTools').style.display='none'; document.getElementById('animTools').style.display='none'; buildOutliner(); };");
+            html.append("window.clearSelection = function() { transformControl.detach(); selectedObj = null; document.getElementById('objTools').style.display='none'; buildOutliner(); };");
 
-            html.append("window.updateParamUI = function() { if(!selectedObj) return; document.getElementById('pX').value=selectedObj.position.x.toFixed(2); document.getElementById('pY').value=selectedObj.position.y.toFixed(2); document.getElementById('pZ').value=selectedObj.position.z.toFixed(2); document.getElementById('rX').value=(selectedObj.rotation.x*180/Math.PI).toFixed(1); document.getElementById('rY').value=(selectedObj.rotation.y*180/Math.PI).toFixed(1); document.getElementById('rZ').value=(selectedObj.rotation.z*180/Math.PI).toFixed(1); document.getElementById('sX').value=selectedObj.scale.x.toFixed(2); document.getElementById('sY').value=selectedObj.scale.y.toFixed(2); document.getElementById('sZ').value=selectedObj.scale.z.toFixed(2); document.getElementById('vX').value=selectedObj.userData.velX||0; document.getElementById('vY').value=selectedObj.userData.velY||0; document.getElementById('vZ').value=selectedObj.userData.velZ||0; document.getElementById('rvX').value=selectedObj.userData.rVelX||0; document.getElementById('rvY').value=selectedObj.userData.rVelY||0; document.getElementById('rvZ').value=selectedObj.userData.rVelZ||0; document.getElementById('matParams').style.display = selectedObj.isMesh ? 'block' : 'none'; if(selectedObj.userData.isLight){ document.getElementById('lightParams').style.display='block'; var l = selectedObj.children[0]; if(l.color) document.getElementById('l_col').value='#'+l.color.getHexString(); document.getElementById('l_int').value=l.intensity||1; document.getElementById('l_dist').value=l.distance||0; }else{ document.getElementById('lightParams').style.display='none'; } };");
-            html.append("window.applyParams = function() { if(!selectedObj) return; selectedObj.position.set(parseFloat(document.getElementById('pX').value)||0, parseFloat(document.getElementById('pY').value)||0, parseFloat(document.getElementById('pZ').value)||0); selectedObj.rotation.set((parseFloat(document.getElementById('rX').value)||0)*Math.PI/180, (parseFloat(document.getElementById('rY').value)||0)*Math.PI/180, (parseFloat(document.getElementById('rZ').value)||0)*Math.PI/180); selectedObj.scale.set(parseFloat(document.getElementById('sX').value)||1, parseFloat(document.getElementById('sY').value)||1, parseFloat(document.getElementById('sZ').value)||1); selectedObj.userData.velX=parseFloat(document.getElementById('vX').value)||0; selectedObj.userData.velY=parseFloat(document.getElementById('vY').value)||0; selectedObj.userData.velZ=parseFloat(document.getElementById('vZ').value)||0; selectedObj.userData.rVelX=parseFloat(document.getElementById('rvX').value)||0; selectedObj.userData.rVelY=parseFloat(document.getElementById('rvY').value)||0; selectedObj.userData.rVelZ=parseFloat(document.getElementById('rvZ').value)||0; if(selectedObj.userData.isLight){ var l = selectedObj.children[0]; if(l.color) l.color.set(document.getElementById('l_col').value); l.intensity=parseFloat(document.getElementById('l_int').value); l.distance=parseFloat(document.getElementById('l_dist').value); } };");
+            // ✍️ 智能命名与参数绑定
+            html.append("function getUniqueName(base) { var n = base; var c = 1; while(scene.getObjectByName(n)) { n = base + '_' + c; c++; } return n; }");
 
-            html.append("window.mirrorObj = function(axis) { if(!selectedObj) return; if(axis==='x') selectedObj.scale.x *= -1; else if(axis==='y') selectedObj.scale.y *= -1; updateParamUI(); };");
-            html.append("window.copyObj = function() { if(selectedObj) { var cache = []; selectedObj.traverse(function(c){ cache.push({m:c.userData.mixer, a:c.userData.action}); delete c.userData.mixer; delete c.userData.action; }); clipboardObj = selectedObj.clone(); var i=0; selectedObj.traverse(function(c){ c.userData.mixer=cache[i].m; c.userData.action=cache[i].a; i++; }); alert('已复制该对象'); } };");
-            html.append("window.pasteObj = function() { if(clipboardObj) { var nObj = clipboardObj.clone(); nObj.position.x += 5; scene.add(nObj); interactables.push(nObj); alert('粘贴成功'); } };");
+            html.append("window.updateParamUI = function() {");
+            html.append("  if(!selectedObj) return;");
+            html.append("  document.getElementById('objName').value = selectedObj.name || '';");
+            html.append("  document.getElementById('pX').value=selectedObj.position.x.toFixed(2); document.getElementById('pY').value=selectedObj.position.y.toFixed(2); document.getElementById('pZ').value=selectedObj.position.z.toFixed(2);");
+            html.append("  document.getElementById('rX').value=(selectedObj.rotation.x*180/Math.PI).toFixed(1); document.getElementById('rY').value=(selectedObj.rotation.y*180/Math.PI).toFixed(1); document.getElementById('rZ').value=(selectedObj.rotation.z*180/Math.PI).toFixed(1);");
+            html.append("  document.getElementById('sX').value=selectedObj.scale.x.toFixed(2); document.getElementById('sY').value=selectedObj.scale.y.toFixed(2); document.getElementById('sZ').value=selectedObj.scale.z.toFixed(2);");
+            html.append("  if(selectedObj.isMesh && selectedObj.material) {");
+            html.append("    var mat = Array.isArray(selectedObj.material) ? selectedObj.material[0] : selectedObj.material;");
+            html.append("    document.getElementById('matParams').style.display='block';");
+            html.append("    if(mat.color) document.getElementById('m_col').value = '#' + mat.color.getHexString();");
+            html.append("    if(mat.emissive) document.getElementById('m_em').value = '#' + mat.emissive.getHexString();");
+            html.append("    document.getElementById('m_met').value = mat.metalness !== undefined ? mat.metalness : 0;");
+            html.append("    document.getElementById('m_rou').value = mat.roughness !== undefined ? mat.roughness : 1;");
+            html.append("  } else { document.getElementById('matParams').style.display='none'; }");
+            html.append("  if(selectedObj.isLight){ ");
+            html.append("    document.getElementById('lightParams').style.display='block';");
+            html.append("    if(selectedObj.color) document.getElementById('l_col').value='#'+selectedObj.color.getHexString();");
+            html.append("    document.getElementById('l_int').value=selectedObj.intensity||1; document.getElementById('l_dist').value=selectedObj.distance||0;");
+            html.append("  } else { document.getElementById('lightParams').style.display='none'; }");
+            html.append("};");
 
-            html.append("var texLoader = new THREE.TextureLoader();");
-            html.append("window.applyTexture = function(url) { if(!selectedObj) return; var isVid = url.match(/\\.(mp4|webm|mkv)$/i); var tex; if(isVid) { var vid = document.createElement('video'); vid.src=url; vid.loop=true; vid.muted=true; vid.play(); tex = new THREE.VideoTexture(vid); } else { tex = texLoader.load(url); } tex.encoding = THREE.sRGBEncoding; selectedObj.traverse(function(child) { if(child.isMesh) { child.material = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide }); child.material.needsUpdate=true; } }); };");
+            html.append("window.applyParams = function() {");
+            html.append("  if(!selectedObj) return;");
+            html.append("  selectedObj.name = document.getElementById('objName').value;");
+            html.append("  var oldNode = document.getElementById('node_' + selectedObj.uuid); if(oldNode) { var icon = selectedObj.isLight ? '💡' : (selectedObj.isMesh ? '🧊' : '📁'); oldNode.innerText = ' '.repeat(oldNode.dataset.depth*2) + icon + ' ' + selectedObj.name; }");
+            html.append("  selectedObj.position.set(parseFloat(document.getElementById('pX').value)||0, parseFloat(document.getElementById('pY').value)||0, parseFloat(document.getElementById('pZ').value)||0);");
+            html.append("  selectedObj.rotation.set((parseFloat(document.getElementById('rX').value)||0)*Math.PI/180, (parseFloat(document.getElementById('rY').value)||0)*Math.PI/180, (parseFloat(document.getElementById('rZ').value)||0)*Math.PI/180);");
+            html.append("  selectedObj.scale.set(parseFloat(document.getElementById('sX').value)||1, parseFloat(document.getElementById('sY').value)||1, parseFloat(document.getElementById('sZ').value)||1);");
+            html.append("  if(selectedObj.isMesh && selectedObj.material) {");
+            html.append("    var applyM = function(mat) {");
+            html.append("      if(mat.color) mat.color.set(document.getElementById('m_col').value);");
+            html.append("      if(mat.emissive) mat.emissive.set(document.getElementById('m_em').value);");
+            html.append("      if(mat.metalness !== undefined) mat.metalness = parseFloat(document.getElementById('m_met').value);");
+            html.append("      if(mat.roughness !== undefined) mat.roughness = parseFloat(document.getElementById('m_rou').value);");
+            html.append("    };");
+            html.append("    if(Array.isArray(selectedObj.material)) { for(var i=0; i<selectedObj.material.length; i++) applyM(selectedObj.material[i]); } else { applyM(selectedObj.material); }");
+            html.append("  }");
+            html.append("  if(selectedObj.isLight){ if(selectedObj.color) selectedObj.color.set(document.getElementById('l_col').value); selectedObj.intensity=parseFloat(document.getElementById('l_int').value); selectedObj.distance=parseFloat(document.getElementById('l_dist').value); }");
+            html.append("};");
 
-            html.append("var joyZone = document.createElement('div'); joyZone.id = 'joyZone'; joyZone.style.cssText = 'position:absolute; bottom:40px; left:40px; width:120px; height:120px; z-index:999; border-radius:50%; background:rgba(255,255,255,0.08); touch-action:none;'; document.body.appendChild(joyZone);");
-            html.append("if(typeof nipplejs !== 'undefined') { var manager = nipplejs.create({ zone: joyZone, mode: 'static', position: {left:'50%', top:'50%'}, color: '#0078D7' }); var moveVec = new THREE.Vector3(0,0,0); manager.on('move', function(evt, data) { var f = Math.min(data.force, 2.0); moveVec.x = Math.cos(data.angle.radian)*f; moveVec.z = -Math.sin(data.angle.radian)*f; }); manager.on('end', function() { moveVec.set(0,0,0); }); }");
+            html.append("window.setMat = function(t) {");
+            html.append("  if(!selectedObj || !selectedObj.isMesh) return;");
+            html.append("  var applyM = function(m) {");
+            html.append("    var nm;");
+            html.append("    if(t==='pbr') nm = new THREE.MeshStandardMaterial({map:m.map, color:m.color, transparent:m.transparent, opacity:m.opacity, side:THREE.DoubleSide});");
+            html.append("    else nm = new THREE.MeshBasicMaterial({map:m.map, color:m.color, transparent:m.transparent, opacity:m.opacity, side:THREE.DoubleSide});");
+            html.append("    return nm;");
+            html.append("  };");
+            html.append("  if(Array.isArray(selectedObj.material)) { for(var i=0; i<selectedObj.material.length; i++) selectedObj.material[i] = applyM(selectedObj.material[i]); } else { selectedObj.material = applyM(selectedObj.material); }");
+            html.append("  if(!selectedObj.geometry.attributes.normal && t==='pbr') selectedObj.geometry.computeVertexNormals();");
+            html.append("  updateParamUI();");
+            html.append("};");
+            
+            html.append("window.deleteSelected = function() { if(selectedObj) { if(selectedObj.parent) selectedObj.parent.remove(selectedObj); var idx = interactables.indexOf(selectedObj); if(idx !== -1) interactables.splice(idx,1); clearSelection(); setTimeout(buildOutliner, 100); }};");
 
-            html.append("window.closeStudioSafe = function() { if(confirm('⚠️ 确定要退出 3D 工作室吗？\\n如果没有点击【💾 烘焙打包】，当前的场景布置将会丢失！')) { StudioBridge.closeStudio(); } };");
-
+            // 🛡️ 兼容各大格式导入 (自动修正贴图路径、自动生成唯一名字)
             html.append("var gltfLoader = new THREE.GLTFLoader();");
-            // 🛡️ 离线加载 Draco 并强制禁用 WebWorker，彻底解决安卓本地 file:// 协议拦截多线程的闪退！
             html.append("if(typeof THREE.DRACOLoader !== 'undefined') { var dracoLoader = new THREE.DRACOLoader(); dracoLoader.setDecoderPath('js/'); dracoLoader.setDecoderConfig({type: 'js'}); dracoLoader.setWorkerLimit(0); gltfLoader.setDRACOLoader(dracoLoader); }");
             html.append("var objLoader = typeof THREE.OBJLoader !== 'undefined' ? new THREE.OBJLoader() : null;");
             html.append("var fbxLoader = typeof THREE.FBXLoader !== 'undefined' ? new THREE.FBXLoader() : null;");
-            html.append("var tdsLoader = typeof THREE.TDSLoader !== 'undefined' ? new THREE.TDSLoader() : null;");
-            html.append("var daeLoader = typeof THREE.ColladaLoader !== 'undefined' ? new THREE.ColladaLoader() : null;");
-            html.append("var plyLoader = typeof THREE.PLYLoader !== 'undefined' ? new THREE.PLYLoader() : null;");
-            html.append("var stlLoader = typeof THREE.STLLoader !== 'undefined' ? new THREE.STLLoader() : null;");
-
+            
             html.append("window.loadExternalModel = function(url) {");
-            html.append("    var mathPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); var spawnPos = new THREE.Vector3();");
-            html.append("    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);");
-            html.append("    raycaster.ray.intersectPlane(mathPlane, spawnPos); if(!spawnPos) spawnPos = new THREE.Vector3(0,0,0);");
+            html.append("    var mathPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); var spawnPos = new THREE.Vector3(); raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); raycaster.ray.intersectPlane(mathPlane, spawnPos); if(!spawnPos) spawnPos = new THREE.Vector3(0,0,0);");
             html.append("    var ext = url.split('.').pop().toLowerCase();");
-            html.append("    var basePath = url.substring(0, url.lastIndexOf('/') + 1);"); 
-            html.append("    if(tdsLoader) tdsLoader.setResourcePath(basePath);"); 
             html.append("    var onLoaded = function(obj) {");
-            html.append("        try {");
-            html.append("            var model = obj.scene || obj;");
-            html.append("            if(model.isBufferGeometry) { var mat = new THREE.MeshStandardMaterial({color:0xcccccc, side:THREE.DoubleSide}); model = new THREE.Mesh(model, mat); }");
-            html.append("            model.userData.isRoot = true; model.position.copy(spawnPos);");
-            html.append("            model.traverse(function(n){ ");
-            html.append("                if(n.isLight) { window.modelNativeLights.push(n); } ");
-            html.append("                if(n.isMesh) { n.castShadow = true; n.receiveShadow = true; if(n.material) { var mats = Array.isArray(n.material) ? n.material : [n.material]; mats.forEach(function(m, i){ m.side = THREE.DoubleSide; m.needsUpdate=true; }); } } ");
-            html.append("                n.userData.isHierarchyNode = true; ");
-            html.append("            });");
-            html.append("            setTimeout(buildOutliner, 500);");
-            html.append("            model.userData.velX = 0; model.userData.velY = 0; model.userData.velZ = 0;"); 
-            html.append("            var anims = obj.animations || [];");
-            html.append("            if(anims && anims.length > 0) { model.userData.animations = anims; model.userData.animIndex = 0; model.userData.isPlaying = true; var mixer = new THREE.AnimationMixer(model); model.userData.mixer = mixer; mixers.push(mixer); model.userData.action = mixer.clipAction(anims[0]); model.userData.action.play(); }");
-            html.append("            scene.add(model); interactables.push(model);");
-            html.append("            checkDefaultLights(); checkAnimUI();");
-            html.append("        } catch(ex) { alert('模型渲染报错: ' + ex.message); }");
+            html.append("        var model = obj.scene || obj;");
+            html.append("        if(model.isBufferGeometry) { var mat = new THREE.MeshStandardMaterial({color:0xcccccc, side:THREE.DoubleSide}); model = new THREE.Mesh(model, mat); }");
+            html.append("        model.name = getUniqueName(model.name || 'Model');");
+            html.append("        model.userData.isRoot = true; model.position.copy(spawnPos);");
+            html.append("        model.traverse(function(n){ ");
+            html.append("            if(n.isMesh) { n.castShadow = true; n.receiveShadow = true; if(n.material) { var mats = Array.isArray(n.material) ? n.material : [n.material]; mats.forEach(function(m, i){ m.side = THREE.DoubleSide; m.needsUpdate=true; }); } } ");
+            html.append("            n.userData.isHierarchyNode = true; ");
+            html.append("        });");
+            html.append("        scene.add(model); interactables.push(model); setTimeout(buildOutliner, 500);");
             html.append("    };");
             html.append("    try {");
             html.append("        if((ext==='gltf'||ext==='glb') && gltfLoader) gltfLoader.load(url, onLoaded, null, function(err){ alert('加载失败: '+err); });");
             html.append("        else if(ext==='obj' && objLoader) objLoader.load(url, onLoaded);");
-            html.append("        else if(ext==='fbx' && fbxLoader) fbxLoader.load(url, onLoaded, null, function(err){ alert('FBX错误(可能缺fflate): '+err); });");
-            html.append("        else if(ext==='3ds' && tdsLoader) tdsLoader.load(url, onLoaded);");
-            html.append("        else if(ext==='dae' && daeLoader) daeLoader.load(url, function(c){ onLoaded(c.scene); });");
-            html.append("        else if(ext==='stl' && stlLoader) stlLoader.load(url, onLoaded);");
-            html.append("        else if(ext==='ply' && plyLoader) plyLoader.load(url, onLoaded);");
+            html.append("        else if(ext==='fbx' && fbxLoader) fbxLoader.load(url, onLoaded, null, function(err){ alert('FBX错误: '+err); });");
             html.append("        else alert('未找到该格式的解析器: ' + ext);");
             html.append("    } catch(e) { alert('加载核心异常: ' + e.message); }");
             html.append("};");
@@ -3067,138 +3067,78 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             
             html.append("window.addGeom = function(t) {");
             html.append("    var geo, mat = new THREE.MeshStandardMaterial({color: 0xcccccc}); var mesh;");
-            html.append("    if(t==='box') { geo=new THREE.BoxBufferGeometry(10,10,10); mesh=new THREE.Mesh(geo,mat); }");
-            html.append("    if(t==='plane') { geo=new THREE.PlaneBufferGeometry(100,100); geo.rotateX(-Math.PI/2); mesh=new THREE.Mesh(geo,mat); }");
-            html.append("    if(t==='skydome') { geo=new THREE.SphereBufferGeometry(100, 32, 32); mat=new THREE.MeshBasicMaterial({color: 0x87CEEB, side: THREE.BackSide}); mesh=new THREE.Mesh(geo,mat); mesh.userData.isSkybox = true; }");
-            html.append("    if(t!=='skydome') {");
-            html.append("       var mathPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); var spawnPos = new THREE.Vector3();");
-            html.append("       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); raycaster.ray.intersectPlane(mathPlane, spawnPos);");
-            html.append("       mesh.position.copy(spawnPos || new THREE.Vector3(0,0,0));");
-            html.append("       mesh.castShadow=true; mesh.receiveShadow=true;");
-            html.append("    }");
+            html.append("    if(t==='box') { geo=new THREE.BoxGeometry(10,10,10); mesh=new THREE.Mesh(geo,mat); mesh.name = getUniqueName('Wall'); }");
+            html.append("    if(t==='plane') { geo=new THREE.PlaneGeometry(100,100); geo.rotateX(-Math.PI/2); mesh=new THREE.Mesh(geo,mat); mesh.name = getUniqueName('Ground'); }");
+            html.append("    var mathPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); var spawnPos = new THREE.Vector3(); raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); raycaster.ray.intersectPlane(mathPlane, spawnPos);");
+            html.append("    mesh.position.copy(spawnPos || new THREE.Vector3(0,0,0)); mesh.castShadow=true; mesh.receiveShadow=true;");
             html.append("    mesh.userData.isRoot=true; mesh.userData.isHierarchyNode=true; scene.add(mesh); interactables.push(mesh); setTimeout(buildOutliner, 100);");
             html.append("};");
 
-            html.append("window.checkDefaultLights = function() { ");
-            html.append("    var c = 0; interactables.forEach(function(o){ if(o.userData.isLight) c++; }); ");
-            html.append("    if(c > 0) { ");
-            html.append("        defaultSun.visible = false; defaultFill.visible = false; ");
-            html.append("        window.modelNativeLights.forEach(function(l){ l.visible = false; }); ");
-            html.append("    } else { ");
-            html.append("        if (window.modelNativeLights.length > 0) { ");
-            html.append("            defaultSun.visible = false; defaultFill.visible = false; ");
-            html.append("            window.modelNativeLights.forEach(function(l){ l.visible = true; }); ");
-            html.append("        } else { ");
-            html.append("            defaultSun.visible = true; defaultFill.visible = true; ");
-            html.append("            window.modelNativeLights.forEach(function(l){ l.visible = true; }); ");
-            html.append("        } ");
-            html.append("    } ");
-            html.append("};");
-            
             html.append("window.addLight = function(type) {");
-            html.append("    var group = new THREE.Group(); var light, gizmo;");
-            html.append("    if(type==='dir') {");
-            html.append("        light = new THREE.DirectionalLight(0xffffff, 2.0); light.castShadow = true; light.shadow.mapSize.width = 4096; light.shadow.mapSize.height = 4096; light.shadow.camera.left = -200; light.shadow.camera.right = 200; light.shadow.camera.top = 200; light.shadow.camera.bottom = -200; light.shadow.bias = -0.0005; ");
-            html.append("        light.position.set(0,0,0); light.target.position.set(0,0,-1); group.add(light); group.add(light.target);");
-            html.append("        gizmo = new THREE.Group(); gizmo.add(new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true}))); var dirObj = new THREE.Mesh(new THREE.CylinderGeometry(0, 1, 4, 4), new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true})); dirObj.rotation.x = -Math.PI/2; dirObj.position.z = -3; gizmo.add(dirObj);");
-            html.append("    } else if(type==='spot') {");
-            html.append("        light = new THREE.SpotLight(0xffffff, 15, 300, Math.PI/6, 0.5, 1); light.position.set(0,0,0); light.target.position.set(0,0,-1); light.castShadow = true; light.shadow.mapSize.width = 2048; light.shadow.mapSize.height = 2048; light.shadow.bias = -0.0005; group.add(light); group.add(light.target);");
-            html.append("        gizmo = new THREE.Group(); gizmo.add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 1.5, 2.5, 8), new THREE.MeshBasicMaterial({color:0x55ff55, wireframe:true}))); gizmo.children[0].rotation.x = -Math.PI/2; gizmo.children[0].position.z = -1.25;");
-            html.append("    } else {");
-            html.append("        light = new THREE.PointLight(0xffffff, 10, 200, 1); light.castShadow = true; light.shadow.mapSize.width = 2048; light.shadow.mapSize.height = 2048; light.shadow.bias = -0.0005; group.add(light);");
-            html.append("        gizmo = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), new THREE.MeshBasicMaterial({color:0xffff00, wireframe:true}));");
-            html.append("    }");
-            html.append("    group.add(gizmo);");
+            html.append("    var light;");
+            html.append("    if(type==='dir') { light = new THREE.DirectionalLight(0xffffff, 2.0); light.castShadow = true; light.shadow.mapSize.width = 4096; light.shadow.mapSize.height = 4096; light.name = getUniqueName('SunLight'); }");
+            html.append("    else if(type==='spot') { light = new THREE.SpotLight(0xffffff, 15, 300, Math.PI/6, 0.5, 1); light.castShadow = true; light.shadow.mapSize.width = 2048; light.shadow.mapSize.height = 2048; light.name = getUniqueName('SpotLight'); }");
+            html.append("    else { light = new THREE.PointLight(0xffffff, 10, 200, 1); light.castShadow = true; light.shadow.mapSize.width = 2048; light.shadow.mapSize.height = 2048; light.name = getUniqueName('PointLight'); }");
             html.append("    var mathPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); var spawnPos = new THREE.Vector3(); raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); raycaster.ray.intersectPlane(mathPlane, spawnPos);");
-            html.append("    group.position.copy(spawnPos || new THREE.Vector3(0,0,0)); group.position.y += 15;");
-            html.append("    group.userData.isRoot = true; group.userData.isHierarchyNode = true; group.userData.isLight = true; group.userData.lType = type || 'point';");
-            html.append("    scene.add(group); interactables.push(group); checkDefaultLights(); setTimeout(buildOutliner, 100);");
+            html.append("    light.position.copy(spawnPos || new THREE.Vector3(0,0,0)); light.position.y += 15;");
+            html.append("    light.userData.isRoot = true; light.userData.isHierarchyNode = true; light.userData.isLight = true;");
+            html.append("    scene.add(light); interactables.push(light); setTimeout(buildOutliner, 100);");
             html.append("};");
 
-            html.append("window.deleteSelected = function() { if(selectedObj) { if(selectedObj.parent) selectedObj.parent.remove(selectedObj); var idx = interactables.indexOf(selectedObj); if(idx !== -1) interactables.splice(idx,1); clearSelection(); checkDefaultLights(); setTimeout(buildOutliner, 100); }};");
-            
-            html.append("window.updateSysLights = function() { defaultFill.color.set(document.getElementById('l_ambC').value); defaultFill.intensity=parseFloat(document.getElementById('l_ambI').value)/10; defaultSun.color.set(document.getElementById('l_dirC').value); defaultSun.intensity=parseFloat(document.getElementById('l_dirI').value)/10; };");
-            html.append("window.updateSettings = function() { moveSpeed=parseFloat(document.getElementById('s_move').value); lookSpeed=parseFloat(document.getElementById('s_look').value)/1000; };");
-            
-            html.append("var isPreview = false; window.togglePreviewMode = function() { isPreview = !isPreview; lockEvents = true; setTimeout(function(){lockEvents=false;}, 500); document.getElementById('sysGroup').style.display = isPreview ? 'none' : 'flex'; document.getElementById('rightMenu').style.display = isPreview ? 'none' : 'flex'; document.getElementById('fireBtn').style.display = isPreview ? 'none' : 'flex'; document.getElementById('crosshair').style.display = isPreview ? 'none' : 'block'; document.getElementById('previewExit').style.display = isPreview ? 'block' : 'none'; grid.visible = !isPreview; transformControl.visible = !isPreview; transformControl.enabled = !isPreview; if(isPreview){clearSelection();} };");
+            html.append("var texLoader = new THREE.TextureLoader();");
+            html.append("window.applyTexture = function(url) { if(!selectedObj) return; var tex = texLoader.load(url); tex.encoding = THREE.sRGBEncoding; selectedObj.traverse(function(child) { if(child.isMesh) { child.material = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide }); child.material.needsUpdate=true; } }); };");
 
-            html.append("function checkAnimUI() { var ui=document.getElementById('animTools'); if(selectedObj) { ui.style.display='flex'; var ud=selectedObj.userData; var p=document.getElementById('playBtn'); p.innerText=ud.isPlaying?'⏸️ 暂停':'▶️ 播放'; p.style.background=ud.isPlaying?'#E81123':'#0078D7'; } else { ui.style.display='none'; } }");
-            
-            html.append("window.switchAnim = function(dir) { var ud=selectedObj.userData; if(!ud.animations || ud.animations.length===0){ alert('该模型无原生动作'); return; } ud.animIndex=(ud.animIndex+dir+ud.animations.length)%ud.animations.length; ud.mixer.stopAllAction(); ud.action=ud.mixer.clipAction(ud.animations[ud.animIndex]); ud.action.paused = !ud.isPlaying; ud.action.play(); checkAnimUI(); };");
-            
-            html.append("window.togglePlay = function() { var ud=selectedObj.userData; ud.isPlaying=!ud.isPlaying; if(ud.action) { ud.action.paused = !ud.isPlaying; if(ud.isPlaying) ud.action.play(); } checkAnimUI(); };");
-            
-            html.append("window.stepFrame = function(dir) { var ud=selectedObj.userData; if(ud.isPlaying){ alert('请先暂停播放再微调帧！'); return; } if(ud.action) { var clip=ud.action.getClip(); ud.action.time += dir * (1.0/30.0); if(ud.action.time < 0) ud.action.time = clip.duration; if(ud.action.time > clip.duration) ud.action.time = 0; ud.mixer.update(0); } };");
-
-            // 🛡️ 动画主循环：使用 Math.sin 生成真正有来有回的移动视差预览效果
-            html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); var time = clock.elapsedTime; if(typeof mixers!=='undefined') mixers.forEach(function(m){m.update(dt);});");
-            html.append("    interactables.forEach(function(obj) { if(obj.userData.isPlaying!==false) { var factor = Math.sin(time); ");
-            html.append("    if(obj.userData.velX) obj.position.x += obj.userData.velX * factor; if(obj.userData.velY) obj.position.y += obj.userData.velY * factor; if(obj.userData.velZ) obj.position.z += obj.userData.velZ * factor; ");
-            html.append("    if(obj.userData.rVelX) obj.rotation.x += obj.userData.rVelX; if(obj.userData.rVelY) obj.rotation.y += obj.userData.rVelY; if(obj.userData.rVelZ) obj.rotation.z += obj.userData.rVelZ; } });");
-            html.append("    if(typeof moveVec!=='undefined' && moveVec.lengthSq()>0) { camera.translateX(moveVec.x*moveSpeed*dt); camera.translateZ(moveVec.z*moveSpeed*dt); } renderer.render(scene, camera); } animate();");
-
-            // 🛡️ 修复4KB导出与Length报错专用代码
+            // 🌟 最核心底层：强制挂载 KHR_lights_punctual 到 GLB 导出管线！
             html.append("window.executeGLBExport = function(name, path, compress) { try { var exporter = new THREE.GLTFExporter(); clearSelection(); scene.remove(grid); scene.remove(transformControl); ");
-            html.append("    var removedLights = []; ");
+            html.append("    var removedLights = [];");
             html.append("    var hasCustom = false; interactables.forEach(function(o){if(o.userData.isLight) hasCustom=true;}); ");
             html.append("    if(defaultFill.parent) { scene.remove(defaultFill); removedLights.push({light: defaultFill, parent: scene}); } ");
-            html.append("    if(hasCustom) { ");
-            html.append("        if(defaultSun.parent) { scene.remove(defaultSun); removedLights.push({light: defaultSun, parent: scene}); } ");
-            html.append("    } else { ");
-            html.append("        if(!defaultSun.parent) { scene.add(defaultSun); } ");
-            html.append("    } ");
-            html.append("    window.modelNativeLights.forEach(function(l){ if(!l.visible && l.parent){ l.parent.remove(l); removedLights.push({light: l, parent: l.parent}); } }); ");
+            html.append("    if(hasCustom) { if(defaultSun.parent) { scene.remove(defaultSun); removedLights.push({light: defaultSun, parent: scene}); } } ");
+            html.append("    else { if(!defaultSun.parent) { scene.add(defaultSun); } } ");
             html.append("    scene.updateMatrixWorld(true); ");
-            html.append("    var expAnims = []; var hiddenGizmos = []; var udCache = []; ");
-            html.append("    scene.traverse(function(child) { ");
-            html.append("        if(child.type === 'LineSegments' || child.type === 'Line' || (child.material && child.material.wireframe) || child.type === 'ArrowHelper') { hiddenGizmos.push({obj: child, vis: child.visible}); child.visible = false; } ");
-            html.append("        if(child.userData) { ");
-            html.append("            udCache.push({obj: child, mixer: child.userData.mixer, action: child.userData.action, animations: child.userData.animations}); ");
-            html.append("            delete child.userData.mixer; delete child.userData.action; delete child.userData.animations; ");
-            html.append("        } ");
-            html.append("    }); ");
-            html.append("    interactables.forEach(function(o){ ");
-            html.append("        var cache = null; for(var i=0; i<udCache.length; i++){ if(udCache[i].obj === o){ cache = udCache[i]; break; } } ");
-            html.append("        if(cache && cache.animations && cache.animations.length > 0) { cache.animations.forEach(function(a){ expAnims.push(a); }); } ");
-            html.append("        var vX=o.userData.velX||0, vY=o.userData.velY||0, vZ=o.userData.velZ||0, rX=o.userData.rVelX||0, rY=o.userData.rVelY||0, rZ=o.userData.rVelZ||0; ");
-            html.append("        if(vX||vY||vZ||rX||rY||rZ){ ");
-            html.append("            var times=[0, 2, 4]; var p = o.position; var dx=vX*120, dy=vY*120, dz=vZ*120; ");
-            html.append("            var trackP=new THREE.VectorKeyframeTrack(o.uuid + '.position', times, [p.x,p.y,p.z, p.x+dx,p.y+dy,p.z+dz, p.x,p.y,p.z]); ");
-            html.append("            var e = new THREE.Euler(o.rotation.x+rX*10, o.rotation.y+rY*10, o.rotation.z+rZ*10); var q1 = new THREE.Quaternion().setFromEuler(e); ");
-            html.append("            var trackQ=new THREE.QuaternionKeyframeTrack(o.uuid + '.quaternion', times, [o.quaternion.x,o.quaternion.y,o.quaternion.z,o.quaternion.w, q1.x,q1.y,q1.z,q1.w, o.quaternion.x,o.quaternion.y,o.quaternion.z,o.quaternion.w]); ");
-            html.append("            expAnims.push(new THREE.AnimationClip(o.name+'_Action', 4, [trackP, trackQ])); ");
-            html.append("        } ");
-            html.append("    }); ");
-            html.append("    var pb = document.createElement('div'); pb.id='exp-prog'; pb.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,120,215,0.9);padding:20px 40px;color:white;z-index:9999;border-radius:10px;text-align:center;font-size:18px;font-weight:bold;box-shadow:0 0 20px rgba(0,0,0,0.5);'; document.body.appendChild(pb); pb.innerText='正在执行无损打包...'; ");
-            html.append("    var opt = { binary: true, includeCustomExtensions: true }; if(expAnims.length > 0) opt.animations = expAnims; ");
+            
+            html.append("    class GLTFLightExt {");
+            html.append("        constructor(w) { this.w=w; this.n='KHR_lights_punctual'; }");
+            html.append("        writeNode(l, nDef) {");
+            html.append("            if(!l.isLight) return;");
+            html.append("            var j = this.w.json; j.extensionsUsed = j.extensionsUsed || [];");
+            html.append("            if(j.extensionsUsed.indexOf(this.n)===-1) j.extensionsUsed.push(this.n);");
+            html.append("            j.extensions = j.extensions || {};");
+            html.append("            var ext = j.extensions[this.n] = j.extensions[this.n] || { lights:[] };");
+            html.append("            var lx = { color: l.color.toArray(), intensity: l.intensity };");
+            html.append("            if(l.isDirectionalLight) lx.type='directional';");
+            html.append("            else if(l.isPointLight) { lx.type='point'; if(l.distance>0) lx.range=l.distance; }");
+            html.append("            else if(l.isSpotLight) { lx.type='spot'; if(l.distance>0) lx.range=l.distance; lx.spot={innerConeAngle: l.angle*(1-l.penumbra), outerConeAngle: l.angle}; }");
+            html.append("            else return;");
+            html.append("            ext.lights.push(lx);");
+            html.append("            nDef.extensions = nDef.extensions || {};");
+            html.append("            nDef.extensions[this.n] = { light: ext.lights.length - 1 };");
+            html.append("        }");
+            html.append("    }");
+            html.append("    exporter.register(function(w){ return new GLTFLightExt(w); });");
+
+            html.append("    var opt = { binary: true, includeCustomExtensions: true };");
             html.append("    var onDone = function(result) { ");
             html.append("        scene.add(grid); scene.add(transformControl); ");
             html.append("        removedLights.forEach(function(item){ if(item.light) item.parent.add(item.light); }); ");
-            html.append("        hiddenGizmos.forEach(function(g){ g.obj.visible = g.vis; }); ");
-            html.append("        udCache.forEach(function(c){ if(c.mixer) c.obj.userData.mixer = c.mixer; if(c.action) c.obj.userData.action = c.action; if(c.animations) c.obj.userData.animations = c.animations; }); ");
             html.append("        var finalRes = (result instanceof ArrayBuffer) ? result : JSON.stringify(result); ");
             html.append("        var blob=new Blob([finalRes], {type:'application/octet-stream'}); var reader=new FileReader(); reader.readAsDataURL(blob); ");
             html.append("        reader.onloadend=function(){ ");
             html.append("            var b64 = reader.result.replace(/^data:.*;base64,/, ''); StudioBridge.beginExport(); var chunk = 500000; var t = b64.length; var i = 0; ");
-            html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; pb.innerText='保存进度: '+Math.min(100, Math.round((i/t)*100))+'%'; setTimeout(nextChunk, 5); } else { document.body.removeChild(pb); StudioBridge.endExport(name, path); } } ");
+            html.append("            function nextChunk(){ if(i < t) { StudioBridge.chunkExport(b64.substring(i, i+chunk)); i += chunk; setTimeout(nextChunk, 5); } else { StudioBridge.endExport(name, path); } } ");
             html.append("            nextChunk(); ");
             html.append("        }; ");
             html.append("    }; ");
-            html.append("    var onError = function(err) { alert('导出错误: '+err.message); document.body.removeChild(pb); scene.add(grid); scene.add(transformControl); udCache.forEach(function(c){ if(c.mixer) c.obj.userData.mixer = c.mixer; if(c.action) c.obj.userData.action = c.action; if(c.animations) c.obj.userData.animations = c.animations; }); }; ");
-            html.append("    if(exporter.parse.length === 3) exporter.parse(scene, onDone, opt); else exporter.parse(scene, onDone, onError, opt); ");
-            html.append("} catch(e) { alert('打包拦截异常: '+e.message); scene.add(grid); scene.add(transformControl); if(document.getElementById('exp-prog')) document.body.removeChild(document.getElementById('exp-prog')); } };");
+            html.append("    exporter.parse(scene, onDone, function(err){alert(err);}, opt); ");
+            html.append("} catch(e) { alert('打包异常: '+e.message); } };");
 
-
-
-
-            html.append("window.addEventListener('resize', function(){ if(typeof camera !== 'undefined'){ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }});");
+            html.append("function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); } animate();");
             html.append("window.makeDraggable = function(handleId, popupId) { var pos1=0, pos2=0, pos3=0, pos4=0; var elmnt = document.getElementById(popupId); var handle = document.getElementById(handleId); if(!handle) return; handle.onpointerdown = function(e) { e.preventDefault(); pos3 = e.clientX; pos4 = e.clientY; document.onpointerup = function() { document.onpointerup = null; document.onpointermove = null; }; document.onpointermove = function(e) { e.preventDefault(); pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY; pos3 = e.clientX; pos4 = e.clientY; elmnt.style.top = (elmnt.offsetTop - pos2) + 'px'; elmnt.style.left = (elmnt.offsetLeft - pos1) + 'px'; }; }; };");
             html.append("setTimeout(function(){ makeDraggable('sysHandle', 'sysGroup'); makeDraggable('rightHandle', 'rightMenu'); makeDraggable('outlinerHandle', 'outlinerGroup'); }, 500);");
             html.append("</script></body></html>");
            
             modelWebView.loadDataWithBaseURL("file:///android_asset/", html.toString(), "text/html", "utf-8", null);
         });
-
         updateViewState[0].run(); refreshLayerListUI[0].run(); return root;
     }
 
