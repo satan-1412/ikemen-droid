@@ -2755,6 +2755,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 
                 @android.webkit.JavascriptInterface public void triggerImport() {
                     new Handler(Looper.getMainLooper()).post(() -> {
+                        // 🔓 支持 8 种主流 3D 格式
                         showWin10FilePicker("导入 3D 模型", 11, null, null, fileMod -> {
                             FileCallback processModel = fMod -> {
                                 StageModelInfo m = new StageModelInfo(); m.name = fMod.getName(); m.path = fMod.getAbsolutePath(); modelList.add(m);
@@ -2842,18 +2843,28 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append(".err-log { position:absolute; bottom:10px; left:10px; color:red; z-index:9999; font-size:12px; pointer-events:none; }");
             html.append("</style>");
             
+            html.append("<script>window.onerror = function(msg, url, line) { var e = document.createElement('div'); e.className = 'err-log'; e.innerText = 'JS报错: ' + msg + ' (行 '+line+')'; document.body.appendChild(e); };</script>");
+
             html.append("<script src=\"js/three.min.js\"></script>");
             html.append("<script src=\"js/GLTFLoader.js\"></script>");
             html.append("<script src=\"js/OBJLoader.js\"></script>");
             html.append("<script src=\"js/FBXLoader.js\"></script>");
+            html.append("<script src=\"js/TDSLoader.js\"></script>");
+            html.append("<script src=\"js/ColladaLoader.js\"></script>");
+            html.append("<script src=\"js/STLLoader.js\"></script>");
+            html.append("<script src=\"js/PLYLoader.js\"></script>");
             html.append("<script src=\"js/TransformControls.js\"></script>");
             html.append("<script src=\"js/GLTFExporter.js\"></script>");
             html.append("<script src=\"js/nipplejs.min.js\"></script>");
-            html.append("<script src=\"js/DRACOLoader.js\"></script>");
-            html.append("<script src=\"js/fflate.min.js\"></script>");
+            html.append("<script src=\"js/DRACOLoader.js\"></script>"); // 🛡️ 纯离线读取 Draco 解码器
+            html.append("<script src=\"js/fflate.min.js\"></script>"); // 🛡️ 引入 FBX 解压模块
             
             html.append("</head><body>");
             
+            html.append("<div id='crosshair' style='position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:rgba(255,255,255,0.7); font-size:30px; pointer-events:none; z-index:50;'>+</div>");
+
+            html.append("<button id='previewExit' onclick='togglePreviewMode()' style='display:none; position:absolute; top:20px; right:20px; z-index:3000; padding:15px; background:#FF9800; color:white; border-radius:8px; border:none; font-weight:bold;'>❌ 退出预览</button>");
+
             html.append("<div id='outlinerGroup' class='scrollable-panel' style='position:absolute; top:190px; left:20px; z-index:1000; background:rgba(20,20,20,0.85); padding:8px; border-radius:10px; width:160px; max-height:45vh; border:1px solid #444;'>");
             html.append("   <div class='drag-handle' id='outlinerHandle'>📑 图层(精准选中)</div>");
             html.append("   <div id='outlinerList' style='display:flex; flex-direction:column; gap:4px;'></div>");
@@ -2863,11 +2874,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("   <div class='drag-handle' id='sysHandle'>⠿ 拖动 ⠿</div>");
             html.append("   <button class='ui-btn' onclick='StudioBridge.closeStudio()' style='background:#E81123;'>⬅️ 返回</button>");
             html.append("   <button class='ui-btn' onclick='StudioBridge.triggerExportSettings()' style='background:#4CAF50;'>💾 烘焙打包</button>");
+            html.append("   <button class='ui-btn' onclick='togglePreviewMode()' style='background:#FF9800;'>👁️ 预览模式</button>");
             html.append("</div>");
 
             html.append("<div id='rightMenu' class='scrollable-panel' style='position:absolute; top:20px; right:20px; z-index:1000; background:rgba(20,20,20,0.85); padding:8px; border-radius:10px; width:190px;'>");
             html.append("   <div class='drag-handle' id='rightHandle'>⠿ 拖动 ⠿</div>");
             html.append("   <button class='ui-btn' onclick='StudioBridge.triggerImport()' style='background:#0078D7;'>📥 导入模型</button>");
+            
             html.append("   <button class='ui-btn' onclick='toggleSub(\"buildSub\")'>➕ 创建 光源/形体</button>");
             html.append("   <div id='buildSub' style='display:none; padding-left:10px;'>");
             html.append("       <button class='ui-btn' onclick='addLight(\"dir\")' style='background:#E6C200; color:black;'>☀️ 平行光 (全局投影)</button>");
@@ -2876,6 +2889,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("       <button class='ui-btn' onclick='addGeom(\"box\")'>方块(墙)</button>");
             html.append("       <button class='ui-btn' onclick='addGeom(\"plane\")'>平面(地)</button>");
             html.append("   </div>");
+            
             html.append("   <button class='ui-btn' onclick='toggleSub(\"transSub\")'>🔧 变换控制轴</button>");
             html.append("   <div id='transSub' style='display:none; padding-left:10px;'>");
             html.append("       <button class='ui-btn' id='m_trans' onclick='setTransMode(\"translate\")' style='background:#0078D7'>↕️ 移动</button>");
@@ -3132,7 +3146,12 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             html.append("    exporter.parse(scene, onDone, function(err){alert(err);}, opt); ");
             html.append("} catch(e) { alert('打包异常: '+e.message); } };");
 
-            html.append("function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); } animate();");
+            html.append("var isPreview = false; window.togglePreviewMode = function() { isPreview = !isPreview; document.getElementById('sysGroup').style.display = isPreview ? 'none' : 'flex'; document.getElementById('rightMenu').style.display = isPreview ? 'none' : 'flex'; document.getElementById('fireBtn').style.display = isPreview ? 'none' : 'flex'; document.getElementById('crosshair').style.display = isPreview ? 'none' : 'block'; document.getElementById('previewExit').style.display = isPreview ? 'block' : 'none'; document.getElementById('joyZone').style.display = isPreview ? 'none' : 'block'; grid.visible = !isPreview; transformControl.visible = !isPreview; transformControl.enabled = !isPreview; if(isPreview){clearSelection();} };");
+
+            html.append("var joyZone = document.createElement('div'); joyZone.id = 'joyZone'; joyZone.style.cssText = 'position:absolute; bottom:40px; left:40px; width:120px; height:120px; z-index:999; border-radius:50%; background:rgba(255,255,255,0.08); touch-action:none;'; document.body.appendChild(joyZone);");
+            html.append("if(typeof nipplejs !== 'undefined') { var manager = nipplejs.create({ zone: joyZone, mode: 'static', position: {left:'50%', top:'50%'}, color: '#0078D7' }); var moveVec = new THREE.Vector3(0,0,0); manager.on('move', function(evt, data) { var f = Math.min(data.force, 2.0); moveVec.x = Math.cos(data.angle.radian)*f; moveVec.z = -Math.sin(data.angle.radian)*f; }); manager.on('end', function() { moveVec.set(0,0,0); }); }");
+
+            html.append("function animate() { requestAnimationFrame(animate); var dt = clock.getDelta(); if(typeof moveVec !== 'undefined' && moveVec.lengthSq() > 0) { camera.translateX(moveVec.x * moveSpeed * dt); camera.translateZ(moveVec.z * moveSpeed * dt); } renderer.render(scene, camera); } animate();");
             html.append("window.makeDraggable = function(handleId, popupId) { var pos1=0, pos2=0, pos3=0, pos4=0; var elmnt = document.getElementById(popupId); var handle = document.getElementById(handleId); if(!handle) return; handle.onpointerdown = function(e) { e.preventDefault(); pos3 = e.clientX; pos4 = e.clientY; document.onpointerup = function() { document.onpointerup = null; document.onpointermove = null; }; document.onpointermove = function(e) { e.preventDefault(); pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY; pos3 = e.clientX; pos4 = e.clientY; elmnt.style.top = (elmnt.offsetTop - pos2) + 'px'; elmnt.style.left = (elmnt.offsetLeft - pos1) + 'px'; }; }; };");
             html.append("setTimeout(function(){ makeDraggable('sysHandle', 'sysGroup'); makeDraggable('rightHandle', 'rightMenu'); makeDraggable('outlinerHandle', 'outlinerGroup'); }, 500);");
             html.append("</script></body></html>");
