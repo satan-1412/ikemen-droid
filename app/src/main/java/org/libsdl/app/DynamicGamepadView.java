@@ -2292,47 +2292,122 @@ import java.util.List;
     
 
 
-        private void showProfileManager() {
-        CharSequence[] options = {"📤 导出: [按键布局] + [所有风格]", "📤 仅导出: [按键布局]", "📤 仅导出: [所有风格库]", "📥 导入: 从文件中读取配置"};
+        // ================= 新增：图片 Base64 自动封包与解包引擎 =================
+    public String embedImageToBase64(String uriStr) {
+        if (uriStr == null || uriStr.isEmpty()) return "";
+        if (uriStr.startsWith("base64:")) return uriStr;
+        // 如果是系统预设风格图（名字带 style_），不转Base64，因为接收方手机里一定自带，节省体积
+        if (uriStr.contains("style_base_") || uriStr.contains("style_knob_") || uriStr.contains("style_btn_") || uriStr.contains("style_sq_")) return uriStr;
+        try {
+            java.io.InputStream is = getContext().getContentResolver().openInputStream(Uri.parse(uriStr));
+            android.graphics.Bitmap bm = BitmapFactory.decodeStream(is);
+            is.close();
+            if (bm == null) return uriStr;
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            bm.compress(android.graphics.Bitmap.CompressFormat.PNG, 80, baos); 
+            byte[] b = baos.toByteArray();
+            bm.recycle();
+            return "base64:" + android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP);
+        } catch (Exception e) { return uriStr; }
+    }
+
+    public String extractBase64ToImage(String dataStr) {
+        if (dataStr == null || dataStr.isEmpty()) return "";
+        if (!dataStr.startsWith("base64:")) return dataStr; 
+        try {
+            String b64 = dataStr.substring(7);
+            byte[] decodedBytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT);
+            android.graphics.Bitmap bm = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
+            return saveImageToLocal(bm, "imported_skin_" + System.currentTimeMillis() + ".png");
+        } catch (Exception e) { return ""; }
+    }
+
+    private void showProfileManager() {
+        CharSequence[] options = {"📤 导出: [全部布局、位置与所有皮肤]", "📤 仅导出: [按键布局定位与基本映射]", "📤 仅导出: [所有皮肤外观与样式库]", "📥 导入: 从文件中读取配置"};
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle("数据导出与导入 (JSON)")
+                .setTitle("数据导出与导入 (完美跨设备分享)")
                 .setItems(options, (dialog, which) -> {
                     android.app.Activity activity = (android.app.Activity) getContext();
                     FileActionFragment fragment = new FileActionFragment();
                     android.os.Bundle args = new android.os.Bundle();
                     
-                    if (which <= 2) { // 导出选项
+                    if (which <= 2) { 
                         args.putInt("action_type", 1); 
                         try {
                             JSONObject root = new JSONObject();
-                            if (which == 0 || which == 1) { // 包含布局
-                                root.put("layout", new JSONArray(prefs.getString(KEY_LAYOUT_PREFIX + currentSlot, "[]")));
-                                // 【👇补充这里，否则导入文件摇杆会变回默认👇】
+                            root.put("exportMode", which); // 打上标记，防混乱
+                            JSONArray rawLayout = new JSONArray(prefs.getString(KEY_LAYOUT_PREFIX + currentSlot, "[]"));
+                            
+                            if (which == 0 || which == 1) { // 【仅布局】或【全部】
+                                JSONArray exportLayout = new JSONArray();
+                                for (int i = 0; i < rawLayout.length(); i++) {
+                                    JSONObject btn = new JSONObject(rawLayout.getJSONObject(i).toString());
+                                    if (which == 1) { 
+                                        // 【仅布局】：无情剥离所有外观数据，只保留位置和映射逻辑
+                                        btn.remove("skin"); btn.remove("pressedSkin");
+                                        btn.remove("color"); btn.remove("pressedColor");
+                                        btn.remove("alpha"); btn.remove("pressedAlpha");
+                                        btn.remove("textColor"); btn.remove("shape");
+                                    } else {
+                                        // 【全部导出】：检测并封包自定义图为 Base64
+                                        btn.put("skin", embedImageToBase64(btn.optString("skin")));
+                                        btn.put("pressedSkin", embedImageToBase64(btn.optString("pressedSkin")));
+                                    }
+                                    exportLayout.put(btn);
+                                }
+                                root.put("layout", exportLayout);
                                 root.put("joystickMode", joystickMode);
                                 root.put("joyBaseX", joyBaseX); root.put("joyBaseY", joyBaseY);
                                 root.put("joyRadius", joyRadius); root.put("joyHitboxRadius", joyHitboxRadius);
-                                root.put("joyAlpha", joyAlpha); root.put("joyColor", joyColor);
-                                root.put("joySkinBase", joySkinBaseUri);root.put("joySkinKnob", joySkinKnobUri);
-                                root.put("isVibrationOn", isVibrationOn); root.put("vibrationIntensity", vibrationIntensity);
-                                root.put("currentStyleIndex", currentStyleIndex); // 【导出修复：把选中的风格索引写入文件】
-                                // 【新增：将摇杆、菜单锁定状态与动态分辨率基准一并打包进 JSON】
-                                root.put("isJoyLocked", isJoyLocked);
-                                root.put("isMenuLocked", isMenuLocked);
+                                root.put("isJoyLocked", isJoyLocked); root.put("isMenuLocked", isMenuLocked);
                                 root.put("menuX", menuX); root.put("menuY", menuY);
                                 root.put("menuWidth", menuWidth); root.put("menuHeight", menuHeight);
-                                root.put("menuScale", menuScale); root.put("menuAlpha", menuAlpha);
+                                root.put("menuScale", menuScale);
                                 root.put("savedScreenWidth", loadedSavedWidth > 0 ? loadedSavedWidth : getWidth());
                                 root.put("savedScreenHeight", loadedSavedHeight > 0 ? loadedSavedHeight : getHeight());
+                                root.put("isVibrationOn", isVibrationOn); root.put("vibrationIntensity", vibrationIntensity);
                             }
                             
-                            if (which == 0 || which == 2) { // 包含风格
+                            if (which == 0 || which == 2) { // 【仅风格】或【全部】
                                 JSONArray styleArr = new JSONArray();
-                                for(GamepadStyle s : styleList) styleArr.put(s.toJson());
+                                for(GamepadStyle s : styleList) {
+                                    JSONObject sj = s.toJson();
+                                    sj.put("joyBaseUri", embedImageToBase64(sj.optString("joyBaseUri")));
+                                    sj.put("joyKnobUri", embedImageToBase64(sj.optString("joyKnobUri")));
+                                    sj.put("btnNormalUri", embedImageToBase64(sj.optString("btnNormalUri")));
+                                    sj.put("btnSquareUri", embedImageToBase64(sj.optString("btnSquareUri")));
+                                    sj.put("btnPressedUri", embedImageToBase64(sj.optString("btnPressedUri")));
+                                    styleArr.put(sj);
+                                }
                                 root.put("styles", styleArr);
+                                
+                                // 【核心机制】：提取当前所有按键独占的外观数据映射关系表
+                                JSONArray btnStyles = new JSONArray();
+                                for (int i = 0; i < rawLayout.length(); i++) {
+                                    JSONObject btn = rawLayout.getJSONObject(i);
+                                    JSONObject bs = new JSONObject();
+                                    bs.put("id", btn.optString("id", ""));
+                                    bs.put("keyMap", btn.optString("keyMap", ""));
+                                    bs.put("skin", embedImageToBase64(btn.optString("skin", "")));
+                                    bs.put("pressedSkin", embedImageToBase64(btn.optString("pressedSkin", "")));
+                                    bs.put("color", btn.optInt("color", Color.GRAY));
+                                    bs.put("pressedColor", btn.optInt("pressedColor", 0));
+                                    bs.put("alpha", btn.optInt("alpha", 150));
+                                    bs.put("pressedAlpha", btn.optInt("pressedAlpha", 150));
+                                    bs.put("textColor", btn.optInt("textColor", Color.WHITE));
+                                    bs.put("shape", btn.optInt("shape", SHAPE_CIRCLE));
+                                    btnStyles.put(bs);
+                                }
+                                root.put("buttonStyles", btnStyles);
+                                
+                                root.put("joyAlpha", joyAlpha); root.put("joyColor", joyColor);
+                                root.put("joySkinBase", embedImageToBase64(joySkinBaseUri)); 
+                                root.put("joySkinKnob", embedImageToBase64(joySkinKnobUri));
+                                root.put("menuAlpha", menuAlpha); root.put("currentStyleIndex", currentStyleIndex);
                             }
                             args.putString("export_data", root.toString());
                         } catch(Exception e) {}
-                    } else if (which == 3) { // 导入选项
+                    } else if (which == 3) { 
                         args.putInt("action_type", 2); 
                     }
                     fragment.setArguments(args);
@@ -4442,7 +4517,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             }
         }
 
-        @Override
+@Override
         public void onActivityResult(int requestCode, int resultCode, Intent data) {
             super.onActivityResult(requestCode, resultCode, data);
             if (resultCode == android.app.Activity.RESULT_OK && data != null && data.getData() != null) {
@@ -4450,69 +4525,17 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                 if (requestCode == 43 && DynamicGamepadView.instance != null) {
                     try { getActivity().getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception e) {}
                     DynamicGamepadView.instance.onImagePicked(uri.toString());
-                             } else if (requestCode == 44) { 
+                } else if (requestCode == 44) { 
                     try {
-                        // 【修复】：优先读取 exportAllData 传过来的全量 JSON 数据
                         String exportData = getArguments() != null ? getArguments().getString("export_data", "") : "";
-                        JSONObject root;
-                        if (!exportData.isEmpty()) {
-                            root = new JSONObject(exportData);
-                        } else {
-                            // 保底旧版单发布局的逻辑
-                            root = new JSONObject();
-                            root.put("joystickMode", DynamicGamepadView.instance.joystickMode);
-                            root.put("joyBaseX", DynamicGamepadView.instance.joyBaseX); 
-                            root.put("joyBaseY", DynamicGamepadView.instance.joyBaseY);
-                            root.put("joyRadius", DynamicGamepadView.instance.joyRadius);
-                            root.put("joyHitboxRadius", DynamicGamepadView.instance.joyHitboxRadius);
-                            root.put("joyAlpha", DynamicGamepadView.instance.joyAlpha);
-                            root.put("joyColor", DynamicGamepadView.instance.joyColor);
-                            root.put("isVibrationOn", DynamicGamepadView.instance.isVibrationOn);
-                            root.put("vibrationIntensity", DynamicGamepadView.instance.vibrationIntensity);
-                            root.put("buttons", new JSONArray(DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_LAYOUT_PREFIX + DynamicGamepadView.instance.currentSlot, "[]")));
-                            root.put("joySkinBase", DynamicGamepadView.instance.joySkinBaseUri);
-                            root.put("joySkinKnob", DynamicGamepadView.instance.joySkinKnobUri);
-                            // 【新增：底层备份导出同样追加锁定状态与分辨率信息】
-                            root.put("isJoyLocked", DynamicGamepadView.instance.isJoyLocked);
-                            root.put("isMenuLocked", DynamicGamepadView.instance.isMenuLocked);
-                            root.put("menuX", DynamicGamepadView.instance.menuX);
-                            root.put("menuY", DynamicGamepadView.instance.menuY);
-                            root.put("menuWidth", DynamicGamepadView.instance.menuWidth);
-                            root.put("menuHeight", DynamicGamepadView.instance.menuHeight);
-                            root.put("menuScale", DynamicGamepadView.instance.menuScale);
-                            root.put("menuAlpha", DynamicGamepadView.instance.menuAlpha);
-                            root.put("savedScreenWidth", DynamicGamepadView.instance.loadedSavedWidth > 0 ? DynamicGamepadView.instance.loadedSavedWidth : DynamicGamepadView.instance.getWidth());
-                            root.put("savedScreenHeight", DynamicGamepadView.instance.loadedSavedHeight > 0 ? DynamicGamepadView.instance.loadedSavedHeight : DynamicGamepadView.instance.getHeight());
-                            root.put("overlayMode", DynamicGamepadView.instance.overlayMode);
-                                                        root.put("overlayUri1", DynamicGamepadView.instance.overlayUri1);
-                            root.put("overlayX1", DynamicGamepadView.instance.overlayX1);
-                            root.put("overlayY1", DynamicGamepadView.instance.overlayY1);
-                            root.put("overlayScaleX1", DynamicGamepadView.instance.overlayScaleX1);
-                            root.put("overlayScaleY1", DynamicGamepadView.instance.overlayScaleY1);
-                            root.put("overlayCurv1", DynamicGamepadView.instance.overlayCurvature1);
-                            root.put("overlayUri2", DynamicGamepadView.instance.overlayUri2);
-                            root.put("overlayX2", DynamicGamepadView.instance.overlayX2);
-                            root.put("overlayY2", DynamicGamepadView.instance.overlayY2);
-                            root.put("overlayScaleX2", DynamicGamepadView.instance.overlayScaleX2);
-                            root.put("overlayScaleY2", DynamicGamepadView.instance.overlayScaleY2);
-                            root.put("overlayCurv2", DynamicGamepadView.instance.overlayCurvature2);                            
-                            root.put("overlayRotation1", DynamicGamepadView.instance.overlayRotation1);
-                            root.put("overlayRotation2", DynamicGamepadView.instance.overlayRotation2);
-                            root.put("isFullscreenHideOverlay", DynamicGamepadView.instance.isFullscreenHideOverlay);
-                            root.put("isAutoHideEnabled", DynamicGamepadView.instance.isAutoHideEnabled);
-                            root.put("autoHideSeconds", DynamicGamepadView.instance.autoHideSeconds);
-                        }
-
-                                               java.io.OutputStream os = getActivity().getContentResolver().openOutputStream(uri);
-                        os.write(root.toString(4).getBytes(StandardCharsets.UTF_8));
+                        if (exportData.isEmpty()) { Toast.makeText(getActivity(), "❌ 无数据可导出", Toast.LENGTH_SHORT).show(); return; }
+                        java.io.OutputStream os = getActivity().getContentResolver().openOutputStream(uri);
+                        os.write(exportData.getBytes(StandardCharsets.UTF_8));
                         os.close();
                         Toast.makeText(getActivity(), "✅ 导出成功！", Toast.LENGTH_SHORT).show();
-                        
                     } catch (Exception e) { Toast.makeText(getActivity(), "❌ 导出失败", Toast.LENGTH_SHORT).show(); }                
-                                               } else if (requestCode == 45 && DynamicGamepadView.instance != null) { 
-                    // 【修复1】提前获取安全的 Context
+                } else if (requestCode == 45 && DynamicGamepadView.instance != null) { 
                     final Context safeContext = getActivity() != null ? getActivity() : DynamicGamepadView.instance.getContext();
-                    
                     try {
                         java.io.InputStream is = safeContext.getContentResolver().openInputStream(uri);
                         BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
@@ -4522,127 +4545,165 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                         
                         String fileContent = sb.toString().trim();
                         final JSONObject root;
-                        boolean hasLayout = false;
-                        boolean hasStyles = false;
                         
-                                       // 【三合一完美兼容逻辑：新版JSON、旧版JSON、经典XML】
                         if (fileContent.startsWith("[")) {
-                            // 1. 兼容旧版：纯按键数组 JSON
-                            root = new JSONObject();
-                            root.put("buttons", new JSONArray(fileContent));
-                            hasLayout = true;
+                            root = new JSONObject(); root.put("buttons", new JSONArray(fileContent));
                         } else if (fileContent.startsWith("{")) {
-                            // 【自动抢救受损文件】：即使文件末尾有乱码残留，也智能截取最后一个 } 之前的内容
                             if (!fileContent.endsWith("}")) {
                                 int lastBracket = fileContent.lastIndexOf("}");
-                                if (lastBracket != -1) {
-                                    fileContent = fileContent.substring(0, lastBracket + 1);
-                                }
+                                if (lastBracket != -1) fileContent = fileContent.substring(0, lastBracket + 1);
                             }
-                            // 2. 兼容新版：包含 layout 和 styles 的完整 JSON
                             root = new JSONObject(fileContent);
-                            hasLayout = root.has("layout") || root.has("buttons");
-                            hasStyles = root.has("styles");
-                        } else if (fileContent.contains("org.libsdl.app") || fileContent.contains("JoystickOverlay") || fileContent.contains("virtual_controller")) {
-                        
-                            // 3. 【新增修复】兼容极早期经典文件：virtual_controller.xml (编译后的二进制或纯文本)
-                            // 核心思路：既然用户导入了经典文件，我们直接调用最新的动态自适应引擎，为其生成完美适配当前屏幕比例的经典六键+摇杆键位。
+                        } else {
                             DynamicGamepadView.instance.post(() -> {
                                 DynamicGamepadView.instance.loadDefaultLayout();
                                 DynamicGamepadView.instance.saveConfig();
                                 DynamicGamepadView.instance.invalidate();
-                                Toast.makeText(safeContext, "✅ 识别到经典 XML 布局！已自动转换为全屏自适应 Pro 布局。", Toast.LENGTH_LONG).show();
+                                Toast.makeText(safeContext, "✅ 已自动转换为全屏自适应 Pro 布局", Toast.LENGTH_LONG).show();
                             });
                             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
                             return;
-                        } else {
-                            Toast.makeText(safeContext, "❌ 无效的文件格式", Toast.LENGTH_SHORT).show(); 
-                            getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
-                            return;
                         }
 
-                        if (!hasLayout && !hasStyles) {
-                            Toast.makeText(safeContext, "❌ 文件内找不到有效的布局数据", Toast.LENGTH_SHORT).show(); 
-                            getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
-                            return;
-                        }
-
-                        // 【核心修复：创建 final 副本供 Lambda 内部使用】
-                        final boolean finalHasLayout = hasLayout;
-                        final boolean finalHasStyles = hasStyles;
-
-                        // 弹窗让用户选择具体要导入什么
                         new AlertDialog.Builder(safeContext, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                             .setTitle("发现数据，请选择要导入的内容：")
-                            .setItems(new CharSequence[]{"📥 导入全部 (布局与风格)", "📥 仅导入按键布局", "📥 仅导入风格库"}, (dialog, which) -> {
+                            .setItems(new CharSequence[]{"📥 导入全部 (布局、位置与所有风格外观)", "📥 仅导入按键布局 (保留当前系统里的外观)", "📥 仅导入外观风格库与皮肤图片"}, (dialog, which) -> {
                                 try {
-                                    SharedPreferences.Editor editor = DynamicGamepadView.instance.getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
+                                    DynamicGamepadView v = DynamicGamepadView.instance;
+                                    SharedPreferences.Editor editor = safeContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
                                     
-                                                                                                         // 处理布局导入
-                                    if ((which == 0 || which == 1) && finalHasLayout) {
-                                        DynamicGamepadView v = DynamicGamepadView.instance;
-                                        JSONArray btnArray = root.has("layout") ? root.getJSONArray("layout") : root.getJSONArray("buttons");
-                                        editor.putString(KEY_LAYOUT_PREFIX + v.currentSlot, btnArray.toString());
-                                        
-                                        // 【核心修复】：找不到摇杆参数时使用 v.xxx，保证摇杆位置继承你算好的动态分辨率坐标
+                                    JSONArray incomingLayout = root.has("layout") ? root.optJSONArray("layout") : root.optJSONArray("buttons");
+                                    if (incomingLayout == null) incomingLayout = new JSONArray();
+
+                                    if (which == 0) { // 【全部解包导入】
+                                        JSONArray finalLayout = new JSONArray();
+                                        for (int i = 0; i < incomingLayout.length(); i++) {
+                                            JSONObject btn = new JSONObject(incomingLayout.getJSONObject(i).toString());
+                                            btn.put("skin", v.extractBase64ToImage(btn.optString("skin", "")));
+                                            btn.put("pressedSkin", v.extractBase64ToImage(btn.optString("pressedSkin", "")));
+                                            finalLayout.put(btn);
+                                        }
+                                        editor.putString(KEY_LAYOUT_PREFIX + v.currentSlot, finalLayout.toString());
                                         editor.putInt("JoystickMode_" + v.currentSlot, root.optInt("joystickMode", v.joystickMode));
                                         editor.putFloat("JoyX_" + v.currentSlot, (float) root.optDouble("joyBaseX", v.joyBaseX));
                                         editor.putFloat("JoyY_" + v.currentSlot, (float) root.optDouble("joyBaseY", v.joyBaseY));
                                         editor.putFloat("JoyR_" + v.currentSlot, (float) root.optDouble("joyRadius", v.joyRadius));
                                         editor.putFloat("JoyHitR_" + v.currentSlot, (float) root.optDouble("joyHitboxRadius", v.joyHitboxRadius));
+                                        editor.putBoolean("JoyLocked_" + v.currentSlot, root.optBoolean("isJoyLocked", v.isJoyLocked));
                                         editor.putInt("JoyA_" + v.currentSlot, root.optInt("joyAlpha", v.joyAlpha));
                                         editor.putInt("JoyColor_" + v.currentSlot, root.optInt("joyColor", v.joyColor)); 
-                                        editor.putBoolean("Vibration_" + v.currentSlot, root.optBoolean("isVibrationOn", v.isVibrationOn));                        
-                                        editor.putInt("VibIntensity_" + v.currentSlot, root.optInt("vibrationIntensity", v.vibrationIntensity));
-                                        editor.putInt("CurrentStyleIndex_" + v.currentSlot, root.optInt("currentStyleIndex", v.currentStyleIndex)); // 【导入修复：覆盖读取风格索引】
-                                        editor.putString("JoySkinBase_" + v.currentSlot, root.optString("joySkinBase", v.joySkinBaseUri != null ? v.joySkinBaseUri : ""));     
-                                        
-                                        // 【新增：导入文件时，恢复锁定状态与菜单设置】
-                                        editor.putBoolean("JoyLocked_" + v.currentSlot, root.optBoolean("isJoyLocked", v.isJoyLocked));
+                                        editor.putString("JoySkinBase_" + v.currentSlot, v.extractBase64ToImage(root.optString("joySkinBase", "")));     
+                                        editor.putString("JoySkinKnob_" + v.currentSlot, v.extractBase64ToImage(root.optString("joySkinKnob", "")));     
                                         editor.putBoolean("MenuLocked_" + v.currentSlot, root.optBoolean("isMenuLocked", v.isMenuLocked));
                                         editor.putFloat("MenuX", (float) root.optDouble("menuX", v.menuX));
                                         editor.putFloat("MenuY", (float) root.optDouble("menuY", v.menuY));
-                                        editor.putFloat("MenuWidth_" + v.currentSlot, (float) root.optDouble("menuWidth", v.menuWidth));
-                                        editor.putFloat("MenuHeight_" + v.currentSlot, (float) root.optDouble("menuHeight", v.menuHeight));
                                         editor.putFloat("MenuScale", (float) root.optDouble("menuScale", v.menuScale));
                                         editor.putInt("MenuAlpha", root.optInt("menuAlpha", v.menuAlpha));
                                         
-                                        // 【新增：导入时继承文件里的屏幕分辨率，触发下次启动时的无损自适应伸缩】
-                                        if (root.has("savedScreenWidth") && root.has("savedScreenHeight")) {
+                                        if (root.has("savedScreenWidth")) {
                                             editor.putInt("SavedScreenWidth_" + v.currentSlot, root.optInt("savedScreenWidth"));
                                             editor.putInt("SavedScreenHeight_" + v.currentSlot, root.optInt("savedScreenHeight"));
                                         }
-                                    }
-                                                                       
-                                    
-                                    
-                                    // 处理风格库导入
-                                    if ((which == 0 || which == 2) && finalHasStyles) {
-                                        JSONArray styleArr = root.getJSONArray("styles");
-                                        for (int i = 0; i < styleArr.length(); i++) {
-                                            GamepadStyle importedStyle = GamepadStyle.fromJson(styleArr.getJSONObject(i));
-                                            boolean exists = false;
-                                            for (GamepadStyle existing : DynamicGamepadView.instance.styleList) {
-                                                if (existing.styleName.equals(importedStyle.styleName)) { exists = true; break; }
+                                        
+                                        if (root.has("styles")) {
+                                            JSONArray styles = root.getJSONArray("styles");
+                                            JSONArray parsedStyles = new JSONArray();
+                                            for (int i = 0; i < styles.length(); i++) {
+                                                JSONObject s = styles.getJSONObject(i);
+                                                s.put("joyBaseUri", v.extractBase64ToImage(s.optString("joyBaseUri", "")));
+                                                s.put("joyKnobUri", v.extractBase64ToImage(s.optString("joyKnobUri", "")));
+                                                s.put("btnNormalUri", v.extractBase64ToImage(s.optString("btnNormalUri", "")));
+                                                s.put("btnSquareUri", v.extractBase64ToImage(s.optString("btnSquareUri", "")));
+                                                s.put("btnPressedUri", v.extractBase64ToImage(s.optString("btnPressedUri", "")));
+                                                parsedStyles.put(s);
                                             }
-                                            if (!exists && !importedStyle.styleName.contains("纯色渐变")) {
-                                                DynamicGamepadView.instance.styleList.add(importedStyle);
-                                            }
+                                            editor.putString("StyleList_" + v.currentSlot, parsedStyles.toString());
+                                            editor.putInt("CurrentStyleIndex_" + v.currentSlot, root.optInt("currentStyleIndex", v.currentStyleIndex));
                                         }
+                                    } 
+                                    else if (which == 1) { // 【仅布局 - 智能穿衣引擎】
+                                        JSONArray finalLayout = new JSONArray();
+                                        for (int i = 0; i < incomingLayout.length(); i++) {
+                                            JSONObject incBtn = new JSONObject(incomingLayout.getJSONObject(i).toString());
+                                            // 自动继承当前系统中同 ID 或对应键值的皮肤
+                                            for (DynamicGamepadView.VirtualButton currBtn : v.buttons) {
+                                                if (currBtn.id.equals(incBtn.optString("id")) || currBtn.keyMapStr.equals(incBtn.optString("keyMap"))) {
+                                                    incBtn.put("skin", currBtn.customImageUri);
+                                                    incBtn.put("pressedSkin", currBtn.customPressedUri);
+                                                    incBtn.put("color", currBtn.color);
+                                                    incBtn.put("pressedColor", currBtn.pressedEffectColor);
+                                                    incBtn.put("alpha", currBtn.alpha);
+                                                    incBtn.put("pressedAlpha", currBtn.pressedEffectAlpha);
+                                                    incBtn.put("shape", currBtn.shape);
+                                                    incBtn.put("textColor", currBtn.textColor);
+                                                    break;
+                                                }
+                                            }
+                                            finalLayout.put(incBtn);
+                                        }
+                                        editor.putString(KEY_LAYOUT_PREFIX + v.currentSlot, finalLayout.toString());
+                                        editor.putFloat("JoyX_" + v.currentSlot, (float) root.optDouble("joyBaseX", v.joyBaseX));
+                                        editor.putFloat("JoyY_" + v.currentSlot, (float) root.optDouble("joyBaseY", v.joyBaseY));
+                                        editor.putFloat("JoyR_" + v.currentSlot, (float) root.optDouble("joyRadius", v.joyRadius));
                                     }
-                                    // 【修复3】使用 commit() 强制同步阻塞写入，确保数据落地后再继续
+                                    else if (which == 2) { // 【仅风格 - 精准覆盖皮肤引擎】
+                                        if (root.has("styles")) {
+                                            JSONArray styles = root.getJSONArray("styles");
+                                            JSONArray parsedStyles = new JSONArray();
+                                            for (int i = 0; i < styles.length(); i++) {
+                                                JSONObject s = styles.getJSONObject(i);
+                                                s.put("joyBaseUri", v.extractBase64ToImage(s.optString("joyBaseUri", "")));
+                                                s.put("joyKnobUri", v.extractBase64ToImage(s.optString("joyKnobUri", "")));
+                                                s.put("btnNormalUri", v.extractBase64ToImage(s.optString("btnNormalUri", "")));
+                                                s.put("btnSquareUri", v.extractBase64ToImage(s.optString("btnSquareUri", "")));
+                                                s.put("btnPressedUri", v.extractBase64ToImage(s.optString("btnPressedUri", "")));
+                                                parsedStyles.put(s);
+                                            }
+                                            editor.putString("StyleList_" + v.currentSlot, parsedStyles.toString());
+                                            editor.putInt("CurrentStyleIndex_" + v.currentSlot, root.optInt("currentStyleIndex", v.currentStyleIndex));
+                                        }
+                                        
+                                        // 提取导入包中的映射库，如果是旧版文件则直接从布局里硬抽映射
+                                        JSONArray btnStyles = root.optJSONArray("buttonStyles");
+                                        if (btnStyles == null) btnStyles = incomingLayout; 
+                                        
+                                        JSONArray currentLayoutArray = new JSONArray(safeContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_LAYOUT_PREFIX + v.currentSlot, "[]"));
+                                        JSONArray finalLayout = new JSONArray();
+                                        
+                                        for (int i = 0; i < currentLayoutArray.length(); i++) {
+                                            JSONObject currBtn = currentLayoutArray.getJSONObject(i);
+                                            for (int j = 0; j < btnStyles.length(); j++) {
+                                                JSONObject incStyle = btnStyles.getJSONObject(j);
+                                                if (currBtn.optString("id").equals(incStyle.optString("id")) || currBtn.optString("keyMap").equals(incStyle.optString("keyMap"))) {
+                                                    currBtn.put("skin", v.extractBase64ToImage(incStyle.optString("skin", "")));
+                                                    currBtn.put("pressedSkin", v.extractBase64ToImage(incStyle.optString("pressedSkin", "")));
+                                                    currBtn.put("color", incStyle.optInt("color", currBtn.optInt("color")));
+                                                    currBtn.put("pressedColor", incStyle.optInt("pressedColor", currBtn.optInt("pressedColor")));
+                                                    currBtn.put("alpha", incStyle.optInt("alpha", currBtn.optInt("alpha")));
+                                                    currBtn.put("pressedAlpha", incStyle.optInt("pressedAlpha", currBtn.optInt("pressedAlpha")));
+                                                    currBtn.put("textColor", incStyle.optInt("textColor", currBtn.optInt("textColor")));
+                                                    currBtn.put("shape", incStyle.optInt("shape", currBtn.optInt("shape")));
+                                                    break;
+                                                }
+                                            }
+                                            finalLayout.put(currBtn);
+                                        }
+                                        editor.putString(KEY_LAYOUT_PREFIX + v.currentSlot, finalLayout.toString());
+                                        editor.putInt("JoyAlpha_" + v.currentSlot, root.optInt("joyAlpha", v.joyAlpha));
+                                        editor.putInt("JoyColor_" + v.currentSlot, root.optInt("joyColor", v.joyColor)); 
+                                        editor.putString("JoySkinBase_" + v.currentSlot, v.extractBase64ToImage(root.optString("joySkinBase", "")));     
+                                        editor.putString("JoySkinKnob_" + v.currentSlot, v.extractBase64ToImage(root.optString("joySkinKnob", "")));     
+                                    }
+
                                     editor.commit(); 
-                                    DynamicGamepadView.instance.loadConfig(DynamicGamepadView.instance.currentSlot);
-                                    Toast.makeText(safeContext, "✅ 数据导入成功！", Toast.LENGTH_LONG).show();
-                                } catch (Exception e) { Toast.makeText(safeContext, "❌ 应用失败", Toast.LENGTH_SHORT).show(); }
+                                    v.post(() -> v.loadConfig(v.currentSlot));
+                                    Toast.makeText(safeContext, "✅ 数据完美导入成功！", Toast.LENGTH_LONG).show();
+                                } catch (Exception e) { Toast.makeText(safeContext, "❌ 应用失败: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }
                             }).show();
-                        
                             
                     } catch (Exception e) { Toast.makeText(safeContext, "❌ 文件读取失败，可能已损坏", Toast.LENGTH_SHORT).show(); }
                 }
             }
-                                
-                    
             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
         }
    }     
