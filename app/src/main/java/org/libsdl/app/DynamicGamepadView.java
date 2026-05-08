@@ -75,7 +75,7 @@ import java.util.List;
     public Bitmap menuPressedSkinBitmap = null;
     public int menuPressedEffectColor = 0;
     public int menuPressedEffectAlpha = 150;
-        public String menuButtonName = "⚙ 高级设置"; // 【新增】菜单按钮自定义名字
+        public String menuButtonName = L("⚙ 高级设置"); // 【新增】菜单按钮自定义名字
     public static boolean alwaysAskFolder = true; // 【新增】每次启动选择目录开关 (全局生效)
     public static boolean isIntegrationModeEnabled = false; // 【新增】整合包兼容模式开关
     
@@ -215,7 +215,7 @@ import java.util.List;
         }
         
         public static GamepadStyle fromJson(JSONObject obj) {
-            GamepadStyle style = new GamepadStyle(obj.optString("name", "未命名风格"));
+            GamepadStyle style = new GamepadStyle(obj.optString("name", L("未命名风格")));
             style.joyBaseUri = obj.optString("joyBaseUri", "");
             style.joyKnobUri = obj.optString("joyKnobUri", "");
             style.btnNormalUri = obj.optString("btnNormalUri", "");
@@ -267,10 +267,10 @@ import java.util.List;
     public VirtualButton currentlyEditingButton = null;
     public static DynamicGamepadView instance;
 
-    public static final String[] TEXT_COLOR_NAMES = {"白色", "黑色", "红色", "黄色", "蓝色", "绿色"};
+    public static final String[] TEXT_COLOR_NAMES = {L("白色"), L("黑色"), L("红色"), L("黄色"), L("蓝色"), L("绿色")};
     public static final int[] TEXT_COLOR_VALUES = {Color.WHITE, Color.BLACK, Color.RED, Color.YELLOW, Color.BLUE, Color.GREEN};
 
-    public static final String[] SHAPE_NAMES = {"⭕ 圆形 (Circle)", "🔲 圆角矩形 (Rounded Square)"};
+    public static final String[] SHAPE_NAMES = {L("⭕ 圆形 (Circle)"), L("🔲 圆角矩形 (Rounded Square)")};
     public static final int SHAPE_CIRCLE = 0;
     public static final int SHAPE_SQUARE = 1;
 
@@ -438,6 +438,7 @@ import java.util.List;
     public DynamicGamepadView(Context context) {
         super(context);
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        loadLanguagePack(context); // 【新增】初始化时立即加载语言补丁
         setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         paintText.setTypeface(Typeface.DEFAULT_BOLD);
         loadConfig(currentSlot);
@@ -569,7 +570,7 @@ import java.util.List;
         styleList.clear();
 
         // 1. 系统原生风格 (占位符，触发代码内置渐变渲染)
-        GamepadStyle style1 = new GamepadStyle("01. 原生渐变引擎 (System Default)");
+        GamepadStyle style1 = new GamepadStyle(L("01. 原生渐变引擎 (System Default)"));
         style1.joyBaseUri = ""; style1.joyKnobUri = ""; style1.btnNormalUri = ""; style1.btnPressedUri = "";
         style1.globalPressedColor = 0; 
         styleList.add(style1);
@@ -578,18 +579,18 @@ import java.util.List;
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         // 核心数据矩阵：{风格名称, 底盘底色, 底盘边框, 摇杆底色, 摇杆边框, 按键底色, 按键边框, 按下特效高亮色}
-        String[][] themes = {
-            {"02. 经典街机 (Retro Arcade)", "#0C141E", "#90CAF9", "#D32F2F", "#B71C1C", "#1A2B42", "#90CAF9", "#4CAF50"},
-            {"03. 赛博朋克霓虹 (Cyberpunk)", "#110022", "#00FFFF", "#FF007F", "#FF00FF", "#110022", "#00FFFF", "#FF00FF"},
-            {"04. 暗物质黑武士 (Dark Matter)", "#111111", "#333333", "#444444", "#111111", "#1A1A1A", "#333333", "#FFFFFF"},
-            {"05. 皇家奢华黑金 (Luxury Gold)", "#1A1813", "#D4AF37", "#C5B358", "#8A793D", "#26241D", "#D4AF37", "#FFDF00"},
-            {"06. SFC 经典主机 (SNES Classic)", "#D3D3D3", "#A9A9A9", "#4A4E69", "#2F3241", "#D3D3D3", "#A9A9A9", "#7B68EE"},
-            {"07. 生化毒液 (Toxic Acid)", "#0F1A0F", "#39FF14", "#2E8B57", "#00FF00", "#142214", "#39FF14", "#ADFF2F"},
-            {"08. 猩红之月 (Blood Moon)", "#1A0505", "#DC143C", "#8B0000", "#660000", "#240A0A", "#DC143C", "#FF0000"},
-            {"09. 深海幽蓝 (Ocean Depth)", "#001F3F", "#00BFFF", "#0074D9", "#00008B", "#001A33", "#00BFFF", "#1E90FF"},
-            {"10. 极简拟物白 (White Glass)", "#F5F5F5", "#E0E0E0", "#FFFFFF", "#CCCCCC", "#FAFAFA", "#E0E0E0", "#87CEEB"},
-            {"11. 紫晶矿石 (Royal Amethyst)", "#20102B", "#9932CC", "#8A2BE2", "#4B0082", "#2A1538", "#9932CC", "#DDA0DD"},
-            {"12. 熔岩火山核心 (Magma Core)", "#2B0F0E", "#FF4500", "#FF8C00", "#8B0000", "#361311", "#FF4500", "#FFFF00"}
+String[][] themes = {
+            {L("02. 经典街机 (Retro Arcade)"), "#0C141E", "#90CAF9", "#D32F2F", "#B71C1C", "#1A2B42", "#90CAF9", "#4CAF50"},
+            {L("03. 赛博朋克霓虹 (Cyberpunk)"), "#110022", "#00FFFF", "#FF007F", "#FF00FF", "#110022", "#00FFFF", "#FF00FF"},
+            {L("04. 暗物质黑武士 (Dark Matter)"), "#111111", "#333333", "#444444", "#111111", "#1A1A1A", "#333333", "#FFFFFF"},
+            {L("05. 皇家奢华黑金 (Luxury Gold)"), "#1A1813", "#D4AF37", "#C5B358", "#8A793D", "#26241D", "#D4AF37", "#FFDF00"},
+            {L("06. SFC 经典主机 (SNES Classic)"), "#D3D3D3", "#A9A9A9", "#4A4E69", "#2F3241", "#D3D3D3", "#A9A9A9", "#7B68EE"},
+            {L("07. 生化毒液 (Toxic Acid)"), "#0F1A0F", "#39FF14", "#2E8B57", "#00FF00", "#142214", "#39FF14", "#ADFF2F"},
+            {L("08. 猩红之月 (Blood Moon)"), "#1A0505", "#DC143C", "#8B0000", "#660000", "#240A0A", "#DC143C", "#FF0000"},
+            {L("09. 深海幽蓝 (Ocean Depth)"), "#001F3F", "#00BFFF", "#0074D9", "#00008B", "#001A33", "#00BFFF", "#1E90FF"},
+            {L("10. 极简拟物白 (White Glass)"), "#F5F5F5", "#E0E0E0", "#FFFFFF", "#CCCCCC", "#FAFAFA", "#E0E0E0", "#87CEEB"},
+            {L("11. 紫晶矿石 (Royal Amethyst)"), "#20102B", "#9932CC", "#8A2BE2", "#4B0082", "#2A1538", "#9932CC", "#DDA0DD"},
+            {L("12. 熔岩火山核心 (Magma Core)"), "#2B0F0E", "#FF4500", "#FF8C00", "#8B0000", "#361311", "#FF4500", "#FFFF00"}
         };
 
         // 批量自动绘制并存入沙盒
@@ -716,7 +717,7 @@ import java.util.List;
                     parentLayout.addView(videoView, 0, params); 
                 }
                 imagePickerTarget = 0; saveConfig(); invalidate();
-                Toast.makeText(getContext(), "视频遮罩准备完毕！", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("视频遮罩准备完毕！"), Toast.LENGTH_SHORT).show();
                 return;
             }
 
@@ -745,7 +746,7 @@ import java.util.List;
                     if (overlayMode < 2) overlayMode = 2;
                 }
                 imagePickerTarget = 0; saveConfig(); invalidate();
-                Toast.makeText(getContext(), "遮罩应用成功！", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("遮罩应用成功！"), Toast.LENGTH_SHORT).show();
                 return; 
             }
 
@@ -775,55 +776,55 @@ import java.util.List;
             }
 
             if (raw == null) {
-                Toast.makeText(getContext(), "❌ 无法解析该文件，请尝试其他格式", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("❌ 无法解析该文件，请尝试其他格式"), Toast.LENGTH_SHORT).show();
                 return;
             }
             
-            String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() + ".png");
+String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() + ".png");
             final String finalUriStr = localUriStr.isEmpty() ? uriStr : localUriStr; 
             
             if (imagePickerTarget == 1) { 
                 if (joySkinBaseBitmap != null && !joySkinBaseBitmap.isRecycled()) joySkinBaseBitmap.recycle();
                 joySkinBaseUri = finalUriStr; 
                 joySkinBaseBitmap = Bitmap.createScaledBitmap(raw, (int)(joyRadius*2), (int)(joyRadius*2), true);
-                Toast.makeText(getContext(), "摇杆外框皮肤应用成功！", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("摇杆外框皮肤应用成功！"), Toast.LENGTH_SHORT).show();
             } else if (imagePickerTarget == 2) { 
                 if (joySkinKnobBitmap != null && !joySkinKnobBitmap.isRecycled()) joySkinKnobBitmap.recycle();
                 joySkinKnobUri = finalUriStr; 
                 joySkinKnobBitmap = Bitmap.createScaledBitmap(raw, (int)(joyRadius*2), (int)(joyRadius*2), true);
-                Toast.makeText(getContext(), "摇杆中心皮肤应用成功！", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("摇杆中心皮肤应用成功！"), Toast.LENGTH_SHORT).show();
             } else if (imagePickerTarget == 3 && currentlyEditingButton != null) { 
                 if (currentlyEditingButton.skinBitmap != null && !currentlyEditingButton.skinBitmap.isRecycled()) currentlyEditingButton.skinBitmap.recycle();
                 currentlyEditingButton.customImageUri = finalUriStr; 
                 currentlyEditingButton.skinBitmap = Bitmap.createScaledBitmap(raw, (int)(currentlyEditingButton.radius*2), (int)(currentlyEditingButton.radius*2), true);
-                Toast.makeText(getContext(), "按键皮肤应用成功！", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("按键皮肤应用成功！"), Toast.LENGTH_SHORT).show();
             } else if (imagePickerTarget == 6 && currentlyEditingButton != null) { 
                 if (currentlyEditingButton.pressedSkinBitmap != null && !currentlyEditingButton.pressedSkinBitmap.isRecycled()) currentlyEditingButton.pressedSkinBitmap.recycle();
                 currentlyEditingButton.customPressedUri = finalUriStr; 
                 currentlyEditingButton.pressedSkinBitmap = Bitmap.createScaledBitmap(raw, (int)(currentlyEditingButton.radius*2), (int)(currentlyEditingButton.radius*2), true);
-                Toast.makeText(getContext(), "按下状态皮肤应用成功！", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("按下状态皮肤应用成功！"), Toast.LENGTH_SHORT).show();
             } else if (imagePickerTarget == 7) { 
                 if (dialogBgBitmap != null && !dialogBgBitmap.isRecycled()) dialogBgBitmap.recycle();
                 dialogBgImageUri = finalUriStr; 
                 dialogBgBitmap = Bitmap.createScaledBitmap(raw, 800, 800, true); 
-                Toast.makeText(getContext(), "弹窗背景图应用成功！", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("弹窗背景图应用成功！"), Toast.LENGTH_SHORT).show();
             } else if (imagePickerTarget == 8) {
                 if (menuSkinBitmap != null && !menuSkinBitmap.isRecycled()) menuSkinBitmap.recycle();
                 menuSkinUri = finalUriStr;
                 menuSkinBitmap = Bitmap.createScaledBitmap(raw, (int)menuWidth, (int)menuHeight, true);
-                Toast.makeText(getContext(), "菜单按钮图片应用成功！", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("菜单按钮图片应用成功！"), Toast.LENGTH_SHORT).show();
             } else if (imagePickerTarget == 9) {
                 if (menuPressedSkinBitmap != null && !menuPressedSkinBitmap.isRecycled()) menuPressedSkinBitmap.recycle();
                 menuPressedSkinUri = finalUriStr;
                 menuPressedSkinBitmap = Bitmap.createScaledBitmap(raw, (int)menuWidth, (int)menuHeight, true);
-                Toast.makeText(getContext(), "菜单按钮按下状态皮肤应用成功！", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("菜单按钮按下状态皮肤应用成功！"), Toast.LENGTH_SHORT).show();
             }
             
             if (raw != null && !raw.isRecycled()) raw.recycle(); 
             saveConfig();
             invalidate();
         } catch (Exception e) {
-             Toast.makeText(getContext(), "文件处理失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+             Toast.makeText(getContext(), L("文件处理失败: ") + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
         imagePickerTarget = 0;
     }
@@ -1036,7 +1037,9 @@ import java.util.List;
         paintText.setColor(menuTextColor);
         paintText.setAlpha(currentMenuAlpha);
         paintText.setTextSize(38f * menuScale * (menuTextSizeFactor / 100f));
-        paintText.setShadowLayer(3f, 1f, 1f, (menuTextColor == Color.BLACK) ? Color.WHITE : Color.BLACK);
+        // 【修复：文本阴影透明度动态跟随菜单整体透明度，解决幽灵文字残留问题】
+        int menuBaseShadowColor = (menuTextColor == Color.BLACK) ? Color.WHITE : Color.BLACK;
+        paintText.setShadowLayer(3f, 1f, 1f, Color.argb(currentMenuAlpha, Color.red(menuBaseShadowColor), Color.green(menuBaseShadowColor), Color.blue(menuBaseShadowColor)));
                 paintText.setTextAlign(Paint.Align.CENTER);
         float textOffset = (paintText.descent() - paintText.ascent()) / 2 - paintText.descent();
         // 【修改】如果自定义名字不为空，才绘制文字
@@ -1070,7 +1073,7 @@ import java.util.List;
             }
                         paintText.setTextSize(Math.max(20f, getHeight() * 0.05f)); // 【修复】动态字体大小
             paintText.setShadowLayer(5f, 2f, 2f, Color.BLACK);
-            canvas.drawText("【编辑模式】拖动调整，轻触设置", getWidth() / 2f, getHeight() * 0.12f, paintText); // 【修复】动态高度位置          
+            canvas.drawText(L("【编辑模式】拖动调整，轻触设置"), getWidth() / 2f, getHeight() * 0.12f, paintText); // 【修复】动态高度位置          
         }
 
               // 核心按键绘制逻辑
@@ -1079,7 +1082,8 @@ import java.util.List;
 
                         int idleAlpha = (int)(btn.alpha * 0.6f); 
             // 【修复】：去掉 Math.max 限制，让编辑模式完全反映真实透明度
-            int currentAlpha = isEditMode ? btn.alpha : (btn.isPressed ? 255 : idleAlpha);
+            // 【关键修复：彻底解决隐藏后按下闪烁的问题】按下状态绝对不能写死 255，必须跟随用户设定的最大透明度 btn.alpha
+            int currentAlpha = isEditMode ? btn.alpha : (btn.isPressed ? btn.alpha : idleAlpha);
             
             // 【超级新增】：允许在编辑模式下，对当前正编辑的按键进行“按下态”强行预览
             boolean isPreviewPress = btn.isPressed && (!isEditMode || btn == currentlyEditingButton);
@@ -1148,7 +1152,9 @@ import java.util.List;
             // 【修改】在此基础上增加玩家定制的字体大小百分比系数 (textSizeFactor)
             paintText.setTextSize(drawRadius * (isMultiLine ? 0.45f : 0.6f) * (btn.textSizeFactor / 100f));           
             paintText.setTextAlign(Paint.Align.CENTER); 
-            paintText.setShadowLayer(3f, 1f, 1f, (btn.textColor == Color.BLACK) ? Color.WHITE : Color.BLACK);
+            // 【修复：动态解析 ARGB，让阴影的透明度与按键本身的透明度 (currentAlpha) 强行同步】
+            int btnBaseShadowColor = (btn.textColor == Color.BLACK) ? Color.WHITE : Color.BLACK;
+            paintText.setShadowLayer(3f, 1f, 1f, Color.argb(currentAlpha, Color.red(btnBaseShadowColor), Color.green(btnBaseShadowColor), Color.blue(btnBaseShadowColor)));
             
             // 【优化】单行直接绘制，多行拆分并重新计算 Y 轴居中偏移
             textOffset = (paintText.descent() - paintText.ascent()) / 2 - paintText.descent();
@@ -1323,7 +1329,7 @@ import java.util.List;
             paintText.setColor(Color.WHITE); 
             paintText.setTextSize(Math.max(16f, joyRadius * 0.25f)); // 【修复】跟随摇杆比例缩放
             paintText.setShadowLayer(3f,0,0,Color.BLACK);
-            canvas.drawText("摇杆控制区", joyBaseX, joyBaseY - joyHitboxRadius - 10, paintText);            
+            canvas.drawText(L("摇杆控制区"), joyBaseX, joyBaseY - joyHitboxRadius - 10, paintText);            
             paintBtn.setStyle(Paint.Style.FILL); paintText.clearShadowLayer();
         }
     }
@@ -1360,7 +1366,7 @@ import java.util.List;
         int keyCode = event.getKeyCode();
         boolean isDown = event.getAction() == KeyEvent.ACTION_DOWN;
 
-        // 1. 拦截：手柄绑定模式 (核心：生成或绑定虚拟按键)
+// 1. 拦截：手柄绑定模式 (核心：生成或绑定虚拟按键)
         if (isGamepadBindingMode && isDown) {
             isGamepadBindingMode = false;
             if (currentBindingDialog != null) currentBindingDialog.dismiss();
@@ -1368,16 +1374,16 @@ import java.util.List;
             if (currentBindingTargetButton != null) {
                 // 模式A：绑定到现有的预设屏幕按键
                 currentBindingTargetButton.boundGamepadKeyCode = keyCode;
-                Toast.makeText(getContext(), "绑定成功！[" + currentBindingTargetButton.id + "] 已绑定手柄键值: " + keyCode, Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("绑定成功！[") + currentBindingTargetButton.id + L("] 已绑定手柄键值: ") + keyCode, Toast.LENGTH_SHORT).show();
             } else {
                 // 模式B：按下手柄，直接在屏幕中央无中生有出一个新按键
                 float scale = Math.max(0.5f, getHeight() / 1080f);
-                VirtualButton newBtn = new VirtualButton("待绑定", getWidth() / 2f, getHeight() / 2f, 90 * scale, Color.parseColor("#9C27B0"), 200, Color.WHITE, SHAPE_CIRCLE, "", false);
+                VirtualButton newBtn = new VirtualButton(L("待绑定"), getWidth() / 2f, getHeight() / 2f, 90 * scale, Color.parseColor("#9C27B0"), 200, Color.WHITE, SHAPE_CIRCLE, "", false);
                 newBtn.boundGamepadKeyCode = keyCode;
                 buttons.add(newBtn);
                 isEditMode = true; // 强制进入编辑模式，方便玩家待会儿直接拖走它
                 showButtonSettingsDialog(newBtn); // 瞬间弹出设置面板
-                Toast.makeText(getContext(), "已捕捉手柄键值: " + keyCode + "，请配置功能并拖动位置", Toast.LENGTH_LONG).show();
+                Toast.makeText(getContext(), L("已捕捉手柄键值: ") + keyCode + L("，请配置功能并拖动位置"), Toast.LENGTH_LONG).show();
             }
             saveConfig();
             return true;
@@ -1386,9 +1392,9 @@ import java.util.List;
         // 2. 拦截：测试仪模式
         if (testFeedbackText != null) {
             if (isDown) {
-                testFeedbackText.setText("当前按下键值: " + keyCode + "\n尝试触发手柄震动...");
+                testFeedbackText.setText(L("当前按下键值: ") + keyCode + L("\n尝试触发手柄震动..."));
                 triggerHardwareGamepadVibration(event.getDevice());
-            } else { testFeedbackText.setText("手柄已连接，等待按键..."); }
+            } else { testFeedbackText.setText(L("手柄已连接，等待按键...")); }
             return true;
         }
 
@@ -1699,12 +1705,12 @@ import java.util.List;
                         btnLongPressRunnable = () -> {
                             copiedButton = draggedButton;
                             triggerVibrate(50);
-                            Toast.makeText(getContext(), "已复制按键 [" + copiedButton.id + "]，双击空白处粘贴", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(getContext(), L("已复制按键 [") + copiedButton.id + L("]，双击空白处粘贴",) Toast.LENGTH_SHORT).show();
                         };
                         postDelayed(btnLongPressRunnable, 600);
                     } else {
                         if (copiedButton != null && System.currentTimeMillis() - lastEmptyTapTime < 300) {
-                            VirtualButton newBtn = new VirtualButton(copiedButton.id + "_复", targetX, targetY, copiedButton.radius, copiedButton.color, copiedButton.alpha, copiedButton.textColor, copiedButton.shape, copiedButton.keyMapStr, copiedButton.isDirectional);
+                            VirtualButton newBtn = new VirtualButton(copiedButton.id + L("_副本"), targetX, targetY, copiedButton.radius, copiedButton.color, copiedButton.alpha, copiedButton.textColor, copiedButton.shape, copiedButton.keyMapStr, copiedButton.isDirectional);
                             newBtn.hitboxRadius = copiedButton.hitboxRadius; newBtn.isTurbo = copiedButton.isTurbo; newBtn.turboInterval = copiedButton.turboInterval;
                             newBtn.customImageUri = copiedButton.customImageUri; newBtn.customPressedUri = copiedButton.customPressedUri;
                             newBtn.pressedEffectColor = copiedButton.pressedEffectColor; newBtn.pressedEffectAlpha = copiedButton.pressedEffectAlpha;
@@ -1774,9 +1780,9 @@ import java.util.List;
     // 【修改】调用系统自带的文件选择器导入 JSON
     private void importLayoutFromFile() {
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("⚠️ 覆盖警告")
-            .setMessage("即将从手机存储中选择布局文件。\n导入成功后将【永久覆盖】你当前的按键布局，确定继续吗？")
-            .setPositiveButton("选文件并覆盖", (d, w) -> {
+            .setTitle(L("⚠️ 覆盖警告"))
+            .setMessage(L("即将从手机存储中选择布局文件。\n导入成功后将【永久覆盖】你当前的按键布局，确定继续吗？"))
+            .setPositiveButton(L("选文件并覆盖"), (d, w) -> {
                 android.app.Activity activity = (android.app.Activity) getContext();
                 FileActionFragment fragment = new FileActionFragment();
                 android.os.Bundle args = new android.os.Bundle();
@@ -1784,7 +1790,7 @@ import java.util.List;
                 fragment.setArguments(args);
                 activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
             })
-            .setNegativeButton("取消", null).show();
+            .setNegativeButton(L("取消"), null).show();
     }
     
     private void exportAllData() {
@@ -1818,7 +1824,7 @@ import java.util.List;
         rootLayout.setBackground(getCustomDialogBackground());
 
         TextView dragHandle = new TextView(getContext());
-        dragHandle.setText("✋ 拖拽此处 | ⚙️ 菜单外观高阶设定");
+        dragHandle.setText(L("✋ 拖拽此处 | ⚙️ 菜单外观高阶设定"));
         android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
         titleBg.setColor(Color.argb(50, 0, 0, 0));
         titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
@@ -1844,26 +1850,26 @@ import java.util.List;
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(50, 20, 50, 50);
 
-        layout.addView(createTitle("0. 菜单自定义文字 (留空则不显示文字):"));
-        final EditText nameInput = createEditText("例如: ⚙ 高级设置", menuButtonName);
+        layout.addView(createTitle(L("0. 菜单自定义文字 (留空则不显示文字):")));
+        final EditText nameInput = createEditText(L("例如: ⚙ 高级设置"), menuButtonName);
         layout.addView(nameInput);
 
 
-        layout.addView(createTitle("1. 菜单位置锁定:"));
+        layout.addView(createTitle(L("1. 菜单位置锁定:")));
         final Button lockBtn = new Button(getContext());
 
-        lockBtn.setText(isMenuLocked ? "🔒 拖拽位置锁定：已开启" : "🔓 拖拽位置锁定：已关闭");
+        lockBtn.setText(isMenuLocked ? L("🔒 拖拽位置锁定：已开启") : L("🔓 拖拽位置锁定：已关闭"));
         lockBtn.setTextColor(Color.WHITE);
         lockBtn.setBackgroundColor(isMenuLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50"));
         lockBtn.setOnClickListener(v -> {
             isMenuLocked = !isMenuLocked;
-            lockBtn.setText(isMenuLocked ? "🔒 拖拽位置锁定：已开启" : "🔓 拖拽位置锁定：已关闭");
+            lockBtn.setText(isMenuLocked ? L("🔒 拖拽位置锁定：已开启") : L("🔓 拖拽位置锁定：已关闭"));
             lockBtn.setBackgroundColor(isMenuLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50"));
             invalidate(); // 立刻预览红/绿框
         });
         layout.addView(lockBtn);
 
-        layout.addView(createTitle("2. 按键样式与文字颜色:"));
+        layout.addView(createTitle(L("2. 按键样式与文字颜色:")));
         final Spinner textColorSpinner = new Spinner(getContext());
         ArrayAdapter<String> textAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, TEXT_COLOR_NAMES);
         textColorSpinner.setAdapter(textAdapter);
@@ -1874,8 +1880,8 @@ import java.util.List;
         ArrayAdapter<String> shapeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, SHAPE_NAMES);
         shapeSpinner.setAdapter(shapeAdapter); shapeSpinner.setSelection(menuShape); layout.addView(shapeSpinner);
 
-        layout.addView(createTitle("3. 菜单背景颜色 (纯色引擎):"));
-        final EditText hexInput = createEditText("颜色代码如: #333333", String.format("#%06X", (0xFFFFFF & menuColor))); 
+        layout.addView(createTitle(L("3. 菜单背景颜色 (纯色引擎):")));
+        final EditText hexInput = createEditText(L("颜色代码如: #333333"), String.format("#%06X", (0xFFFFFF & menuColor))); 
         layout.addView(hexInput);
 
         final View colorPreview = new View(getContext());
@@ -1886,9 +1892,9 @@ import java.util.List;
         layout.addView(colorPreview);
 
         final int[] rgb = {Color.red(menuColor), Color.green(menuColor), Color.blue(menuColor)};
-        final SeekBar redBar = createColorBar(layout, "🔴 红色分量 (R)", rgb[0]); 
-        final SeekBar greenBar = createColorBar(layout, "🟢 绿色分量 (G)", rgb[1]); 
-        final SeekBar blueBar = createColorBar(layout, "🔵 蓝色分量 (B)", rgb[2]);
+        final SeekBar redBar = createColorBar(layout, L("🔴 红色分量 (R)"), rgb[0]); 
+        final SeekBar greenBar = createColorBar(layout, L("🟢 绿色分量 (G)"), rgb[1]); 
+        final SeekBar blueBar = createColorBar(layout, L("🔵 蓝色分量 (B)"), rgb[2]);
 
         SeekBar.OnSeekBarChangeListener colorUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -1901,12 +1907,12 @@ import java.util.List;
         };
         redBar.setOnSeekBarChangeListener(colorUpdater); greenBar.setOnSeekBarChangeListener(colorUpdater); blueBar.setOnSeekBarChangeListener(colorUpdater);
 
-        layout.addView(createTitle("4. 尺寸与隐藏参数:"));
-        final SeekBar wBar = createColorBar(layout, "基础宽度", (int)menuWidth); wBar.setMax(500);
-        final SeekBar hBar = createColorBar(layout, "基础高度", (int)menuHeight); hBar.setMax(300);
-        final SeekBar sBar = createColorBar(layout, "整体缩放 (%)", (int)(menuScale * 100)); sBar.setMax(300);
-        final SeekBar aBar = createColorBar(layout, "可见透明度 (0-255)", menuAlpha); 
-        final SeekBar txtSizeBar = createColorBar(layout, "🅰️ 字体大小百分比", menuTextSizeFactor); txtSizeBar.setMax(300);
+        layout.addView(createTitle(L("4. 尺寸与隐藏参数:")));
+        final SeekBar wBar = createColorBar(layout, L("基础宽度"), (int)menuWidth); wBar.setMax(500);
+        final SeekBar hBar = createColorBar(layout, L("基础高度"), (int)menuHeight); hBar.setMax(300);
+        final SeekBar sBar = createColorBar(layout, L("整体缩放 (%)"), (int)(menuScale * 100)); sBar.setMax(300);
+        final SeekBar aBar = createColorBar(layout, L("可见透明度 (0-255)"), menuAlpha); 
+        final SeekBar txtSizeBar = createColorBar(layout, L("🅰️ 字体大小百分比"), menuTextSizeFactor); txtSizeBar.setMax(300);
 
         SeekBar.OnSeekBarChangeListener sizeUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -1921,29 +1927,28 @@ import java.util.List;
         };
         wBar.setOnSeekBarChangeListener(sizeUpdater); hBar.setOnSeekBarChangeListener(sizeUpdater); sBar.setOnSeekBarChangeListener(sizeUpdater); aBar.setOnSeekBarChangeListener(sizeUpdater); txtSizeBar.setOnSeekBarChangeListener(sizeUpdater);
 
-        layout.addView(createTitle("5. 自定义常态图片皮肤:"));
+        layout.addView(createTitle(L("5. 自定义常态图片皮肤:")));
         LinearLayout skinLayout = new LinearLayout(getContext()); skinLayout.setOrientation(LinearLayout.HORIZONTAL);
-        Button pickImg = new Button(getContext()); pickImg.setText("🖼️ 选择皮肤"); pickImg.setTextColor(Color.WHITE); pickImg.setBackgroundColor(Color.parseColor("#4CAF50"));
+        Button pickImg = new Button(getContext()); pickImg.setText(L("🖼️ 选择皮肤")); pickImg.setTextColor(Color.WHITE); pickImg.setBackgroundColor(Color.parseColor("#4CAF50"));
         pickImg.setOnClickListener(v -> {
             imagePickerTarget = 8; android.app.Activity activity = (android.app.Activity) getContext(); FileActionFragment fragment = new FileActionFragment();
             android.os.Bundle args = new android.os.Bundle(); args.putInt("action_type", 0); fragment.setArguments(args); activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
         }); skinLayout.addView(pickImg);
         
-        Button clearImg = new Button(getContext()); clearImg.setText("❌ 移除皮肤"); clearImg.setTextColor(Color.WHITE); clearImg.setBackgroundColor(Color.parseColor("#F44336"));
+        Button clearImg = new Button(getContext()); clearImg.setText(L("❌ 移除皮肤")); clearImg.setTextColor(Color.WHITE); clearImg.setBackgroundColor(Color.parseColor("#F44336"));
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); cp.setMargins(20, 0, 0, 0); clearImg.setLayoutParams(cp);
-        clearImg.setOnClickListener(v -> { menuSkinUri = ""; menuSkinBitmap = null; Toast.makeText(getContext(), "已恢复默认材质", Toast.LENGTH_SHORT).show(); invalidate(); });
+        clearImg.setOnClickListener(v -> { menuSkinUri = ""; menuSkinBitmap = null; Toast.makeText(getContext(), L("已恢复默认材质"), Toast.LENGTH_SHORT).show(); invalidate(); });
         skinLayout.addView(clearImg); layout.addView(skinLayout);
-
         // ================= 按下特效引擎 =================
-        layout.addView(createTitle("6. 按下状态特效 (独立颜色与皮肤):"));
-        final EditText hexInputP = createEditText("颜色如: #4CAF50 (填 #000000 为无)", String.format("#%06X", (0xFFFFFF & menuPressedEffectColor))); layout.addView(hexInputP);
+        layout.addView(createTitle(L("6. 按下状态特效 (独立颜色与皮肤):")));
+        final EditText hexInputP = createEditText(L("颜色如: #4CAF50 (填 #000000 为无)"), String.format("#%06X", (0xFFFFFF & menuPressedEffectColor))); layout.addView(hexInputP);
         final View colorPreviewP = new View(getContext()); colorPreviewP.setLayoutParams(previewParams); 
         final android.graphics.drawable.GradientDrawable previewBgP = new android.graphics.drawable.GradientDrawable();
         previewBgP.setCornerRadius(20f); previewBgP.setColor(menuPressedEffectColor == 0 ? Color.parseColor("#333333") : menuPressedEffectColor); colorPreviewP.setBackground(previewBgP); layout.addView(colorPreviewP);
 
-        final SeekBar alphaBarP = createColorBar(layout, "按下特效不透明度", menuPressedEffectAlpha); 
+        final SeekBar alphaBarP = createColorBar(layout, L("按下特效不透明度"), menuPressedEffectAlpha); 
         final int[] rgbP = {Color.red(menuPressedEffectColor), Color.green(menuPressedEffectColor), Color.blue(menuPressedEffectColor)};
-        final SeekBar rBarP = createColorBar(layout, "🔴 按下红 (R)", rgbP[0]); final SeekBar gBarP = createColorBar(layout, "🟢 按下绿 (G)", rgbP[1]); final SeekBar bBarP = createColorBar(layout, "🔵 按下蓝 (B)", rgbP[2]);
+        final SeekBar rBarP = createColorBar(layout, L("🔴 按下红 (R)"), rgbP[0]); final SeekBar gBarP = createColorBar(layout, L("🟢 按下绿 (G)"), rgbP[1]); final SeekBar bBarP = createColorBar(layout, L("🔵 按下蓝 (B)"), rgbP[2]);
 
         SeekBar.OnSeekBarChangeListener colorUpdaterP = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -1962,18 +1967,18 @@ import java.util.List;
         });
 
         LinearLayout skinLayoutP = new LinearLayout(getContext()); skinLayoutP.setOrientation(LinearLayout.HORIZONTAL);
-        Button pickImgP = new Button(getContext()); pickImgP.setText("🖼️ 按下皮肤"); pickImgP.setTextColor(Color.WHITE); pickImgP.setBackgroundColor(Color.parseColor("#4CAF50"));
+        Button pickImgP = new Button(getContext()); pickImgP.setText(L("🖼️ 按下皮肤")); pickImgP.setTextColor(Color.WHITE); pickImgP.setBackgroundColor(Color.parseColor("#4CAF50"));
         pickImgP.setOnClickListener(v -> {
             imagePickerTarget = 9; android.app.Activity activity = (android.app.Activity) getContext(); FileActionFragment fragment = new FileActionFragment();
             android.os.Bundle args = new android.os.Bundle(); args.putInt("action_type", 0); fragment.setArguments(args); activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
         }); skinLayoutP.addView(pickImgP);
-        Button clearImgP = new Button(getContext()); clearImgP.setText("❌ 移除按下皮肤"); clearImgP.setTextColor(Color.WHITE); clearImgP.setBackgroundColor(Color.parseColor("#F44336")); clearImgP.setLayoutParams(cp);
-        clearImgP.setOnClickListener(v -> { menuPressedSkinUri = ""; menuPressedSkinBitmap = null; Toast.makeText(getContext(), "已恢复无", Toast.LENGTH_SHORT).show(); invalidate(); });
+        Button clearImgP = new Button(getContext()); clearImgP.setText(L("❌ 移除按下皮肤")); clearImgP.setTextColor(Color.WHITE); clearImgP.setBackgroundColor(Color.parseColor("#F44336")); clearImgP.setLayoutParams(cp);
+        clearImgP.setOnClickListener(v -> { menuPressedSkinUri = ""; menuPressedSkinBitmap = null; Toast.makeText(getContext(), L("已恢复无"), Toast.LENGTH_SHORT).show(); invalidate(); });
         skinLayoutP.addView(clearImgP); layout.addView(skinLayoutP);
 
         // 底部按钮区域
         LinearLayout bottomButtons = new LinearLayout(getContext()); bottomButtons.setOrientation(LinearLayout.HORIZONTAL); bottomButtons.setPadding(0, 50, 0, 0);
-        Button deleteBtn = new Button(getContext()); deleteBtn.setText("🔄 恢复默认"); deleteBtn.setTextColor(Color.WHITE); deleteBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
+        Button deleteBtn = new Button(getContext()); deleteBtn.setText(L("🔄 恢复默认")); deleteBtn.setTextColor(Color.WHITE); deleteBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
         deleteBtn.setOnClickListener(v -> { 
             isMenuLocked = false; menuColor = Color.parseColor("#333333"); menuTextColor = Color.WHITE; menuTextSizeFactor = 100; menuShape = 1;
             menuWidth = 230; menuHeight = 90; menuScale = 1.0f; menuAlpha = 220;
@@ -1982,7 +1987,7 @@ import java.util.List;
             saveConfig(); invalidate(); dialog.dismiss(); showMenuSettingsDialog(); // 重新加载界面
         }); bottomButtons.addView(deleteBtn);
         
-        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存修改并退出"); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
+        Button saveBtn = new Button(getContext()); saveBtn.setText(L("💾 保存修改并退出")); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
         LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); saveParams.setMargins(20, 0, 0, 0); saveBtn.setLayoutParams(saveParams);
         
         saveBtn.setOnClickListener(v -> {
@@ -2014,7 +2019,7 @@ import java.util.List;
         rootLayout.setBackground(getCustomDialogBackground()); // 统一应用自定义背景
 
         TextView dragHandle = new TextView(getContext());
-        dragHandle.setText("✋ 拖拽此处 | ⚙️ 游戏面板全局设置");
+        dragHandle.setText(L("✋ 拖拽此处 | ⚙️ 游戏面板全局设置"));
                         android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
         titleBg.setColor(Color.argb(50, 0, 0, 0)); // 【修复1】改用半透明遮罩，完美融合下方自定义背景色
         titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
@@ -2049,16 +2054,16 @@ import java.util.List;
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(40, 20, 40, 40);
 
-        layout.addView(createMenuButton(isEditMode ? "💾 保存并退出编辑" : "🛠️ 开启按键编辑", v -> { isEditMode = !isEditMode; if (!isEditMode) saveConfig(); invalidate(); dialog.dismiss(); }));
-        layout.addView(createMenuButton("➕ 新建组合键/宏", v -> { 
+        layout.addView(createMenuButton(isEditMode ? L("💾 保存并退出编辑") : L("🛠️ 开启按键编辑"), v -> { isEditMode = !isEditMode; if (!isEditMode) saveConfig(); invalidate(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(L("➕ 新建组合键/宏"), v -> { 
             float scale = Math.max(0.5f, getHeight() / 1080f);
-            VirtualButton newBtn = new VirtualButton("新键", getWidth() / 2f, getHeight() / 2f, 90 * scale, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);                                             
+            VirtualButton newBtn = new VirtualButton(L("新键"), getWidth() / 2f, getHeight() / 2f, 90 * scale, Color.RED, 150, Color.WHITE, SHAPE_CIRCLE, "Z+X", false);                                             
             buttons.add(newBtn); isEditMode = true; showButtonSettingsDialog(newBtn); dialog.dismiss();
         }));
-        layout.addView(createMenuButton(isGridSnapMode ? "🧲 网格吸附：已开启" : "🧲 网格吸附：已关闭", v -> { isGridSnapMode = !isGridSnapMode; Toast.makeText(getContext(), isGridSnapMode ? "已开启网格吸附" : "已开启自由拖动", Toast.LENGTH_SHORT).show(); dialog.dismiss(); showMainMenu(); }));
+        layout.addView(createMenuButton(isGridSnapMode ? L("🧲 网格吸附：已开启") : L("🧲 网格吸附：已关闭"), v -> { isGridSnapMode = !isGridSnapMode; Toast.makeText(getContext(), isGridSnapMode ? L("已开启网格吸附") : L("已开启自由拖动"), Toast.LENGTH_SHORT).show(); dialog.dismiss(); showMainMenu(); }));
         if (isGridSnapMode) {
             // 1. 网格大小滑条 (加入 invalidate 实现实时预览)
-            final SeekBar gridBar = createColorBar(layout, "📐 网格尺寸步长 (拖动实时预览)", gridSize);
+            final SeekBar gridBar = createColorBar(layout, L("📐 网格尺寸步长 (拖动实时预览)"), gridSize);
             gridBar.setMax(200);
             gridBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
                 public void onProgressChanged(SeekBar s, int p, boolean fromUser) { 
@@ -2069,7 +2074,7 @@ import java.util.List;
             });
 
             // 2. 网格线透明度滑条
-            final SeekBar lineAlphaBar = createColorBar(layout, "👁️ 网格线不透明度 (0-255)", gridLineAlpha);
+            final SeekBar lineAlphaBar = createColorBar(layout, L("👁️ 网格线不透明度 (0-255)"), gridLineAlpha);
             lineAlphaBar.setMax(255);
             lineAlphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
                 public void onProgressChanged(SeekBar s, int p, boolean fromUser) { 
@@ -2080,7 +2085,7 @@ import java.util.List;
             });
 
             // 3. 网格线颜色下拉框
-            layout.addView(createTitle("🎨 网格线颜色:"));
+            layout.addView(createTitle(L("🎨 网格线颜色:")));
             final Spinner lineColorSpinner = new Spinner(getContext());
             ArrayAdapter<String> colorAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, TEXT_COLOR_NAMES);
             lineColorSpinner.setAdapter(colorAdapter);
@@ -2095,7 +2100,7 @@ import java.util.List;
 
             // 4. 背景色透明度滑条
             int currentBgAlpha = Color.alpha(gridBgColor);
-            final SeekBar bgAlphaBar = createColorBar(layout, "🌫️ 编辑背景不透明度 (0-255)", currentBgAlpha);
+            final SeekBar bgAlphaBar = createColorBar(layout, L("🌫️ 编辑背景不透明度 (0-255)"), currentBgAlpha);
             bgAlphaBar.setMax(255);
             bgAlphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
                 public void onProgressChanged(SeekBar s, int p, boolean fromUser) { 
@@ -2109,7 +2114,7 @@ import java.util.List;
             });
 
             // 5. 背景颜色下拉框
-            layout.addView(createTitle("🖌️ 编辑模式背景色:"));
+            layout.addView(createTitle(L("🖌️ 编辑模式背景色:")));
             final Spinner bgColorSpinner = new Spinner(getContext());
             bgColorSpinner.setAdapter(colorAdapter);
             int rgbOnly = Color.rgb(Color.red(gridBgColor), Color.green(gridBgColor), Color.blue(gridBgColor));
@@ -2125,53 +2130,63 @@ import java.util.List;
             layout.addView(bgColorSpinner);
         }
 
-        layout.addView(createMenuButton("🕹️ 切换摇杆形态", v -> { joystickMode = (joystickMode + 1) % 5; if (joystickMode == JOYSTICK_MODE_STYLE) refreshJoystickStyle(); saveConfig(); invalidate(); dialog.dismiss(); showMainMenu(); }));
-        layout.addView(createMenuButton("⚙️ 全局设置配置区", v -> { showVibrationSettingsDialog(); dialog.dismiss(); }));
-        layout.addView(createMenuButton("📂 布局存档与导入导出", v -> { showProfileManager(); dialog.dismiss(); }));
-        layout.addView(createMenuButton("🔄 恢复初始默认布局", v -> { loadDefaultLayout(); saveConfig(); invalidate(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(L("🕹️ 切换摇杆形态"), v -> { joystickMode = (joystickMode + 1) % 5; if (joystickMode == JOYSTICK_MODE_STYLE) refreshJoystickStyle(); saveConfig(); invalidate(); dialog.dismiss(); showMainMenu(); }));
+        layout.addView(createMenuButton(L("⚙️ 全局设置配置区"), v -> { showVibrationSettingsDialog(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(L("📂 布局存档与导入导出"), v -> { showProfileManager(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(L("🔄 恢复初始默认布局"), v -> { loadDefaultLayout(); saveConfig(); invalidate(); dialog.dismiss(); }));
         
         // 👇 这里是新增的动态缩放开关 👇
-        layout.addView(createMenuButton(isDynamicScaleEnabled ? "📱 跨设备动态缩放适配: [已开启]" : "📱 跨设备动态缩放适配: [已关闭(原版)]", v -> {
+        layout.addView(createMenuButton(isDynamicScaleEnabled ? L("📱 跨设备动态缩放适配: [已开启]") : L("📱 跨设备动态缩放适配: [已关闭(原版)]"), v -> {
             isDynamicScaleEnabled = !isDynamicScaleEnabled;
             saveConfig();
-            Toast.makeText(getContext(), isDynamicScaleEnabled ? "已开启: 自动缩放适配不同分辨率屏幕" : "已关闭: 恢复原版像素1:1映射", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), isDynamicScaleEnabled ? L("已开启: 自动缩放适配不同分辨率屏幕") : L("已关闭: 恢复原版像素1:1映射"), Toast.LENGTH_SHORT).show();
             dialog.dismiss(); showMainMenu();
         }));
-        layout.addView(createMenuButton("🖼️ 屏幕遮罩详细设置", v -> { showOverlaySettingsDialog(); dialog.dismiss(); }));
-        layout.addView(createMenuButton(isOverlayVisible ? "👁️ 隐藏遮罩图 (当前:显示)" : "👁️ 显示遮罩图 (当前:隐藏)", v -> { isOverlayVisible = !isOverlayVisible; invalidate(); dialog.dismiss(); showMainMenu(); }));
-        layout.addView(createMenuButton("📁 重新选择游戏数据目录", v -> { if (getContext() instanceof SDLActivity) ((SDLActivity) getContext()).checkAndPickFolder(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(L("🖼️ 屏幕遮罩详细设置"), v -> { showOverlaySettingsDialog(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(isOverlayVisible ? L("👁️ 隐藏遮罩图 (当前:显示)") : L("👁️ 显示遮罩图 (当前:隐藏)"), v -> { isOverlayVisible = !isOverlayVisible; invalidate(); dialog.dismiss(); showMainMenu(); }));
+        layout.addView(createMenuButton(L("📁 重新选择游戏数据目录"), v -> { if (getContext() instanceof SDLActivity) ((SDLActivity) getContext()).checkAndPickFolder(); dialog.dismiss(); }));
         
-        layout.addView(createMenuButton(alwaysAskFolder ? "📂 每次启动强制重选目录: [已开启]" : "📂 每次启动强制重选目录: [已关闭]", v -> {
+        layout.addView(createMenuButton(alwaysAskFolder ? L("📂 每次启动强制重选目录: [已开启]") : L("📂 每次启动强制重选目录: [已关闭]"), v -> {
             alwaysAskFolder = !alwaysAskFolder;
             saveConfig();
-            Toast.makeText(getContext(), alwaysAskFolder ? "已开启: 每次启动/更新都会提示选择目录" : "已关闭: 启动时将直接进入上次的目录", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), alwaysAskFolder ? L("已开启: 每次启动/更新都会提示选择目录") : L("已关闭: 启动时将直接进入上次的目录"), Toast.LENGTH_SHORT).show();
             dialog.dismiss(); showMainMenu();
         }));
         
         // 【新增：主程序快速启动列表】
-        layout.addView(createMenuButton("🗂️ 主程序列表管理系统", v -> { showFolderPresetManagerDialog(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(L("🗂️ 主程序列表管理系统"), v -> { showFolderPresetManagerDialog(); dialog.dismiss(); }));
 
         // 【新增：整合包兼容模式 UI 开关】
-        layout.addView(createMenuButton(isIntegrationModeEnabled ? "📦 整合包兼容直读模式: [已开启]" : "📦 整合包兼容直读模式: [已关闭]", v -> {
+        layout.addView(createMenuButton(isIntegrationModeEnabled ? L("📦 整合包兼容直读模式: [已开启]") : L("📦 整合包兼容直读模式: [已关闭]"), v -> {
             isIntegrationModeEnabled = !isIntegrationModeEnabled;
             saveConfig();
             if (isIntegrationModeEnabled) {
                 new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle("📦 兼容模式已开启")
-                    .setMessage("此模式专为第三方整合包设计。\n\n引擎将自动扫描文件夹内是否有【任意.exe文件】或【data/system.def】。\n如果检测到，将直接读取整合包数据，绝对不会释放并覆盖官方脚本！")
-                    .setPositiveButton("我知道了", null).show();
+                    .setTitle(L("📦 兼容模式已开启"))
+                    .setMessage(L("此模式专为第三方整合包设计。\n\n引擎将自动扫描文件夹内是否有【任意.exe文件】或【data/system.def】。\n如果检测到，将直接读取整合包数据，绝对不会释放并覆盖官方脚本！"))
+                    .setPositiveButton(L("我知道了"), null).show();
             } else {
-                Toast.makeText(getContext(), "已关闭：将恢复原版官方文件校验机制", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("已关闭：将恢复原版官方文件校验机制"), Toast.LENGTH_SHORT).show();
             }
             dialog.dismiss(); showMainMenu();
         }));
 
-        layout.addView(createMenuButton("⏱️ 面板自动隐藏设置", v -> { showAutoHideSettingsDialog(); dialog.dismiss(); }));
-        layout.addView(createMenuButton("🎨 按键风格管理系统", v -> { showStyleManagerDialog(); dialog.dismiss(); }));
-                layout.addView(createMenuButton("🎮 物理手柄与外设专区", v -> { showGamepadSettingsDialog(); dialog.dismiss(); }));
-        layout.addView(createMenuButton("🪟 自定义设置弹窗 UI外观", v -> { showDialogCustomizationSettings(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(L("⏱️ 面板自动隐藏设置"), v -> { showAutoHideSettingsDialog(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(L("🎨 按键风格管理系统"), v -> { showStyleManagerDialog(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(L("🎮 物理手柄与外设专区"), v -> { showGamepadSettingsDialog(); dialog.dismiss(); }));
+        layout.addView(createMenuButton(L("🪟 自定义设置弹窗 UI外观"), v -> { showDialogCustomizationSettings(); dialog.dismiss(); }));
+        // 【新增：多语言补丁导入入口】
+        layout.addView(createMenuButton(L("🌐 导入本地化语言补丁 (.json)"), v -> { 
+            android.app.Activity activity = (android.app.Activity) getContext();
+            FileActionFragment fragment = new FileActionFragment();
+            android.os.Bundle args = new android.os.Bundle();
+            args.putInt("action_type", 3); // 3 代表导入语言包
+            fragment.setArguments(args);
+            activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
+            dialog.dismiss(); 
+        }));
         // 【新增：桌面系统模式入口】
-        layout.addView(createMenuButton("💻 进入桌面/梦工厂模式", v -> { 
+        layout.addView(createMenuButton(L("💻 进入桌面/梦工厂模式"), v -> { 
             if (getContext() instanceof SDLActivity) {
                 ((SDLActivity) getContext()).toggleDesktopMode(true);
             }
@@ -2217,17 +2232,22 @@ import java.util.List;
         if (styleList.isEmpty()) generateVideoArcadeStyle(); 
         
 
-                CharSequence[] options = {"🎨 1. 选择并应用现有风格", "💾 2. 提取当前面板保存为新风格", "✏️ 3. 重命名选择的风格", "🗑️ 4. 删除当前选择的风格"};
+                CharSequence[] options = {
+            L("🎨 1. 选择并应用现有风格"), 
+            L("💾 2. 提取当前面板保存为新风格"), 
+            L("✏️ 3. 重命名选择的风格"), 
+            L("🗑️ 4. 删除当前选择的风格")
+        };
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("按键风格系统 (Style System)")
+            .setTitle(L("按键风格系统 (Style System)"))
             .setItems(options, (dialog, which) -> {
                 if (which == 0) {
                     String[] styleNames = new String[styleList.size()];
                     for(int i=0; i<styleList.size(); i++) styleNames[i] = styleList.get(i).styleName;
                     new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                        .setTitle("应用风格 (将替换所有按键)")
+                        .setTitle(L("应用风格 (将替换所有按键)"))
                         .setSingleChoiceItems(styleNames, currentStyleIndex, (d, w) -> currentStyleIndex = w)
-                        .setPositiveButton("确定应用", (d, w) -> {
+                        .setPositiveButton(L("确定应用"), (d, w) -> {
                             GamepadStyle style = styleList.get(currentStyleIndex);
                             joystickMode = JOYSTICK_MODE_STYLE;
                             refreshJoystickStyle(); 
@@ -2246,15 +2266,15 @@ import java.util.List;
                                     b.loadSkinFromUri(getContext());
                                 }
                             }
-                            saveConfig(); invalidate(); Toast.makeText(getContext(), "已应用风格: " + style.styleName, Toast.LENGTH_SHORT).show();
-                        }).setNegativeButton("取消", null).show();
+                            saveConfig(); invalidate(); Toast.makeText(getContext(), L("已应用风格: ") + style.styleName, Toast.LENGTH_SHORT).show();
+                        }).setNegativeButton(L("取消"), null).show();
                 } else if (which == 1) {
-                    final EditText input = createEditText("给新风格命名", "我的自定义风格");
+                    final EditText input = createEditText(L("给新风格命名"), L("我的自定义风格"));
                     new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                        .setTitle("提取并保存风格")
-                        .setMessage("将自动提取当前屏幕上的按键外观，打包为新风格。")
+                        .setTitle(L("提取并保存风格"))
+                        .setMessage(L("将自动提取当前屏幕上的按键外观，打包为新风格。"))
                         .setView(input)
-                        .setPositiveButton("保存", (d, w) -> {
+                        .setPositiveButton(L("保存"), (d, w) -> {
                             GamepadStyle newStyle = new GamepadStyle(input.getText().toString());
                             newStyle.joyBaseUri = joySkinBaseUri; newStyle.joyKnobUri = joySkinKnobUri;
                             for (VirtualButton b : buttons) { 
@@ -2269,28 +2289,26 @@ import java.util.List;
                             
                             styleList.add(newStyle); currentStyleIndex = styleList.size() - 1;
 
-                            saveConfig(); Toast.makeText(getContext(), "新风格保存成功！", Toast.LENGTH_SHORT).show();
-                        }).setNegativeButton("取消", null).show();
+                            saveConfig(); Toast.makeText(getContext(), L("新风格保存成功！"), Toast.LENGTH_SHORT).show();
+                        }).setNegativeButton(L("取消"), null).show();
 
                 // 👇这里就是你漏掉的重命名逻辑👇
                 } else if (which == 2) {
-                    final EditText input = createEditText("新风格名称", styleList.get(currentStyleIndex).styleName);
+                    final EditText input = createEditText(L("新风格名称"), styleList.get(currentStyleIndex).styleName);
                     new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                        .setTitle("重命名风格").setView(input)
-                        .setPositiveButton("保存", (d, w) -> {
+                        .setTitle(L("重命名风格")).setView(input)
+                        .setPositiveButton(L("保存"), (d, w) -> {
                             styleList.get(currentStyleIndex).styleName = input.getText().toString();
-                            saveConfig(); Toast.makeText(getContext(), "已重命名", Toast.LENGTH_SHORT).show();
+                            saveConfig(); Toast.makeText(getContext(), L("已重命名"), Toast.LENGTH_SHORT).show();
                         }).show();
                 // 👇删除逻辑变成了 which == 3👇
                 } else if (which == 3) {
-                    if (currentStyleIndex <= 1) { Toast.makeText(getContext(), "系统默认风格不可删除！", Toast.LENGTH_SHORT).show(); return; }
+                    if (currentStyleIndex <= 1) { Toast.makeText(getContext(), L("系统默认风格不可删除！"), Toast.LENGTH_SHORT).show(); return; }
                     styleList.remove(currentStyleIndex); currentStyleIndex = 0; saveConfig();
-                    Toast.makeText(getContext(), "风格已删除", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(getContext(), L("风格已删除"), Toast.LENGTH_SHORT).show();
                 }
             }).show();
         }
-    
-
 
         // ================= 新增：图片 Base64 自动封包与解包引擎 =================
     public String embedImageToBase64(String uriStr) {
@@ -2323,9 +2341,14 @@ import java.util.List;
     }
 
     private void showProfileManager() {
-        CharSequence[] options = {"📤 导出: [全部布局、位置与所有皮肤]", "📤 仅导出: [按键布局定位与基本映射]", "📤 仅导出: [所有皮肤外观与样式库]", "📥 导入: 从文件中读取配置"};
+        CharSequence[] options = {
+            L("📤 导出: [全部布局、位置与所有皮肤]"), 
+            L("📤 仅导出: [按键布局定位与基本映射]"), 
+            L("📤 仅导出: [所有皮肤外观与样式库]"), 
+            L("📥 导入: 从文件中读取配置")
+        };
         new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle("数据导出与导入 (完美跨设备分享)")
+                .setTitle(L("数据导出与导入 (完美跨设备分享)"))
                 .setItems(options, (dialog, which) -> {
                     android.app.Activity activity = (android.app.Activity) getContext();
                     FileActionFragment fragment = new FileActionFragment();
@@ -2425,7 +2448,7 @@ import java.util.List;
         rootLayout.setBackground(getCustomDialogBackground());
 
         TextView dragHandle = new TextView(getContext());
-        dragHandle.setText("✋ 拖拽此处 | 🗂️ 主程序列表管理");
+        dragHandle.setText(L("✋ 拖拽此处 | 🗂️ 主程序列表管理"));
         android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
         titleBg.setColor(Color.argb(50, 0, 0, 0)); titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
         dragHandle.setBackground(titleBg); dragHandle.setTextColor(dialogTextColor);
@@ -2446,7 +2469,7 @@ import java.util.List;
 
         // --- 1. 大大的加号按键区 ---
         Button addBtn = new Button(getContext());
-        addBtn.setText("➕ 添加一个新的主程序路径");
+        addBtn.setText(L("➕ 添加一个新的主程序路径"));
         addBtn.setTextColor(Color.WHITE); addBtn.setTextSize(18f);
         addBtn.setBackgroundColor(Color.parseColor("#4CAF50"));
         addBtn.setPadding(0, 40, 0, 40);
@@ -2485,7 +2508,7 @@ import java.util.List;
             card.addView(uriTv);
             if (preset.motifPath != null && !preset.motifPath.isEmpty()) {
                 TextView motifTv = new TextView(getContext());
-                motifTv.setText("🎯 专属UI主题: " + preset.motifPath); motifTv.setTextColor(Color.parseColor("#4CAF50")); motifTv.setTextSize(dialogTextSize - 3f); motifTv.setPadding(0,0,0,20);
+                motifTv.setText(L("🎯 专属UI主题: ") + preset.motifPath); motifTv.setTextColor(Color.parseColor("#4CAF50")); motifTv.setTextSize(dialogTextSize - 3f); motifTv.setPadding(0,0,0,20);
                 card.addView(motifTv);
             } else { uriTv.setPadding(0,0,0,20); }
             
@@ -2493,23 +2516,23 @@ import java.util.List;
             LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL);
             
             // 【启动按钮】带有确认提示
-            Button launchBtn = new Button(getContext()); launchBtn.setText("🚀 读取此文件夹"); launchBtn.setTextColor(Color.WHITE); launchBtn.setBackgroundColor(Color.parseColor("#2196F3"));
+            Button launchBtn = new Button(getContext()); launchBtn.setText(L("🚀 读取此文件夹")); launchBtn.setTextColor(Color.WHITE); launchBtn.setBackgroundColor(Color.parseColor("#2196F3"));
             LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f); lp1.setMargins(0,0,10,0); launchBtn.setLayoutParams(lp1);
             launchBtn.setOnClickListener(v -> {
                 new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle("🔄 即将重新加载数据")
-                    .setMessage("确定要无缝切换到【" + preset.name + "】并重新加载游戏吗？\n\n⚠️ 警告：如果您读取的是第三方整合包或非官方引擎，请务必确保已在设置中开启【📦 整合包兼容直读模式】，否则可能导致原版素材被无损注入覆盖或数据异常！")
-                    .setPositiveButton("立刻加载", (d, w) -> {
+                    .setTitle(L("🔄 即将重新加载数据"))
+                    .setMessage(L("确定要无缝切换到【") + preset.name + L("】并重新加载游戏吗？\n\n⚠️ 警告：如果您读取的是第三方整合包或非官方引擎，请务必确保已在设置中开启【📦 整合包兼容直读模式】，否则可能导致原版素材被无损注入覆盖或数据异常！"))
+                    .setPositiveButton(L("立刻加载"), (d, w) -> {
                         if (getContext() instanceof SDLActivity) {
                             dialog.dismiss();
                             ((SDLActivity) getContext()).saveAndRestartWithPresetUri(preset.uri, preset.motifPath);
                         }
-                    }).setNegativeButton("取消", null).show();
+                    }).setNegativeButton(L("取消"), null).show();
             });
             btnRow.addView(launchBtn);
             
             // 【编辑按钮】
-            Button editBtn = new Button(getContext()); editBtn.setText("✏️ 编辑"); editBtn.setTextColor(Color.WHITE); editBtn.setBackgroundColor(Color.parseColor("#FF9800"));
+            Button editBtn = new Button(getContext()); editBtn.setText(L("✏️ 编辑")); editBtn.setTextColor(Color.WHITE); editBtn.setBackgroundColor(Color.parseColor("#FF9800"));
             LinearLayout.LayoutParams lp2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.8f); lp2.setMargins(0,0,10,0); editBtn.setLayoutParams(lp2);
             editBtn.setOnClickListener(v -> {
                 dialog.dismiss();
@@ -2518,14 +2541,14 @@ import java.util.List;
             btnRow.addView(editBtn);
 
             // 【删除按钮】带有确认提示
-            Button delBtn = new Button(getContext()); delBtn.setText("🗑️"); delBtn.setTextColor(Color.WHITE); delBtn.setBackgroundColor(Color.parseColor("#F44336"));
+            Button delBtn = new Button(getContext()); delBtn.setText(L("🗑️")); delBtn.setTextColor(Color.WHITE); delBtn.setBackgroundColor(Color.parseColor("#F44336"));
             LinearLayout.LayoutParams lp3 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); delBtn.setLayoutParams(lp3);
             delBtn.setOnClickListener(v -> {
                 new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle("移除预设").setMessage("确定要从列表中移除【" + preset.name + "】吗？\n(仅移除快捷方式，不会删除手机里的真实文件)")
-                    .setPositiveButton("确定移除", (d, w) -> {
+                    .setTitle(L("移除预设")).setMessage(L("确定要从列表中移除【") + preset.name + L("】吗？\n(仅移除快捷方式，不会删除手机里的真实文件)"))
+                    .setPositiveButton(L("确定移除"), (d, w) -> {
                         folderPresets.remove(index); saveConfig(); dialog.dismiss(); showFolderPresetManagerDialog();
-                    }).setNegativeButton("取消", null).show();
+                    }).setNegativeButton(L("取消"), null).show();
             });
             btnRow.addView(delBtn);
 
@@ -2533,7 +2556,7 @@ import java.util.List;
             layout.addView(card);
         }
 
-        Button exitBtn = new Button(getContext()); exitBtn.setText("关闭面板");
+        Button exitBtn = new Button(getContext()); exitBtn.setText(L("关闭面板"));
         LinearLayout.LayoutParams exParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); exParams.setMargins(0, 40, 0, 0); exitBtn.setLayoutParams(exParams);
         exitBtn.setOnClickListener(v -> dialog.dismiss()); layout.addView(exitBtn);
 
@@ -2546,24 +2569,24 @@ import java.util.List;
         final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
         dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         LinearLayout rootLayout = new LinearLayout(getContext()); rootLayout.setOrientation(LinearLayout.VERTICAL); rootLayout.setBackground(getCustomDialogBackground());
-        TextView dragHandle = new TextView(getContext()); dragHandle.setText("✋ 拖拽此处 | ✏️ 编辑主程序预设");
+        TextView dragHandle = new TextView(getContext()); dragHandle.setText(L("✋ 拖拽此处 | ✏️ 编辑主程序预设"));
         android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
         titleBg.setColor(Color.argb(50, 0, 0, 0)); titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f}); dragHandle.setBackground(titleBg); dragHandle.setTextColor(dialogTextColor);
         dragHandle.setPadding(40, 30, 40, 30); dragHandle.setTextSize(dialogTextSize + 2f); dragHandle.setTypeface(null, Typeface.BOLD); rootLayout.addView(dragHandle);
 
         LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 50, 50, 50);
         
-        layout.addView(createTitle("自定义显示名称:"));
-        final EditText nameInput = createEditText("给它起个好记的名字", preset.name); layout.addView(nameInput);
+        layout.addView(createTitle(L("自定义显示名称:")));
+        final EditText nameInput = createEditText(L("给它起个好记的名字"), preset.name); layout.addView(nameInput);
         
-        layout.addView(createTitle("字体高亮颜色:"));
+        layout.addView(createTitle(L("字体高亮颜色:")));
         final Spinner colorSpinner = new Spinner(getContext());
         ArrayAdapter<String> colorAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, TEXT_COLOR_NAMES);
         colorSpinner.setAdapter(colorAdapter);
         for (int i=0; i<TEXT_COLOR_VALUES.length; i++) { if (preset.color == TEXT_COLOR_VALUES[i]) { colorSpinner.setSelection(i); break; } }
         layout.addView(colorSpinner);
         
-        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存设置"); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
+        Button saveBtn = new Button(getContext()); saveBtn.setText(L("💾 保存设置")); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); btnParams.setMargins(0, 40, 0, 0); saveBtn.setLayoutParams(btnParams);
         saveBtn.setOnClickListener(v -> {
             preset.name = nameInput.getText().toString();
@@ -2644,24 +2667,24 @@ import java.util.List;
         LinearLayout contentLayout = new LinearLayout(getContext());
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         
-        contentLayout.addView(createTitle("🖼️ 遮罩图配置面板"));
+        contentLayout.addView(createTitle(L("🖼️ 遮罩图配置面板")));
 
         // 强制全屏隐藏开关
         final Button toggleHideBtn = new Button(getContext());
-        toggleHideBtn.setText(isFullscreenHideOverlay ? "【开启】游戏强制全屏时隐藏遮罩" : "【关闭】全屏不影响遮罩");
+        toggleHideBtn.setText(isFullscreenHideOverlay ? L("【开启】游戏强制全屏时隐藏遮罩") : L("【关闭】全屏不影响遮罩"));
         toggleHideBtn.setTextColor(Color.WHITE);
         toggleHideBtn.setBackgroundColor(isFullscreenHideOverlay ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
         toggleHideBtn.setOnClickListener(v -> {
             isFullscreenHideOverlay = !isFullscreenHideOverlay;
-            toggleHideBtn.setText(isFullscreenHideOverlay ? "【开启】游戏强制全屏时隐藏遮罩" : "【关闭】全屏不影响遮罩");
+            toggleHideBtn.setText(isFullscreenHideOverlay ? L("【开启】游戏强制全屏时隐藏遮罩") : L("【关闭】全屏不影响遮罩"));
             toggleHideBtn.setBackgroundColor(isFullscreenHideOverlay ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
         });
         contentLayout.addView(toggleHideBtn);
 
         // 模式选择
-        contentLayout.addView(createTitle("模式选择："));
+        contentLayout.addView(createTitle(L("模式选择：")));
         final Spinner modeSpinner = new Spinner(getContext());
-        ArrayAdapter<String> modeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, new String[]{"关闭遮罩", "开启一张遮罩图", "开启两张遮罩图"});
+        ArrayAdapter<String> modeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, new String[]{L("关闭遮罩"), L("开启一张遮罩图"), L("开启两张遮罩图")});
         modeSpinner.setAdapter(modeAdapter);
         modeSpinner.setSelection(overlayMode);
         modeSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
@@ -2676,21 +2699,21 @@ import java.util.List;
         contentLayout.addView(modeSpinner);
 
         // ==== 第一张图控件 ====
-        contentLayout.addView(createTitle("--- 遮罩图 1 (绿框) ---"));
+        contentLayout.addView(createTitle(L("--- 遮罩图 1 (绿框) ---")));
         LinearLayout btnLayout1 = new LinearLayout(getContext()); btnLayout1.setOrientation(LinearLayout.HORIZONTAL);
-        Button mirrorBmp1 = new Button(getContext()); mirrorBmp1.setText(overlayMirror1 ? "↔️ 镜像: [开]" : "↔️ 镜像: [关]");
-        mirrorBmp1.setOnClickListener(v -> { overlayMirror1 = !overlayMirror1; mirrorBmp1.setText(overlayMirror1 ? "↔️ 镜像: [开]" : "↔️ 镜像: [关]"); invalidate(); });
+        Button mirrorBmp1 = new Button(getContext()); mirrorBmp1.setText(overlayMirror1 ? L("↔️ 镜像: [开]") : L("↔️ 镜像: [关]"));
+        mirrorBmp1.setOnClickListener(v -> { overlayMirror1 = !overlayMirror1; mirrorBmp1.setText(overlayMirror1 ? L("↔️ 镜像: [开]") : L("↔️ 镜像: [关]")); invalidate(); });
         btnLayout1.addView(mirrorBmp1);
-        Button pickBmp1 = new Button(getContext()); pickBmp1.setText("选择图片"); pickBmp1.setOnClickListener(v -> { imagePickerTarget = 4; pickImage(); });
-        Button clearBmp1 = new Button(getContext()); clearBmp1.setText("清除图片"); clearBmp1.setOnClickListener(v -> { overlayUri1 = ""; overlayBmp1 = null; overlayMovie1 = null; if(movieBuffer1!=null){movieBuffer1.recycle(); movieBuffer1=null;} invalidate(); });
+        Button pickBmp1 = new Button(getContext()); pickBmp1.setText(L("选择图片")); pickBmp1.setOnClickListener(v -> { imagePickerTarget = 4; pickImage(); });
+        Button clearBmp1 = new Button(getContext()); clearBmp1.setText(L("清除图片")); clearBmp1.setOnClickListener(v -> { overlayUri1 = ""; overlayBmp1 = null; overlayMovie1 = null; if(movieBuffer1!=null){movieBuffer1.recycle(); movieBuffer1=null;} invalidate(); });
         btnLayout1.addView(pickBmp1); btnLayout1.addView(clearBmp1); contentLayout.addView(btnLayout1);
 
-        final SeekBar xBar1 = createColorBar(contentLayout, "X 轴位置", (int)overlayX1); xBar1.setMax(3000);
-        final SeekBar yBar1 = createColorBar(contentLayout, "Y 轴位置", (int)overlayY1); yBar1.setMax(2000);
-        final SeekBar sxBar1 = createColorBar(contentLayout, "↔️ 独立宽度拉宽 (%)", (int)(overlayScaleX1 * 100)); sxBar1.setMax(500);
-        final SeekBar syBar1 = createColorBar(contentLayout, "↕️ 独立高度拉长 (%)", (int)(overlayScaleY1 * 100)); syBar1.setMax(500);
-        final SeekBar rBar1 = createColorBar(contentLayout, "🔄 旋转角度 (°)", (int)overlayRotation1); rBar1.setMax(360);
-        final SeekBar cBar1 = createColorBar(contentLayout, "📺 遮罩图边缘弯曲度", (int)overlayCurvature1); cBar1.setMax(100);
+        final SeekBar xBar1 = createColorBar(contentLayout, L("X 轴位置"), (int)overlayX1); xBar1.setMax(3000);
+        final SeekBar yBar1 = createColorBar(contentLayout, L("Y 轴位置"), (int)overlayY1); yBar1.setMax(2000);
+        final SeekBar sxBar1 = createColorBar(contentLayout, L("↔️ 独立宽度拉宽 (%)"), (int)(overlayScaleX1 * 100)); sxBar1.setMax(500);
+        final SeekBar syBar1 = createColorBar(contentLayout, L("↕️ 独立高度拉长 (%)"), (int)(overlayScaleY1 * 100)); syBar1.setMax(500);
+        final SeekBar rBar1 = createColorBar(contentLayout, L("🔄 旋转角度 (°)"), (int)overlayRotation1); rBar1.setMax(360);
+        final SeekBar cBar1 = createColorBar(contentLayout, L("📺 遮罩图边缘弯曲度"), (int)overlayCurvature1); cBar1.setMax(100);
                 
         SeekBar.OnSeekBarChangeListener valUpdater1 = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -2701,22 +2724,22 @@ import java.util.List;
         };
         xBar1.setOnSeekBarChangeListener(valUpdater1); yBar1.setOnSeekBarChangeListener(valUpdater1); sxBar1.setOnSeekBarChangeListener(valUpdater1); syBar1.setOnSeekBarChangeListener(valUpdater1); rBar1.setOnSeekBarChangeListener(valUpdater1); cBar1.setOnSeekBarChangeListener(valUpdater1);
 
-        // ==== 第二张图控件 ====
-        contentLayout.addView(createTitle("--- 遮罩图 2 (蓝框) ---"));
+// ==== 第二张图控件 ====
+        contentLayout.addView(createTitle(L("--- 遮罩图 2 (蓝框) ---")));
         LinearLayout btnLayout2 = new LinearLayout(getContext()); btnLayout2.setOrientation(LinearLayout.HORIZONTAL);
-        Button mirrorBmp2 = new Button(getContext()); mirrorBmp2.setText(overlayMirror2 ? "↔️ 镜像: [开]" : "↔️ 镜像: [关]");
-        mirrorBmp2.setOnClickListener(v -> { overlayMirror2 = !overlayMirror2; mirrorBmp2.setText(overlayMirror2 ? "↔️ 镜像: [开]" : "↔️ 镜像: [关]"); invalidate(); });
+        Button mirrorBmp2 = new Button(getContext()); mirrorBmp2.setText(overlayMirror2 ? L("↔️ 镜像: [开]") : L("↔️ 镜像: [关]"));
+        mirrorBmp2.setOnClickListener(v -> { overlayMirror2 = !overlayMirror2; mirrorBmp2.setText(overlayMirror2 ? L("↔️ 镜像: [开]") : L("↔️ 镜像: [关]")); invalidate(); });
         btnLayout2.addView(mirrorBmp2);
-        Button pickBmp2 = new Button(getContext()); pickBmp2.setText("选择图片"); pickBmp2.setOnClickListener(v -> { imagePickerTarget = 5; pickImage(); });
-        Button clearBmp2 = new Button(getContext()); clearBmp2.setText("清除图片"); clearBmp2.setOnClickListener(v -> { overlayUri2 = ""; overlayBmp2 = null; overlayMovie2 = null; if(movieBuffer2!=null){movieBuffer2.recycle(); movieBuffer2=null;} invalidate(); });        
+        Button pickBmp2 = new Button(getContext()); pickBmp2.setText(L("选择图片")); pickBmp2.setOnClickListener(v -> { imagePickerTarget = 5; pickImage(); });
+        Button clearBmp2 = new Button(getContext()); clearBmp2.setText(L("清除图片")); clearBmp2.setOnClickListener(v -> { overlayUri2 = ""; overlayBmp2 = null; overlayMovie2 = null; if(movieBuffer2!=null){movieBuffer2.recycle(); movieBuffer2=null;} invalidate(); });        
         btnLayout2.addView(pickBmp2); btnLayout2.addView(clearBmp2); contentLayout.addView(btnLayout2);
 
-        final SeekBar xBar2 = createColorBar(contentLayout, "X 轴位置", (int)overlayX2); xBar2.setMax(3000);
-        final SeekBar yBar2 = createColorBar(contentLayout, "Y 轴位置", (int)overlayY2); yBar2.setMax(2000);
-        final SeekBar sxBar2 = createColorBar(contentLayout, "↔️ 独立宽度拉宽 (%)", (int)(overlayScaleX2 * 100)); sxBar2.setMax(500);
-        final SeekBar syBar2 = createColorBar(contentLayout, "↕️ 独立高度拉长 (%)", (int)(overlayScaleY2 * 100)); syBar2.setMax(500);
-        final SeekBar rBar2 = createColorBar(contentLayout, "🔄 旋转角度 (°)", (int)overlayRotation2); rBar2.setMax(360);
-        final SeekBar cBar2 = createColorBar(contentLayout, "📺 遮罩图边缘弯曲度", (int)overlayCurvature2); cBar2.setMax(100);
+        final SeekBar xBar2 = createColorBar(contentLayout, L("X 轴位置"), (int)overlayX2); xBar2.setMax(3000);
+        final SeekBar yBar2 = createColorBar(contentLayout, L("Y 轴位置"), (int)overlayY2); yBar2.setMax(2000);
+        final SeekBar sxBar2 = createColorBar(contentLayout, L("↔️ 独立宽度拉宽 (%)"), (int)(overlayScaleX2 * 100)); sxBar2.setMax(500);
+        final SeekBar syBar2 = createColorBar(contentLayout, L("↕️ 独立高度拉长 (%)"), (int)(overlayScaleY2 * 100)); syBar2.setMax(500);
+        final SeekBar rBar2 = createColorBar(contentLayout, L("🔄 旋转角度 (°)"), (int)overlayRotation2); rBar2.setMax(360);
+        final SeekBar cBar2 = createColorBar(contentLayout, L("📺 遮罩图边缘弯曲度"), (int)overlayCurvature2); cBar2.setMax(100);
         
         SeekBar.OnSeekBarChangeListener valUpdater2 = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -2728,10 +2751,10 @@ import java.util.List;
         xBar2.setOnSeekBarChangeListener(valUpdater2); yBar2.setOnSeekBarChangeListener(valUpdater2); sxBar2.setOnSeekBarChangeListener(valUpdater2); syBar2.setOnSeekBarChangeListener(valUpdater2); rBar2.setOnSeekBarChangeListener(valUpdater2); cBar2.setOnSeekBarChangeListener(valUpdater2);
                         
 
-               
+                
 
         Button saveBtn = new Button(getContext());
-        saveBtn.setText("💾 保存并关闭");
+        saveBtn.setText(L("💾 保存并关闭"));
         saveBtn.setTextColor(Color.WHITE);
         saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
         saveBtn.setOnClickListener(v -> { overlayMode = modeSpinner.getSelectedItemPosition(); saveConfig(); invalidate(); dialog.dismiss(); });
@@ -2786,8 +2809,8 @@ import java.util.List;
         layout.setPadding(60, 60, 60, 60);
 
         // ================= 1. 全局透明度统一调整 =================
-        layout.addView(createTitle("👁️ 全局不透明度统一调整"));
-        final SeekBar alphaBar = createColorBar(layout, "拖动统一修改所有按键 (0为全透, 255不透明)", tempGlobalAlpha[0]);
+        layout.addView(createTitle(L("👁️ 全局不透明度统一调整")));
+        final SeekBar alphaBar = createColorBar(layout, L("拖动统一修改所有按键 (0为全透, 255不透明)"), tempGlobalAlpha[0]);
         alphaBar.setMax(255);
         alphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -2803,7 +2826,7 @@ import java.util.List;
         });
 
         // 【新增：全局按下特效透明度滑块】
-        final SeekBar pressedAlphaBar = createColorBar(layout, "拖动统一修改所有按键【按下时的特效透明度】", tempGlobalPressedAlpha[0]);
+        final SeekBar pressedAlphaBar = createColorBar(layout, L("拖动统一修改所有按键【按下时的特效透明度】"), tempGlobalPressedAlpha[0]);
         pressedAlphaBar.setMax(255);
         pressedAlphaBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -2817,7 +2840,7 @@ import java.util.List;
                     invalidate(); 
                 }
             }
-            public void onStartTrackingTouch(SeekBar s) {} 
+            public void onStartTrackingTouch(SeekBar s) { } 
             public void onStopTrackingTouch(SeekBar s) {
                 for (VirtualButton b : buttons) b.isPressed = false; // 松开滑块时恢复原状
                 invalidate();
@@ -2827,20 +2850,20 @@ import java.util.List;
         layout.addView(createTitle("")); // 占位空行
 
         // ================= 2. 震动设置 =================
-        layout.addView(createTitle("📳 全局震动控制"));
+        layout.addView(createTitle(L("📳 全局震动控制")));
         final Button toggleVibBtn = new Button(getContext());
-        toggleVibBtn.setText(tempVibOn[0] ? "全局震动：已开启" : "全局震动：已关闭");
+        toggleVibBtn.setText(tempVibOn[0] ? L("全局震动：已开启") : L("全局震动：已关闭"));
         toggleVibBtn.setTextColor(Color.WHITE);
         toggleVibBtn.setBackgroundColor(tempVibOn[0] ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
         toggleVibBtn.setOnClickListener(v -> {
             tempVibOn[0] = !tempVibOn[0];
-            toggleVibBtn.setText(tempVibOn[0] ? "全局震动：已开启" : "全局震动：已关闭");
+            toggleVibBtn.setText(tempVibOn[0] ? L("全局震动：已开启") : L("全局震动：已关闭"));
             toggleVibBtn.setBackgroundColor(tempVibOn[0] ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
             if (tempVibOn[0]) triggerVibrate(tempVibInt[0]); 
         });
         layout.addView(toggleVibBtn);
 
-        final SeekBar intensityBar = createColorBar(layout, "震动时长 / 毫秒 (拖动测试)", tempVibInt[0]);
+        final SeekBar intensityBar = createColorBar(layout, L("震动时长 / 毫秒 (拖动测试)"), tempVibInt[0]);
         intensityBar.setMax(100); 
         intensityBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -2853,19 +2876,19 @@ import java.util.List;
         layout.addView(createTitle("")); // 占位空行
 
         // ================= 3. 形变反馈设置 =================
-        layout.addView(createTitle("🗜️ 按压视觉反馈控制"));
+        layout.addView(createTitle(L("🗜️ 按压视觉反馈控制")));
         final Button toggleFeedBtn = new Button(getContext());
-        toggleFeedBtn.setText(tempFeedOn[0] ? "按压视觉反馈：已开启" : "按压视觉反馈：已关闭");
+        toggleFeedBtn.setText(tempFeedOn[0] ? L("按压视觉反馈：已开启") : L("按压视觉反馈：已关闭") );
         toggleFeedBtn.setTextColor(Color.WHITE);
         toggleFeedBtn.setBackgroundColor(tempFeedOn[0] ? Color.parseColor("#2196F3") : Color.parseColor("#555555"));
         toggleFeedBtn.setOnClickListener(v -> {
             tempFeedOn[0] = !tempFeedOn[0];
-            toggleFeedBtn.setText(tempFeedOn[0] ? "按压视觉反馈：已开启" : "按压视觉反馈：已关闭");
+            toggleFeedBtn.setText(tempFeedOn[0] ? L("按压视觉反馈：已开启") : L("按压视觉反馈：已关闭"));
             toggleFeedBtn.setBackgroundColor(tempFeedOn[0] ? Color.parseColor("#2196F3") : Color.parseColor("#555555"));
         });
         layout.addView(toggleFeedBtn);
 
-        final SeekBar scaleBar = createColorBar(layout, "反馈幅度 (100不变, <100缩小, >100放大)", tempFeedScale[0]);
+        final SeekBar scaleBar = createColorBar(layout, L("反馈幅度 (100不变, <100缩小, >100放大)"), tempFeedScale[0]);
         scaleBar.setMax(200); 
         scaleBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -2876,9 +2899,9 @@ import java.util.List;
 
         // ================= 4. 保存 =================
         Button saveBtn = new Button(getContext());
-        saveBtn.setText("💾 保存并覆盖所有按键");
+        saveBtn.setText(L("💾 保存并覆盖所有按键"));
         saveBtn.setTextColor(Color.WHITE);
-        saveBtn.setBackgroundColor(Color.parseColor("#D32F2F")); 
+        saveBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         btnParams.setMargins(0, 40, 0, 0); saveBtn.setLayoutParams(btnParams);
         saveBtn.setOnClickListener(v -> { 
@@ -2925,7 +2948,7 @@ import java.util.List;
         rootLayout.setBackground(getCustomDialogBackground()); // 应用自定义背景
 
         final TextView dragHandle = new TextView(getContext());
-        dragHandle.setText("✋ 拖拽窗口 | 🪟 全局弹窗 UI 实验室");
+        dragHandle.setText(L("✋ 拖拽窗口 | 🪟 全局弹窗 UI 实验室"));
                 android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
         titleBg.setColor(Color.argb(50, 0, 0, 0)); // 【修复1】改用半透明遮罩，完美融合下方自定义背景色
         titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
@@ -2962,9 +2985,9 @@ import java.util.List;
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
 
-        layout.addView(createTitle("0. 窗口全局缩放比例"));
-        final SeekBar widthBar = createColorBar(layout, "↔️ 窗口宽度百分比", (int)(dialogWidthRatio * 100)); widthBar.setMax(100);
-        final SeekBar heightBar = createColorBar(layout, "↕️ 窗口高度百分比", (int)(dialogHeightRatio * 100)); heightBar.setMax(100);
+        layout.addView(createTitle(L("0. 窗口全局缩放比例")));
+        final SeekBar widthBar = createColorBar(layout, L("↔️ 窗口宽度百分比"), (int)(dialogWidthRatio * 100)); widthBar.setMax(100);
+        final SeekBar heightBar = createColorBar(layout, L("↕️ 窗口高度百分比"), (int)(dialogHeightRatio * 100)); heightBar.setMax(100);
                         // 找到 showDialogCustomizationSettings 里面的 ratioUpdater，替换为：
                 SeekBar.OnSeekBarChangeListener ratioUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -3004,9 +3027,9 @@ import java.util.List;
         heightBar.setOnSeekBarChangeListener(ratioUpdater);
 
         // --- 1. 文字样式设置 ---
-        layout.addView(createTitle("1. 全局字体大小与透明度"));
-        final SeekBar sizeBar = createColorBar(layout, "字体缩放大小", (int)dialogTextSize); sizeBar.setMax(30);
-        final SeekBar alphaBar = createColorBar(layout, "背景不透明度 (0为全透)", dialogBgAlpha); 
+        layout.addView(createTitle(L("1. 全局字体大小与透明度")));
+        final SeekBar sizeBar = createColorBar(layout, L("字体缩放大小"), (int)dialogTextSize); sizeBar.setMax(30);
+        final SeekBar alphaBar = createColorBar(layout, L("背景不透明度 (0为全透)"), dialogBgAlpha);
         
                 sizeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -3028,7 +3051,7 @@ import java.util.List;
         });
 
         // --- 2. 颜色控制面板 ---
-        layout.addView(createTitle("2. 背景纯色与文字颜色"));
+        layout.addView(createTitle(L("2. 背景纯色与文字颜色")));
         final Spinner textColorSpinner = new Spinner(getContext());
         ArrayAdapter<String> textAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, TEXT_COLOR_NAMES);
         textColorSpinner.setAdapter(textAdapter);
@@ -3044,7 +3067,7 @@ import java.util.List;
         
         layout.addView(textColorSpinner);
 
-        final EditText hexInput = createEditText("背景颜色代码: #222222", String.format("#%06X", (0xFFFFFF & dialogBgColor))); layout.addView(hexInput);
+        final EditText hexInput = createEditText(L("背景颜色代码: #222222"), String.format("#%06X", (0xFFFFFF & dialogBgColor))); layout.addView(hexInput);
         final View colorPreview = new View(getContext());
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 60);
         previewParams.setMargins(0, 10, 0, 30); colorPreview.setLayoutParams(previewParams); 
@@ -3052,9 +3075,9 @@ import java.util.List;
         previewBg.setCornerRadius(20f); previewBg.setColor(dialogBgColor); colorPreview.setBackground(previewBg); layout.addView(colorPreview);
 
         final int[] rgb = {Color.red(dialogBgColor), Color.green(dialogBgColor), Color.blue(dialogBgColor)};
-        final SeekBar rBar = createColorBar(layout, "🔴 红", rgb[0]); 
-        final SeekBar gBar = createColorBar(layout, "🟢 绿", rgb[1]); 
-        final SeekBar bBar = createColorBar(layout, "🔵 蓝", rgb[2]);
+        final SeekBar rBar = createColorBar(layout, L("🔴 红"), rgb[0]); 
+        final SeekBar gBar = createColorBar(layout, L("🟢 绿"), rgb[1]); 
+        final SeekBar bBar = createColorBar(layout, L("🔵 蓝"), rgb[2]);
 
         SeekBar.OnSeekBarChangeListener colorUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -3068,9 +3091,9 @@ import java.util.List;
         rBar.setOnSeekBarChangeListener(colorUpdater); gBar.setOnSeekBarChangeListener(colorUpdater); bBar.setOnSeekBarChangeListener(colorUpdater);
 
         // --- 3. 自定义背景图 ---
-        layout.addView(createTitle("3. 注入自定义背景图"));
+        layout.addView(createTitle(L("3. 注入自定义背景图")));
         LinearLayout imgLayout = new LinearLayout(getContext()); imgLayout.setOrientation(LinearLayout.HORIZONTAL);
-        Button pickImgBtn = new Button(getContext()); pickImgBtn.setText("🖼️ 选择图片"); pickImgBtn.setTextColor(Color.WHITE); pickImgBtn.setBackgroundColor(Color.parseColor("#4CAF50"));
+        Button pickImgBtn = new Button(getContext()); pickImgBtn.setText(L("🖼️ 选择图片")); pickImgBtn.setTextColor(Color.WHITE); pickImgBtn.setBackgroundColor(Color.parseColor("#4CAF50"));
         pickImgBtn.setOnClickListener(v -> {
             imagePickerTarget = 7; 
             android.app.Activity activity = (android.app.Activity) getContext(); FileActionFragment fragment = new FileActionFragment();
@@ -3078,14 +3101,14 @@ import java.util.List;
             activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
         }); imgLayout.addView(pickImgBtn);
         
-        Button clearImgBtn = new Button(getContext()); clearImgBtn.setText("❌ 清除图片"); clearImgBtn.setTextColor(Color.WHITE); clearImgBtn.setBackgroundColor(Color.parseColor("#F44336"));
+        Button clearImgBtn = new Button(getContext()); clearImgBtn.setText(L("❌ 清除图片")); clearImgBtn.setTextColor(Color.WHITE); clearImgBtn.setBackgroundColor(Color.parseColor("#F44336"));
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); cp.setMargins(20, 0, 0, 0); clearImgBtn.setLayoutParams(cp);
-        clearImgBtn.setOnClickListener(v -> { dialogBgImageUri = ""; dialogBgBitmap = null; rootLayout.setBackground(getCustomDialogBackground()); Toast.makeText(getContext(), "已清除", Toast.LENGTH_SHORT).show(); });
+        clearImgBtn.setOnClickListener(v -> { dialogBgImageUri = ""; dialogBgBitmap = null; rootLayout.setBackground(getCustomDialogBackground()); Toast.makeText(getContext(), L("已清除"), Toast.LENGTH_SHORT).show(); });
         imgLayout.addView(clearImgBtn); layout.addView(imgLayout);
 
         // --- 4. 底部三按钮 ---
         LinearLayout bottomButtons = new LinearLayout(getContext()); bottomButtons.setOrientation(LinearLayout.HORIZONTAL); bottomButtons.setPadding(0, 50, 0, 0);
-        Button defaultBtn = new Button(getContext()); defaultBtn.setText("🔄 默认"); defaultBtn.setTextColor(Color.WHITE); defaultBtn.setBackgroundColor(Color.parseColor("#9E9E9E"));
+        Button defaultBtn = new Button(getContext()); defaultBtn.setText(L("🔄 默认")); defaultBtn.setTextColor(Color.WHITE); defaultBtn.setBackgroundColor(Color.parseColor("#9E9E9E"));
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f); btnParams.setMargins(5, 0, 5, 0); defaultBtn.setLayoutParams(btnParams);
                 defaultBtn.setOnClickListener(v -> {
             dialogBgColor = Color.parseColor("#222222"); dialogBgAlpha = 230; dialogTextColor = Color.WHITE; dialogTextSize = 14f; dialogBgImageUri = ""; dialogBgBitmap = null;
@@ -3095,14 +3118,14 @@ import java.util.List;
         bottomButtons.addView(defaultBtn);
         
 
-        Button cancelBtn = new Button(getContext()); cancelBtn.setText("❌ 取消"); cancelBtn.setTextColor(Color.WHITE); cancelBtn.setBackgroundColor(Color.parseColor("#F44336"));
+        Button cancelBtn = new Button(getContext()); cancelBtn.setText(L("❌ 取消")); cancelBtn.setTextColor(Color.WHITE); cancelBtn.setBackgroundColor(Color.parseColor("#F44336"));
         cancelBtn.setLayoutParams(btnParams);
         cancelBtn.setOnClickListener(v -> {
             dialogBgColor = backupColor; dialogBgAlpha = backupAlpha; dialogTextColor = backupTextColor; dialogTextSize = backupTextSize; dialogBgImageUri = backupUri; dialogBgBitmap = backupBmp;
             dialog.dismiss();
         }); bottomButtons.addView(cancelBtn);
 
-        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存"); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
+        Button saveBtn = new Button(getContext()); saveBtn.setText(L("💾 保存")); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
         saveBtn.setLayoutParams(btnParams); saveBtn.setOnClickListener(v -> { saveConfig(); dialog.dismiss(); });
         bottomButtons.addView(saveBtn); layout.addView(bottomButtons);
 
@@ -3139,16 +3162,16 @@ import java.util.List;
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(60, 60, 60, 60);
 
-        layout.addView(createTitle("⏱️ 面板自动隐藏设置"));
+        layout.addView(createTitle(L("⏱️ 面板自动隐藏设置")));
 
         // 隐藏总开关
         final Button toggleBtn = new Button(getContext());
-        toggleBtn.setText(isAutoHideEnabled ? "当前状态：已开启 (点击关闭)" : "当前状态：已关闭 (面板长亮)");
+        toggleBtn.setText(isAutoHideEnabled ? L("当前状态：已开启 (点击关闭)") : L("当前状态：已关闭 (面板长亮)"));
         toggleBtn.setTextColor(Color.WHITE);
         toggleBtn.setBackgroundColor(isAutoHideEnabled ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
         toggleBtn.setOnClickListener(v -> {
             isAutoHideEnabled = !isAutoHideEnabled;
-            toggleBtn.setText(isAutoHideEnabled ? "当前状态：已开启 (点击关闭)" : "当前状态：已关闭 (面板长亮)");
+            toggleBtn.setText(isAutoHideEnabled ? L("当前状态：已开启 (点击关闭)") : L("当前状态：已关闭 (面板长亮)"));
             toggleBtn.setBackgroundColor(isAutoHideEnabled ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
             if (!isAutoHideEnabled && getContext() instanceof SDLActivity) {
                 ((SDLActivity) getContext()).cancelAutoHide();
@@ -3157,7 +3180,7 @@ import java.util.List;
         layout.addView(toggleBtn);
 
         // 延迟时间滑动条
-        final SeekBar timeBar = createColorBar(layout, "无操作自动隐藏延迟 / 秒", autoHideSeconds);
+        final SeekBar timeBar = createColorBar(layout, L("无操作自动隐藏延迟 / 秒"), autoHideSeconds);
         timeBar.setMax(60); 
         timeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -3167,7 +3190,7 @@ import java.util.List;
         });
 
         Button saveBtn = new Button(getContext());
-        saveBtn.setText("💾 保存并关闭");
+        saveBtn.setText(L("💾 保存并关闭"));
         saveBtn.setTextColor(Color.WHITE);
         saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -3262,7 +3285,7 @@ import java.util.List;
         
 
         TextView dragHandle = new TextView(getContext());
-        dragHandle.setText("✋ 按住此处拖拽窗口 | 🕹️ 摇杆配置");
+        dragHandle.setText(L("✋ 按住此处拖拽窗口 | 🕹️ 摇杆配置"));
                 android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
         titleBg.setColor(Color.argb(50, 0, 0, 0)); // 【修复1】改用半透明遮罩，完美融合下方自定义背景色
         titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
@@ -3300,20 +3323,20 @@ import java.util.List;
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
                // 【新增：摇杆位置锁定控制区】
-        layout.addView(createTitle("0. 摇杆位置锁定设置:"));
+        layout.addView(createTitle(L("0. 摇杆位置锁定设置:")));
         final Button lockBtn = new Button(getContext());
-        lockBtn.setText(isJoyLocked ? "🔒 摇杆位置：已锁定" : "🔓 摇杆位置：未锁定");
+        lockBtn.setText(isJoyLocked ? L("🔒 摇杆位置：已锁定") : L("🔓 摇杆位置：未锁定"));
         lockBtn.setTextColor(Color.WHITE);
         lockBtn.setBackgroundColor(isJoyLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50"));
         lockBtn.setOnClickListener(v -> {
             isJoyLocked = !isJoyLocked;
-            lockBtn.setText(isJoyLocked ? "🔒 摇杆位置：已锁定" : "🔓 摇杆位置：未锁定");
+            lockBtn.setText(isJoyLocked ? L("🔒 摇杆位置：已锁定") : L("🔓 摇杆位置：未锁定"));
             lockBtn.setBackgroundColor(isJoyLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50"));
             invalidate(); // 刷新编辑模式下的外框颜色
         });
         layout.addView(lockBtn);
-        layout.addView(createTitle("1. 摇杆中心球颜色 (双向同步):"));
-        final EditText hexInput = createEditText("颜色代码如: #FF5555", String.format("#%06X", (0xFFFFFF & joyColor))); 
+        layout.addView(createTitle(L("1. 摇杆中心球颜色 (双向同步):")));
+        final EditText hexInput = createEditText(L("颜色代码如: #FF5555"), String.format("#%06X", (0xFFFFFF & joyColor))); 
         layout.addView(hexInput);
         
         final View colorPreview = new View(getContext());
@@ -3324,9 +3347,9 @@ import java.util.List;
         layout.addView(colorPreview);
 
         final int[] rgb = {Color.red(joyColor), Color.green(joyColor), Color.blue(joyColor)};
-        final SeekBar redBar = createColorBar(layout, "🔴 红色分量 (R)", rgb[0]); 
-        final SeekBar greenBar = createColorBar(layout, "🟢 绿色分量 (G)", rgb[1]); 
-        final SeekBar blueBar = createColorBar(layout, "🔵 蓝色分量 (B)", rgb[2]);
+        final SeekBar redBar = createColorBar(layout, L("🔴 红色分量 (R)"), rgb[0]); 
+        final SeekBar greenBar = createColorBar(layout, L("🟢 绿色分量 (G)"), rgb[1]); 
+        final SeekBar blueBar = createColorBar(layout, L("🔵 蓝色分量 (B)"), rgb[2]);
 
         hexInput.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void afterTextChanged(Editable s) {
@@ -3356,10 +3379,10 @@ import java.util.List;
         };
         redBar.setOnSeekBarChangeListener(colorUpdater); greenBar.setOnSeekBarChangeListener(colorUpdater); blueBar.setOnSeekBarChangeListener(colorUpdater);
 
-        layout.addView(createTitle("2. 尺寸与判定范围:"));
-        final SeekBar alphaBar = createColorBar(layout, "不透明度 (0-255)", joyAlpha); 
-        final SeekBar sizeBar = createColorBar(layout, "摇杆视觉大小", (int)joyRadius); sizeBar.setMax(400);
-        final SeekBar hitboxBar = createColorBar(layout, "触摸判定半径 (黄色虚线)", (int)joyHitboxRadius); hitboxBar.setMax(500);
+        layout.addView(createTitle(L("2. 尺寸与判定范围:")));
+        final SeekBar alphaBar = createColorBar(layout, L("不透明度 (0-255)"), joyAlpha); 
+        final SeekBar sizeBar = createColorBar(layout, L("摇杆视觉大小"), (int)joyRadius); sizeBar.setMax(400);
+        final SeekBar hitboxBar = createColorBar(layout, L("触摸判定半径 (黄色虚线)"), (int)joyHitboxRadius); hitboxBar.setMax(500);
         
         SeekBar.OnSeekBarChangeListener sizeUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -3374,43 +3397,43 @@ import java.util.List;
         };
         alphaBar.setOnSeekBarChangeListener(sizeUpdater); sizeBar.setOnSeekBarChangeListener(sizeUpdater); hitboxBar.setOnSeekBarChangeListener(sizeUpdater);
 
-        layout.addView(createTitle("3. 自定义双层皮肤:"));
+        layout.addView(createTitle(L("3. 自定义双层皮肤:")));
         // 外框皮肤按钮
         LinearLayout baseLayout = new LinearLayout(getContext()); baseLayout.setOrientation(LinearLayout.HORIZONTAL);
-        Button btnPickBase = new Button(getContext()); btnPickBase.setText("🖼️ 外框皮肤"); btnPickBase.setTextColor(Color.WHITE); btnPickBase.setBackgroundColor(Color.parseColor("#4CAF50"));
+        Button btnPickBase = new Button(getContext()); btnPickBase.setText(L("🖼️ 外框皮肤")); btnPickBase.setTextColor(Color.WHITE); btnPickBase.setBackgroundColor(Color.parseColor("#4CAF50"));
         btnPickBase.setOnClickListener(v -> {
             imagePickerTarget = 1; 
             android.app.Activity activity = (android.app.Activity) getContext(); FileActionFragment fragment = new FileActionFragment();
             android.os.Bundle args = new android.os.Bundle(); args.putInt("action_type", 0); fragment.setArguments(args); 
             activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
         }); baseLayout.addView(btnPickBase);
-        Button btnClearBase = new Button(getContext()); btnClearBase.setText("❌ 清除"); btnClearBase.setTextColor(Color.WHITE); btnClearBase.setBackgroundColor(Color.parseColor("#F44336"));
+        Button btnClearBase = new Button(getContext()); btnClearBase.setText(L("❌ 清除")); btnClearBase.setTextColor(Color.WHITE); btnClearBase.setBackgroundColor(Color.parseColor("#F44336"));
         LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); p1.setMargins(20, 0, 0, 0); btnClearBase.setLayoutParams(p1);
-        btnClearBase.setOnClickListener(v -> { joySkinBaseUri = ""; joySkinBaseBitmap = null; Toast.makeText(getContext(), "已清除", Toast.LENGTH_SHORT).show(); invalidate(); });
+        btnClearBase.setOnClickListener(v -> { joySkinBaseUri = ""; joySkinBaseBitmap = null; Toast.makeText(getContext(), L("已清除"), Toast.LENGTH_SHORT).show(); invalidate(); });
         baseLayout.addView(btnClearBase); layout.addView(baseLayout);
         
         // 中心皮肤按钮
         LinearLayout knobLayout = new LinearLayout(getContext()); knobLayout.setOrientation(LinearLayout.HORIZONTAL); knobLayout.setPadding(0, 20, 0, 0);
-        Button btnPickKnob = new Button(getContext()); btnPickKnob.setText("🖼️ 中心皮肤"); btnPickKnob.setTextColor(Color.WHITE); btnPickKnob.setBackgroundColor(Color.parseColor("#4CAF50"));
+        Button btnPickKnob = new Button(getContext()); btnPickKnob.setText(L("🖼️ 中心皮肤")); btnPickKnob.setTextColor(Color.WHITE); btnPickKnob.setBackgroundColor(Color.parseColor("#4CAF50"));
         btnPickKnob.setOnClickListener(v -> {
             imagePickerTarget = 2; 
             android.app.Activity activity = (android.app.Activity) getContext(); FileActionFragment fragment = new FileActionFragment();
             android.os.Bundle args = new android.os.Bundle(); args.putInt("action_type", 0); fragment.setArguments(args); 
             activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
         }); knobLayout.addView(btnPickKnob);
-        Button btnClearKnob = new Button(getContext()); btnClearKnob.setText("❌ 清除"); btnClearKnob.setTextColor(Color.WHITE); btnClearKnob.setBackgroundColor(Color.parseColor("#F44336"));
+        Button btnClearKnob = new Button(getContext()); btnClearKnob.setText(L("❌ 清除")); btnClearKnob.setTextColor(Color.WHITE); btnClearKnob.setBackgroundColor(Color.parseColor("#F44336"));
         LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); p2.setMargins(20, 0, 0, 0); btnClearKnob.setLayoutParams(p2);
-        btnClearKnob.setOnClickListener(v -> { joySkinKnobUri = ""; joySkinKnobBitmap = null; Toast.makeText(getContext(), "已清除", Toast.LENGTH_SHORT).show(); invalidate(); });
+        btnClearKnob.setOnClickListener(v -> { joySkinKnobUri = ""; joySkinKnobBitmap = null; Toast.makeText(getContext(), L("已清除"), Toast.LENGTH_SHORT).show(); invalidate(); });
         knobLayout.addView(btnClearKnob); layout.addView(knobLayout);
 
         LinearLayout bottomButtons = new LinearLayout(getContext()); bottomButtons.setOrientation(LinearLayout.HORIZONTAL); bottomButtons.setPadding(0, 50, 0, 0);
-        Button deleteBtn = new Button(getContext()); deleteBtn.setText("🔄 恢复默认"); deleteBtn.setTextColor(Color.WHITE); deleteBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
+        Button deleteBtn = new Button(getContext()); deleteBtn.setText(L("🔄 恢复默认")); deleteBtn.setTextColor(Color.WHITE); deleteBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
         deleteBtn.setOnClickListener(v -> { 
             joyAlpha = 200; joyRadius = 180; joyHitboxRadius = 270; joyColor = Color.parseColor("#FF5555"); joySkinBaseUri = ""; joySkinKnobUri = ""; joySkinBaseBitmap = null; joySkinKnobBitmap = null;
             saveConfig(); invalidate(); dialog.dismiss(); 
         }); bottomButtons.addView(deleteBtn);
         
-        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存退出"); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
+        Button saveBtn = new Button(getContext()); saveBtn.setText(L("💾 保存退出")); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
         LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); saveParams.setMargins(20, 0, 0, 0); saveBtn.setLayoutParams(saveParams);
         saveBtn.setOnClickListener(v -> { saveConfig(); invalidate(); dialog.dismiss(); });
         bottomButtons.addView(saveBtn); layout.addView(bottomButtons);
@@ -3431,7 +3454,7 @@ import java.util.List;
         
 
         TextView dragHandle = new TextView(getContext());
-        dragHandle.setText("✋ 按住此处拖拽窗口 | 🔧 配置: " + btn.id);
+        dragHandle.setText(L("✋ 按住此处拖拽窗口 | 🔧 配置: ") + btn.id);
                android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
         titleBg.setColor(Color.argb(50, 0, 0, 0)); // 【修复1】改用半透明遮罩，完美融合下方自定义背景色
         titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
@@ -3468,34 +3491,34 @@ import java.util.List;
         LinearLayout layout = new LinearLayout(getContext()); 
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
 
-        layout.addView(createTitle("0. 按键位置锁定:"));
+        layout.addView(createTitle(L("0. 按键位置锁定:")));
         Button lockBtn = new Button(getContext());
-        lockBtn.setText(btn.isLocked ? "🔒 位置已锁定 (不可拖动)" : "🔓 位置未锁定 (可拖动)");
+        lockBtn.setText(btn.isLocked ? L("🔒 位置已锁定 (不可拖动)") : L("🔓 位置未锁定 (可拖动)"));
         lockBtn.setTextColor(Color.WHITE); lockBtn.setBackgroundColor(btn.isLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50"));
-        lockBtn.setOnClickListener(v -> { btn.isLocked = !btn.isLocked; lockBtn.setText(btn.isLocked ? "🔒 位置已锁定 (不可拖动)" : "🔓 位置未锁定 (可拖动)"); lockBtn.setBackgroundColor(btn.isLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50")); invalidate(); });
+        lockBtn.setOnClickListener(v -> { btn.isLocked = !btn.isLocked; lockBtn.setText(btn.isLocked ? L("🔒 位置已锁定 (不可拖动)") : L("🔓 位置未锁定 (可拖动)")); lockBtn.setBackgroundColor(btn.isLocked ? Color.parseColor("#D32F2F") : Color.parseColor("#4CAF50")); invalidate(); });
         layout.addView(lockBtn);
 
-        layout.addView(createTitle("1. 按键名称与映射:"));
+        layout.addView(createTitle(L("1. 按键名称与映射:")));
         
         // 【新增】显示绑定的物理手柄键值
         TextView padInfo = new TextView(getContext());
-        padInfo.setText("🎮 已绑定物理手柄键值: " + (btn.boundGamepadKeyCode != 0 ? btn.boundGamepadKeyCode : "未绑定"));
+        padInfo.setText(L("🎮 已绑定物理手柄键值: ") + (btn.boundGamepadKeyCode != 0 ? btn.boundGamepadKeyCode : L("未绑定")));
         padInfo.setTextColor(Color.parseColor("#FF9800")); padInfo.setTextSize(dialogTextSize); padInfo.setPadding(0,0,0,10);
         layout.addView(padInfo);
 
-        final EditText inputName = createEditText("显示名称 (如: A)", btn.id); layout.addView(inputName);
-        final EditText inputKey = createEditText("映射引擎键值 (如: DOWN/A)", btn.keyMapStr); layout.addView(inputKey);
+        final EditText inputName = createEditText(L("显示名称 (如: A)"), btn.id); layout.addView(inputName);
+        final EditText inputKey = createEditText(L("映射引擎键值 (如: DOWN/A)"), btn.keyMapStr); layout.addView(inputKey);
 
         // 【新增】如果是系统基础预设按键，则强制锁定底层键值映射，不允许修改，只能改外观
         boolean isPreset = btn.id.equals("A") || btn.id.equals("B") || btn.id.equals("C") || btn.id.equals("X") || btn.id.equals("Y") || btn.id.equals("Z") || btn.id.equals("ESC") || btn.id.equals("START") || btn.id.equals("UP") || btn.id.equals("DOWN") || btn.id.equals("LEFT") || btn.id.equals("RIGHT");
         if (isPreset) {
             inputKey.setEnabled(false);
             inputKey.setBackgroundColor(Color.parseColor("#555555")); // 变暗暗示锁定
-            inputKey.setHint("核心预设按键，映射键值已锁定");
+            inputKey.setHint(L("核心预设按键，映射键值已锁定"));
         }
 
 
-        layout.addView(createTitle("2. 按键样式:"));
+        layout.addView(createTitle(L("2. 按键样式:")));
         final Spinner textColorSpinner = new Spinner(getContext());
         ArrayAdapter<String> textAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, TEXT_COLOR_NAMES);
         textColorSpinner.setAdapter(textAdapter);
@@ -3506,8 +3529,8 @@ import java.util.List;
         ArrayAdapter<String> shapeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, SHAPE_NAMES);
         shapeSpinner.setAdapter(shapeAdapter); shapeSpinner.setSelection(btn.shape); layout.addView(shapeSpinner);
 
-        layout.addView(createTitle("3. 按键颜色 (代码与滑块双向同步):"));
-        final EditText hexInput = createEditText("颜色代码如: #FF0000", String.format("#%06X", (0xFFFFFF & btn.color))); 
+        layout.addView(createTitle(L("3. 按键颜色 (代码与滑块双向同步):")));
+        final EditText hexInput = createEditText(L("颜色代码如: #FF0000"), String.format("#%06X", (0xFFFFFF & btn.color))); 
         layout.addView(hexInput);
 
         final View colorPreview = new View(getContext());
@@ -3518,9 +3541,9 @@ import java.util.List;
         layout.addView(colorPreview);
 
         final int[] rgb = {Color.red(btn.color), Color.green(btn.color), Color.blue(btn.color)};
-        final SeekBar redBar = createColorBar(layout, "🔴 红色分量 (R)", rgb[0]); 
-        final SeekBar greenBar = createColorBar(layout, "🟢 绿色分量 (G)", rgb[1]); 
-        final SeekBar blueBar = createColorBar(layout, "🔵 蓝色分量 (B)", rgb[2]);
+        final SeekBar redBar = createColorBar(layout, L("🔴 红色分量 (R)"), rgb[0]); 
+        final SeekBar greenBar = createColorBar(layout, L("🟢 绿色分量 (G)"), rgb[1]); 
+        final SeekBar blueBar = createColorBar(layout, L("🔵 蓝色分量 (B)"), rgb[2]);
 
         hexInput.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void afterTextChanged(Editable s) {
@@ -3552,10 +3575,10 @@ import java.util.List;
         };
         redBar.setOnSeekBarChangeListener(colorUpdater); greenBar.setOnSeekBarChangeListener(colorUpdater); blueBar.setOnSeekBarChangeListener(colorUpdater);
 
-        layout.addView(createTitle("4. 尺寸与隐藏参数:"));
-        final SeekBar alphaBar = createColorBar(layout, "可见透明度 (拉到0为隐藏)", btn.alpha); 
-        final SeekBar sizeBar = createColorBar(layout, "视觉大小", (int)btn.radius); sizeBar.setMax(300);
-        final SeekBar hitboxBar = createColorBar(layout, "边缘触控灵敏度/范围 (黄线圈)", (int)btn.hitboxRadius); hitboxBar.setMax(600); // 【优化4】重命名并扩大上限
+        layout.addView(createTitle(L("4. 尺寸与隐藏参数:")));
+        final SeekBar alphaBar = createColorBar(layout, L("可见透明度 (拉到0为隐藏)"), btn.alpha); 
+        final SeekBar sizeBar = createColorBar(layout, L("视觉大小"), (int)btn.radius); sizeBar.setMax(300);
+        final SeekBar hitboxBar = createColorBar(layout, L("边缘触控灵敏度/范围 (黄线圈)"), (int)btn.hitboxRadius); hitboxBar.setMax(600); // 【优化4】重命名并扩大上限
 
         SeekBar.OnSeekBarChangeListener sizeUpdater = new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -3570,9 +3593,9 @@ import java.util.List;
         };
         alphaBar.setOnSeekBarChangeListener(sizeUpdater); sizeBar.setOnSeekBarChangeListener(sizeUpdater); hitboxBar.setOnSeekBarChangeListener(sizeUpdater);
 
-        layout.addView(createTitle("5. 自定义图片皮肤:"));
+        layout.addView(createTitle(L("5. 自定义图片皮肤:")));
         LinearLayout skinLayout = new LinearLayout(getContext()); skinLayout.setOrientation(LinearLayout.HORIZONTAL);
-                Button btnPickImage = new Button(getContext()); btnPickImage.setText("🖼️ 选择皮肤"); btnPickImage.setTextColor(Color.WHITE); btnPickImage.setBackgroundColor(Color.parseColor("#4CAF50"));
+                Button btnPickImage = new Button(getContext()); btnPickImage.setText(L("🖼️ 选择皮肤")); btnPickImage.setTextColor(Color.WHITE); btnPickImage.setBackgroundColor(Color.parseColor("#4CAF50"));
         btnPickImage.setOnClickListener(v -> {
             // 【新增这一句】，告诉回调函数这是普通按键在选图片
             imagePickerTarget = 3; currentlyEditingButton = btn; 
@@ -3582,24 +3605,24 @@ import java.util.List;
         }); skinLayout.addView(btnPickImage);
         
         
-        Button btnClearImage = new Button(getContext()); btnClearImage.setText("❌ 移除皮肤"); btnClearImage.setTextColor(Color.WHITE); btnClearImage.setBackgroundColor(Color.parseColor("#F44336"));
+        Button btnClearImage = new Button(getContext()); btnClearImage.setText(L("❌ 移除皮肤")); btnClearImage.setTextColor(Color.WHITE); btnClearImage.setBackgroundColor(Color.parseColor("#F44336"));
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); btnParams.setMargins(20, 0, 0, 0); btnClearImage.setLayoutParams(btnParams);
-        btnClearImage.setOnClickListener(v -> { btn.customImageUri = ""; btn.skinBitmap = null; Toast.makeText(getContext(), "已恢复默认材质", Toast.LENGTH_SHORT).show(); invalidate(); });
+        btnClearImage.setOnClickListener(v -> { btn.customImageUri = ""; btn.skinBitmap = null; Toast.makeText(getContext(), L("已恢复默认材质"), Toast.LENGTH_SHORT).show(); invalidate(); });
                 skinLayout.addView(btnClearImage); layout.addView(skinLayout);
                 
-                        layout.addView(createTitle("7. 连发功能 (Turbo):"));
+                        layout.addView(createTitle(L("7. 连发功能 (Turbo):")));
         final Button turboBtn = new Button(getContext());
-        turboBtn.setText(btn.isTurbo ? "🔥 连发状态：已开启" : "⚪ 连发状态：已关闭");
+        turboBtn.setText(btn.isTurbo ? L("🔥 连发状态：已开启") : L("⚪ 连发状态：已关闭"));
         turboBtn.setTextColor(Color.WHITE);
         turboBtn.setBackgroundColor(btn.isTurbo ? Color.parseColor("#FF5722") : Color.parseColor("#555555"));
         turboBtn.setOnClickListener(v -> {
             btn.isTurbo = !btn.isTurbo;
-            turboBtn.setText(btn.isTurbo ? "🔥 连发状态：已开启" : "⚪ 连发状态：已关闭");
+            turboBtn.setText(btn.isTurbo ? L("🔥 连发状态：已开启") : L("⚪ 连发状态：已关闭"));
             turboBtn.setBackgroundColor(btn.isTurbo ? Color.parseColor("#FF5722") : Color.parseColor("#555555"));
         });
         layout.addView(turboBtn);
 
-        final SeekBar turboIntervalBar = createColorBar(layout, "⏱️ 连发触发间隔 (毫秒)", btn.turboInterval);
+        final SeekBar turboIntervalBar = createColorBar(layout, L("⏱️ 连发触发间隔 (毫秒)"), btn.turboInterval);
         turboIntervalBar.setMax(500);
         turboIntervalBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
@@ -3609,9 +3632,9 @@ import java.util.List;
         });
         
         // ================= 【新增：独立高阶属性区】 =================
-        layout.addView(createTitle("8. 独立高级控制 (文字/震动/反馈):"));
+        layout.addView(createTitle(L("8. 独立高级控制 (文字/震动/反馈):")));
         
-        final SeekBar txtSizeBar = createColorBar(layout, "🅰️ 字体大小百分比 (默认 100%)", btn.textSizeFactor);
+        final SeekBar txtSizeBar = createColorBar(layout, L("🅰️ 字体大小百分比 (默认 100%)"), btn.textSizeFactor);
         txtSizeBar.setMax(300);
         
         // 【新增】：拖动滑块实时刷新字体大小
@@ -3624,11 +3647,11 @@ import java.util.List;
 
         // 独立震动开关与滑块
         final Button useVibBtn = new Button(getContext());
-        useVibBtn.setText(btn.useCustomVib ? "📳 此键震动：独立配置 (点击跟随全局)" : "📳 此键震动：跟随全局配置 (点击独立)");
+        useVibBtn.setText(btn.useCustomVib ? L("📳 此键震动：独立配置 (点击跟随全局)") : L("📳 此键震动：跟随全局配置 (点击独立)"));
         useVibBtn.setTextColor(Color.WHITE);
         useVibBtn.setBackgroundColor(btn.useCustomVib ? Color.parseColor("#4CAF50") : Color.parseColor("#555555"));
         
-        final SeekBar customVibBar = createColorBar(layout, "  └─ 独立震动时长 (毫秒)", btn.customVib);
+        final SeekBar customVibBar = createColorBar(layout, L("  └─ 独立震动时长 (毫秒)"), btn.customVib);
         customVibBar.setMax(100);
         customVibBar.setVisibility(btn.useCustomVib ? View.VISIBLE : View.GONE); 
         
@@ -3645,7 +3668,7 @@ import java.util.List;
 
         useVibBtn.setOnClickListener(v -> {
             btn.useCustomVib = !btn.useCustomVib;
-            useVibBtn.setText(btn.useCustomVib ? "📳 此键震动：独立配置 (点击跟随全局)" : "📳 此键震动：跟随全局配置 (点击独立)");
+            useVibBtn.setText(btn.useCustomVib ? L("📳 此键震动：独立配置 (点击跟随全局)") : L("📳 此键震动：跟随全局配置 (点击独立)"));
             useVibBtn.setBackgroundColor(btn.useCustomVib ? Color.parseColor("#4CAF50") : Color.parseColor("#555555"));
             customVibBar.setVisibility(btn.useCustomVib ? View.VISIBLE : View.GONE);
             if (btn.useCustomVib) triggerVibrate(btn.customVib); // 开启瞬间给个测试震动
@@ -3654,11 +3677,11 @@ import java.util.List;
 
         // 独立反馈开关与滑块
         final Button useFeedBtn = new Button(getContext());
-        useFeedBtn.setText(btn.useCustomFeed ? "🗜️ 按压形变：独立配置 (点击跟随全局)" : "🗜️ 按压形变：跟随全局配置 (点击独立)");
+        useFeedBtn.setText(btn.useCustomFeed ? L("🗜️ 按压形变：独立配置 (点击跟随全局)") : L("🗜️ 按压形变：跟随全局配置 (点击独立)"));
         useFeedBtn.setTextColor(Color.WHITE);
         useFeedBtn.setBackgroundColor(btn.useCustomFeed ? Color.parseColor("#2196F3") : Color.parseColor("#555555"));
         
-        final SeekBar customFeedBar = createColorBar(layout, "  └─ 独立形变比例 (按住拖动看画布预览)", btn.customFeedScale);
+        final SeekBar customFeedBar = createColorBar(layout, L("  └─ 独立形变比例 (按住拖动看画布预览)"), btn.customFeedScale);
         customFeedBar.setMax(200);
         customFeedBar.setVisibility(btn.useCustomFeed ? View.VISIBLE : View.GONE);
 
@@ -3679,7 +3702,7 @@ import java.util.List;
 
         useFeedBtn.setOnClickListener(v -> {
             btn.useCustomFeed = !btn.useCustomFeed;
-            useFeedBtn.setText(btn.useCustomFeed ? "🗜️ 按压形变：独立配置 (点击跟随全局)" : "🗜️ 按压形变：跟随全局配置 (点击独立)");
+            useFeedBtn.setText(btn.useCustomFeed ? L("🗜️ 按压形变：独立配置 (点击跟随全局)") : L("🗜️ 按压形变：跟随全局配置 (点击独立)"));
             useFeedBtn.setBackgroundColor(btn.useCustomFeed ? Color.parseColor("#2196F3") : Color.parseColor("#555555"));
             customFeedBar.setVisibility(btn.useCustomFeed ? View.VISIBLE : View.GONE);
         });
@@ -3690,8 +3713,8 @@ import java.util.List;
 
         // ================= 【新增：按下状态的UI调节控制】 =================
                 // ================= 【修改：增加按下特效的实时颜色预览】 =================
-        layout.addView(createTitle("6. 按下状态特效 (独立颜色与皮肤):"));
-        final EditText hexInputP = createEditText("颜色如: #4CAF50 (填 #000000 变回普通渐变)", String.format("#%06X", (0xFFFFFF & btn.pressedEffectColor))); 
+        layout.addView(createTitle(L("6. 按下状态特效 (独立颜色与皮肤):")));
+        final EditText hexInputP = createEditText(L("颜色如: #4CAF50 (填 #000000 变回普通渐变)"), String.format("#%06X", (0xFFFFFF & btn.pressedEffectColor))); 
         layout.addView(hexInputP);
         
         final View colorPreviewP = new View(getContext());
@@ -3704,13 +3727,13 @@ import java.util.List;
         colorPreviewP.setBackground(previewBgP);
         layout.addView(colorPreviewP);
 
-        final SeekBar alphaBarP = createColorBar(layout, "按下特效不透明度", btn.pressedEffectAlpha); 
+        final SeekBar alphaBarP = createColorBar(layout, L("按下特效不透明度"), btn.pressedEffectAlpha); 
         
 
         final int[] rgbP = {Color.red(btn.pressedEffectColor), Color.green(btn.pressedEffectColor), Color.blue(btn.pressedEffectColor)};
-        final SeekBar rBarP = createColorBar(layout, "🔴 按下红 (R)", rgbP[0]); 
-        final SeekBar gBarP = createColorBar(layout, "🟢 按下绿 (G)", rgbP[1]); 
-        final SeekBar bBarP = createColorBar(layout, "🔵 按下蓝 (B)", rgbP[2]);
+        final SeekBar rBarP = createColorBar(layout, L("🔴 按下红 (R)"), rgbP[0]); 
+        final SeekBar gBarP = createColorBar(layout, L("🟢 按下绿 (G)"), rgbP[1]); 
+        final SeekBar bBarP = createColorBar(layout, L("🔵 按下蓝 (B)"), rgbP[2]);
 
         hexInputP.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void afterTextChanged(Editable s) {
@@ -3749,7 +3772,7 @@ import java.util.List;
         });
 
         LinearLayout skinLayoutP = new LinearLayout(getContext()); skinLayoutP.setOrientation(LinearLayout.HORIZONTAL);
-        Button btnPickImageP = new Button(getContext()); btnPickImageP.setText("🖼️ 按下皮肤"); btnPickImageP.setTextColor(Color.WHITE); btnPickImageP.setBackgroundColor(Color.parseColor("#4CAF50"));
+        Button btnPickImageP = new Button(getContext()); btnPickImageP.setText(L("🖼️ 按下皮肤")); btnPickImageP.setTextColor(Color.WHITE); btnPickImageP.setBackgroundColor(Color.parseColor("#4CAF50"));
         btnPickImageP.setOnClickListener(v -> {
             imagePickerTarget = 6; currentlyEditingButton = btn; 
             android.app.Activity activity = (android.app.Activity) getContext(); FileActionFragment fragment = new FileActionFragment();
@@ -3757,14 +3780,14 @@ import java.util.List;
             fragment.setArguments(args); activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
         }); skinLayoutP.addView(btnPickImageP);
         
-        Button btnClearImageP = new Button(getContext()); btnClearImageP.setText("❌ 移除按下皮肤"); btnClearImageP.setTextColor(Color.WHITE); btnClearImageP.setBackgroundColor(Color.parseColor("#F44336"));
+        Button btnClearImageP = new Button(getContext()); btnClearImageP.setText(L("❌ 移除按下皮肤")); btnClearImageP.setTextColor(Color.WHITE); btnClearImageP.setBackgroundColor(Color.parseColor("#F44336"));
         LinearLayout.LayoutParams btnParamsP = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); btnParamsP.setMargins(20, 0, 0, 0); btnClearImageP.setLayoutParams(btnParamsP);
-        btnClearImageP.setOnClickListener(v -> { btn.customPressedUri = ""; btn.pressedSkinBitmap = null; Toast.makeText(getContext(), "已恢复无皮肤状态", Toast.LENGTH_SHORT).show(); invalidate(); });
+        btnClearImageP.setOnClickListener(v -> { btn.customPressedUri = ""; btn.pressedSkinBitmap = null; Toast.makeText(getContext(), L("已恢复无皮肤状态"), Toast.LENGTH_SHORT).show(); invalidate(); });
         skinLayoutP.addView(btnClearImageP); layout.addView(skinLayoutP);
         // =========================================================================
 
         LinearLayout bottomButtons = new LinearLayout(getContext()); bottomButtons.setOrientation(LinearLayout.HORIZONTAL); bottomButtons.setPadding(0, 50, 0, 0);
-        Button deleteBtn = new Button(getContext()); deleteBtn.setText("🗑️ 删除按键"); deleteBtn.setTextColor(Color.WHITE); deleteBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
+        Button deleteBtn = new Button(getContext()); deleteBtn.setText(L("🗑️ 删除按键")); deleteBtn.setTextColor(Color.WHITE); deleteBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
                 deleteBtn.setOnClickListener(v -> { 
             btn.stopTurbo(); btn.isMacroPlaying = false; // 修复：先斩断后台独立线程
             buttons.remove(btn); 
@@ -3773,7 +3796,7 @@ import java.util.List;
         
         bottomButtons.addView(deleteBtn);
         
-        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存修改并退出"); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
+        Button saveBtn = new Button(getContext()); saveBtn.setText(L("💾 保存修改并退出")); saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
         LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); saveParams.setMargins(20, 0, 0, 0); saveBtn.setLayoutParams(saveParams);
         
         // ================= 【新增：第4点要求 - 高级拦截防误触保护】 =================
@@ -3830,15 +3853,15 @@ import java.util.List;
             if (!isNormalSave[0]) {
                 // 如果是用户点击了外部区域（或返回键），拦截关闭并弹出警告
                 new AlertDialog.Builder(getContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                    .setTitle("⚠️ 未保存的更改")
-                    .setMessage("您点击了设置窗口外部，是否要保存刚刚做出的修改？")
-                    .setPositiveButton("💾 马上保存", (dialogInterface, i) -> {
+                    .setTitle(L("⚠️ 未保存的更改"))
+                    .setMessage(L("您点击了设置窗口外部，是否要保存刚刚做出的修改？"))
+                    .setPositiveButton(L("💾 马上保存"), (dialogInterface, i) -> {
                         saveBtn.performClick(); // 直接触发上面写好的保存按钮
                     })
-                    .setNeutralButton("🔙 返回继续修改", (dialogInterface, i) -> {
+                    .setNeutralButton(L("🔙 返回继续修改"), (dialogInterface, i) -> {
                         dialog.show(); // 拦截操作，重新把刚刚关掉的弹窗显示回来
                     })
-                    .setNegativeButton("🗑️ 不保存(复原)", (dialogInterface, i) -> {
+                    .setNegativeButton(L("🗑️ 不保存(复原)"), (dialogInterface, i) -> {
                         // 触发灾难恢复：把上面备份的初始数据强行覆盖回来
                         btn.id = origName; btn.displayLines = btn.id.split("\n");
                         btn.keyMapStr = origKey; btn.parseKeyCodes();
@@ -4308,7 +4331,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             menuPressedSkinUri = prefs.getString("MenuPressedSkin_" + slot, "");
             menuPressedEffectColor = prefs.getInt("MenuPressedColor_" + slot, 0);
             menuPressedEffectAlpha = prefs.getInt("MenuPressedAlpha_" + slot, 150);
-            menuButtonName = prefs.getString("MenuButtonName_" + slot, "⚙ 高级设置");
+            menuButtonName = prefs.getString("MenuButtonName_" + slot, L("⚙ 高级设置"));
             alwaysAskFolder = prefs.getBoolean("AlwaysAskFolder", true);
             isIntegrationModeEnabled = prefs.getBoolean("IntegrationMode", false); // 读取整合包兼容模式
             isDynamicScaleEnabled = prefs.getBoolean("DynamicScaleEnabled_" + slot, false);
@@ -4509,6 +4532,11 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("*/*");
                 startActivityForResult(intent, 45);
+            } else if (type == 3) { // 【新增】语言补丁专属请求
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/json");
+                startActivityForResult(intent, 46);
             } else { 
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -4528,12 +4556,40 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                 } else if (requestCode == 44) { 
                     try {
                         String exportData = getArguments() != null ? getArguments().getString("export_data", "") : "";
-                        if (exportData.isEmpty()) { Toast.makeText(getActivity(), "❌ 无数据可导出", Toast.LENGTH_SHORT).show(); return; }
+                        if (exportData.isEmpty()) { Toast.makeText(getActivity(), L("❌ 无数据可导出"), Toast.LENGTH_SHORT).show(); return; }
                         java.io.OutputStream os = getActivity().getContentResolver().openOutputStream(uri);
                         os.write(exportData.getBytes(StandardCharsets.UTF_8));
                         os.close();
-                        Toast.makeText(getActivity(), "✅ 导出成功！", Toast.LENGTH_SHORT).show();
-                    } catch (Exception e) { Toast.makeText(getActivity(), "❌ 导出失败", Toast.LENGTH_SHORT).show(); }                
+                        Toast.makeText(getActivity(), L("✅ 导出成功！"), Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) { Toast.makeText(getActivity(), L("❌ 导出失败"), Toast.LENGTH_SHORT).show(); }                
+                } else if (requestCode == 46 && DynamicGamepadView.instance != null) { 
+                    // 【新增】处理语言补丁的解析与覆写
+                    final Context safeContext = getActivity() != null ? getActivity() : DynamicGamepadView.instance.getContext();
+                    try {
+                        java.io.InputStream is = safeContext.getContentResolver().openInputStream(uri);
+                        BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                        StringBuilder sb = new StringBuilder(); String line;
+                        while ((line = reader.readLine()) != null) sb.append(line);
+                        reader.close(); is.close();
+                        
+                        // 校验 JSON 格式并永久保存
+                        JSONObject newLangPack = new JSONObject(sb.toString().trim());
+                        SharedPreferences.Editor editor = safeContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
+                        editor.putString("LanguagePatch", newLangPack.toString());
+                        editor.commit();
+                        
+                        Toast.makeText(safeContext, L("✅ 补丁导入成功！即将强制重启生效..."), Toast.LENGTH_LONG).show();
+                        
+                        // 延迟 1.5 秒后直接杀死进程，迫使玩家重进游戏
+                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                            System.exit(0);
+                        }, 1500);
+                        
+                    } catch (Exception e) {
+                        Toast.makeText(safeContext, L("❌ 语言补丁读取失败，请检查 JSON 格式是否正确"), Toast.LENGTH_SHORT).show();
+                    }
+                    getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
+                    return;
                 } else if (requestCode == 45 && DynamicGamepadView.instance != null) { 
                     final Context safeContext = getActivity() != null ? getActivity() : DynamicGamepadView.instance.getContext();
                     try {
@@ -4559,15 +4615,15 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                                 DynamicGamepadView.instance.loadDefaultLayout();
                                 DynamicGamepadView.instance.saveConfig();
                                 DynamicGamepadView.instance.invalidate();
-                                Toast.makeText(safeContext, "✅ 已自动转换为全屏自适应 Pro 布局", Toast.LENGTH_LONG).show();
+                                Toast.makeText(safeContext, L("✅ 已自动转换为全屏自适应 Pro 布局"), Toast.LENGTH_LONG).show();
                             });
                             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
                             return;
                         }
 
                         new AlertDialog.Builder(safeContext, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                            .setTitle("发现数据，请选择要导入的内容：")
-                            .setItems(new CharSequence[]{"📥 导入全部 (布局、位置与所有风格外观)", "📥 仅导入按键布局 (保留当前系统里的外观)", "📥 仅导入外观风格库与皮肤图片"}, (dialog, which) -> {
+                            .setTitle(L("发现数据，请选择要导入的内容："))
+                            .setItems(new CharSequence[]{L("📥 导入全部 (布局、位置与所有风格外观)"), L("📥 仅导入按键布局 (保留当前系统里的外观)"), L("📥 仅导入外观风格库与皮肤图片")}, (dialog, which) -> {
                                 try {
                                     DynamicGamepadView v = DynamicGamepadView.instance;
                                     SharedPreferences.Editor editor = safeContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
@@ -4697,11 +4753,11 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
 
                                     editor.commit(); 
                                     v.post(() -> v.loadConfig(v.currentSlot));
-                                    Toast.makeText(safeContext, "✅ 数据完美导入成功！", Toast.LENGTH_LONG).show();
-                                } catch (Exception e) { Toast.makeText(safeContext, "❌ 应用失败: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }
+                                    Toast.makeText(safeContext, L("✅ 数据完美导入成功！"), Toast.LENGTH_LONG).show();
+                                } catch (Exception e) { Toast.makeText(safeContext, L("❌ 应用失败: ") + e.getMessage(), Toast.LENGTH_SHORT).show(); }
                             }).show();
                             
-                    } catch (Exception e) { Toast.makeText(safeContext, "❌ 文件读取失败，可能已损坏", Toast.LENGTH_SHORT).show(); }
+                    } catch (Exception e) { Toast.makeText(safeContext, L("❌ 文件读取失败，可能已损坏"), Toast.LENGTH_SHORT).show(); }
                 }
             }
             getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
@@ -4719,7 +4775,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
         rootLayout.setBackground(getCustomDialogBackground());
 
         TextView dragHandle = new TextView(getContext());
-        dragHandle.setText("✋ 拖拽此处 | 🎮 物理手柄外设专区");
+        dragHandle.setText(L("✋ 拖拽此处 | 🎮 物理手柄外设专区"));
         android.graphics.drawable.GradientDrawable titleBg = new android.graphics.drawable.GradientDrawable();
         titleBg.setColor(Color.argb(50, 0, 0, 0));
         titleBg.setCornerRadii(new float[]{35f, 35f, 35f, 35f, 0f, 0f, 0f, 0f});
@@ -4732,15 +4788,15 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
         layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(50, 20, 50, 50);
 
         // 1. 硬件连接测试仪
-        layout.addView(createTitle("1. 手柄通讯与硬件检测"));
-        Button testBtn = new Button(getContext()); testBtn.setText("🕹️ 打开手柄信号检测仪");
+        layout.addView(createTitle(L("1. 手柄通讯与硬件检测")));
+        Button testBtn = new Button(getContext()); testBtn.setText(L("🕹️ 打开手柄信号检测仪"));
         testBtn.setTextColor(Color.WHITE); testBtn.setBackgroundColor(Color.parseColor("#9C27B0"));
         testBtn.setOnClickListener(v -> showGamepadTestDialog());
         layout.addView(testBtn);
 
         // 2. 灵敏度与视觉联动
-        layout.addView(createTitle("2. 摇杆灵敏度与 UI 联动"));
-        final SeekBar deadzoneBar = createColorBar(layout, "摇杆死区/灵敏度 (%)", (int)(gamepadDeadzone * 100));
+        layout.addView(createTitle(L("2. 摇杆灵敏度与 UI 联动")));
+        final SeekBar deadzoneBar = createColorBar(layout, L("摇杆死区/灵敏度 (%)"), (int)(gamepadDeadzone * 100));
         deadzoneBar.setMax(100);
         deadzoneBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean fromUser) { if(fromUser) gamepadDeadzone = p / 100f; }
@@ -4749,32 +4805,32 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
 
         final Spinner uiModeSpinner = new Spinner(getContext());
         ArrayAdapter<String> modeAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, 
-            new String[]{"0 - 屏幕按键无反应", "1 - 手柄按压时屏幕按键同步发光", "2 - 操作手柄时自动隐藏整个屏幕UI"});
+            new String[]{L("0 - 屏幕按键无反应"), L("1 - 手柄按压时屏幕按键同步发光"), L("2 - 操作手柄时自动隐藏整个屏幕UI")});
         uiModeSpinner.setAdapter(modeAdapter); uiModeSpinner.setSelection(gamepadUIMode);
         layout.addView(uiModeSpinner);
 
         // 3. 外设物理震动
-        layout.addView(createTitle("3. 外设硬件震动 (依赖系统驱动)"));
+        layout.addView(createTitle(L("3. 外设硬件震动 (依赖系统驱动)")));
         final Button vibBtn = new Button(getContext());
-        vibBtn.setText(isGamepadVibrationOn ? "📳 外设实体震动：已开启" : "📳 外设实体震动：已关闭");
+        vibBtn.setText(isGamepadVibrationOn ? L("📳 外设实体震动：已开启") : L("📳 外设实体震动：已关闭"));
         vibBtn.setTextColor(Color.WHITE);
         vibBtn.setBackgroundColor(isGamepadVibrationOn ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
         vibBtn.setOnClickListener(v -> {
             isGamepadVibrationOn = !isGamepadVibrationOn;
-            vibBtn.setText(isGamepadVibrationOn ? "📳 外设实体震动：已开启" : "📳 外设实体震动：已关闭");
+            vibBtn.setText(isGamepadVibrationOn ? L("📳 外设实体震动：已开启") : L("📳 外设实体震动：已关闭"));
             vibBtn.setBackgroundColor(isGamepadVibrationOn ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
         });
         layout.addView(vibBtn);
 
         // 4. 自定义改键
-        layout.addView(createTitle("4. 外设自定义映射 (改键)"));
-        Button bindBtn = new Button(getContext()); bindBtn.setText("🛠️ 进入手柄自定义映射模式");
+        layout.addView(createTitle(L("4. 外设自定义映射 (改键)")));
+        Button bindBtn = new Button(getContext()); bindBtn.setText(L("🛠️ 进入手柄自定义映射模式"));
         bindBtn.setTextColor(Color.WHITE); bindBtn.setBackgroundColor(Color.parseColor("#FF9800"));
         bindBtn.setOnClickListener(v -> { dialog.dismiss(); showGamepadBindingManager(); });
         layout.addView(bindBtn);
 
         // 底部保存按钮
-        Button saveBtn = new Button(getContext()); saveBtn.setText("💾 保存设置");
+        Button saveBtn = new Button(getContext()); saveBtn.setText(L("💾 保存设置"));
         saveBtn.setTextColor(Color.WHITE); saveBtn.setBackgroundColor(Color.parseColor("#1976D2"));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); p.setMargins(0, 40, 0, 0); saveBtn.setLayoutParams(p);
         saveBtn.setOnClickListener(v -> { gamepadUIMode = uiModeSpinner.getSelectedItemPosition(); saveConfig(); dialog.dismiss(); });
@@ -4791,16 +4847,16 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
         LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL);
         layout.setBackgroundColor(Color.parseColor("#222222")); layout.setPadding(60, 60, 60, 60);
         
-        TextView title = new TextView(getContext()); title.setText("📡 手柄信号接收测试仪");
+        TextView title = new TextView(getContext()); title.setText(L("📡 手柄信号接收测试仪"));
         title.setTextColor(Color.GREEN); title.setTextSize(20f); title.setGravity(android.view.Gravity.CENTER);
         layout.addView(title);
 
         testFeedbackText = new TextView(getContext());
-        testFeedbackText.setText("请随意按下手柄任意按键...\n(测试期间会拦截所有引擎指令)");
+        testFeedbackText.setText(L("请随意按下手柄任意按键...\n(测试期间会拦截所有引擎指令)"));
         testFeedbackText.setTextColor(Color.WHITE); testFeedbackText.setTextSize(16f); testFeedbackText.setPadding(0, 40, 0, 40);
         layout.addView(testFeedbackText);
 
-        Button closeBtn = new Button(getContext()); closeBtn.setText("结束测试");
+        Button closeBtn = new Button(getContext()); closeBtn.setText(L("结束测试"));
         closeBtn.setOnClickListener(v -> { testFeedbackText = null; dialog.dismiss(); });
         layout.addView(closeBtn);
         
@@ -4814,56 +4870,78 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
         dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         
         LinearLayout rootLayout = new LinearLayout(getContext()); rootLayout.setOrientation(LinearLayout.VERTICAL); rootLayout.setBackground(getCustomDialogBackground());
-        TextView header = new TextView(getContext()); header.setText("✋ 拖拽此处 | 🛠️ 手柄映射管理器");
+        TextView header = new TextView(getContext()); header.setText(L("✋ 拖拽此处 | 🛠️ 手柄映射管理器"));
         header.setTextColor(dialogTextColor); header.setPadding(40, 30, 40, 30); header.setTextSize(dialogTextSize + 2f); header.setTypeface(null, Typeface.BOLD); rootLayout.addView(header);
 
         ScrollView scroll = new ScrollView(getContext()); LinearLayout layout = new LinearLayout(getContext()); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(40, 20, 40, 40);
         
         // ===== 【核心功能】：按下手柄新建按键 =====
-        layout.addView(createTitle("【进阶】手柄直连创建自定义按键:"));
+        layout.addView(createTitle(L("【进阶】手柄直连创建自定义按键:")));
         Button btnNewFromPad = new Button(getContext());
-        btnNewFromPad.setText("➕ 监听手柄按键 -> 在屏幕上新建绑定按键");
+        btnNewFromPad.setText(L("➕ 监听手柄按键 -> 在屏幕上新建绑定按键"));
         btnNewFromPad.setTextColor(Color.WHITE); btnNewFromPad.setBackgroundColor(Color.parseColor("#9C27B0"));
         btnNewFromPad.setPadding(0, 30, 0, 30);
         btnNewFromPad.setOnClickListener(v -> {
             isGamepadBindingMode = true; currentBindingTargetButton = null; // null 代表这是新建模式
             currentBindingDialog = new android.app.Dialog(getContext());
-            TextView tv = new TextView(getContext()); tv.setText("请按下外设手柄上想要使用的按键...\n(按下后将在屏幕中心生成一个新按键并打开设置)");
+            TextView tv = new TextView(getContext()); tv.setText(L("请按下外设手柄上想要使用的按键...\n(按下后将在屏幕中心生成一个新按键并打开设置)"));
             tv.setTextColor(Color.WHITE); tv.setTextSize(18f); tv.setPadding(60,60,60,60);
             currentBindingDialog.setContentView(tv); currentBindingDialog.show();
         });
         layout.addView(btnNewFromPad);
 
         // ===== 【基础功能】：绑定已有预设 =====
-        layout.addView(createTitle("【基础】绑定到屏幕上已存在的按键:"));
+        layout.addView(createTitle(L("【基础】绑定到屏幕上已存在的按键:")));
         for (VirtualButton btn : buttons) {
             if (btn.isDirectional) continue; // 过滤掉方向键，摇杆有独立的物理支持
             Button targetBtn = new Button(getContext());
-            String bindInfo = (btn.boundGamepadKeyCode != 0) ? " (已绑手柄键值:"+btn.boundGamepadKeyCode+")" : " (未绑定手柄)";
-            targetBtn.setText("绑定 -> [" + btn.id + "]" + bindInfo);
+            String bindInfo = (btn.boundGamepadKeyCode != 0) ? L(" (已绑手柄键值:") + btn.boundGamepadKeyCode + L(")") : L(" (未绑定手柄)");
+            targetBtn.setText(L("绑定 -> [") + btn.id + L("]") + bindInfo);
             targetBtn.setTextColor(Color.WHITE); targetBtn.setBackgroundColor(Color.parseColor("#33ffffff"));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); lp.setMargins(0, 5, 0, 5); targetBtn.setLayoutParams(lp);
             
             targetBtn.setOnClickListener(v -> {
                 isGamepadBindingMode = true; currentBindingTargetButton = btn; // 记录要绑定到哪个按键
                 currentBindingDialog = new android.app.Dialog(getContext());
-                TextView tv = new TextView(getContext()); tv.setText("请按下外设手柄上想要绑定到 [" + btn.id + "] 的按键...");
+                TextView tv = new TextView(getContext()); tv.setText(L("请按下外设手柄上想要绑定到 [") + btn.id + L("] 的按键..."));
                 tv.setTextColor(Color.WHITE); tv.setTextSize(18f); tv.setPadding(60,60,60,60);
                 currentBindingDialog.setContentView(tv); currentBindingDialog.show();
             });
             layout.addView(targetBtn);
         }
         
-        Button clearBtn = new Button(getContext()); clearBtn.setText("❌ 清除所有手柄绑定 (恢复默认)");
+        Button clearBtn = new Button(getContext()); clearBtn.setText(L("❌ 清除所有手柄绑定 (恢复默认)"));
         clearBtn.setTextColor(Color.WHITE); clearBtn.setBackgroundColor(Color.parseColor("#D32F2F"));
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); cp.setMargins(0, 40, 0, 0); clearBtn.setLayoutParams(cp);
         clearBtn.setOnClickListener(v -> { for(VirtualButton b : buttons) b.boundGamepadKeyCode = 0; saveConfig(); dialog.dismiss(); showGamepadBindingManager(); });
         layout.addView(clearBtn);
 
-        Button exitBtn = new Button(getContext()); exitBtn.setText("退出管理器"); exitBtn.setOnClickListener(v -> dialog.dismiss());
+        Button exitBtn = new Button(getContext()); exitBtn.setText(L("退出管理器")); exitBtn.setOnClickListener(v -> dialog.dismiss());
         layout.addView(exitBtn);
 
         scroll.addView(layout); rootLayout.addView(scroll);
         dialog.setContentView(rootLayout); setupMovableDialog(dialog, header); dialog.show();
     }
+    
+// ================= 新增：多语言补丁引擎 =================
+    public static JSONObject languagePack = new JSONObject();
+
+    public static void loadLanguagePack(Context context) {
+        SharedPreferences p = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String json = p.getString("LanguagePatch", "{}");
+        try {
+            languagePack = new JSONObject(json);
+        } catch (Exception e) {
+            languagePack = new JSONObject();
+        }
+    }
+
+    public static String L(String text) {
+        // 核心翻译逻辑：如果 JSON 里有这个中文的翻译，就输出翻译；如果没有，就原样输出中文
+        if (languagePack != null && languagePack.has(text)) {
+            return languagePack.optString(text, text);
+        }
+        return text;
+    }
+
 } // <==== 注意：确保代码的最后以这个大括号结尾！

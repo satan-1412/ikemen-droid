@@ -116,7 +116,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         if (!targetMotifFromList.isEmpty()) {
             // 列表直达：什么废话都不说，不弹窗，直接用指定的这个！
             finalMotif = targetMotifFromList;
-            Log.i("SDL", "收到列表直达指令，直接使用专属 Motif: " + finalMotif);
+            Log.i("SDL", L("收到列表直达指令，直接使用专属 Motif: ") + finalMotif);
         } else {
             // 普通启动：全盘扫描 + 弹窗让你选
             foundSystemDefs.clear();
@@ -124,7 +124,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             scanForSystemDefAll(root, gamePath);
             
             if (foundSystemDefs.isEmpty()) {
-                Log.e("SDL", "未能在文件夹中找到任何有效的 system.def");
+                Log.e("SDL", L("未能在文件夹中找到任何有效的 system.def"));
                 return; 
             }
 
@@ -136,7 +136,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
                 runOnUiThread(() -> {
                     AlertDialog.Builder builder = new AlertDialog.Builder(SDLActivity.this, android.R.style.Theme_DeviceDefault_Dialog_Alert);
-                    builder.setTitle("发现多个 UI 主题，请选择要启动哪一个：");
+                    builder.setTitle(L("发现多个 UI 主题，请选择要启动哪一个："));
                     String[] items = foundSystemDefs.toArray(new String[0]);
                     builder.setItems(items, (dialog, which) -> {
                         popupMotif[0] = items[which];
@@ -151,7 +151,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         }
 
         if (finalMotif == null) return;
-        Log.d("SDL", "最终写入 config.ini 的 Motif 路径: " + finalMotif);
+        Log.d("SDL", L("最终写入 config.ini 的 Motif 路径: ") + finalMotif);
 
         // 写回 config.ini
         File root = new File(gamePath);
@@ -182,9 +182,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(configFile)));
             for (String l : lines) { bw.write(l); bw.newLine(); }
             bw.flush(); bw.close();
-            Log.d("SDL", "config.ini 修复成功！已指向: " + finalMotif);
+            Log.d("SDL", L("config.ini 修复成功！已指向: ") + finalMotif);
         } catch (Exception e) {
-            Log.e("SDL", "修复 config.ini 失败: " + e.getMessage());
+            Log.e("SDL", L("修复 config.ini 失败: " + e.getMessage()));
         }
     }
     // --- 自动配置修复机制结束 ---
@@ -362,7 +362,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             }
 
             if (!motifPath.isEmpty()) {
-                android.util.Log.i("SDLActivity", "兼容模式：成功嗅探到真实 UI -> " + motifPath);
+                android.util.Log.i("SDLActivity", L("兼容模式：成功嗅探到真实 UI -> ") + motifPath);
                 // 直接通过命令行 -m 强制传给底层，最安全最直接！
                 return new String[] {"-m", motifPath};
             }
@@ -417,6 +417,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     // Setup
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // 【机制注入】确保在所有 UI 创建前，先加载语言包
+        DynamicGamepadView.loadLanguagePack(this);
+        
         try {
             // Stop Go from using SIGURG (the Android 14 crasher)
             android.system.Os.setenv("GODEBUG", "asyncpreemptoff=1", true);
@@ -761,7 +764,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             String selectedPath = getFullPathFromTreeUri(treeUri);
             if (selectedPath != null && !selectedPath.isEmpty()) {
                 if (org.libsdl.app.DynamicGamepadView.instance != null) {
-                    String baseName = "新主程序";
+                    String baseName = L("新主程序");
                     try {
                         String[] parts = selectedPath.split("/");
                         baseName = parts[parts.length - 1]; 
@@ -802,7 +805,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                         }
                     }
                     org.libsdl.app.DynamicGamepadView.instance.saveConfig();
-                    Toast.makeText(this, "✅ 扫描完毕！成功去重并添加了 " + addedCount + " 个主程序卡片", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, L("✅ 扫描完毕！成功去重并添加了 ") + addedCount + L(" 个主程序卡片"), Toast.LENGTH_LONG).show();
                 }
             }
         }
@@ -858,7 +861,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         mIsPickerActive = true;
 
         if (Build.VERSION.SDK_INT < 24) {
-            Log.i(TAG, "检测到旧版安卓(API < 24)，自动指定根目录 IkemenGO 文件夹");
+            Log.i(TAG, L("检测到旧版安卓(API < 24)，自动指定根目录 IkemenGO 文件夹"));
             mIsPickerActive = false; 
             File defaultGameDir = new File(Environment.getExternalStorageDirectory(), "IkemenGO");
             if (!defaultGameDir.exists()) {
@@ -906,7 +909,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             
             // 【完全尊重原版】：只有玩家手动开启兼容模式，才会执行路径嗅探。否则什么都不做。
             if (isIntegrationMode) {
-                Log.i("SDL", "兼容模式已开启，准备执行配置扫描与路径兜底...");
+                Log.i("SDL", L("兼容模式已开启，准备执行配置扫描与路径兜底..."));
                 fixIkemenConfig(mBasePath);
             }
 
@@ -940,14 +943,14 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 
                 // 【修改】只要大脑、字体、或者特效有任何一个没到位，就强制触发你的查漏补缺！
                 if (!engineBrain.exists() || !systemFont.exists() || !gofxDef.exists()) {
-                    Log.i("SDLActivity", "兼容模式：引擎核心或特效文件(gofx)缺失，触发智能补全...");
+                    Log.i("SDLActivity", L("兼容模式：引擎核心或特效文件(gofx)缺失，触发智能补全..."));
                     needInject = true;
                 } else {
                     long localCRC = AssetExtractor.getFileCRC(engineBrain);
                     long apkCRC = AssetExtractor.getAssetCRC(getAssets(), "external/script/main.lua");
                     
                     if (localCRC != apkCRC && localCRC != -2 && apkCRC != -1) {
-                        Log.i("SDLActivity", "兼容模式：检测到旧版大脑，准备备份并升级...");
+                        Log.i("SDLActivity", L("兼容模式：检测到旧版核心，准备备份并升级..."));
                         needInject = true;
                         File backupDir = new File(baseDir, "external_old_backup_" + System.currentTimeMillis());
                         externalDir.renameTo(backupDir);
@@ -957,8 +960,8 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 if (needInject) {
                     runOnUiThread(() -> {
                         ProgressDialog progress = new ProgressDialog(SDLActivity.this);
-                        progress.setTitle("⚙️ 智能兼容处理");
-                        progress.setMessage("正在为整合包注入最新引擎核心...\n(原有核心已安全备份，画面与人物不受影响)");
+                        progress.setTitle(L("⚙️ 智能兼容处理"));
+                        progress.setMessage(L("正在为整合包注入最新引擎核心...\n(原有核心已安全备份，画面与人物不受影响)"));
                         progress.setCancelable(false);
                         progress.show();
 
@@ -980,7 +983,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     return; 
                 }
                 
-                Log.i("SDLActivity", "兼容模式：环境完好，直接拉起引擎！");
+                Log.i("SDLActivity", L("兼容模式：环境完好，直接拉起引擎！"));
                 runOnUiThread(this::onSDLReady);
                 return; 
             }
@@ -2264,6 +2267,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
     // === 桌面系统模式新增方法 结束 ===
 
+    // ================= 【机制注入】多语言补丁快捷助手 =================
+    // 自动连接到 DynamicGamepadView 的翻译引擎
+    private String L(String text) {
+        return DynamicGamepadView.L(text);
+    }
 
 }
 

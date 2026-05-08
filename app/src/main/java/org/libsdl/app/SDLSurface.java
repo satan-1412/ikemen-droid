@@ -315,4 +315,8 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         }
         return false;
     }
-}
+// ================= 【机制注入】多语言补丁快捷助手 =================
+    private String L(String text) {
+        return DynamicGamepadView.L(text);
+    }
+} // 类的结尾
