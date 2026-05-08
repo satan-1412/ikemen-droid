@@ -1803,11 +1803,26 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
         
         try {
             JSONObject root = new JSONObject();
-            // 保存之前的布局
-            root.put("layout", new JSONArray(prefs.getString(KEY_LAYOUT_PREFIX + currentSlot, "[]")));
-            // 保存风格列表
+            JSONArray rawLayout = new JSONArray(prefs.getString(KEY_LAYOUT_PREFIX + currentSlot, "[]"));
+            JSONArray exportLayout = new JSONArray();
+            for (int i = 0; i < rawLayout.length(); i++) {
+                JSONObject btn = new JSONObject(rawLayout.getJSONObject(i).toString());
+                btn.put("skin", embedImageToBase64(btn.optString("skin", "")));
+                btn.put("pressedSkin", embedImageToBase64(btn.optString("pressedSkin", "")));
+                exportLayout.put(btn);
+            }
+            root.put("layout", exportLayout);
+            
             JSONArray styleArr = new JSONArray();
-            for(GamepadStyle s : styleList) styleArr.put(s.toJson());
+            for(GamepadStyle s : styleList) {
+                JSONObject sj = s.toJson();
+                sj.put("joyBaseUri", embedImageToBase64(sj.optString("joyBaseUri", "")));
+                sj.put("joyKnobUri", embedImageToBase64(sj.optString("joyKnobUri", "")));
+                sj.put("btnNormalUri", embedImageToBase64(sj.optString("btnNormalUri", "")));
+                sj.put("btnSquareUri", embedImageToBase64(sj.optString("btnSquareUri", "")));
+                sj.put("btnPressedUri", embedImageToBase64(sj.optString("btnPressedUri", "")));
+                styleArr.put(sj);
+            }
             root.put("styles", styleArr);
             DynamicGamepadView.pendingExportData = root.toString();
         } catch(Exception e) {}
@@ -2319,9 +2334,14 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
         // 如果是系统预设风格图（名字带 style_），不转Base64，因为接收方手机里一定自带，节省体积
         if (uriStr.contains("style_base_") || uriStr.contains("style_knob_") || uriStr.contains("style_btn_") || uriStr.contains("style_sq_")) return uriStr;
         try {
-            java.io.InputStream is = getContext().getContentResolver().openInputStream(Uri.parse(uriStr));
+            java.io.InputStream is;
+            if (uriStr.startsWith("file://")) {
+                is = new java.io.FileInputStream(uriStr.substring(7));
+            } else {
+                is = getContext().getContentResolver().openInputStream(Uri.parse(uriStr));
+            }
             android.graphics.Bitmap bm = BitmapFactory.decodeStream(is);
-            is.close();
+            if (is != null) is.close();
             if (bm == null) return uriStr;
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
             bm.compress(android.graphics.Bitmap.CompressFormat.PNG, 80, baos); 
@@ -2338,7 +2358,7 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             String b64 = dataStr.substring(7);
             byte[] decodedBytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT);
             android.graphics.Bitmap bm = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
-            return saveImageToLocal(bm, "imported_skin_" + System.currentTimeMillis() + ".png");
+            return saveImageToLocal(bm, "imported_skin_" + java.util.UUID.randomUUID().toString().replace("-", "") + ".png");
         } catch (Exception e) { return ""; }
     }
 
