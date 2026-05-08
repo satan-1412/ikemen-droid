@@ -1705,7 +1705,7 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                         btnLongPressRunnable = () -> {
                             copiedButton = draggedButton;
                             triggerVibrate(50);
-                            Toast.makeText(getContext(), L("已复制按键 [") + copiedButton.id + L("]，双击空白处粘贴",) Toast.LENGTH_SHORT).show();
+                            Toast.makeText(getContext(), L("已复制按键 [") + copiedButton.id + L("]，双击空白处粘贴"), Toast.LENGTH_SHORT).show();
                         };
                         postDelayed(btnLongPressRunnable, 600);
                     } else {
