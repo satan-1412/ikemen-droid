@@ -1772,7 +1772,7 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
         FileActionFragment fragment = new FileActionFragment();
         android.os.Bundle args = new android.os.Bundle();
         args.putInt("action_type", 1); // 1 代表导出
-        args.putString("export_data", prefs.getString(KEY_LAYOUT_PREFIX + currentSlot, "[]"));
+        DynamicGamepadView.pendingExportData = prefs.getString(KEY_LAYOUT_PREFIX + currentSlot, "[]");
         fragment.setArguments(args);
         activity.getFragmentManager().beginTransaction().add(fragment, "file_action").commitAllowingStateLoss();
     }
@@ -1807,7 +1807,7 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             JSONArray styleArr = new JSONArray();
             for(GamepadStyle s : styleList) styleArr.put(s.toJson());
             root.put("styles", styleArr);
-            args.putString("export_data", root.toString());
+            DynamicGamepadView.pendingExportData = root.toString();
         } catch(Exception e) {}
         
         fragment.setArguments(args);
@@ -2428,7 +2428,7 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                                 root.put("joySkinKnob", embedImageToBase64(joySkinKnobUri));
                                 root.put("menuAlpha", menuAlpha); root.put("currentStyleIndex", currentStyleIndex);
                             }
-                            args.putString("export_data", root.toString());
+                            DynamicGamepadView.pendingExportData = root.toString();
                         } catch(Exception e) {}
                     } else if (which == 3) { 
                         args.putInt("action_type", 2); 
@@ -4555,7 +4555,8 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                     DynamicGamepadView.instance.onImagePicked(uri.toString());
                 } else if (requestCode == 44) { 
                     try {
-                        String exportData = getArguments() != null ? getArguments().getString("export_data", "") : "";
+                        String exportData = !DynamicGamepadView.pendingExportData.isEmpty() ? DynamicGamepadView.pendingExportData : (getArguments() != null ? getArguments().getString("export_data", "") : "");
+                        DynamicGamepadView.pendingExportData = "";
                         if (exportData.isEmpty()) { Toast.makeText(getActivity(), L("❌ 无数据可导出"), Toast.LENGTH_SHORT).show(); return; }
                         java.io.OutputStream os = getActivity().getContentResolver().openOutputStream(uri);
                         os.write(exportData.getBytes(StandardCharsets.UTF_8));
