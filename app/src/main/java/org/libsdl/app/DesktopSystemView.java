@@ -441,7 +441,7 @@ public class DesktopSystemView extends Dialog {
         GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#2D2D30")); border.setStroke((int)(1*density), Color.parseColor("#3F3F46"));
         menu.setBackground(border); menu.setPadding((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density));
         
-        Button btnClose = createButton(L("❌ 强制关闭", "#E81123"));
+        Button btnClose = createButton(L("❌ 强制关闭"), "#E81123");
         btnClose.setOnClickListener(v -> { onClose.run(); rootLayer.removeView(menuOverlay); }); menu.addView(btnClose);
         
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, -2);
@@ -3232,7 +3232,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
 // ================= 【机制注入】多语言补丁快捷助手 =================
     // 自动连接到 DynamicGamepadView 的翻译引擎
-    private String L(String text) {
+    private static String L(String text) {
         return DynamicGamepadView.L(text);
     }
 } // 类的结尾
