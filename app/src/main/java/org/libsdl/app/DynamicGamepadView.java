@@ -50,6 +50,8 @@ import java.util.ArrayList;
 import java.util.List;
 
         public class DynamicGamepadView extends View {
+    // 【新增】用于规避 Bundle 1MB 大小限制的巨型数据中转站
+    public static String pendingExportData = ""; 
     // ================= UI 尺寸比例与遮罩图控制变量 =================
     public String menuSkinUri = "";
     public Bitmap menuSkinBitmap = null;
