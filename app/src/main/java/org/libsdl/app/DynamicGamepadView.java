@@ -267,10 +267,10 @@ import java.util.List;
     public VirtualButton currentlyEditingButton = null;
     public static DynamicGamepadView instance;
 
-    public static final String[] TEXT_COLOR_NAMES = {L("白色"), L("黑色"), L("红色"), L("黄色"), L("蓝色"), L("绿色")};
+    public static final String[] TEXT_COLOR_NAMES = {"⬜", "⬛", "🟥", "🟨", "🟦", "🟩"};
     public static final int[] TEXT_COLOR_VALUES = {Color.WHITE, Color.BLACK, Color.RED, Color.YELLOW, Color.BLUE, Color.GREEN};
 
-    public static final String[] SHAPE_NAMES = {L("⭕ 圆形 (Circle)"), L("🔲 圆角矩形 (Rounded Square)")};
+    public static final String[] SHAPE_NAMES = {"⭕", "🔲"};
     public static final int SHAPE_CIRCLE = 0;
     public static final int SHAPE_SQUARE = 1;
 
