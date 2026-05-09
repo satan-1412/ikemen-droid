@@ -4415,19 +4415,21 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             }
 
             // 【开局全局纠偏】：无论玩家存的是什么神仙旧布局，开机瞬间强行把错误穿成“圆形衣服”的“方形按键”扒下来！
-            // 【修复】：只纠正外观图片，绝对不碰玩家自定义保存下来的透明度和颜色，解决重启丢失配置 Bug！
+            // 【终极修复】：坚决保护玩家自定义的本地图片！只有当前图片属于系统默认材质或为空时，才允许被主题覆盖，彻底解决重启丢失皮肤Bug！
             if (joystickMode == JOYSTICK_MODE_STYLE && currentStyleIndex < styleList.size()) {
                 GamepadStyle currentTheme = styleList.get(currentStyleIndex);
                 for (VirtualButton b : buttons) {
                     if (!b.isDirectional) {
-                        // 移除对 b.color 和 b.pressedEffectAlpha 的强行覆盖，保留玩家自定义数值
-                        if (b.shape == SHAPE_CIRCLE) {
-                            b.customImageUri = currentTheme.btnNormalUri != null ? currentTheme.btnNormalUri : "";
-                        } else {
-                            b.customImageUri = (currentTheme.btnSquareUri != null && !currentTheme.btnSquareUri.isEmpty()) ? currentTheme.btnSquareUri : "";
+                        boolean isSysSkin = b.customImageUri == null || b.customImageUri.isEmpty() || b.customImageUri.contains("style_");
+                        if (isSysSkin) {
+                            if (b.shape == SHAPE_CIRCLE) {
+                                b.customImageUri = currentTheme.btnNormalUri != null ? currentTheme.btnNormalUri : "";
+                            } else {
+                                b.customImageUri = (currentTheme.btnSquareUri != null && !currentTheme.btnSquareUri.isEmpty()) ? currentTheme.btnSquareUri : "";
+                            }
                         }
-                        // 只有当按键的按下特效颜色等于默认 0 时，才补全主题皮肤；如果玩家改过，保留玩家的！
-                        if (b.pressedEffectColor == 0) {
+                        boolean isSysPressedSkin = b.customPressedUri == null || b.customPressedUri.isEmpty() || b.customPressedUri.contains("style_");
+                        if (b.pressedEffectColor == 0 && isSysPressedSkin) {
                              b.customPressedUri = currentTheme.btnPressedUri != null ? currentTheme.btnPressedUri : "";
                         }
                         b.loadSkinFromUri(getContext());
@@ -4552,6 +4554,7 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
         @Override
         public void onCreate(android.os.Bundle savedInstanceState) {
             super.onCreate(savedInstanceState);
+            if (savedInstanceState != null) return; // 【自检优化】防止切屏或后台回收导致 Fragment 重建时，无限拉起文件选择器
             int type = getArguments() != null ? getArguments().getInt("action_type", 0) : 0;
             if (type == 1) { 
                 Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -4596,9 +4599,9 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                         Toast.makeText(getActivity(), L("✅ 导出成功！"), Toast.LENGTH_SHORT).show();
                     } catch (Exception e) { Toast.makeText(getActivity(), L("❌ 导出失败"), Toast.LENGTH_SHORT).show(); }                
                 } else if (requestCode == 46) { 
-                    // 【新增】处理语言补丁的解析与覆写
+                    // 【自检修复】彻底移除对 instance 的依赖，防止低内存手机切到文件管理器时被杀后台，切回来导致 instance 为空而静默失效
                     final Context safeContext = getActivity();
-                    if (safeContext == null) return;
+                    if (safeContext == null) { getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss(); return; }
                     try {
                         java.io.InputStream is = safeContext.getContentResolver().openInputStream(uri);
                         BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));

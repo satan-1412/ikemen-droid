@@ -160,14 +160,22 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         File configFile = new File(saveDir, "config.ini");
         List<String> lines = new ArrayList<>();
         boolean foundMotif = false;
+        boolean needRewrite = false; // 【优化】是否真的需要重写文件
 
         try {
             if (configFile.exists()) {
-                BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(configFile)));
+                // 【修复1】强制使用 UTF-8 读取，防止玩家添加中文被错误编码导致文件损坏
+                BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(configFile), "UTF-8"));
                 String line;
                 while ((line = br.readLine()) != null) {
                     if (line.trim().toLowerCase().startsWith("motif") && line.contains("=")) {
-                        lines.add("motif = " + finalMotif);
+                        String expected = "motif = " + finalMotif;
+                        if (!line.trim().equalsIgnoreCase(expected)) {
+                            lines.add(expected);
+                            needRewrite = true; // 只有当 motif 路径真的发生改变时，才允许修改文件
+                        } else {
+                            lines.add(line);
+                        }
                         foundMotif = true;
                     } else {
                         lines.add(line);
@@ -178,11 +186,21 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             if (!foundMotif) {
                 if (lines.isEmpty()) lines.add("[Options]");
                 lines.add("motif = " + finalMotif);
+                needRewrite = true;
             }
-            BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(configFile)));
-            for (String l : lines) { bw.write(l); bw.newLine(); }
-            bw.flush(); bw.close();
-            Log.d("SDL", L("config.ini 修复成功！已指向: ") + finalMotif);
+            
+            if (needRewrite) {
+                // 【修复2】强制使用 UTF-8 写入
+                BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(configFile), "UTF-8"));
+                for (String l : lines) { 
+                    bw.write(l); 
+                    bw.write("\r\n"); // 【修复3】强制写入 Windows 标准的 CRLF 换行符，防止底层引擎解析 \n 失败崩溃重置
+                }
+                bw.flush(); bw.close();
+                Log.d("SDL", L("config.ini 修复成功！已指向: ") + finalMotif);
+            } else {
+                Log.d("SDL", L("config.ini motif路径一致，已跳过重写，保护玩家自定义参数不变。"));
+            }
         } catch (Exception e) {
             Log.e("SDL", L("修复 config.ini 失败: " + e.getMessage()));
         }
