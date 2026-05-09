@@ -357,7 +357,12 @@ import java.util.List;
             // 加载常态皮肤
             if (customImageUri != null && !customImageUri.isEmpty()) {
                 try {
-                    InputStream is = context.getContentResolver().openInputStream(Uri.parse(customImageUri));
+                    InputStream is;
+                    if (customImageUri.startsWith("file://")) {
+                        is = new java.io.FileInputStream(customImageUri.substring(7));
+                    } else {
+                        is = context.getContentResolver().openInputStream(Uri.parse(customImageUri));
+                    }
                     skinBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(is), (int)(radius*2), (int)(radius*2), true);
                     if (is != null) is.close();
                 } catch (Exception e) { skinBitmap = null; }
@@ -366,7 +371,12 @@ import java.util.List;
             // 加载按下态皮肤
             if (customPressedUri != null && !customPressedUri.isEmpty()) {
                 try {
-                    InputStream is = context.getContentResolver().openInputStream(Uri.parse(customPressedUri));
+                    InputStream is;
+                    if (customPressedUri.startsWith("file://")) {
+                        is = new java.io.FileInputStream(customPressedUri.substring(7));
+                    } else {
+                        is = context.getContentResolver().openInputStream(Uri.parse(customPressedUri));
+                    }
                     pressedSkinBitmap = Bitmap.createScaledBitmap(BitmapFactory.decodeStream(is), (int)(radius*2), (int)(radius*2), true);
                     if (is != null) is.close();
                 } catch (Exception e) { pressedSkinBitmap = null; }
@@ -4585,9 +4595,10 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                         os.close();
                         Toast.makeText(getActivity(), L("✅ 导出成功！"), Toast.LENGTH_SHORT).show();
                     } catch (Exception e) { Toast.makeText(getActivity(), L("❌ 导出失败"), Toast.LENGTH_SHORT).show(); }                
-                } else if (requestCode == 46 && DynamicGamepadView.instance != null) { 
+                } else if (requestCode == 46) { 
                     // 【新增】处理语言补丁的解析与覆写
-                    final Context safeContext = getActivity() != null ? getActivity() : DynamicGamepadView.instance.getContext();
+                    final Context safeContext = getActivity();
+                    if (safeContext == null) return;
                     try {
                         java.io.InputStream is = safeContext.getContentResolver().openInputStream(uri);
                         BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
