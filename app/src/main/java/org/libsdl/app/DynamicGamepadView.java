@@ -50,6 +50,10 @@ import java.util.ArrayList;
 import java.util.List;
 
         public class DynamicGamepadView extends View {
+    // 【新增】定时休眠控制引擎变量
+    private android.os.Handler sleepTimerHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable sleepTimerRunnable = null;
+
     // 【新增】用于规避 Bundle 1MB 大小限制的巨型数据中转站
     public static String pendingExportData = ""; 
     // ================= UI 尺寸比例与遮罩图控制变量 =================
@@ -2217,6 +2221,12 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             if (getContext() instanceof SDLActivity) {
                 ((SDLActivity) getContext()).toggleDesktopMode(true);
             }
+            dialog.dismiss(); 
+        }));
+
+        // 【新增：定时休眠功能入口】
+        layout.addView(createMenuButton(L("⏳ 设置定时休眠 (倒计时暂停并息屏)"), v -> { 
+            showSleepTimerDialog(); 
             dialog.dismiss(); 
         }));
 
@@ -4960,6 +4970,108 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
         dialog.setContentView(rootLayout); setupMovableDialog(dialog, header); dialog.show();
     }
     
+    // ================= 新增：定时休眠设置弹窗逻辑 =================
+    private void showSleepTimerDialog() {
+        final android.app.Dialog dialog = new android.app.Dialog(getContext(), android.R.style.Theme_DeviceDefault_Dialog);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        
+        LinearLayout layout = new LinearLayout(getContext());
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(60, 60, 60, 60);
+        layout.setBackground(getCustomDialogBackground()); // 自动应用你自定义的全局弹窗背景
+
+        layout.addView(createTitle(L("⏳ 定时休眠设置 (单位:秒)")));
+
+        final EditText timeInput = createEditText(L("输入秒数 (如 1800 为半小时)"), "");
+        timeInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        layout.addView(timeInput);
+
+        // 如果已经在倒计时，给玩家一个醒目提示
+        if (sleepTimerRunnable != null) {
+            TextView status = new TextView(getContext());
+            status.setText(L("⚠️ 当前已有定时任务正在运行，重新设定将覆盖原任务。"));
+            status.setTextColor(Color.parseColor("#FF9800"));
+            status.setPadding(0, 20, 0, 20);
+            status.setTextSize(dialogTextSize);
+            layout.addView(status);
+        }
+
+        LinearLayout btnLayout = new LinearLayout(getContext());
+        btnLayout.setOrientation(LinearLayout.HORIZONTAL);
+        btnLayout.setPadding(0, 40, 0, 0);
+
+        Button cancelBtn = new Button(getContext());
+        cancelBtn.setText(L("❌ 取消定时"));
+        cancelBtn.setTextColor(Color.WHITE);
+        cancelBtn.setBackgroundColor(Color.parseColor("#F44336"));
+        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        p1.setMargins(0, 0, 10, 0);
+        cancelBtn.setLayoutParams(p1);
+        cancelBtn.setOnClickListener(v -> {
+            if (sleepTimerHandler != null && sleepTimerRunnable != null) {
+                sleepTimerHandler.removeCallbacks(sleepTimerRunnable);
+                sleepTimerRunnable = null;
+                Toast.makeText(getContext(), L("✅ 定时任务已取消"), Toast.LENGTH_SHORT).show();
+            }
+            dialog.dismiss();
+        });
+
+        Button startBtn = new Button(getContext());
+        startBtn.setText(L("▶️ 开始倒计时"));
+        startBtn.setTextColor(Color.WHITE);
+        startBtn.setBackgroundColor(Color.parseColor("#4CAF50"));
+        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        p2.setMargins(10, 0, 0, 0);
+        startBtn.setLayoutParams(p2);
+        startBtn.setOnClickListener(v -> {
+            String text = timeInput.getText().toString();
+            if (text.isEmpty()) {
+                Toast.makeText(getContext(), L("请输入需要倒计时的秒数"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            try {
+                int seconds = Integer.parseInt(text);
+                if (seconds <= 0) return;
+                
+                // 清理旧任务防止重叠
+                if (sleepTimerRunnable != null) {
+                    sleepTimerHandler.removeCallbacks(sleepTimerRunnable);
+                }
+
+                sleepTimerRunnable = new Runnable() {
+                    @Override
+                    public void run() {
+                        // 1. 调用底层接口进入桌面模式 (实现游戏自动暂停)
+                        if (getContext() instanceof SDLActivity) {
+                            ((SDLActivity) getContext()).toggleDesktopMode(true);
+                        }
+                        
+                        // 2. 剥离窗口防休眠锁，并将屏幕亮度置 0 瞬间黑屏，交由系统接管真实休眠
+                        android.app.Activity activity = (android.app.Activity) getContext();
+                        if (activity != null && activity.getWindow() != null) {
+                            activity.getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                            android.view.WindowManager.LayoutParams params = activity.getWindow().getAttributes();
+                            params.screenBrightness = 0.0f; 
+                            activity.getWindow().setAttributes(params);
+                        }
+                        Toast.makeText(getContext(), L("⏳ 定时已到！游戏已暂停，屏幕即将熄灭"), Toast.LENGTH_LONG).show();
+                        sleepTimerRunnable = null;
+                    }
+                };
+                sleepTimerHandler.postDelayed(sleepTimerRunnable, seconds * 1000L);
+                Toast.makeText(getContext(), L("✅ 定时休眠已启动: 将在 ") + seconds + L(" 秒后执行"), Toast.LENGTH_SHORT).show();
+                dialog.dismiss();
+            } catch (Exception e) {}
+        });
+
+        btnLayout.addView(cancelBtn);
+        btnLayout.addView(startBtn);
+        layout.addView(btnLayout);
+
+        dialog.setContentView(layout);
+        dialog.show();
+    }
+
 // ================= 新增：多语言补丁引擎 =================
     public static JSONObject languagePack = new JSONObject();
 
