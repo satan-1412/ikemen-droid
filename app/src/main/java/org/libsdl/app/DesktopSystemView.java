@@ -384,6 +384,8 @@ public class DesktopSystemView extends Dialog {
         createDesktopIcon("snd_extractor", "🎵", L("SND查看器")); 
         createDesktopIcon("gif_extractor", "🎞️", L("GIF拆解器")); 
         createDesktopIcon("stage_editor", "🗺️", L("地图编辑器")); 
+        createDesktopIcon("text_decipher", "🔣", L("乱码解字板")); 
+        createDesktopIcon("def_scanner", "🗂️", L("DEF生成器"));
     }
 
     private void createDesktopIcon(final String id, String iconStr, String name) {
@@ -427,6 +429,8 @@ public class DesktopSystemView extends Dialog {
                             else if (id.equals("snd_extractor")) openAppWindow(L("🎵 SND查看器"), buildSndExtractorContent(), null); 
                             else if (id.equals("gif_extractor")) openAppWindow(L("🎞️ GIF拆解器"), buildGifExtractorContent(), null);
                             else if (id.equals("stage_editor")) openAppWindow(L("🗺️ 地图编辑器"), buildStageEditorContent(), null);
+                            else if (id.equals("text_decipher")) openAppWindow(L("🔣 乱码解字板"), buildDecipherBoardContent(), null);
+                            else if (id.equals("def_scanner")) openAppWindow(L("🗂️ 自动 DEF 扫描器"), buildDefScannerContent(), null);
                             lastClickTime = 0; 
                         } else lastClickTime = clickTime;
                     }
@@ -743,6 +747,12 @@ public class DesktopSystemView extends Dialog {
                 } else if (targetType == 11) {
                     Button scanDirBtn = createButton(L("✔️ 深度扫描本文件夹的 3D 模型 (.gltf/.glb)"), "#0078D7"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
+                } else if (targetType == 12) {
+                    Button scanDirBtn = createButton(L("✔️ 选择此文件夹进行文件名乱码修复"), "#9C27B0"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                    scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
+                } else if (targetType == 13) {
+                    Button scanDirBtn = createButton(L("✔️ 扫描此文件夹下的所有 DEF 工程"), "#E81123"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
+                    scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
                 }
 
                 
@@ -814,6 +824,9 @@ public class DesktopSystemView extends Dialog {
                                     } else {
                                         Toast.makeText(getContext(), L("❌ 格式不支持，请选择支持的 3D 格式"), Toast.LENGTH_SHORT).show();
                                     }
+                                }
+                                else if (targetType == 12 || targetType == 13) {
+                                    if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); 
                                 }
                                 else if (targetType == 1 || targetType == 2) { 
                                     if(targetType == 1) customDesktopBg = absPath; else customWindowBg = absPath;
@@ -3228,6 +3241,244 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         });
         
         parentLayout.addView(btnTexture, 0); // 将缩小后的贴图键插入布局首位
+    }
+
+    // ======================================================================================
+    // 🔣 模块 6：乱码解字板 (完美平替 VBS，彻底解决日文 Shift-JIS 字符集错位)
+    // ======================================================================================
+    private View buildDecipherBoardContent() {
+        LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
+
+        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL);
+        Button btnFixText = createButton(L("📄 修复文件内容乱码 (单文件)"), "#0078D7");
+        Button btnFixName = createButton(L("📁 修复文件名乱码 (选文件夹)"), "#9C27B0");
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0, -2, 1f); bp.setMargins(0, 0, (int)(10*density), 0);
+        topBar.addView(btnFixText, bp); topBar.addView(btnFixName, bp);
+        root.addView(topBar);
+
+        ScrollView scroll = new ScrollView(getContext()); LinearLayout contentArea = new LinearLayout(getContext()); contentArea.setOrientation(LinearLayout.VERTICAL); scroll.addView(contentArea);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
+
+        btnFixText.setOnClickListener(v -> {
+            showWin10FilePicker(L("选择需要修复内容的文本文件 (.def/.cns/.cmd 等)"), 12, null, null, file -> {
+                if(file.isDirectory()) { Toast.makeText(getContext(), L("❌ 请选择单个文件，而不是文件夹！"), Toast.LENGTH_SHORT).show(); return; }
+                contentArea.removeAllViews();
+                contentArea.addView(createSubTitle(L("🎯 当前文件: ") + file.getName()));
+                
+                final byte[][] rawBytes = {null};
+                try {
+                    FileInputStream fis = new FileInputStream(file);
+                    rawBytes[0] = new byte[(int)file.length()];
+                    fis.read(rawBytes[0]); fis.close();
+                } catch (Exception e) { Toast.makeText(getContext(), L("文件读取失败!"), Toast.LENGTH_SHORT).show(); return; }
+
+                LinearLayout decodeBar = new LinearLayout(getContext()); decodeBar.setOrientation(LinearLayout.HORIZONTAL); decodeBar.setGravity(Gravity.CENTER_VERTICAL);
+                decodeBar.addView(createSubTitle(L("尝试使用以下编码读取: ")));
+                Spinner charsetSpinner = new Spinner(getContext());
+                String[] charsets = {"Shift_JIS (日文引擎常用)", "GBK (中文系统常用)", "UTF-8 (国际标准)", "Big5 (繁体中文)", "Windows-1252"};
+                String[] charsetsKeys = {"Shift_JIS", "GBK", "UTF-8", "Big5", "Windows-1252"};
+                ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, charsets);
+                charsetSpinner.setAdapter(adapter); decodeBar.addView(charsetSpinner); contentArea.addView(decodeBar);
+
+                EditText previewText = createInput("", ""); previewText.setGravity(Gravity.TOP | Gravity.LEFT);
+                previewText.setMinimumHeight((int)(300*density)); contentArea.addView(previewText);
+
+                charsetSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+                    @Override public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) {
+                        try {
+                            // 为了防 OOM，预览只转前 200KB，但保存时会转全部
+                            int length = Math.min(rawBytes[0].length, 200 * 1024);
+                            String decoded = new String(rawBytes[0], 0, length, charsetsKeys[pos]);
+                            if (rawBytes[0].length > length) decoded += "\n\n... (预览已截断，实际保存包含全部内容)";
+                            previewText.setText(decoded);
+                        } catch (Exception e) {}
+                    }
+                    @Override public void onNothingSelected(android.widget.AdapterView<?> p) {}
+                });
+
+                Button btnSave = createButton(L("💾 破解成功！另存为 UTF-8 无乱码文件"), "#4CAF50");
+                LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2); sp.setMargins(0, (int)(15*density), 0, 0);
+                btnSave.setOnClickListener(saveBtn -> {
+                    try {
+                        String finalEncoding = charsetsKeys[charsetSpinner.getSelectedItemPosition()];
+                        String fullDecoded = new String(rawBytes[0], finalEncoding);
+                        File outFile = new File(file.getParent(), file.getName().replaceAll("\\.[^.]+$", "") + "_UTF8" + file.getName().substring(file.getName().lastIndexOf(".")));
+                        FileOutputStream fos = new FileOutputStream(outFile);
+                        fos.write(fullDecoded.getBytes("UTF-8")); fos.close();
+                        Toast.makeText(getContext(), L("✅ 保存成功！可用 MT 管理器查看:\n") + outFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
+                    } catch (Exception e) { Toast.makeText(getContext(), L("❌ 保存失败"), Toast.LENGTH_SHORT).show(); }
+                });
+                contentArea.addView(btnSave, sp);
+            });
+        });
+
+        btnFixName.setOnClickListener(v -> {
+            showWin10FilePicker(L("选择包含乱码文件名的【文件夹】"), 12, null, null, dir -> {
+                if(!dir.isDirectory()) { Toast.makeText(getContext(), L("❌ 请选择文件夹，而不是单个文件！"), Toast.LENGTH_SHORT).show(); return; }
+                contentArea.removeAllViews();
+                contentArea.addView(createSubTitle(L("📂 目录: ") + dir.getAbsolutePath()));
+                contentArea.addView(createSubTitle(L("⚠️ VBS 原理还原：系统用 GBK 错误地读取了 Shift-JIS 字节，正在反向破解...")));
+
+                LinearLayout listPreview = new LinearLayout(getContext()); listPreview.setOrientation(LinearLayout.VERTICAL);
+                File[] files = dir.listFiles();
+                if (files == null || files.length == 0) return;
+
+                final List<File> targets = new ArrayList<>(); final List<String> newNames = new ArrayList<>();
+                for (File f : files) {
+                    try {
+                        // 核心破解算法：反向获取被错认的 GBK 字节，重新用 Shift-JIS 解析
+                        String badName = f.getName();
+                        String fixedName = new String(badName.getBytes("GBK"), "Shift_JIS");
+                        
+                        LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL);
+                        TextView tBad = new TextView(getContext()); tBad.setText("❌ " + badName); tBad.setTextColor(Color.RED); applyGlobalFontSettings(tBad, 0.9f, false);
+                        TextView tGood = new TextView(getContext()); tGood.setText(" ➡️ ✅ " + fixedName); tGood.setTextColor(Color.GREEN); applyGlobalFontSettings(tGood, 0.9f, true);
+                        row.addView(tBad); row.addView(tGood); listPreview.addView(row);
+
+                        targets.add(f); newNames.add(fixedName);
+                    } catch (Exception e) {}
+                }
+                contentArea.addView(listPreview);
+
+                Button btnRename = createButton(L("🚀 确认全部重命名 (无法撤销，请确认预览无误)"), "#E81123");
+                LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2); sp.setMargins(0, (int)(15*density), 0, 0);
+                btnRename.setOnClickListener(renBtn -> {
+                    int success = 0;
+                    for (int i=0; i<targets.size(); i++) {
+                        File oldF = targets.get(i); File newF = new File(oldF.getParent(), newNames.get(i));
+                        if (!oldF.getName().equals(newNames.get(i)) && oldF.renameTo(newF)) success++;
+                    }
+                    Toast.makeText(getContext(), L("✅ 成功重命名 ") + success + L(" 个文件/文件夹！"), Toast.LENGTH_LONG).show();
+                    contentArea.removeAllViews();
+                });
+                contentArea.addView(btnRename, sp);
+            });
+        });
+        return root;
+    }
+
+    // ======================================================================================
+    // 🗂️ 模块 7：DEF 扫描与 Select.def 生成器
+    // ======================================================================================
+    private View buildDefScannerContent() {
+        LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
+
+        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL);
+        Button btnScan = createButton(L("📂 选择根目录进行全盘扫描 (Chars/Stages)"), "#0078D7");
+        TextView txtStatus = new TextView(getContext()); txtStatus.setText(L("  等待扫描...")); applyGlobalFontSettings(txtStatus, 1.0f, false); txtStatus.setTextColor(Color.WHITE);
+        topBar.addView(btnScan); topBar.addView(txtStatus); root.addView(topBar);
+
+        ScrollView scroll = new ScrollView(getContext()); LinearLayout contentArea = new LinearLayout(getContext()); contentArea.setOrientation(LinearLayout.VERTICAL); scroll.addView(contentArea);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
+
+        btnScan.setOnClickListener(v -> {
+            showWin10FilePicker(L("选择你要扫描的根目录"), 13, null, null, dir -> {
+                if(!dir.isDirectory()) { Toast.makeText(getContext(), L("❌ 请选择文件夹！"), Toast.LENGTH_SHORT).show(); return; }
+                contentArea.removeAllViews(); txtStatus.setText(L("  🚀 正在深度扫描全文，请稍候..."));
+                
+                final List<String> stageResults = new ArrayList<>();
+                final List<String> charNormalResults = new ArrayList<>();
+                final List<String> charRiskResults = new ArrayList<>();
+
+                new Thread(() -> {
+                    List<File> allDefs = new ArrayList<>();
+                    class DefScanner {
+                        void scan(File targetDir) {
+                            File[] fs = targetDir.listFiles(); if(fs==null) return;
+                            for(File f:fs){ if(f.isDirectory() && !f.isHidden()) scan(f); else if(f.getName().toLowerCase().endsWith(".def")) allDefs.add(f); }
+                        }
+                    }
+                    new DefScanner().scan(dir);
+
+                    for (File defF : allDefs) {
+                        try {
+                            // 根据你的要求：全文扫描，绝不只扫前50行
+                            java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(defF));
+                            String line; boolean isStage = false; boolean isChar = false;
+                            while ((line = br.readLine()) != null) {
+                                String lower = line.toLowerCase().trim();
+                                if (lower.startsWith("[stageinfo]") || lower.startsWith("[bgdef]")) { isStage = true; break; }
+                                if (lower.startsWith("[files]") || lower.contains("cmd =") || lower.contains("cns =")) { isChar = true; } // 不立即 break，防止误判
+                            }
+                            br.close();
+
+                            String folderName = defF.getParentFile().getName();
+                            String defNameNoExt = defF.getName().substring(0, defF.getName().lastIndexOf("."));
+
+                            if (isStage) {
+                                stageResults.add(folderName + "/" + defF.getName());
+                            } else if (isChar) {
+                                if (folderName.equalsIgnoreCase(defNameNoExt)) {
+                                    charNormalResults.add(defNameNoExt);
+                                } else {
+                                    charRiskResults.add(L("文件夹名称：") + folderName + L(" - def名称:") + defF.getName());
+                                }
+                            }
+                        } catch (Exception e) {}
+                    }
+
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        txtStatus.setText(L("  ✅ 扫描完毕！共分析 ") + allDefs.size() + L(" 个 DEF。"));
+                        
+                        StringBuilder finalExportText = new StringBuilder();
+                        finalExportText.append("; ==================================\n");
+                        finalExportText.append("; 🗺️ 地图列表 (Stages)\n");
+                        finalExportText.append("; ==================================\n");
+                        contentArea.addView(createTitle(L("🗺️ 地图列表 (Stages)")));
+                        for (String s : stageResults) { 
+                            TextView tv = new TextView(getContext()); tv.setText(s); tv.setTextColor(Color.parseColor("#4CAF50")); applyGlobalFontSettings(tv, 0.9f, false); contentArea.addView(tv); 
+                            finalExportText.append(s).append("\n");
+                        }
+
+                        finalExportText.append("\n; ==================================\n");
+                        finalExportText.append("; 🥷 角色列表 - 正常 (Characters)\n");
+                        finalExportText.append("; ==================================\n");
+                        contentArea.addView(createTitle(L("🥷 角色列表 (正常匹配)")));
+                        for (String s : charNormalResults) { 
+                            TextView tv = new TextView(getContext()); tv.setText(s); tv.setTextColor(Color.parseColor("#0078D7")); applyGlobalFontSettings(tv, 0.9f, false); contentArea.addView(tv); 
+                            finalExportText.append(s).append("\n");
+                        }
+
+                        finalExportText.append("\n; ==================================\n");
+                        finalExportText.append("; ⚠️ 角色列表 - 风险类 (文件夹与 DEF 不一致)\n");
+                        finalExportText.append("; ==================================\n");
+                        contentArea.addView(createTitle(L("⚠️ 角色列表 (风险类)")));
+                        for (String s : charRiskResults) { 
+                            TextView tv = new TextView(getContext()); tv.setText(s); tv.setTextColor(Color.parseColor("#E81123")); applyGlobalFontSettings(tv, 0.9f, false); contentArea.addView(tv); 
+                            finalExportText.append("; ").append(s).append("\n"); // 风险类默认注释掉，防止直接报错
+                        }
+
+                        Button btnExport = createButton(L("💾 导出并保存为 txt 文件 (供 select.def 使用)"), "#FF9800");
+                        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2); bp.setMargins(0, (int)(25*density), 0, (int)(25*density));
+                        btnExport.setOnClickListener(expBtn -> {
+                            final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+                            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
+                            
+                            box.addView(createSubTitle(L("自定义导出文件名 (默认保存在 Download 目录):")));
+                            EditText nameInput = createInput("", "select_export.txt"); box.addView(nameInput);
+                            
+                            Button bConfirm = createButton(L("✔️ 确认导出"), "#4CAF50");
+                            bConfirm.setOnClickListener(confBtn -> {
+                                try {
+                                    File outDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                                    File outFile = new File(outDir, nameInput.getText().toString());
+                                    FileOutputStream fos = new FileOutputStream(outFile);
+                                    fos.write(finalExportText.toString().getBytes("UTF-8")); fos.close();
+                                    Toast.makeText(getContext(), L("✅ 成功导出到:\n") + outFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
+                                    d.dismiss();
+                                } catch (Exception e) { Toast.makeText(getContext(), L("❌ 导出失败"), Toast.LENGTH_SHORT).show(); }
+                            });
+                            box.addView(bConfirm, new LinearLayout.LayoutParams(-1, -2)); d.setContentView(box); d.show();
+                        });
+                        contentArea.addView(btnExport, bp);
+                    });
+                }).start();
+            });
+        });
+        return root;
     }
 
 // ================= 【机制注入】多语言补丁快捷助手 =================
