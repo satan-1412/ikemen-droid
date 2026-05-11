@@ -5055,7 +5055,8 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                         if (activity != null && activity.getWindow() != null) {
                             final android.view.Window window = activity.getWindow();
                             final android.view.WindowManager.LayoutParams params = window.getAttributes();
-                            final float originalBrightness = params.screenBrightness; // 记录原亮度
+                            // 【修复】记录原亮度，若原亮度获取异常(极暗)，强制使用 -1.0f 恢复系统默认亮度
+                            final float originalBrightness = params.screenBrightness <= 0.01f ? -1.0f : params.screenBrightness;
                             
                             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                             params.screenBrightness = 0.0f; 
@@ -5065,6 +5066,10 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                             final android.widget.FrameLayout decorView = (android.widget.FrameLayout) window.getDecorView();
                             final View blackOverlay = new View(getContext());
                             blackOverlay.setBackgroundColor(Color.BLACK);
+                            // 【核心修复1】强行拦截焦点，防止事件被 SDL 底层引擎吞噬
+                            blackOverlay.setClickable(true);
+                            blackOverlay.setFocusable(true);
+                            blackOverlay.setFocusableInTouchMode(true);
                             blackOverlay.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
                                     ViewGroup.LayoutParams.MATCH_PARENT, 
                                     ViewGroup.LayoutParams.MATCH_PARENT));
@@ -5073,18 +5078,24 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                                 blackOverlay.setElevation(9999f);
                             }
                             
-                            // 点击黑屏恢复亮度和常亮
-                            blackOverlay.setOnClickListener(new View.OnClickListener() {
+                            // 【核心修复2】抛弃 OnClickListener，改用底层 OnTouchListener，只要手指一碰到屏幕（即使有微小滑动）就瞬间唤醒！
+                            blackOverlay.setOnTouchListener(new View.OnTouchListener() {
                                 @Override
-                                public void onClick(View v) {
-                                    window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                                    android.view.WindowManager.LayoutParams restoreParams = window.getAttributes();
-                                    restoreParams.screenBrightness = originalBrightness;
-                                    window.setAttributes(restoreParams);
-                                    decorView.removeView(blackOverlay);
+                                public boolean onTouch(View v, MotionEvent event) {
+                                    if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                                        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                                        android.view.WindowManager.LayoutParams restoreParams = window.getAttributes();
+                                        restoreParams.screenBrightness = originalBrightness;
+                                        window.setAttributes(restoreParams);
+                                        decorView.removeView(blackOverlay);
+                                        return true; // 消费触摸事件，防止误点游戏内元素
+                                    }
+                                    return true; 
                                 }
                             });
                             decorView.addView(blackOverlay);
+                            blackOverlay.bringToFront(); // 【核心修复3】强行置于最顶层
+                            blackOverlay.requestFocus();
                         }
                         Toast.makeText(getContext(), L("⏳ 定时已到！游戏已暂停，屏幕即将熄灭"), Toast.LENGTH_LONG).show();
                         sleepTimerRunnable = null;
