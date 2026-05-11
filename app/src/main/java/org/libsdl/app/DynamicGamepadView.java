@@ -5050,53 +5050,66 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                             ((SDLActivity) getContext()).toggleDesktopMode(true);
                         }
                         
-                        // 2. 剥离窗口防休眠锁，记录当前亮度，瞬间黑屏并生成全屏黑色恢复层
-                        final android.app.Activity activity = (android.app.Activity) getContext();
-                        if (activity != null && activity.getWindow() != null) {
-                            final android.view.Window window = activity.getWindow();
-                            final android.view.WindowManager.LayoutParams params = window.getAttributes();
-                            // 【修复】记录原亮度，若原亮度获取异常(极暗)，强制使用 -1.0f 恢复系统默认亮度
-                            final float originalBrightness = params.screenBrightness <= 0.01f ? -1.0f : params.screenBrightness;
-                            
-                            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                            params.screenBrightness = 0.0f; 
-                            window.setAttributes(params);
-
-                            // 渲染全屏纯黑防烧屏遮罩
-                            final android.widget.FrameLayout decorView = (android.widget.FrameLayout) window.getDecorView();
-                            final View blackOverlay = new View(getContext());
-                            blackOverlay.setBackgroundColor(Color.BLACK);
-                            // 【核心修复1】强行拦截焦点，防止事件被 SDL 底层引擎吞噬
-                            blackOverlay.setClickable(true);
-                            blackOverlay.setFocusable(true);
-                            blackOverlay.setFocusableInTouchMode(true);
-                            blackOverlay.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT, 
-                                    ViewGroup.LayoutParams.MATCH_PARENT));
-                            // 提升层级，确保覆盖所有UI
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                                blackOverlay.setElevation(9999f);
-                            }
-                            
-                            // 【核心修复2】抛弃 OnClickListener，改用底层 OnTouchListener，只要手指一碰到屏幕（即使有微小滑动）就瞬间唤醒！
-                            blackOverlay.setOnTouchListener(new View.OnTouchListener() {
-                                @Override
-                                public boolean onTouch(View v, MotionEvent event) {
-                                    if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                                        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                                        android.view.WindowManager.LayoutParams restoreParams = window.getAttributes();
-                                        restoreParams.screenBrightness = originalBrightness;
-                                        window.setAttributes(restoreParams);
-                                        decorView.removeView(blackOverlay);
-                                        return true; // 消费触摸事件，防止误点游戏内元素
-                                    }
-                                    return true; 
+                        // 2. 【终极修复】延迟 300 毫秒，确保桌面模式完全弹出后，智能追踪并盖住最高层级的 Window
+                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                android.view.Window targetWindow = null;
+                                // 智能判断：如果桌面模式已成功运行，直接劫持桌面模式的 Window
+                                if (org.libsdl.app.DesktopSystemView.instance != null && org.libsdl.app.DesktopSystemView.instance.isShowing()) {
+                                    targetWindow = org.libsdl.app.DesktopSystemView.instance.getWindow();
+                                } else {
+                                    // 兜底方案：如果没开桌面模式，则使用底层 Activity 的 Window
+                                    android.app.Activity activity = (android.app.Activity) getContext();
+                                    if (activity != null) targetWindow = activity.getWindow();
                                 }
-                            });
-                            decorView.addView(blackOverlay);
-                            blackOverlay.bringToFront(); // 【核心修复3】强行置于最顶层
-                            blackOverlay.requestFocus();
-                        }
+
+                                if (targetWindow != null) {
+                                    final android.view.Window window = targetWindow;
+                                    final android.view.WindowManager.LayoutParams params = window.getAttributes();
+                                    final float originalBrightness = params.screenBrightness <= 0.01f ? -1.0f : params.screenBrightness;
+                                    
+                                    window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                                    params.screenBrightness = 0.0f; 
+                                    window.setAttributes(params);
+
+                                    // 获取当前最高层 Window 的根视图
+                                    final android.widget.FrameLayout decorView = (android.widget.FrameLayout) window.getDecorView();
+                                    final View blackOverlay = new View(getContext());
+                                    // 强制使用绝对不透明的纯黑色
+                                    blackOverlay.setBackgroundColor(Color.parseColor("#FF000000"));
+                                    blackOverlay.setClickable(true);
+                                    blackOverlay.setFocusable(true);
+                                    blackOverlay.setFocusableInTouchMode(true);
+                                    blackOverlay.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT, 
+                                            ViewGroup.LayoutParams.MATCH_PARENT));
+                                    
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                                        blackOverlay.setElevation(9999f);
+                                    }
+                                    
+                                    blackOverlay.setOnTouchListener(new View.OnTouchListener() {
+                                        @Override
+                                        public boolean onTouch(View v, MotionEvent event) {
+                                            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                                                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                                                android.view.WindowManager.LayoutParams restoreParams = window.getAttributes();
+                                                restoreParams.screenBrightness = originalBrightness;
+                                                window.setAttributes(restoreParams);
+                                                decorView.removeView(blackOverlay);
+                                                return true; 
+                                            }
+                                            return true; 
+                                        }
+                                    });
+                                    decorView.addView(blackOverlay);
+                                    blackOverlay.bringToFront(); 
+                                    blackOverlay.requestFocus();
+                                }
+                            }
+                        }, 300); // 给桌面系统弹窗 300ms 的渲染时间
+
                         Toast.makeText(getContext(), L("⏳ 定时已到！游戏已暂停，屏幕即将熄灭"), Toast.LENGTH_LONG).show();
                         sleepTimerRunnable = null;
                     }
