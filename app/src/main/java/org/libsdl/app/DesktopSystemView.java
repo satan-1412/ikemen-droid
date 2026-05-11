@@ -747,9 +747,6 @@ public class DesktopSystemView extends Dialog {
                 } else if (targetType == 11) {
                     Button scanDirBtn = createButton(L("✔️ 深度扫描本文件夹的 3D 模型 (.gltf/.glb)"), "#0078D7"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
-                } else if (targetType == 12) {
-                    Button scanDirBtn = createButton(L("✔️ 选择此文件夹进行文件名乱码修复"), "#9C27B0"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
-                    scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
                 } else if (targetType == 13) {
                     Button scanDirBtn = createButton(L("✔️ 扫描此文件夹下的所有 DEF 工程"), "#E81123"); scanDirBtn.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); scanDirBtn.setPadding((int)(20*density), (int)(15*density), 0, (int)(15*density));
                     scanDirBtn.setOnClickListener(v -> { if (listener != null) listener.onFileSelected(lastVisitedDir); pDialog.dismiss(); }); listLayout.addView(scanDirBtn);
@@ -3244,119 +3241,109 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
     }
 
     // ======================================================================================
-    // 🔣 模块 6：乱码解字板 (完美平替 VBS，彻底解决日文 Shift-JIS 字符集错位)
+    // 🔣 模块 6：万能乱码解字板 (支持 22 种全球主流编码矩阵)
     // ======================================================================================
     private View buildDecipherBoardContent() {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.parseColor("#1E1E1E"));
         root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
 
-        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL);
-        Button btnFixText = createButton(L("📄 修复文件内容乱码 (单文件)"), "#0078D7");
-        Button btnFixName = createButton(L("📁 修复文件名乱码 (选文件夹)"), "#9C27B0");
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0, -2, 1f); bp.setMargins(0, 0, (int)(10*density), 0);
-        topBar.addView(btnFixText, bp); topBar.addView(btnFixName, bp);
-        root.addView(topBar);
+        Button btnPickFile = createButton(L("📂 选择乱码文本文件 (.def/.cns/.cmd/.st 等)"), "#0078D7");
+        root.addView(btnPickFile);
 
         ScrollView scroll = new ScrollView(getContext()); LinearLayout contentArea = new LinearLayout(getContext()); contentArea.setOrientation(LinearLayout.VERTICAL); scroll.addView(contentArea);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
 
-        btnFixText.setOnClickListener(v -> {
-            showWin10FilePicker(L("选择需要修复内容的文本文件 (.def/.cns/.cmd 等)"), 12, null, null, file -> {
-                if(file.isDirectory()) { Toast.makeText(getContext(), L("❌ 请选择单个文件，而不是文件夹！"), Toast.LENGTH_SHORT).show(); return; }
+        btnPickFile.setOnClickListener(v -> {
+            showWin10FilePicker(L("选择需要修复内容的文本文件"), 12, null, null, file -> {
+                if(file.isDirectory()) { Toast.makeText(getContext(), L("❌ 请选择单个文件！"), Toast.LENGTH_SHORT).show(); return; }
                 contentArea.removeAllViews();
-                contentArea.addView(createSubTitle(L("🎯 当前文件: ") + file.getName()));
+                contentArea.addView(createSubTitle(L("🎯 目标文件: ") + file.getName()));
                 
                 final byte[][] rawBytes = {null};
                 try {
                     FileInputStream fis = new FileInputStream(file);
-                    rawBytes[0] = new byte[(int)file.length()];
-                    fis.read(rawBytes[0]); fis.close();
+                    rawBytes[0] = new byte[(int)file.length()]; fis.read(rawBytes[0]); fis.close();
                 } catch (Exception e) { Toast.makeText(getContext(), L("文件读取失败!"), Toast.LENGTH_SHORT).show(); return; }
 
-                LinearLayout decodeBar = new LinearLayout(getContext()); decodeBar.setOrientation(LinearLayout.HORIZONTAL); decodeBar.setGravity(Gravity.CENTER_VERTICAL);
-                decodeBar.addView(createSubTitle(L("尝试使用以下编码读取: ")));
+                // --- 22 种全球编码矩阵 (按热度排序) ---
+                String[] charsets = {
+                    "UTF-8 (国际通用标准)", "Shift_JIS (日本作者首选)", "GBK (简体中文标准)", "Big5 (繁体中文-港台)", "Windows-1252 (西欧/英语)",
+                    "EUC-KR (韩语作者)", "Windows-1251 (俄语/东欧)", "UTF-16LE (Unicode双字节)", "UTF-16BE (Unicode大端)", "EUC-JP (旧版日文系统)",
+                    "ISO-8859-1 (西欧拉丁语)", "ISO-8859-2 (中欧语系)", "ISO-8859-5 (西里尔语系)", "Windows-1250 (中欧/波兰)", "Windows-1253 (希腊语)",
+                    "Windows-1254 (土耳其语)", "Windows-1255 (希伯来语)", "Windows-1256 (阿拉伯语)", "Windows-1257 (波罗的海语)", "Windows-1258 (越南语)",
+                    "KOI8-R (俄语网络标准)", "GB18030 (超全中文兼容)"
+                };
+                String[] charsetsKeys = {
+                    "UTF-8", "Shift_JIS", "GBK", "Big5", "Windows-1252", "EUC-KR", "Windows-1251", "UTF-16LE", "UTF-16BE", "EUC-JP",
+                    "ISO-8859-1", "ISO-8859-2", "ISO-8859-5", "Windows-1250", "Windows-1253", "Windows-1254", "Windows-1255", "Windows-1256", "Windows-1257", "Windows-1258",
+                    "KOI8-R", "GB18030"
+                };
+                String[] charsetsIntro = {
+                    L("💡 现代软件标准：全球通用，Ikemen 原生支持。"),
+                    L("💡 日本作者首选：解决 90% 日系人物包乱码问题。"),
+                    L("💡 简体中文：国内早期作者或系统默认编码。"),
+                    L("💡 繁体中文：港澳台地区作者制作素材常用。"),
+                    L("💡 西欧语系：包含英法德意西等欧美作者常用。"),
+                    L("💡 韩语：韩国作者制作素材时的默认编码。"),
+                    L("💡 俄语/西里尔：俄罗斯、乌克兰等作者常用。"),
+                    L("💡 Unicode：某些编辑器导出的特定双字节文本。"),
+                    L("💡 Unicode(BE)：常见于某些旧版大型引擎配置。"),
+                    L("💡 旧版日文：较老的日本 UNIX/Linux 系统常用。"),
+                    L("💡 传统西欧：最早的拉丁字母标准。"),
+                    L("💡 中欧语系：波兰、捷克、匈牙利语常用。"),
+                    L("💡 斯拉夫语：保加利亚、白俄罗斯等语系。"),
+                    L("💡 中欧 Windows：Windows 系统下的中欧编码。"),
+                    L("💡 希腊语：修复希腊地区作者素材乱码。"),
+                    L("💡 土耳其语：修复土耳其地区作者素材。"),
+                    L("💡 希伯来语：中东地区特定作者常用。"),
+                    L("💡 阿拉伯语：中东及北非地区作者常用。"),
+                    L("💡 波罗的海：爱沙尼亚、拉脱维亚地区常用。"),
+                    L("💡 越南语：越南作者制作素材时的专用编码。"),
+                    L("💡 旧版俄语：早期俄罗斯互联网常用标准。"),
+                    L("💡 全能中文：覆盖所有少数民族字符的强力中文集。")
+                };
+
+                contentArea.addView(createSubTitle(L("⚙️ 请选择匹配的解码方案:")));
                 Spinner charsetSpinner = new Spinner(getContext());
-                String[] charsets = {"Shift_JIS (日文引擎常用)", "GBK (中文系统常用)", "UTF-8 (国际标准)", "Big5 (繁体中文)", "Windows-1252"};
-                String[] charsetsKeys = {"Shift_JIS", "GBK", "UTF-8", "Big5", "Windows-1252"};
                 ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_dropdown_item, charsets);
-                charsetSpinner.setAdapter(adapter); decodeBar.addView(charsetSpinner); contentArea.addView(decodeBar);
+                charsetSpinner.setAdapter(adapter); contentArea.addView(charsetSpinner);
+
+                TextView txtIntro = new TextView(getContext()); txtIntro.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
+                txtIntro.setBackgroundColor(Color.parseColor("#2D2D30")); applyGlobalFontSettings(txtIntro, 0.85f, false); txtIntro.setTextColor(Color.parseColor("#FFD700"));
+                contentArea.addView(txtIntro);
 
                 EditText previewText = createInput("", ""); previewText.setGravity(Gravity.TOP | Gravity.LEFT);
                 previewText.setMinimumHeight((int)(300*density)); contentArea.addView(previewText);
 
                 charsetSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
                     @Override public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) {
+                        txtIntro.setText(charsetsIntro[pos]);
                         try {
-                            // 为了防 OOM，预览只转前 200KB，但保存时会转全部
-                            int length = Math.min(rawBytes[0].length, 200 * 1024);
+                            int length = Math.min(rawBytes[0].length, 100 * 1024); // 预览 100KB
                             String decoded = new String(rawBytes[0], 0, length, charsetsKeys[pos]);
-                            if (rawBytes[0].length > length) decoded += "\n\n... (预览已截断，实际保存包含全部内容)";
                             previewText.setText(decoded);
-                        } catch (Exception e) {}
+                        } catch (Exception e) { previewText.setText(L("❌ 该编码不匹配或无法解码")); }
                     }
                     @Override public void onNothingSelected(android.widget.AdapterView<?> p) {}
                 });
 
-                Button btnSave = createButton(L("💾 破解成功！另存为 UTF-8 无乱码文件"), "#4CAF50");
-                LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2); sp.setMargins(0, (int)(15*density), 0, 0);
+                Button btnSave = createButton(L("💾 破解成功！另存为 UTF-8 无乱码文本"), "#4CAF50");
+                LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2); sp.setMargins(0, (int)(15*density), 0, (int)(15*density));
                 btnSave.setOnClickListener(saveBtn -> {
                     try {
                         String finalEncoding = charsetsKeys[charsetSpinner.getSelectedItemPosition()];
                         String fullDecoded = new String(rawBytes[0], finalEncoding);
                         File outFile = new File(file.getParent(), file.getName().replaceAll("\\.[^.]+$", "") + "_UTF8" + file.getName().substring(file.getName().lastIndexOf(".")));
-                        FileOutputStream fos = new FileOutputStream(outFile);
-                        fos.write(fullDecoded.getBytes("UTF-8")); fos.close();
-                        Toast.makeText(getContext(), L("✅ 保存成功！可用 MT 管理器查看:\n") + outFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
+                        FileOutputStream fos = new FileOutputStream(outFile); fos.write(fullDecoded.getBytes("UTF-8")); fos.close();
+                        Toast.makeText(getContext(), L("✅ 另存成功！") + outFile.getName(), Toast.LENGTH_LONG).show();
                     } catch (Exception e) { Toast.makeText(getContext(), L("❌ 保存失败"), Toast.LENGTH_SHORT).show(); }
                 });
                 contentArea.addView(btnSave, sp);
             });
         });
-
-        btnFixName.setOnClickListener(v -> {
-            showWin10FilePicker(L("选择包含乱码文件名的【文件夹】"), 12, null, null, dir -> {
-                if(!dir.isDirectory()) { Toast.makeText(getContext(), L("❌ 请选择文件夹，而不是单个文件！"), Toast.LENGTH_SHORT).show(); return; }
-                contentArea.removeAllViews();
-                contentArea.addView(createSubTitle(L("📂 目录: ") + dir.getAbsolutePath()));
-                contentArea.addView(createSubTitle(L("⚠️ VBS 原理还原：系统用 GBK 错误地读取了 Shift-JIS 字节，正在反向破解...")));
-
-                LinearLayout listPreview = new LinearLayout(getContext()); listPreview.setOrientation(LinearLayout.VERTICAL);
-                File[] files = dir.listFiles();
-                if (files == null || files.length == 0) return;
-
-                final List<File> targets = new ArrayList<>(); final List<String> newNames = new ArrayList<>();
-                for (File f : files) {
-                    try {
-                        // 核心破解算法：反向获取被错认的 GBK 字节，重新用 Shift-JIS 解析
-                        String badName = f.getName();
-                        String fixedName = new String(badName.getBytes("GBK"), "Shift_JIS");
-                        
-                        LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL);
-                        TextView tBad = new TextView(getContext()); tBad.setText("❌ " + badName); tBad.setTextColor(Color.RED); applyGlobalFontSettings(tBad, 0.9f, false);
-                        TextView tGood = new TextView(getContext()); tGood.setText(" ➡️ ✅ " + fixedName); tGood.setTextColor(Color.GREEN); applyGlobalFontSettings(tGood, 0.9f, true);
-                        row.addView(tBad); row.addView(tGood); listPreview.addView(row);
-
-                        targets.add(f); newNames.add(fixedName);
-                    } catch (Exception e) {}
-                }
-                contentArea.addView(listPreview);
-
-                Button btnRename = createButton(L("🚀 确认全部重命名 (无法撤销，请确认预览无误)"), "#E81123");
-                LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2); sp.setMargins(0, (int)(15*density), 0, 0);
-                btnRename.setOnClickListener(renBtn -> {
-                    int success = 0;
-                    for (int i=0; i<targets.size(); i++) {
-                        File oldF = targets.get(i); File newF = new File(oldF.getParent(), newNames.get(i));
-                        if (!oldF.getName().equals(newNames.get(i)) && oldF.renameTo(newF)) success++;
-                    }
-                    Toast.makeText(getContext(), L("✅ 成功重命名 ") + success + L(" 个文件/文件夹！"), Toast.LENGTH_LONG).show();
-                    contentArea.removeAllViews();
-                });
-                contentArea.addView(btnRename, sp);
-            });
-        });
         return root;
     }
+
 
     // ======================================================================================
     // 🗂️ 模块 7：DEF 扫描与 Select.def 生成器
