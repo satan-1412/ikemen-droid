@@ -3267,11 +3267,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
                 // --- 22 种全球编码矩阵 (按热度排序) ---
                 String[] charsets = {
-                    "UTF-8 (国际通用标准)", "Shift_JIS (日本作者首选)", "GBK (简体中文标准)", "Big5 (繁体中文-港台)", "Windows-1252 (西欧/英语)",
-                    "EUC-KR (韩语作者)", "Windows-1251 (俄语/东欧)", "UTF-16LE (Unicode双字节)", "UTF-16BE (Unicode大端)", "EUC-JP (旧版日文系统)",
-                    "ISO-8859-1 (西欧拉丁语)", "ISO-8859-2 (中欧语系)", "ISO-8859-5 (西里尔语系)", "Windows-1250 (中欧/波兰)", "Windows-1253 (希腊语)",
-                    "Windows-1254 (土耳其语)", "Windows-1255 (希伯来语)", "Windows-1256 (阿拉伯语)", "Windows-1257 (波罗的海语)", "Windows-1258 (越南语)",
-                    "KOI8-R (俄语网络标准)", "GB18030 (超全中文兼容)"
+                    L("UTF-8 (国际通用标准)"), L("Shift_JIS (日本作者首选)"), L("GBK (简体中文标准)"), L("Big5 (繁体中文-港台)"), L("Windows-1252 (西欧/英语)"),
+                    L("EUC-KR (韩语作者)"), L("Windows-1251 (俄语/东欧)"), L("UTF-16LE (Unicode双字节)"), L("UTF-16BE (Unicode大端)"), L("EUC-JP (旧版日文系统)"),
+                    L("ISO-8859-1 (西欧拉丁语)"), L("ISO-8859-2 (中欧语系)"), L("ISO-8859-5 (西里尔语系)"), L("Windows-1250 (中欧/波兰)"), L("Windows-1253 (希腊语)"),
+                    L("Windows-1254 (土耳其语)"), L("Windows-1255 (希伯来语)"), L("Windows-1256 (阿拉伯语)"), L("Windows-1257 (波罗的海语)"), L("Windows-1258 (越南语)"),
+                    L("KOI8-R (俄语网络标准)"), L("GB18030 (超全中文兼容)")
                 };
                 String[] charsetsKeys = {
                     "UTF-8", "Shift_JIS", "GBK", "Big5", "Windows-1252", "EUC-KR", "Windows-1251", "UTF-16LE", "UTF-16BE", "EUC-JP",
