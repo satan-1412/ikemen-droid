@@ -5004,6 +5004,8 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
         cancelBtn.setText(L("❌ 取消定时"));
         cancelBtn.setTextColor(Color.WHITE);
         cancelBtn.setBackgroundColor(Color.parseColor("#F44336"));
+        cancelBtn.setSingleLine(true); // 强制单行防换行不对称
+        cancelBtn.setEllipsize(android.text.TextUtils.TruncateAt.END); // 兼容其它超长语言显示省略号
         LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         p1.setMargins(0, 0, 10, 0);
         cancelBtn.setLayoutParams(p1);
@@ -5020,6 +5022,8 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
         startBtn.setText(L("▶️ 开始倒计时"));
         startBtn.setTextColor(Color.WHITE);
         startBtn.setBackgroundColor(Color.parseColor("#4CAF50"));
+        startBtn.setSingleLine(true); // 强制单行防换行不对称
+        startBtn.setEllipsize(android.text.TextUtils.TruncateAt.END); // 兼容其它超长语言显示省略号
         LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         p2.setMargins(10, 0, 0, 0);
         startBtn.setLayoutParams(p2);
@@ -5046,13 +5050,41 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                             ((SDLActivity) getContext()).toggleDesktopMode(true);
                         }
                         
-                        // 2. 剥离窗口防休眠锁，并将屏幕亮度置 0 瞬间黑屏，交由系统接管真实休眠
-                        android.app.Activity activity = (android.app.Activity) getContext();
+                        // 2. 剥离窗口防休眠锁，记录当前亮度，瞬间黑屏并生成全屏黑色恢复层
+                        final android.app.Activity activity = (android.app.Activity) getContext();
                         if (activity != null && activity.getWindow() != null) {
-                            activity.getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                            android.view.WindowManager.LayoutParams params = activity.getWindow().getAttributes();
+                            final android.view.Window window = activity.getWindow();
+                            final android.view.WindowManager.LayoutParams params = window.getAttributes();
+                            final float originalBrightness = params.screenBrightness; // 记录原亮度
+                            
+                            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                             params.screenBrightness = 0.0f; 
-                            activity.getWindow().setAttributes(params);
+                            window.setAttributes(params);
+
+                            // 渲染全屏纯黑防烧屏遮罩
+                            final android.widget.FrameLayout decorView = (android.widget.FrameLayout) window.getDecorView();
+                            final View blackOverlay = new View(getContext());
+                            blackOverlay.setBackgroundColor(Color.BLACK);
+                            blackOverlay.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT, 
+                                    ViewGroup.LayoutParams.MATCH_PARENT));
+                            // 提升层级，确保覆盖所有UI
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                                blackOverlay.setElevation(9999f);
+                            }
+                            
+                            // 点击黑屏恢复亮度和常亮
+                            blackOverlay.setOnClickListener(new View.OnClickListener() {
+                                @Override
+                                public void onClick(View v) {
+                                    window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                                    android.view.WindowManager.LayoutParams restoreParams = window.getAttributes();
+                                    restoreParams.screenBrightness = originalBrightness;
+                                    window.setAttributes(restoreParams);
+                                    decorView.removeView(blackOverlay);
+                                }
+                            });
+                            decorView.addView(blackOverlay);
                         }
                         Toast.makeText(getContext(), L("⏳ 定时已到！游戏已暂停，屏幕即将熄灭"), Toast.LENGTH_LONG).show();
                         sleepTimerRunnable = null;
