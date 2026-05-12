@@ -39,13 +39,16 @@ ifeq ($(TARGET_ARCH_ABI),arm64-v8a)
     LOCAL_LDFLAGS += -Wl,--gc-sections -Wl,-O3 -flto
 else ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
     # -----------------------------------------------------
-    # 【32位 (armeabi-v7a)】：极度求稳模式 (兼顾老设备与省电)
+    # 【32位 (armeabi-v7a)】：狂暴性能模式 (放弃保守，榨干机能)
     # -----------------------------------------------------
-    # -Os: 偏向优化应用体积。较小体积能提高老旧设备 CPU 的指令缓存命中率，减少卡顿和发热。
-    LOCAL_CFLAGS += -Os
+    # -O3: 开启最高级性能优化，优先保证运行帧率
+    # -ffast-math: 加速底层矩阵与图像运算
+    # -mfloat-abi=softfp -mfpu=neon: 强制激活 32 位架构下的 NEON 硬件级 SIMD 加速
+    # -funroll-loops: 循环展开，降低底层解析时的分支跳转开销
+    LOCAL_CFLAGS += -O3 -ffast-math -mfloat-abi=softfp -mfpu=neon -funroll-loops
     
-    # 链接器求稳修复：Wl,--fix-cortex-a8 用于修复早期 32 位处理器的硬件级指令死锁 BUG
-    LOCAL_LDFLAGS += -Wl,--gc-sections -Wl,--fix-cortex-a8
+    # 链接器优化：保留 cortex-a8 硬件修复，追加 O3 级别链接期优化
+    LOCAL_LDFLAGS += -Wl,--gc-sections -Wl,--fix-cortex-a8 -Wl,-O3
 else
     # -----------------------------------------------------
     # 【其他架构 (如 x86_64 模拟器环境)】：平衡模式
