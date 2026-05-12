@@ -379,10 +379,46 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 }
             }
 
+            // 【新增】：物理文件存在性校验与终极保底机制
             if (!motifPath.isEmpty()) {
-                android.util.Log.i("SDLActivity", L("兼容模式：成功嗅探到真实 UI -> ") + motifPath);
-                // 直接通过命令行 -m 强制传给底层，最安全最直接！
-                return new String[] {"-m", motifPath};
+                File motifFile = new File(baseDir, motifPath);
+                if (!motifFile.exists()) {
+                    android.util.Log.w("SDLActivity", L("检测到目标 UI 文件不存在，触发保底拦截：") + motifPath);
+                    motifPath = ""; // 清空失效路径，强制进入下方的保底逻辑
+                } else {
+                    android.util.Log.i("SDLActivity", L("兼容模式：成功嗅探到真实 UI -> ") + motifPath);
+                    // 直接通过命令行 -m 强制传给底层，最安全最直接！
+                    return new String[] {"-m", motifPath};
+                }
+            }
+
+            // 保底阶段 1：尝试强制读取 config.ini 作为第一替补
+            if (motifPath.isEmpty()) {
+                File fallbackIni = new File(baseDir, "save/config.ini");
+                if (fallbackIni.exists()) {
+                    try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(fallbackIni), "UTF-8"))) {
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            if (line.trim().toLowerCase().startsWith("motif") && line.contains("=")) {
+                                String[] parts = line.split("=");
+                                if (parts.length > 1) {
+                                    String iniMotif = parts[1].trim().replace("\\", "/").replace("\"", "");
+                                    if (new File(baseDir, iniMotif).exists()) {
+                                        android.util.Log.i("SDLActivity", L("保底成功：截获 config.ini 中的可用 UI -> ") + iniMotif);
+                                        return new String[] {"-m", iniMotif};
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {}
+                }
+                
+                // 保底阶段 2：如果连 config.ini 里的都不存在，强行续命，指向引擎自带 UI 防闪退
+                File officialMotif = new File(baseDir, "data/ikemen1/system.def");
+                if (officialMotif.exists()) {
+                    android.util.Log.i("SDLActivity", L("终极保底：强制回退到引擎自带 UI"));
+                    return new String[] {"-m", "data/ikemen1/system.def"};
+                }
             }
         }
         return new String[0];
@@ -454,10 +490,13 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                 android.system.Os.setenv("GOMEMLIMIT", "2048MiB", true); 
                 Log.i(TAG, "IkemenGO: Running in 64-bit Extreme Performance Mode");
             } else {
-                // 【32位维稳模式】：2MB 极简栈空间，GOGC=80 频繁回收内存，确保老旧安卓 5.0 机器绝对不会崩溃！
-                System.setProperty("SDL_THREAD_STACK_SIZE", "2097152");
-                android.system.Os.setenv("GOGC", "80", true);
-                Log.i(TAG, "IkemenGO: Running in 32-bit Maximum Stability Mode");
+                // 【32位狂暴模式】：放弃保守兼容，跑满 32 位性能！
+                // 提升栈空间到 4MB 防巨型脚本栈溢出，GOGC=150 减少垃圾回收引起的卡顿和闪退
+                System.setProperty("SDL_THREAD_STACK_SIZE", "4194304");
+                android.system.Os.setenv("GOGC", "150", true);
+                // 给 32 位也放开部分物理内存软限
+                android.system.Os.setenv("GOMEMLIMIT", "1024MiB", true); 
+                Log.i(TAG, "IkemenGO: Running in 32-bit Extreme Performance Mode (Abandoning Conservative)");
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to set Go/SDL environment: " + e.getMessage());
