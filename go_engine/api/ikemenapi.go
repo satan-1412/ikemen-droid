@@ -13,6 +13,7 @@ import (
 	"ikemenbridge/sff_module"
 	"ikemenbridge/snd_module"
 	"ikemenbridge/stage_module"
+	"github.com/veandco/go-sdl2/sdl" // 🔥 新增：用于底层虚拟按键注入
 )
 
 // ==========================================
@@ -330,4 +331,47 @@ func ExportStageDef(exportDir string, stageJson string) string {
 		return "" 
 	}
 	return outPath
+}
+// ==========================================
+// 🎮 云游戏底层接口：强制注入 P2 虚拟按键
+// ==========================================
+
+func InjectP2Key(keyName string, isDown bool) bool {
+	var sdlKey sdl.Keycode
+
+	// 映射到 Ikemen GO 默认的 2P 键盘键位
+	switch keyName {
+	case "UP": sdlKey = sdl.K_t
+	case "DOWN": sdlKey = sdl.K_g
+	case "LEFT": sdlKey = sdl.K_f
+	case "RIGHT": sdlKey = sdl.K_h
+	case "A": sdlKey = sdl.K_u
+	case "B": sdlKey = sdl.K_i
+	case "C": sdlKey = sdl.K_o
+	case "X": sdlKey = sdl.K_j
+	case "Y": sdlKey = sdl.K_k
+	case "Z": sdlKey = sdl.K_l
+	case "START": sdlKey = sdl.K_v
+	default:
+		return false
+	}
+
+	var state uint8 = sdl.RELEASED
+	var evType uint32 = sdl.KEYUP
+	if isDown {
+		state = sdl.PRESSED
+		evType = sdl.KEYDOWN
+	}
+
+	// 伪造 SDL 底层物理键盘事件，欺骗 Ikemen 引擎
+	event := &sdl.KeyboardEvent{
+		Type:      evType,
+		Timestamp: sdl.GetTicks(),
+		State:     state,
+		Keysym: sdl.Keysym{
+			Sym: sdlKey,
+		},
+	}
+	sdl.PushEvent(event)
+	return true
 }
