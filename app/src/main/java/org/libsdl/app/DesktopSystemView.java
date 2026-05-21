@@ -4101,12 +4101,35 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     dataChannel = channel;
                     dataChannel.registerObserver(new DataChannel.Observer() {
                         @Override public void onMessage(DataChannel.Buffer buffer) {
-                            // 🚀 核心：主机收到客机按键，注入引擎底层！
+                            // 🚀 核心：主机收到客机按键，通过 Android 原生 JNI 直接注入引擎！
                             try {
                                 byte[] data = new byte[buffer.data.remaining()];
                                 buffer.data.get(data);
                                 JSONObject input = new JSONObject(new String(data, "UTF-8"));
-                                api.Api.InjectP2Key(input.getString("btn"), input.getBoolean("down"));
+                                String btn = input.getString("btn");
+                                boolean down = input.getBoolean("down");
+
+                                int keyCode = 0;
+                                // 映射到 2P 的默认键盘按键
+                                switch(btn) {
+                                    case "UP": keyCode = android.view.KeyEvent.KEYCODE_T; break;
+                                    case "DOWN": keyCode = android.view.KeyEvent.KEYCODE_G; break;
+                                    case "LEFT": keyCode = android.view.KeyEvent.KEYCODE_F; break;
+                                    case "RIGHT": keyCode = android.view.KeyEvent.KEYCODE_H; break;
+                                    case "A": keyCode = android.view.KeyEvent.KEYCODE_U; break;
+                                    case "B": keyCode = android.view.KeyEvent.KEYCODE_I; break;
+                                    case "C": keyCode = android.view.KeyEvent.KEYCODE_O; break;
+                                    case "X": keyCode = android.view.KeyEvent.KEYCODE_J; break;
+                                    case "Y": keyCode = android.view.KeyEvent.KEYCODE_K; break;
+                                    case "Z": keyCode = android.view.KeyEvent.KEYCODE_L; break;
+                                    case "START": keyCode = android.view.KeyEvent.KEYCODE_V; break;
+                                }
+                                
+                                if (keyCode != 0) {
+                                    // 完美避开 Go 交叉编译，直接利用 SDL 官方的 Java 接口推入 2P 的按键事件！
+                                    if (down) org.libsdl.app.SDLActivity.onNativeKeyDown(keyCode);
+                                    else org.libsdl.app.SDLActivity.onNativeKeyUp(keyCode);
+                                }
                             } catch (Exception e) {}
                         }
                         @Override public void onBufferedAmountChange(long l) {}
