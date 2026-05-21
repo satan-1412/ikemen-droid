@@ -3073,14 +3073,17 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             if (finalSffFile.length() > 0) {
                                 List<GoEngineBridge.SffFrame> origFrames = GoEngineBridge.getAllFrames(finalSffFile.getAbsolutePath());
                                 for (GoEngineBridge.SffFrame f : origFrames) {
-                                    boolean found = false;
+                                    boolean keepAsIs = false;
                                     for (StageLayerInfo l : layerList) {
-                                        if (!l.isGhostGrid && !l.isExternal && l.originalGroup == f.group && l.originalItem == f.item) {
-                                            found = true; break;
+                                        // 仅保留完全未做编号修改的原始图层
+                                        if (!l.isGhostGrid && !l.isExternal && l.sourcePath.equals(globalSffPath)) {
+                                            if (l.originalGroup == f.group && l.originalItem == f.item) {
+                                                if (l.group == f.group && l.item == f.item) { keepAsIs = true; }
+                                                break;
+                                            }
                                         }
                                     }
-                                    // 把面板里被删除了的原生帧进行针对性物理剔除
-                                    if (!found) { Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item); }
+                                    if (!keepAsIs) { Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item); }
                                 }
                             }
                         } else { 
@@ -3089,9 +3092,27 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         
                         for (StageLayerInfo layer : layerList) { 
                             if (layer.isGhostGrid) continue;
-                            // 将所有玩家后期插入的外部素材逐个原样注入到 SFF 中
-                            if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) {
-                                Api.addSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, (short)layer.axisX, (short)layer.axisY, layer.sourcePath);
+                            
+                            // 校验该图层是否已安全且毫无改动地保存在文件中
+                            boolean isNativeAndUnchanged = (!globalSffPath.isEmpty() && !layer.isExternal && layer.sourcePath.equals(globalSffPath) && layer.group == layer.originalGroup && layer.item == layer.originalItem);
+                            
+                            if (!isNativeAndUnchanged) {
+                                File tmpPng = null;
+                                if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) {
+                                    // 纯外部引入的图片或拆解得到的 GIF 序列帧
+                                    tmpPng = new File(layer.sourcePath);
+                                } else if (!layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) {
+                                    // 从其他 SFF 导入的图片，或是修改了原本编号的图层：将其解包并重构
+                                    byte[] bmpData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, "");
+                                    if (bmpData != null && bmpData.length > 0) {
+                                        tmpPng = new File(getContext().getCacheDir(), "tmp_export_" + System.currentTimeMillis() + "_" + layer.group + "_" + layer.item + ".png");
+                                        FileOutputStream fos = new FileOutputStream(tmpPng); fos.write(bmpData); fos.close();
+                                    }
+                                }
+                                // 把无论什么来路的解析产物，全部稳稳注入进最终的 SFF 包内
+                                if (tmpPng != null && tmpPng.exists()) {
+                                    Api.addSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, (short)layer.axisX, (short)layer.axisY, tmpPng.getAbsolutePath());
+                                }
                             }
                         }
                         
