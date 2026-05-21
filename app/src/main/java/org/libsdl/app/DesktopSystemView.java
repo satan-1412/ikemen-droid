@@ -1392,10 +1392,73 @@ public class DesktopSystemView extends Dialog {
                     });
 
 
-                    row.addView(btnPlay); row.addView(btnExport, btnParams); row.addView(btnReplace, btnParams); listLayout.addView(row, rowParams);
+                    Button btnDelete = createButton(L("🗑️ 删除"), "#E81123");
+                    btnDelete.setOnClickListener(v -> {
+                        new Thread(() -> {
+                            boolean success = api.Api.deleteSndAudio(sndPath, n.group, n.item);
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                if (success) { 
+                                    Toast.makeText(getContext(), L("✅ 音频已永久删除！"), Toast.LENGTH_SHORT).show(); 
+                                    new Thread(() -> {
+                                        List<GoEngineBridge.SndNode> newNodes = GoEngineBridge.scanSnd(sndPath);
+                                        new Handler(Looper.getMainLooper()).post(() -> { allNodes.clear(); allNodes.addAll(newNodes); refreshList.run(); });
+                                    }).start();
+                                } else { Toast.makeText(getContext(), L("❌ 删除失败"), Toast.LENGTH_SHORT).show(); }
+                            });
+                        }).start();
+                    });
+
+                    HorizontalScrollView hsv = new HorizontalScrollView(getContext());
+                    hsv.setHorizontalScrollBarEnabled(false);
+                    LinearLayout btnContainer = new LinearLayout(getContext());
+                    btnContainer.setOrientation(LinearLayout.HORIZONTAL);
+                    
+                    btnContainer.addView(btnPlay); 
+                    btnContainer.addView(btnExport, btnParams); 
+                    btnContainer.addView(btnReplace, btnParams); 
+                    btnContainer.addView(btnDelete, btnParams);
+                    
+                    hsv.addView(btnContainer);
+                    row.addView(hsv); 
+                    listLayout.addView(row, rowParams);
                 }
             }
         };
+
+        Button btnAddSnd = createButton(L("➕ 新增音频"), "#4CAF50");
+        LinearLayout.LayoutParams btnAddParams = new LinearLayout.LayoutParams(-2, -2);
+        btnAddParams.setMargins(0, 0, (int)(15*density), 0);
+        btnAddSnd.setOnClickListener(v -> {
+            showWin10FilePicker(L("选择要强行注入的音频文件"), 8, null, null, selectedFile -> {
+                final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+                GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
+                
+                box.addView(createSubTitle(L("➕ 设定目标音频编号")));
+                EditText gIn = createInput(L("所属组 (Group)"), "0"); gIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(gIn);
+                EditText iIn = createInput(L("索引项 (Item)"), "0"); iIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(iIn);
+                
+                Button bConf = createButton(L("✔️ 执行注入合并"), "#4CAF50");
+                bConf.setOnClickListener(v2 -> {
+                    int addG = 0, addI = 0; try { addG = Integer.parseInt(gIn.getText().toString()); addI = Integer.parseInt(iIn.getText().toString()); } catch(Exception e){}
+                    final int fg = addG, fi = addI;
+                    new Thread(() -> {
+                        boolean success = api.Api.addSndAudio(sndPath, fg, fi, selectedFile.getAbsolutePath());
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            if (success) { 
+                                Toast.makeText(getContext(), L("✅ 音频强行注入成功！"), Toast.LENGTH_SHORT).show(); d.dismiss();
+                                new Thread(() -> {
+                                    List<GoEngineBridge.SndNode> newNodes = GoEngineBridge.scanSnd(sndPath);
+                                    new Handler(Looper.getMainLooper()).post(() -> { allNodes.clear(); allNodes.addAll(newNodes); refreshList.run(); });
+                                }).start();
+                            } else { Toast.makeText(getContext(), L("❌ 注入失败，可能编号重复或格式不可读"), Toast.LENGTH_LONG).show(); }
+                        });
+                    }).start();
+                });
+                box.addView(bConf, new LinearLayout.LayoutParams(-1,-2)); d.setContentView(box); d.show();
+            });
+        });
+        groupToolBelt.addView(btnAddSnd, btnAddParams);
 
         for (final int g : groupList) {
             String btnText = (g == -999) ? L("📂 所有音频") : L("📁 音频组 ") + g;
@@ -2416,11 +2479,69 @@ public class DesktopSystemView extends Dialog {
         leftPanel.addView(titleRow);
 
         LinearLayout psToolsRow = new LinearLayout(getContext()); psToolsRow.setOrientation(LinearLayout.HORIZONTAL); psToolsRow.setPadding(0, padS, 0, padS);
-        Button btnNewLayer = createButton("➕", "#4CAF50"); Button btnCopyLayer = createButton("📄", "#0078D7"); Button btnPasteLayer = createButton("📋", "#FF9800"); Button btnDelLayer = createButton("🗑️", "#E81123");
-        LinearLayout.LayoutParams toolBp = new LinearLayout.LayoutParams(0, -2, 1f); toolBp.setMargins((int)(2*density), 0, (int)(2*density), 0);
-        psToolsRow.addView(btnNewLayer, toolBp); psToolsRow.addView(btnCopyLayer, toolBp); psToolsRow.addView(btnPasteLayer, toolBp); psToolsRow.addView(btnDelLayer, toolBp);
+        Button btnNewLayer = createButton("➕", "#4CAF50"); Button btnCopyLayer = createButton("📄", "#0078D7"); Button btnPasteLayer = createButton("📋", "#FF9800"); Button btnDelLayer = createButton("🗑️", "#E81123"); Button btnBatchDel = createButton("☑️ 批量", "#E81123");
+        LinearLayout.LayoutParams toolBp = new LinearLayout.LayoutParams(0, -2, 1f); toolBp.setMargins((int)(1*density), 0, (int)(1*density), 0);
+        psToolsRow.addView(btnNewLayer, toolBp); psToolsRow.addView(btnCopyLayer, toolBp); psToolsRow.addView(btnPasteLayer, toolBp); psToolsRow.addView(btnDelLayer, toolBp); psToolsRow.addView(btnBatchDel, toolBp);
         leftPanel.addView(psToolsRow);
 
+        btnNewLayer.setOnClickListener(v -> btnImportMenu.performClick());
+
+        btnCopyLayer.setOnClickListener(v -> {
+            if (selectedLayerIndex[0] > 0 && selectedLayerIndex[0] < layerList.size()) {
+                clipboardLayer[0] = layerList.get(selectedLayerIndex[0]).cloneLayer();
+                Toast.makeText(getContext(), L("✅ 已复制图层: ") + clipboardLayer[0].name, Toast.LENGTH_SHORT).show();
+            } else { Toast.makeText(getContext(), L("❌ 底板不可复制"), Toast.LENGTH_SHORT).show(); }
+        });
+
+        btnPasteLayer.setOnClickListener(v -> {
+            if (clipboardLayer[0] != null) {
+                StageLayerInfo newLayer = clipboardLayer[0].cloneLayer();
+                int[] gi = incrementer.getNext(newLayer.group, newLayer.item);
+                newLayer.group = gi[0]; newLayer.item = gi[1];
+                layerList.add(newLayer);
+                refreshLayerListUI[0].run();
+                Toast.makeText(getContext(), L("✅ 粘贴成功"), Toast.LENGTH_SHORT).show();
+            } else { Toast.makeText(getContext(), L("❌ 剪贴板为空"), Toast.LENGTH_SHORT).show(); }
+        });
+
+        btnDelLayer.setOnClickListener(v -> {
+            if (selectedLayerIndex[0] > 0 && selectedLayerIndex[0] < layerList.size()) {
+                layerList.remove(selectedLayerIndex[0]);
+                selectedLayerIndex[0] = 0;
+                refreshLayerListUI[0].run(); viewportFrame.invalidate();
+                Toast.makeText(getContext(), L("✅ 选中图层已删除"), Toast.LENGTH_SHORT).show();
+            } else { Toast.makeText(getContext(), L("❌ 请先选中一个要删除的图层"), Toast.LENGTH_SHORT).show(); }
+        });
+
+        btnBatchDel.setOnClickListener(v -> {
+            if (layerList.size() <= 1) { Toast.makeText(getContext(), L("当前没有可删除的图层"), Toast.LENGTH_SHORT).show(); return; }
+            final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding(padM, padM, padM, padM);
+            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
+            box.addView(createSubTitle(L("☑️ 勾选要批量删除的图层")));
+            
+            ScrollView sv = new ScrollView(getContext()); LinearLayout list = new LinearLayout(getContext()); list.setOrientation(LinearLayout.VERTICAL);
+            List<android.widget.CheckBox> checks = new ArrayList<>();
+            for (int i = 1; i < layerList.size(); i++) {
+                android.widget.CheckBox cb = new android.widget.CheckBox(getContext());
+                cb.setText(String.format(" G:%d I:%d - %s", layerList.get(i).group, layerList.get(i).item, layerList.get(i).name));
+                cb.setTextColor(Color.WHITE); cb.setTag(i); checks.add(cb); list.addView(cb);
+            }
+            sv.addView(list); box.addView(sv, new LinearLayout.LayoutParams(-1, (int)(250*density)));
+
+            Button bConf = createButton(L("🗑️ 确认粉碎选中图层"), "#E81123");
+            bConf.setOnClickListener(v2 -> {
+                List<StageLayerInfo> toRemove = new ArrayList<>();
+                for (android.widget.CheckBox cb : checks) { if (cb.isChecked()) toRemove.add(layerList.get((int)cb.getTag())); }
+                layerList.removeAll(toRemove); selectedLayerIndex[0] = 0;
+                refreshLayerListUI[0].run(); viewportFrame.invalidate(); d.dismiss();
+            });
+            Button bCan = createButton(L("❌ 取消"), "#333333"); bCan.setOnClickListener(v2 -> d.dismiss());
+            
+            LinearLayout btnRow = new LinearLayout(getContext()); btnRow.setOrientation(LinearLayout.HORIZONTAL);
+            btnRow.addView(bConf, new LinearLayout.LayoutParams(0, -2, 1f)); btnRow.addView(bCan, new LinearLayout.LayoutParams(0, -2, 1f));
+            box.addView(btnRow, new LinearLayout.LayoutParams(-1, -2)); d.setContentView(box); d.show();
+        });
         ScrollView layerScroll = new ScrollView(getContext()); final LinearLayout layerListLayout = new LinearLayout(getContext()); layerListLayout.setOrientation(LinearLayout.VERTICAL); layerScroll.addView(layerListLayout);
         leftPanel.addView(layerScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -2897,11 +3018,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         File finalSffFile = new File(finalExportDir, baseName + ".sff"); if (!globalSffPath.isEmpty()) { copyFileToSandbox(new File(globalSffPath), finalSffFile); } else { finalSffFile.createNewFile(); } 
                         if (finalSffFile.length() > 0) { List<GoEngineBridge.SffFrame> origFrames = GoEngineBridge.getAllFrames(finalSffFile.getAbsolutePath()); for (GoEngineBridge.SffFrame f : origFrames) { Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item); } }
                         float minX = 99999, minY = 99999, maxX = -99999, maxY = -99999; boolean hasContent = false;
-                        for (StageLayerInfo layer : layerList) { if (layer.isGhostGrid || layer.origW == 0 || (!layer.isVisible && !layer.manuallyVisible)) continue; float left = layer.startX - layer.axisX; float top = layer.startY - layer.axisY; float right = left + layer.origW * Math.abs(layer.scaleX); float bottom = top + layer.origH * Math.abs(layer.scaleY); if (left < minX) minX = left; if (top < minY) minY = top; if (right > maxX) maxX = right; if (bottom > maxY) maxY = bottom; hasContent = true; }
+                        for (StageLayerInfo layer : layerList) { if (layer.isGhostGrid || layer.origW == 0) continue; float left = layer.startX - layer.axisX; float top = layer.startY - layer.axisY; float right = left + layer.origW * Math.abs(layer.scaleX); float bottom = top + layer.origH * Math.abs(layer.scaleY); if (left < minX) minX = left; if (top < minY) minY = top; if (right > maxX) maxX = right; if (bottom > maxY) maxY = bottom; hasContent = true; }
                         if (hasContent) {
                             int outW = (int) Math.ceil(maxX - minX); int outH = (int) Math.ceil(maxY - minY); if (outW <= 0) outW = 1; if (outH <= 0) outH = 1; Bitmap mergedBmp = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888); Canvas mergedCanvas = new Canvas(mergedBmp);
                             for (int l_idx = 1; l_idx < layerList.size(); l_idx++) {
-                                StageLayerInfo layer = layerList.get(l_idx); if (layer.isGhostGrid || layer.origW == 0 || (!layer.isVisible && !layer.manuallyVisible)) continue;
+                                StageLayerInfo layer = layerList.get(l_idx); if (layer.isGhostGrid || layer.origW == 0) continue;
                                 try { Bitmap layerFullBmp = null; if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) { layerFullBmp = BitmapFactory.decodeFile(layer.sourcePath); } else if (!layer.isExternal && layer.sourcePath != null && layer.sourcePath.toLowerCase().endsWith(".sff")) { byte[] fullData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, ""); if (fullData != null) layerFullBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length); }
                                     if (layerFullBmp != null) { Matrix m = new Matrix(); m.postScale(layer.scaleX, layer.scaleY); float drawX = (layer.startX - layer.axisX) - minX; float drawY = (layer.startY - layer.axisY) - minY; m.postTranslate(drawX, drawY); Paint p = new Paint(); if ("add".equalsIgnoreCase(layer.trans != null ? layer.trans.trim() : "none")) { p.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SCREEN)); } mergedCanvas.drawBitmap(layerFullBmp, m, p); layerFullBmp.recycle(); }
                                 } catch (OutOfMemoryError e) {}
