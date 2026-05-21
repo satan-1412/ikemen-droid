@@ -1458,32 +1458,35 @@ public class DesktopSystemView extends Dialog {
         btnAddParams.setMargins(0, 0, (int)(15*density), 0);
         btnAddSnd.setOnClickListener(v -> {
             showWin10FilePicker(L("选择要强行注入的音频文件"), 8, null, null, selectedFile -> {
-                final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-                LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
-                GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
-                
-                box.addView(createSubTitle(L("➕ 设定目标音频编号")));
-                EditText gIn = createInput(L("所属组 (Group)"), "0"); gIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(gIn);
-                EditText iIn = createInput(L("索引项 (Item)"), "0"); iIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(iIn);
-                
-                Button bConf = createButton(L("✔️ 执行注入合并"), "#4CAF50");
-                bConf.setOnClickListener(v2 -> {
-                    int addG = 0, addI = 0; try { addG = Integer.parseInt(gIn.getText().toString()); addI = Integer.parseInt(iIn.getText().toString()); } catch(Exception e){}
-                    final int fg = addG, fi = addI;
-                    new Thread(() -> {
-                        boolean success = api.Api.addSndAudio(sndPath, fg, fi, selectedFile.getAbsolutePath());
-                        new Handler(Looper.getMainLooper()).post(() -> {
-                            if (success) { 
-                                Toast.makeText(getContext(), L("✅ 音频强行注入成功！"), Toast.LENGTH_SHORT).show(); d.dismiss();
-                                new Thread(() -> {
-                                    List<GoEngineBridge.SndNode> newNodes = GoEngineBridge.scanSnd(sndPath);
-                                    new Handler(Looper.getMainLooper()).post(() -> { allNodes.clear(); allNodes.addAll(newNodes); refreshList[0].run(); });
-                                }).start();
-                            } else { Toast.makeText(getContext(), L("❌ 注入失败，可能编号重复或格式不可读"), Toast.LENGTH_LONG).show(); }
-                        });
-                    }).start();
-                });
-                box.addView(bConf, new LinearLayout.LayoutParams(-1,-2)); d.setContentView(box); d.show();
+                FileCallback doAdd = finalFile -> {
+                    final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                    LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
+                    GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
+                    
+                    box.addView(createSubTitle(L("➕ 设定目标音频编号")));
+                    EditText gIn = createInput(L("所属组 (Group)"), "0"); gIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(gIn);
+                    EditText iIn = createInput(L("索引项 (Item)"), "0"); iIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(iIn);
+                    
+                    Button bConf = createButton(L("✔️ 执行注入合并"), "#4CAF50");
+                    bConf.setOnClickListener(v2 -> {
+                        int addG = 0, addI = 0; try { addG = Integer.parseInt(gIn.getText().toString()); addI = Integer.parseInt(iIn.getText().toString()); } catch(Exception e){}
+                        final int fg = addG, fi = addI;
+                        new Thread(() -> {
+                            boolean success = api.Api.addSndAudio(sndPath, fg, fi, finalFile.getAbsolutePath());
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                if (success) { 
+                                    Toast.makeText(getContext(), L("✅ 音频强行注入成功！"), Toast.LENGTH_SHORT).show(); d.dismiss();
+                                    new Thread(() -> {
+                                        List<GoEngineBridge.SndNode> newNodes = GoEngineBridge.scanSnd(sndPath);
+                                        new Handler(Looper.getMainLooper()).post(() -> { allNodes.clear(); allNodes.addAll(newNodes); refreshList[0].run(); });
+                                    }).start();
+                                } else { Toast.makeText(getContext(), L("❌ 注入失败，可能编号重复或格式不可读"), Toast.LENGTH_LONG).show(); }
+                            });
+                        }).start();
+                    });
+                    box.addView(bConf, new LinearLayout.LayoutParams(-1,-2)); d.setContentView(box); d.show();
+                };
+                if (selectedFile.isDirectory()) showAudioListPicker(selectedFile, doAdd); else doAdd.onFileSelected(selectedFile);
             });
         });
         groupToolBelt.addView(btnAddSnd, btnAddParams);
@@ -2724,6 +2727,8 @@ public class DesktopSystemView extends Dialog {
                     layer.deltaY = Float.parseFloat(dl[1].trim());
                     
                     layer.trans = trans2D.getText().toString().trim();
+                    
+                    txtRes.setText(String.format(L(" 📐 %dx%d "), (int)(layer.origW * layer.scaleX), (int)(layer.origH * layer.scaleY)));
                     viewportFrame.invalidate(); 
                     Toast.makeText(getContext(), L("✅ 2D 参数已应用到当前图层"), Toast.LENGTH_SHORT).show();
                 } catch(Exception e){}
@@ -2777,7 +2782,7 @@ public class DesktopSystemView extends Dialog {
                         if(!info.isGhostGrid) { 
                             // 处理模式切换下的 GI 文字显示
                             txtGI.setText(String.format(isLayerMode[0] ? L(" 图层%d|G%d ") : " [%d,%d] ", info.item, info.group)); 
-                            txtRes.setText(String.format(L(" 📐 %dx%d "), info.origW, info.origH)); 
+                            txtRes.setText(String.format(L(" 📐 %dx%d "), (int)(info.origW * info.scaleX), (int)(info.origH * info.scaleY))); 
                             scale2D.setText(info.scaleX + ", " + info.scaleY); 
                             delta2D.setText(info.deltaX + ", " + info.deltaY); 
                             trans2D.setText(info.trans); 
@@ -2812,7 +2817,7 @@ public class DesktopSystemView extends Dialog {
                                         viewportFrame.invalidate(); 
                                         // 仅当用户依然选中该图层时更新尺寸 UI
                                         if (selectedLayerIndex[0] == idx) {
-                                            txtRes.setText(String.format(L(" 📐 %dx%d "), info.origW, info.origH)); 
+                                            txtRes.setText(String.format(L(" 📐 %dx%d "), (int)(info.origW * info.scaleX), (int)(info.origH * info.scaleY))); 
                                         }
                                     }); 
                                 } 
@@ -3057,11 +3062,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             defBuilder.append("start = ").append((int)layer.startX).append(", ").append((int)layer.startY).append("\n");
                             defBuilder.append("delta = ").append(layer.deltaX).append(", ").append(layer.deltaY).append("\n");
                             defBuilder.append("mask = 1\n");
+                            if (layer.scaleX != 1.0f || layer.scaleY != 1.0f) {
+                                defBuilder.append("scalestart = ").append(layer.scaleX).append(", ").append(layer.scaleY).append("\n");
+                            }
                             if (layer.trans != null && !layer.trans.trim().equals("none")) {
                                 defBuilder.append("trans = ").append(layer.trans).append("\n");
                             }
-                        }
-                        
+                        }                      
                         File defFile = new File(finalExportDir, baseName + ".def"); 
                         FileOutputStream defOut = new FileOutputStream(defFile); 
                         defOut.write(defBuilder.toString().getBytes("UTF-8")); 
