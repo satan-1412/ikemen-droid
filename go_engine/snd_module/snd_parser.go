@@ -297,3 +297,142 @@ func ReplaceAudioWithWav(sndPath string, targetGroup int32, targetItem int32, au
 	}
 	return nil
 }
+
+func AddAudioWithWav(sndPath string, targetGroup int32, targetItem int32, audioPath string) error {
+	audioData, err := getWavData(audioPath)
+	if err != nil {
+		audioData, err = os.ReadFile(audioPath)
+		if err != nil { return fmt.Errorf("读取文件失败: %v", err) }
+	}
+
+	f, err := os.Open(sndPath)
+	if err != nil { return fmt.Errorf("无法打开SND文件: %v", err) }
+
+	buf := make([]byte, 12)
+	f.Read(buf)
+	if string(buf) != "ElecbyteSnd\x00" { f.Close(); return fmt.Errorf("非法的 SND 格式") }
+
+	var ver, ver2 uint16
+	var numberOfSounds, subHeaderOffset uint32
+	binary.Read(f, binary.LittleEndian, &ver)
+	binary.Read(f, binary.LittleEndian, &ver2)
+	binary.Read(f, binary.LittleEndian, &numberOfSounds)
+	binary.Read(f, binary.LittleEndian, &subHeaderOffset)
+
+	type Node struct { Group, Item int32; Data []byte }
+	var nodes []Node
+
+	for i := uint32(0); i < numberOfSounds; i++ {
+		if subHeaderOffset == 0 { break }
+		f.Seek(int64(subHeaderOffset), io.SeekStart)
+		var nextSubHeaderOffset, subFileLength uint32
+		var num [2]int32
+		binary.Read(f, binary.LittleEndian, &nextSubHeaderOffset)
+		binary.Read(f, binary.LittleEndian, &subFileLength)
+		binary.Read(f, binary.LittleEndian, &num)
+
+		if num[0] == targetGroup && num[1] == targetItem {
+			f.Close()
+			return fmt.Errorf("编号已被占用，请先删除或使用替换功能")
+		}
+
+		data := make([]byte, subFileLength)
+		f.Read(data)
+		nodes = append(nodes, Node{Group: num[0], Item: num[1], Data: data})
+		subHeaderOffset = nextSubHeaderOffset
+	}
+	f.Close()
+
+	nodes = append(nodes, Node{Group: targetGroup, Item: targetItem, Data: audioData})
+
+	out, err := os.Create(sndPath)
+	if err != nil { return err }
+	defer out.Close()
+
+	out.Write([]byte("ElecbyteSnd\x00"))
+	binary.Write(out, binary.LittleEndian, ver)
+	binary.Write(out, binary.LittleEndian, ver2)
+	binary.Write(out, binary.LittleEndian, uint32(len(nodes)))
+	if len(nodes) > 0 { binary.Write(out, binary.LittleEndian, uint32(24)) } else { binary.Write(out, binary.LittleEndian, uint32(0)) }
+
+	currentOffset := uint32(24)
+	for i, n := range nodes {
+		nextOffset := uint32(0)
+		if i < len(nodes)-1 { nextOffset = currentOffset + 16 + uint32(len(n.Data)) }
+		out.Seek(int64(currentOffset), io.SeekStart)
+		binary.Write(out, binary.LittleEndian, nextOffset)
+		binary.Write(out, binary.LittleEndian, uint32(len(n.Data)))
+		binary.Write(out, binary.LittleEndian, n.Group)
+		binary.Write(out, binary.LittleEndian, n.Item)
+		out.Write(n.Data)
+		currentOffset = nextOffset
+	}
+	return nil
+}
+
+func DeleteAudio(sndPath string, targetGroup int32, targetItem int32) error {
+	f, err := os.Open(sndPath)
+	if err != nil { return fmt.Errorf("无法打开SND文件: %v", err) }
+
+	buf := make([]byte, 12)
+	f.Read(buf)
+	if string(buf) != "ElecbyteSnd\x00" { f.Close(); return fmt.Errorf("非法的 SND 格式") }
+
+	var ver, ver2 uint16
+	var numberOfSounds, subHeaderOffset uint32
+	binary.Read(f, binary.LittleEndian, &ver)
+	binary.Read(f, binary.LittleEndian, &ver2)
+	binary.Read(f, binary.LittleEndian, &numberOfSounds)
+	binary.Read(f, binary.LittleEndian, &subHeaderOffset)
+
+	type Node struct { Group, Item int32; Data []byte }
+	var nodes []Node
+	found := false
+
+	for i := uint32(0); i < numberOfSounds; i++ {
+		if subHeaderOffset == 0 { break }
+		f.Seek(int64(subHeaderOffset), io.SeekStart)
+		var nextSubHeaderOffset, subFileLength uint32
+		var num [2]int32
+		binary.Read(f, binary.LittleEndian, &nextSubHeaderOffset)
+		binary.Read(f, binary.LittleEndian, &subFileLength)
+		binary.Read(f, binary.LittleEndian, &num)
+
+		data := make([]byte, subFileLength)
+		f.Read(data)
+		
+		if num[0] == targetGroup && num[1] == targetItem {
+			found = true
+		} else {
+			nodes = append(nodes, Node{Group: num[0], Item: num[1], Data: data})
+		}
+		subHeaderOffset = nextSubHeaderOffset
+	}
+	f.Close()
+
+	if !found { return fmt.Errorf("未找到对应的音频编号") }
+
+	out, err := os.Create(sndPath)
+	if err != nil { return err }
+	defer out.Close()
+
+	out.Write([]byte("ElecbyteSnd\x00"))
+	binary.Write(out, binary.LittleEndian, ver)
+	binary.Write(out, binary.LittleEndian, ver2)
+	binary.Write(out, binary.LittleEndian, uint32(len(nodes)))
+	if len(nodes) > 0 { binary.Write(out, binary.LittleEndian, uint32(24)) } else { binary.Write(out, binary.LittleEndian, uint32(0)) }
+
+	currentOffset := uint32(24)
+	for i, n := range nodes {
+		nextOffset := uint32(0)
+		if i < len(nodes)-1 { nextOffset = currentOffset + 16 + uint32(len(n.Data)) }
+		out.Seek(int64(currentOffset), io.SeekStart)
+		binary.Write(out, binary.LittleEndian, nextOffset)
+		binary.Write(out, binary.LittleEndian, uint32(len(n.Data)))
+		binary.Write(out, binary.LittleEndian, n.Group)
+		binary.Write(out, binary.LittleEndian, n.Item)
+		out.Write(n.Data)
+		currentOffset = nextOffset
+	}
+	return nil
+}
