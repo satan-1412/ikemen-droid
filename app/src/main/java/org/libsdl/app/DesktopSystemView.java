@@ -2483,7 +2483,47 @@ public class DesktopSystemView extends Dialog {
         LinearLayout.LayoutParams toolBp = new LinearLayout.LayoutParams(0, -2, 1f); toolBp.setMargins((int)(1*density), 0, (int)(1*density), 0);
         psToolsRow.addView(btnNewLayer, toolBp); psToolsRow.addView(btnCopyLayer, toolBp); psToolsRow.addView(btnPasteLayer, toolBp); psToolsRow.addView(btnDelLayer, toolBp); psToolsRow.addView(btnBatchDel, toolBp);
         leftPanel.addView(psToolsRow);
+        ScrollView layerScroll = new ScrollView(getContext()); final LinearLayout layerListLayout = new LinearLayout(getContext()); layerListLayout.setOrientation(LinearLayout.VERTICAL); layerScroll.addView(layerListLayout);
+        leftPanel.addView(layerScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
+        Button btnImportMenu = createButton(L("📥 导入素材"), "#FF9800"); leftPanel.addView(btnImportMenu, new LinearLayout.LayoutParams(-1, -2));
+
+        FrameLayout centerContainer = new FrameLayout(getContext());
+        LinearLayout sffCenterPanel = new LinearLayout(getContext()); sffCenterPanel.setOrientation(LinearLayout.VERTICAL);
+        final Matrix imageMatrix = new Matrix(); 
+        
+        final FrameLayout viewportFrame = new FrameLayout(getContext()) {
+            Paint gridPaint = new Paint(); Paint axisPaint = new Paint(); { axisPaint.setColor(Color.parseColor("#FF0000")); axisPaint.setStrokeWidth(2 * density); setWillNotDraw(false); }
+            @Override protected void dispatchDraw(Canvas canvas) {
+                if (layerList.get(0).isVisible) {
+                    canvas.drawColor(bgColor[0]); gridPaint.setColor(gridColor[0]); gridPaint.setAlpha(gridAlpha[0]); gridPaint.setStrokeWidth(1);
+                    float[] values = new float[9]; imageMatrix.getValues(values);
+                    float transX = values[Matrix.MTRANS_X]; float transY = values[Matrix.MTRANS_Y]; float scale = values[Matrix.MSCALE_X];
+                    float gridSize = 20 * scale; 
+                    if (gridSize > 4 && gridAlpha[0] > 0) { 
+                        float startX = transX % gridSize; if (startX < 0) startX += gridSize;
+                        for (float x = startX; x < getWidth(); x += gridSize) canvas.drawLine(x, 0, x, getHeight(), gridPaint);
+                        float startY = transY % gridSize; if (startY < 0) startY += gridSize;
+                        for (float y = startY; y < getHeight(); y += gridSize) canvas.drawLine(0, y, getWidth(), y, gridPaint);
+                    }
+                    canvas.drawLine(transX, 0, transX, getHeight(), axisPaint); canvas.drawLine(0, transY, getWidth(), transY, axisPaint); 
+                } else { canvas.drawColor(Color.parseColor("#0A0A0A")); }
+                
+                for (int i = 1; i < layerList.size(); i++) {
+                    StageLayerInfo layer = layerList.get(i);
+                    if (layer.isVisible && layer.cacheBmp != null) {
+                        canvas.save(); canvas.concat(imageMatrix); canvas.translate(layer.startX - layer.axisX, layer.startY - layer.axisY); 
+                        float uiScaleX = layer.origW > 0 ? (float)layer.origW / layer.cacheBmp.getWidth() : 1.0f;
+                        float uiScaleY = layer.origH > 0 ? (float)layer.origH / layer.cacheBmp.getHeight() : 1.0f;
+                        canvas.scale(layer.scaleX * uiScaleX, layer.scaleY * uiScaleY); canvas.drawBitmap(layer.cacheBmp, 0, 0, null); canvas.restore();
+                    }
+                }
+                super.dispatchDraw(canvas); 
+            }
+        };
+        sffCenterPanel.addView(viewportFrame, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        // 🌟 修复: 只有在这里绑定事件，btnImportMenu 和 viewportFrame 才算真正存活
         btnNewLayer.setOnClickListener(v -> btnImportMenu.performClick());
 
         btnCopyLayer.setOnClickListener(v -> {
@@ -2542,45 +2582,6 @@ public class DesktopSystemView extends Dialog {
             btnRow.addView(bConf, new LinearLayout.LayoutParams(0, -2, 1f)); btnRow.addView(bCan, new LinearLayout.LayoutParams(0, -2, 1f));
             box.addView(btnRow, new LinearLayout.LayoutParams(-1, -2)); d.setContentView(box); d.show();
         });
-        ScrollView layerScroll = new ScrollView(getContext()); final LinearLayout layerListLayout = new LinearLayout(getContext()); layerListLayout.setOrientation(LinearLayout.VERTICAL); layerScroll.addView(layerListLayout);
-        leftPanel.addView(layerScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
-
-        Button btnImportMenu = createButton(L("📥 导入素材"), "#FF9800"); leftPanel.addView(btnImportMenu, new LinearLayout.LayoutParams(-1, -2));
-
-        FrameLayout centerContainer = new FrameLayout(getContext());
-        LinearLayout sffCenterPanel = new LinearLayout(getContext()); sffCenterPanel.setOrientation(LinearLayout.VERTICAL);
-        final Matrix imageMatrix = new Matrix(); 
-        
-        final FrameLayout viewportFrame = new FrameLayout(getContext()) {
-            Paint gridPaint = new Paint(); Paint axisPaint = new Paint(); { axisPaint.setColor(Color.parseColor("#FF0000")); axisPaint.setStrokeWidth(2 * density); setWillNotDraw(false); }
-            @Override protected void dispatchDraw(Canvas canvas) {
-                if (layerList.get(0).isVisible) {
-                    canvas.drawColor(bgColor[0]); gridPaint.setColor(gridColor[0]); gridPaint.setAlpha(gridAlpha[0]); gridPaint.setStrokeWidth(1);
-                    float[] values = new float[9]; imageMatrix.getValues(values);
-                    float transX = values[Matrix.MTRANS_X]; float transY = values[Matrix.MTRANS_Y]; float scale = values[Matrix.MSCALE_X];
-                    float gridSize = 20 * scale; 
-                    if (gridSize > 4 && gridAlpha[0] > 0) { 
-                        float startX = transX % gridSize; if (startX < 0) startX += gridSize;
-                        for (float x = startX; x < getWidth(); x += gridSize) canvas.drawLine(x, 0, x, getHeight(), gridPaint);
-                        float startY = transY % gridSize; if (startY < 0) startY += gridSize;
-                        for (float y = startY; y < getHeight(); y += gridSize) canvas.drawLine(0, y, getWidth(), y, gridPaint);
-                    }
-                    canvas.drawLine(transX, 0, transX, getHeight(), axisPaint); canvas.drawLine(0, transY, getWidth(), transY, axisPaint); 
-                } else { canvas.drawColor(Color.parseColor("#0A0A0A")); }
-                
-                for (int i = 1; i < layerList.size(); i++) {
-                    StageLayerInfo layer = layerList.get(i);
-                    if (layer.isVisible && layer.cacheBmp != null) {
-                        canvas.save(); canvas.concat(imageMatrix); canvas.translate(layer.startX - layer.axisX, layer.startY - layer.axisY); 
-                        float uiScaleX = layer.origW > 0 ? (float)layer.origW / layer.cacheBmp.getWidth() : 1.0f;
-                        float uiScaleY = layer.origH > 0 ? (float)layer.origH / layer.cacheBmp.getHeight() : 1.0f;
-                        canvas.scale(layer.scaleX * uiScaleX, layer.scaleY * uiScaleY); canvas.drawBitmap(layer.cacheBmp, 0, 0, null); canvas.restore();
-                    }
-                }
-                super.dispatchDraw(canvas); 
-            }
-        };
-        sffCenterPanel.addView(viewportFrame, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         final Matrix savedMatrix = new Matrix(); final int[] touchMode = {0}; final PointF startPoint = new PointF(); final PointF midPoint = new PointF(); final float[] oldDist = {1f}; 
         viewportFrame.setOnTouchListener((vFrameTouch, event) -> {
