@@ -84,7 +84,11 @@ public class DesktopSystemView extends Dialog {
 
     private Context mContext;
     private SharedPreferences prefs;
+    private float baseDensity;
     private float density;
+    
+    public boolean forceCutoutFullscreen = false;
+    public float uiScale = 1.0f;
 
     private float mouseX = -1f, mouseY = -1f;
     private Path cursorPath;
@@ -132,7 +136,7 @@ public class DesktopSystemView extends Dialog {
         super(context, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
         this.mContext = context;
         this.prefs = context.getSharedPreferences("IkemenDesktopPrefs", Context.MODE_PRIVATE);
-        this.density = context.getResources().getDisplayMetrics().density;
+        this.baseDensity = context.getResources().getDisplayMetrics().density;
     }
 
     private void applyImmersiveMode(Window window) {
@@ -142,6 +146,11 @@ public class DesktopSystemView extends Dialog {
                     View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                             | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                             | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                WindowManager.LayoutParams layoutParams = window.getAttributes();
+                layoutParams.layoutInDisplayCutoutMode = forceCutoutFullscreen ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+                window.setAttributes(layoutParams);
+            }
         }
     }
 
@@ -566,6 +575,10 @@ public class DesktopSystemView extends Dialog {
     }
 
     private void loadDesktopSettings() {
+        forceCutoutFullscreen = prefs.getBoolean("dt_forceCutout", false);
+        uiScale = prefs.getFloat("dt_uiScale", 1.0f);
+        this.density = baseDensity * uiScale;
+
         bgAlpha = prefs.getInt("dt_bgAlpha", 180); gridSizeBase = prefs.getInt("dt_gridSize", 100); showGrid = prefs.getBoolean("dt_showGrid", false);
         customDesktopBg = prefs.getString("dt_customDeskBg", ""); customWindowBg = prefs.getString("dt_customWinBg", "");
         bgMediaVolume = prefs.getInt("dt_bgMediaVol", 50); winMediaVolume = prefs.getInt("dt_winMediaVol", 50); taskbarAlpha = prefs.getInt("dt_taskbarAlpha", 230);
@@ -586,6 +599,7 @@ public class DesktopSystemView extends Dialog {
         final int b_mediaScaleMode = mediaScaleMode;
         final String b_fontPath = fontPath; final int b_fontColor = fontColor; final float b_fontSize = fontSize;
         final boolean b_fontShadowEnabled = fontShadowEnabled; final int b_fontShadowColor = fontShadowColor;
+        final boolean b_forceCutout = forceCutoutFullscreen; final float b_uiScale = uiScale;
 
         Runnable performClose = () -> {
             View win = windowsLayer.findViewWithTag(title); if (win != null) windowsLayer.removeView(win);
@@ -593,15 +607,16 @@ public class DesktopSystemView extends Dialog {
         };
 
         Runnable checkAndPromptClose = () -> {
-            boolean changed = (bgAlpha!=b_bgAlpha || gridSizeBase!=b_gridSizeBase || showGrid!=b_showGrid || !customDesktopBg.equals(b_customDesktopBg) || !customWindowBg.equals(b_customWindowBg) || bgMediaVolume!=b_bgMediaVolume || winMediaVolume!=b_winMediaVolume || taskbarAlpha!=b_taskbarAlpha || mediaScaleMode!=b_mediaScaleMode || !fontPath.equals(b_fontPath) || fontColor!=b_fontColor || fontShadowEnabled!=b_fontShadowEnabled);
+            boolean changed = (bgAlpha!=b_bgAlpha || gridSizeBase!=b_gridSizeBase || showGrid!=b_showGrid || !customDesktopBg.equals(b_customDesktopBg) || !customWindowBg.equals(b_customWindowBg) || bgMediaVolume!=b_bgMediaVolume || winMediaVolume!=b_winMediaVolume || taskbarAlpha!=b_taskbarAlpha || mediaScaleMode!=b_mediaScaleMode || !fontPath.equals(b_fontPath) || fontColor!=b_fontColor || fontShadowEnabled!=b_fontShadowEnabled || forceCutoutFullscreen!=b_forceCutout || uiScale!=b_uiScale);
             if (changed) {
                 showWin10SavePrompt(
                     () -> { 
-                        prefs.edit().putInt("dt_bgAlpha", bgAlpha).putInt("dt_gridSize", gridSizeBase).putBoolean("dt_showGrid", showGrid).putString("dt_customDeskBg", customDesktopBg).putString("dt_customWinBg", customWindowBg).putInt("dt_bgMediaVol", bgMediaVolume).putInt("dt_winMediaVol", winMediaVolume).putInt("dt_taskbarAlpha", taskbarAlpha).putInt("dt_mediaScale", mediaScaleMode).putString("dt_fontPath", fontPath).putInt("dt_fontColor", fontColor).putFloat("dt_fontSize", fontSize).putBoolean("dt_fontShadow", fontShadowEnabled).putInt("dt_fontShadowC", fontShadowColor).apply();
+                        prefs.edit().putBoolean("dt_forceCutout", forceCutoutFullscreen).putFloat("dt_uiScale", uiScale).putInt("dt_bgAlpha", bgAlpha).putInt("dt_gridSize", gridSizeBase).putBoolean("dt_showGrid", showGrid).putString("dt_customDeskBg", customDesktopBg).putString("dt_customWinBg", customWindowBg).putInt("dt_bgMediaVol", bgMediaVolume).putInt("dt_winMediaVol", winMediaVolume).putInt("dt_taskbarAlpha", taskbarAlpha).putInt("dt_mediaScale", mediaScaleMode).putString("dt_fontPath", fontPath).putInt("dt_fontColor", fontColor).putFloat("dt_fontSize", fontSize).putBoolean("dt_fontShadow", fontShadowEnabled).putInt("dt_fontShadowC", fontShadowColor).apply();
                         savedVideoPositionDesk = 0; savedVideoPositionWin = 0;
                         reloadTypeface(); refreshDesktopBackground(); setupDesktopIcons(); Toast.makeText(getContext(), L("✅ 设置已保存！"), Toast.LENGTH_SHORT).show(); performClose.run();
                     },
                     () -> { 
+                        forceCutoutFullscreen = b_forceCutout; uiScale = b_uiScale;
                         bgAlpha = b_bgAlpha; gridSizeBase = b_gridSizeBase; showGrid = b_showGrid; customDesktopBg = b_customDesktopBg; customWindowBg = b_customWindowBg; bgMediaVolume = b_bgMediaVolume; winMediaVolume = b_winMediaVolume; taskbarAlpha = b_taskbarAlpha; mediaScaleMode = b_mediaScaleMode; fontPath = b_fontPath; fontColor = b_fontColor; fontSize = b_fontSize; fontShadowEnabled = b_fontShadowEnabled; fontShadowColor = b_fontShadowColor;
                         if (taskbar != null) taskbar.setBackgroundColor(Color.argb(taskbarAlpha, 17, 17, 17)); updateMediaVolumes(); reloadTypeface(); refreshDesktopBackground(); setupDesktopIcons(); performClose.run();
                     }
@@ -629,6 +644,17 @@ public class DesktopSystemView extends Dialog {
 
         Button gridToggle = createButton(showGrid ? L("✔️ 网格辅助线：开启") : L("❌ 网格辅助线：关闭"), "#333333");
         gridToggle.setOnClickListener(v -> { showGrid = !showGrid; gridToggle.setText(showGrid ? L("✔️ 网格辅助线：开启") : L("❌ 网格辅助线：关闭")); rootLayer.invalidate(); }); layout.addView(gridToggle);
+
+        layout.addView(createSubTitle(L("布局与屏幕适配:")));
+        Button cutoutToggle = createButton(forceCutoutFullscreen ? L("✔️ 强制全屏 (延伸至刘海/打孔区)") : L("❌ 默认显示 (避开刘海屏黑边)"), "#333333");
+        cutoutToggle.setOnClickListener(v -> { forceCutoutFullscreen = !forceCutoutFullscreen; cutoutToggle.setText(forceCutoutFullscreen ? L("✔️ 强制全屏 (延伸至刘海/打孔区)") : L("❌ 默认显示 (避开刘海屏黑边)")); applyImmersiveMode(getWindow()); }); layout.addView(cutoutToggle);
+
+        final TextView uiScaleLabel = createSubTitle(L("全局 UI 缩放比例: ") + String.format("%.2fx", uiScale) + L(" (需重启面板生效)")); layout.addView(uiScaleLabel);
+        SeekBar scaleBar = new SeekBar(getContext()); scaleBar.setMax(150); scaleBar.setProgress((int)((uiScale - 0.5f) * 100)); // 支持 0.5x 到 2.0x 动态调缩放
+        scaleBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() { 
+            public void onProgressChanged(SeekBar s, int p, boolean b) { uiScale = 0.5f + (p / 100f); uiScaleLabel.setText(L("全局 UI 缩放比例: ") + String.format("%.2fx", uiScale) + L(" (需重启面板生效)")); } 
+            public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){} 
+        }); layout.addView(scaleBar);
 
         layout.addView(createTitle(L("🅰️ 全局字体定制引擎")));
         final TextView fontLabel = createSubTitle(L("字体状态: ") + (fontPath.isEmpty() ? L("系统默认") : L("已加载外部资源"))); layout.addView(fontLabel);
@@ -664,7 +690,8 @@ public class DesktopSystemView extends Dialog {
 
         Button saveBtn = createButton(L("💾 保存设置并应用"), "#0078D7"); LinearLayout.LayoutParams btnP = new LinearLayout.LayoutParams(-1, -2); btnP.setMargins(0, (int)(30*density), 0, 0); saveBtn.setLayoutParams(btnP);
         saveBtn.setOnClickListener(v -> {
-            prefs.edit().putInt("dt_bgAlpha", bgAlpha).putInt("dt_gridSize", gridSizeBase).putBoolean("dt_showGrid", showGrid).putString("dt_customDeskBg", customDesktopBg).putString("dt_customWinBg", customWindowBg).putInt("dt_bgMediaVol", bgMediaVolume).putInt("dt_winMediaVol", winMediaVolume).putInt("dt_taskbarAlpha", taskbarAlpha).putInt("dt_mediaScale", mediaScaleMode).putString("dt_fontPath", fontPath).putInt("dt_fontColor", fontColor).putFloat("dt_fontSize", fontSize).putBoolean("dt_fontShadow", fontShadowEnabled).putInt("dt_fontShadowC", fontShadowColor).apply();
+            density = baseDensity * uiScale;
+            prefs.edit().putBoolean("dt_forceCutout", forceCutoutFullscreen).putFloat("dt_uiScale", uiScale).putInt("dt_bgAlpha", bgAlpha).putInt("dt_gridSize", gridSizeBase).putBoolean("dt_showGrid", showGrid).putString("dt_customDeskBg", customDesktopBg).putString("dt_customWinBg", customWindowBg).putInt("dt_bgMediaVol", bgMediaVolume).putInt("dt_winMediaVol", winMediaVolume).putInt("dt_taskbarAlpha", taskbarAlpha).putInt("dt_mediaScale", mediaScaleMode).putString("dt_fontPath", fontPath).putInt("dt_fontColor", fontColor).putFloat("dt_fontSize", fontSize).putBoolean("dt_fontShadow", fontShadowEnabled).putInt("dt_fontShadowC", fontShadowColor).apply();
             savedVideoPositionDesk = 0; savedVideoPositionWin = 0; reloadTypeface(); refreshDesktopBackground(); setupDesktopIcons(); Toast.makeText(getContext(), L("✅ 设置已保存！"), Toast.LENGTH_SHORT).show(); closeAction.run();
         }); layout.addView(saveBtn);
         scroll.addView(layout); return scroll;
@@ -2480,7 +2507,7 @@ public class DesktopSystemView extends Dialog {
         leftPanel.addView(titleRow);
 
         LinearLayout psToolsRow = new LinearLayout(getContext()); psToolsRow.setOrientation(LinearLayout.HORIZONTAL); psToolsRow.setPadding(0, padS, 0, padS);
-        Button btnNewLayer = createButton("➕", "#4CAF50"); Button btnCopyLayer = createButton("📄", "#0078D7"); Button btnPasteLayer = createButton("📋", "#FF9800"); Button btnDelLayer = createButton("🗑️", "#E81123"); Button btnBatchDel = createButton("☑️ 批量", "#E81123");
+        Button btnNewLayer = createButton("➕", "#4CAF50"); Button btnCopyLayer = createButton("📄", "#0078D7"); Button btnPasteLayer = createButton("📋", "#FF9800"); Button btnDelLayer = createButton("🗑️", "#E81123"); Button btnBatchDel = createButton("☑️", "#E81123");
         LinearLayout.LayoutParams toolBp = new LinearLayout.LayoutParams(0, -2, 1f); toolBp.setMargins((int)(1*density), 0, (int)(1*density), 0);
         psToolsRow.addView(btnNewLayer, toolBp); psToolsRow.addView(btnCopyLayer, toolBp); psToolsRow.addView(btnPasteLayer, toolBp); psToolsRow.addView(btnDelLayer, toolBp); psToolsRow.addView(btnBatchDel, toolBp);
         leftPanel.addView(psToolsRow);
@@ -3009,29 +3036,66 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             EditText nameInput = createInput(L("(默认追加递增防重名)"), defaultName); 
             box.addView(nameInput);
 
-            Button bConfirm = createButton(L("✔️ 确认合并栅格化导出"), "#4CAF50");
+            Button bConfirm = createButton(L("✔️ 确认保存并分离图层导出"), "#4CAF50");
             bConfirm.setOnClickListener(clickConfSave -> {
                 exportDialog.dismiss(); 
-                Toast.makeText(getContext(), L("📦 引擎正在合并栅格化导出中..."), Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("📦 引擎正在原生多图层分离导出中..."), Toast.LENGTH_SHORT).show();
                 new Thread(() -> {
                     try {
                         String baseName = nameInput.getText().toString().trim(); if (baseName.isEmpty()) baseName = "NewStage"; File rootExportDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports"); File tempDir = new File(rootExportDir, baseName); int counter = 1; while (tempDir.exists()) { tempDir = new File(rootExportDir, baseName + "_" + counter); counter++; } tempDir.mkdirs(); final File finalExportDir = tempDir; 
-                        String rawDef = defCodeInput.getText().toString(); String cleanedDef = rawDef.replaceAll("(?i)\\[BG\\s+.*?\\][\\s\\S]*?(?=\\[|$)", ""); cleanedDef = cleanedDef.replaceAll("(?i)\\[BG\\][\\s\\S]*?(?=\\[|$)", ""); cleanedDef += "\n[BG FlattenedBackground]\ntype = normal\nspriteno = 0, 0\nstart = 0, 0\nmask = 1\n"; File defFile = new File(finalExportDir, baseName + ".def"); FileOutputStream defOut = new FileOutputStream(defFile); defOut.write(cleanedDef.getBytes("UTF-8")); defOut.close();
-                        File finalSffFile = new File(finalExportDir, baseName + ".sff"); if (!globalSffPath.isEmpty()) { copyFileToSandbox(new File(globalSffPath), finalSffFile); } else { finalSffFile.createNewFile(); } 
-                        if (finalSffFile.length() > 0) { List<GoEngineBridge.SffFrame> origFrames = GoEngineBridge.getAllFrames(finalSffFile.getAbsolutePath()); for (GoEngineBridge.SffFrame f : origFrames) { Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item); } }
-                        float minX = 99999, minY = 99999, maxX = -99999, maxY = -99999; boolean hasContent = false;
-                        for (StageLayerInfo layer : layerList) { if (layer.isGhostGrid || layer.origW == 0) continue; float left = layer.startX - layer.axisX; float top = layer.startY - layer.axisY; float right = left + layer.origW * Math.abs(layer.scaleX); float bottom = top + layer.origH * Math.abs(layer.scaleY); if (left < minX) minX = left; if (top < minY) minY = top; if (right > maxX) maxX = right; if (bottom > maxY) maxY = bottom; hasContent = true; }
-                        if (hasContent) {
-                            int outW = (int) Math.ceil(maxX - minX); int outH = (int) Math.ceil(maxY - minY); if (outW <= 0) outW = 1; if (outH <= 0) outH = 1; Bitmap mergedBmp = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888); Canvas mergedCanvas = new Canvas(mergedBmp);
-                            for (int l_idx = 1; l_idx < layerList.size(); l_idx++) {
-                                StageLayerInfo layer = layerList.get(l_idx); if (layer.isGhostGrid || layer.origW == 0) continue;
-                                try { Bitmap layerFullBmp = null; if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) { layerFullBmp = BitmapFactory.decodeFile(layer.sourcePath); } else if (!layer.isExternal && layer.sourcePath != null && layer.sourcePath.toLowerCase().endsWith(".sff")) { byte[] fullData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, ""); if (fullData != null) layerFullBmp = BitmapFactory.decodeByteArray(fullData, 0, fullData.length); }
-                                    if (layerFullBmp != null) { Matrix m = new Matrix(); m.postScale(layer.scaleX, layer.scaleY); float drawX = (layer.startX - layer.axisX) - minX; float drawY = (layer.startY - layer.axisY) - minY; m.postTranslate(drawX, drawY); Paint p = new Paint(); if ("add".equalsIgnoreCase(layer.trans != null ? layer.trans.trim() : "none")) { p.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SCREEN)); } mergedCanvas.drawBitmap(layerFullBmp, m, p); layerFullBmp.recycle(); }
-                                } catch (OutOfMemoryError e) {}
+                        
+                        String rawDef = defCodeInput.getText().toString(); 
+                        String cleanedDef = rawDef.replaceAll("(?i)\\[BG\\s+.*?\\][\\s\\S]*?(?=\\[|$)", ""); 
+                        cleanedDef = cleanedDef.replaceAll("(?i)\\[BG\\][\\s\\S]*?(?=\\[|$)", ""); 
+                        
+                        StringBuilder defBuilder = new StringBuilder(cleanedDef);
+                        for (StageLayerInfo layer : layerList) {
+                            if (layer.isGhostGrid) continue;
+                            defBuilder.append("\n[BG ").append(layer.name).append("]\n");
+                            defBuilder.append("type = normal\n");
+                            defBuilder.append("spriteno = ").append(layer.group).append(", ").append(layer.item).append("\n");
+                            defBuilder.append("start = ").append((int)layer.startX).append(", ").append((int)layer.startY).append("\n");
+                            defBuilder.append("delta = ").append(layer.deltaX).append(", ").append(layer.deltaY).append("\n");
+                            defBuilder.append("mask = 1\n");
+                            if (layer.trans != null && !layer.trans.trim().equals("none")) {
+                                defBuilder.append("trans = ").append(layer.trans).append("\n");
                             }
-                            File tmpPng = new File(getContext().getCacheDir(), "merged_flatten_" + System.currentTimeMillis() + ".png"); FileOutputStream fosPng = new FileOutputStream(tmpPng); mergedBmp.compress(Bitmap.CompressFormat.PNG, 100, fosPng); fosPng.close(); mergedBmp.recycle(); short newAxisX = (short) -minX; short newAxisY = (short) -minY; Api.addSffFrame(finalSffFile.getAbsolutePath(), 0, 0, newAxisX, newAxisY, tmpPng.getAbsolutePath());
                         }
-                        new Handler(Looper.getMainLooper()).post(() -> { Toast.makeText(getContext(), L("✅ 2D 地图合并栅格化导出成功！\n文件在:\n") + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); });
+                        
+                        File defFile = new File(finalExportDir, baseName + ".def"); 
+                        FileOutputStream defOut = new FileOutputStream(defFile); 
+                        defOut.write(defBuilder.toString().getBytes("UTF-8")); 
+                        defOut.close();
+                        
+                        File finalSffFile = new File(finalExportDir, baseName + ".sff"); 
+                        if (!globalSffPath.isEmpty()) { 
+                            copyFileToSandbox(new File(globalSffPath), finalSffFile); 
+                            if (finalSffFile.length() > 0) {
+                                List<GoEngineBridge.SffFrame> origFrames = GoEngineBridge.getAllFrames(finalSffFile.getAbsolutePath());
+                                for (GoEngineBridge.SffFrame f : origFrames) {
+                                    boolean found = false;
+                                    for (StageLayerInfo l : layerList) {
+                                        if (!l.isGhostGrid && !l.isExternal && l.originalGroup == f.group && l.originalItem == f.item) {
+                                            found = true; break;
+                                        }
+                                    }
+                                    // 把面板里被删除了的原生帧进行针对性物理剔除
+                                    if (!found) { Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item); }
+                                }
+                            }
+                        } else { 
+                            finalSffFile.createNewFile(); 
+                        } 
+                        
+                        for (StageLayerInfo layer : layerList) { 
+                            if (layer.isGhostGrid) continue;
+                            // 将所有玩家后期插入的外部素材逐个原样注入到 SFF 中
+                            if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) {
+                                Api.addSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, (short)layer.axisX, (short)layer.axisY, layer.sourcePath);
+                            }
+                        }
+                        
+                        new Handler(Looper.getMainLooper()).post(() -> { Toast.makeText(getContext(), L("✅ 2D 原生多图层分离导出成功！\n文件在:\n") + finalExportDir.getAbsolutePath(), Toast.LENGTH_LONG).show(); });
                     } catch (Throwable t) { t.printStackTrace(); }
                 }).start();
             });
