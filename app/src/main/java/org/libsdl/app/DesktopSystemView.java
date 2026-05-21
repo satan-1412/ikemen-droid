@@ -1339,7 +1339,8 @@ public class DesktopSystemView extends Dialog {
 
         final int[] currentSelectedGroup = {-999};
 
-        Runnable refreshList = () -> {
+        final Runnable[] refreshList = {null};
+        refreshList[0] = () -> {
             listLayout.removeAllViews(); int selectedGroup = currentSelectedGroup[0];
             if (allNodes != null) {
                 for (GoEngineBridge.SndNode n : allNodes) {
@@ -1401,7 +1402,7 @@ public class DesktopSystemView extends Dialog {
                                     Toast.makeText(getContext(), L("✅ 音频已永久删除！"), Toast.LENGTH_SHORT).show(); 
                                     new Thread(() -> {
                                         List<GoEngineBridge.SndNode> newNodes = GoEngineBridge.scanSnd(sndPath);
-                                        new Handler(Looper.getMainLooper()).post(() -> { allNodes.clear(); allNodes.addAll(newNodes); refreshList.run(); });
+                                        new Handler(Looper.getMainLooper()).post(() -> { allNodes.clear(); allNodes.addAll(newNodes); refreshList[0].run(); });
                                     }).start();
                                 } else { Toast.makeText(getContext(), L("❌ 删除失败"), Toast.LENGTH_SHORT).show(); }
                             });
@@ -1449,7 +1450,7 @@ public class DesktopSystemView extends Dialog {
                                 Toast.makeText(getContext(), L("✅ 音频强行注入成功！"), Toast.LENGTH_SHORT).show(); d.dismiss();
                                 new Thread(() -> {
                                     List<GoEngineBridge.SndNode> newNodes = GoEngineBridge.scanSnd(sndPath);
-                                    new Handler(Looper.getMainLooper()).post(() -> { allNodes.clear(); allNodes.addAll(newNodes); refreshList.run(); });
+                                    new Handler(Looper.getMainLooper()).post(() -> { allNodes.clear(); allNodes.addAll(newNodes); refreshList[0].run(); });
                                 }).start();
                             } else { Toast.makeText(getContext(), L("❌ 注入失败，可能编号重复或格式不可读"), Toast.LENGTH_LONG).show(); }
                         });
@@ -1465,14 +1466,14 @@ public class DesktopSystemView extends Dialog {
             Button groupBtn = createButton(btnText, "#1E1E1E");
             LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-2, -2); gp.setMargins(0, 0, (int)(5*density), 0);
             groupBtn.setOnClickListener(v -> {
-                currentSelectedGroup[0] = g; refreshList.run();
+                currentSelectedGroup[0] = g; refreshList[0].run();
             });
             groupToolBelt.addView(groupBtn, gp);
         }
         groupScroll.addView(groupToolBelt);
         root.addView(groupScroll);
         
-        refreshList.run(); 
+        refreshList[0].run(); 
 
         openAppWindow(winTitle, root, () -> {
             if (currentSndPlayer != null) { currentSndPlayer.release(); currentSndPlayer = null; }
