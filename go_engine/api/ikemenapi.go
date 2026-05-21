@@ -157,6 +157,16 @@ func ReplaceSndAudio(sndPath string, group int32, item int32, targetWavPath stri
 	return err == nil
 }
 
+func AddSndAudio(sndPath string, group int32, item int32, targetWavPath string) bool {
+	err := snd_module.AddAudioWithWav(sndPath, group, item, targetWavPath)
+	return err == nil
+}
+
+func DeleteSndAudio(sndPath string, group int32, item int32) bool {
+	err := snd_module.DeleteAudio(sndPath, group, item)
+	return err == nil
+}
+
 // ==========================================
 // 🎞️ GIF 极限省内存拆解引擎 (完美适配 32 位系统)
 // ==========================================
