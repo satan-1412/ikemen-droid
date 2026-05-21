@@ -77,6 +77,9 @@ android {
 dependencies {
     // 👇 核心修改：让安卓能够读取我们未来用 Go 生成的 .aar 模块包
     implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')
+    
+    // 🔥 新增：远程同乐云游戏必备的低延迟音视频 WebRTC 核心依赖包
+    implementation 'org.webrtc:google-webrtc:1.0.32006'
 }
 
 // =========================================================
