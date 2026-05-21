@@ -3085,7 +3085,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                         // 仅保留完全未做编号修改的原始图层
                                         if (!l.isGhostGrid && !l.isExternal && l.sourcePath.equals(globalSffPath)) {
                                             if (l.originalGroup == f.group && l.originalItem == f.item) {
-                                                if (l.group == f.group && l.item == f.item) { keepAsIs = true; }
+                                                if (l.group == f.group && l.item == f.item && Math.abs(l.scaleX) == 1.0f && Math.abs(l.scaleY) == 1.0f) { keepAsIs = true; }
                                                 break;
                                             }
                                         }
@@ -3100,25 +3100,59 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         for (StageLayerInfo layer : layerList) { 
                             if (layer.isGhostGrid) continue;
                             
-                            // 校验该图层是否已安全且毫无改动地保存在文件中
-                            boolean isNativeAndUnchanged = (!globalSffPath.isEmpty() && !layer.isExternal && layer.sourcePath.equals(globalSffPath) && layer.group == layer.originalGroup && layer.item == layer.originalItem);
+                            // 校验该图层是否已安全且毫无改动地保存在文件中，增加缩放判定
+                            boolean isNativeAndUnchanged = (!globalSffPath.isEmpty() && !layer.isExternal && layer.sourcePath.equals(globalSffPath) && layer.group == layer.originalGroup && layer.item == layer.originalItem && Math.abs(layer.scaleX) == 1.0f && Math.abs(layer.scaleY) == 1.0f);
                             
                             if (!isNativeAndUnchanged) {
                                 File tmpPng = null;
+                                Bitmap layerBmp = null;
+                                
+                                // 提取图像的原始像素数据以供手术
                                 if (layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) {
-                                    // 纯外部引入的图片或拆解得到的 GIF 序列帧
-                                    tmpPng = new File(layer.sourcePath);
+                                    layerBmp = BitmapFactory.decodeFile(layer.sourcePath);
                                 } else if (!layer.isExternal && layer.sourcePath != null && !layer.sourcePath.isEmpty()) {
                                     // 从其他 SFF 导入的图片，或是修改了原本编号的图层：将其解包并重构
                                     byte[] bmpData = Api.decodeSffFrame(layer.sourcePath, layer.originalGroup, layer.originalItem, "");
                                     if (bmpData != null && bmpData.length > 0) {
-                                        tmpPng = new File(getContext().getCacheDir(), "tmp_export_" + System.currentTimeMillis() + "_" + layer.group + "_" + layer.item + ".png");
-                                        FileOutputStream fos = new FileOutputStream(tmpPng); fos.write(bmpData); fos.close();
+                                        layerBmp = BitmapFactory.decodeByteArray(bmpData, 0, bmpData.length);
                                     }
                                 }
-                                // 把无论什么来路的解析产物，全部稳稳注入进最终的 SFF 包内
-                                if (tmpPng != null && tmpPng.exists()) {
-                                    Api.addSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, (short)layer.axisX, (short)layer.axisY, tmpPng.getAbsolutePath());
+
+                                if (layerBmp != null) {
+                                    Bitmap finalBmp = layerBmp;
+                                    int finalAxisX = layer.axisX;
+                                    int finalAxisY = layer.axisY;
+
+                                    float absScaleX = Math.abs(layer.scaleX);
+                                    float absScaleY = Math.abs(layer.scaleY);
+
+                                    // 如果存在缩放，直接从底层物理修改照片的宽、高、及轴心的映射定位！
+                                    if (absScaleX != 1.0f || absScaleY != 1.0f) {
+                                        int newW = (int)(layerBmp.getWidth() * absScaleX);
+                                        int newH = (int)(layerBmp.getHeight() * absScaleY);
+                                        if (newW <= 0) newW = 1; if (newH <= 0) newH = 1;
+                                        
+                                        Matrix m = new Matrix();
+                                        m.postScale(absScaleX, absScaleY);
+                                        finalBmp = Bitmap.createBitmap(layerBmp, 0, 0, layerBmp.getWidth(), layerBmp.getHeight(), m, true);
+                                        
+                                        // 图像放大后，中心点也要同步放大跟上
+                                        finalAxisX = (int)(layer.axisX * absScaleX);
+                                        finalAxisY = (int)(layer.axisY * absScaleY);
+                                    }
+
+                                    tmpPng = new File(getContext().getCacheDir(), "tmp_export_" + System.currentTimeMillis() + "_" + layer.group + "_" + layer.item + ".png");
+                                    FileOutputStream fos = new FileOutputStream(tmpPng);
+                                    finalBmp.compress(Bitmap.CompressFormat.PNG, 100, fos);
+                                    fos.close();
+                                    
+                                    if (finalBmp != layerBmp) finalBmp.recycle();
+                                    layerBmp.recycle();
+                                    
+                                    // 写入 SFF 包内
+                                    if (tmpPng != null && tmpPng.exists()) {
+                                        Api.addSffFrame(finalSffFile.getAbsolutePath(), layer.group, layer.item, (short)finalAxisX, (short)finalAxisY, tmpPng.getAbsolutePath());
+                                    }
                                 }
                             }
                         }
