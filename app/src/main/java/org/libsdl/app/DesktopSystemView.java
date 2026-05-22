@@ -94,6 +94,26 @@ import java.nio.ByteBuffer;
 import api.Api;
 
 public class DesktopSystemView extends Dialog {
+    
+    // 🔥 1. 全局静态唯一实例，保证桌面的所有窗口和日志状态永驻内存！
+    public static DesktopSystemView mSingleton = null;
+
+    // 🔥 2. 拦截系统的销毁指令，改为“隐身”
+    @Override
+    public void dismiss() {
+        this.hide(); // 仅仅隐藏界面，绝不销毁内部的窗口和联机状态！
+    }
+    
+    @Override
+    public void cancel() {
+        this.hide(); 
+    }
+    
+    // 留给真正需要彻底清理内存时的后门
+    public void forceDestroy() {
+        super.dismiss();
+        mSingleton = null;
+    }
 
     public static DesktopSystemView instance;
     
@@ -3474,6 +3494,23 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             btnClient.setBackgroundColor(Color.parseColor("#0078D7")); btnHost.setBackgroundColor(Color.parseColor("#333333"));
             clientScroll.setVisibility(View.VISIBLE); hostScroll.setVisibility(View.GONE);
         });
+
+        // --- 🛑 危险操作区：手动强制断开与销毁 ---
+        Button btnKill = createButton(L("🛑 彻底断开联机并销毁当前窗口"), "#F44336");
+        LinearLayout.LayoutParams killParams = new LinearLayout.LayoutParams(-1, -2);
+        killParams.setMargins(0, (int)(30 * density), 0, 0);
+        btnKill.setOnClickListener(v -> {
+            try {
+                // 物理斩断 WebRTC 和局域网监听
+                if (CloudGamingManager.peerConnection != null) { CloudGamingManager.peerConnection.close(); CloudGamingManager.peerConnection = null; }
+                if (CloudGamingManager.lanServer != null) { CloudGamingManager.lanServer.close(); CloudGamingManager.lanServer = null; }
+                CloudGamingManager.log("🛑 联机进程已手动彻底终止！");
+                Toast.makeText(getContext(), L("联机已彻底断开"), Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {}
+            // 从桌面系统中移除这个“远程同乐”窗口
+            if (root.getParent() instanceof ViewGroup) { ((ViewGroup) root.getParent()).removeView(root); }
+        });
+        root.addView(btnKill, killParams);
 
         return root;
     }

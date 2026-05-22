@@ -5056,8 +5056,8 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                             public void run() {
                                 android.view.Window targetWindow = null;
                                 // 智能判断：如果桌面模式已成功运行，直接劫持桌面模式的 Window
-                                if (org.libsdl.app.DesktopSystemView.instance != null && org.libsdl.app.DesktopSystemView.instance.isShowing()) {
-                                    targetWindow = org.libsdl.app.DesktopSystemView.instance.getWindow();
+                                if (org.libsdl.app.DesktopSystemView.mSingleton != null && org.libsdl.app.DesktopSystemView.mSingleton.isShowing()) {
+                                    targetWindow = org.libsdl.app.DesktopSystemView.mSingleton.getWindow();
                                 } else {
                                     // 兜底方案：如果没开桌面模式，则使用底层 Activity 的 Window
                                     android.app.Activity activity = (android.app.Activity) getContext();

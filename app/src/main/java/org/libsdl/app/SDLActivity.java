@@ -2278,10 +2278,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             @Override
             public void run() {
                 if (active) {
-                    if (mDesktopSystemView == null) {
-                        mDesktopSystemView = new DesktopSystemView(SDLActivity.this);
+                    // 🚀 如果桌面是第一次打开，就创建它；如果已经存在，就直接唤醒旧的！
+                    if (org.libsdl.app.DesktopSystemView.mSingleton == null) {
+                        org.libsdl.app.DesktopSystemView.mSingleton = new DesktopSystemView(SDLActivity.this);
                     }
-                    mDesktopSystemView.show();
+                    org.libsdl.app.DesktopSystemView.mSingleton.show();
                     
                     SDLActivity.mHasFocus = false;
                     SDLActivity.mNextNativeState = NativeState.PAUSED;
@@ -2295,10 +2296,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     } catch (Exception e) {}
 
                 } else {
-                    // 1. 极速销毁桌面弹窗，并清空内存以便下次重新干净地加载
-                    if (mDesktopSystemView != null) {
-                        mDesktopSystemView.dismiss();
-                        mDesktopSystemView = null; 
+                    // 1. 隐身桌面弹窗，保留联机进程和日志！绝对不要置为 null！
+                    if (org.libsdl.app.DesktopSystemView.mSingleton != null) {
+                        org.libsdl.app.DesktopSystemView.mSingleton.dismiss(); // 这里会触发我们刚才重写的 hide()
                     }
 
                     // 2. 瞬间把焦点还给游戏画布 (必须在唤醒引擎前执行)
