@@ -3365,7 +3365,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
     // ======================================================================================
     // 🎮 模块 8：远程同乐 (云同游 / WebRTC 低延迟串流中枢)
     // ======================================================================================
-    public static android.widget.TextView logConsole; // 静态日志控制台
+    public static android.widget.TextView logConsole; 
+    public static ScrollView logScrollView; // 🚀 新增：用于让日志自动滚动到底部
 
     private View buildRemotePlayContent() {
         LinearLayout root = new LinearLayout(getContext());
@@ -3398,6 +3399,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         logConsole.setTypeface(Typeface.MONOSPACE);
         logScroll.addView(logConsole);
         logScroll.setBackgroundColor(Color.parseColor("#000000"));
+        logScrollView = logScroll; // 绑定静态引用以实现自动滚动
         logScroll.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
         LinearLayout.LayoutParams logParams = new LinearLayout.LayoutParams(-1, (int)(120 * density));
         logParams.setMargins(0, (int)(10 * density), 0, 0);
@@ -3936,7 +3938,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 } else {
                     android.widget.Toast.makeText(getActivity(), "❌ 必须授予录屏权限才能充当主机！", android.widget.Toast.LENGTH_SHORT).show();
                 }
-                try { getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss(); } catch(Exception e){}
+                // 🚀 核心修复：严禁在此刻销毁 Fragment！否则 Android 系统会直接没收录屏权限令牌！
             }
         }
     }
@@ -3947,17 +3949,20 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
     public static class CloudGamingManager {
         public static String playerName = "Player";
         private static PeerConnectionFactory factory;
-        private static PeerConnection peerConnection;
+        public static PeerConnection peerConnection;
         private static SurfaceTextureHelper surfaceTextureHelper;
         private static DataChannel dataChannel;
         private static boolean isHost = false;
-        private static ServerSocket lanServer; 
-        private static VideoTrack localVideoTrack; // 用于后台切屏时暂停共享
+        public static ServerSocket lanServer; 
+        private static VideoTrack localVideoTrack; 
         
         // --- 控制台 UI 更新通道 ---
         public static void log(String msg) {
             new Handler(Looper.getMainLooper()).post(() -> {
-                if (logConsole != null) { logConsole.append("[" + new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date()) + "] " + msg + "\n"); }
+                if (logConsole != null) { 
+                    logConsole.append("[" + new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date()) + "] " + msg + "\n"); 
+                    if (logScrollView != null) { logScrollView.post(() -> logScrollView.fullScroll(View.FOCUS_DOWN)); }
+                }
             });
         }
 
@@ -4023,7 +4028,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             String sender = msg.optString("senderName", "神秘玩家");
             
             if (type.equals("offer")) {
-                log("=> [" + sender + "] 加入了房间，正在响应...");
+                log("=> [" + sender + "] 加入了房间，正在推流画面...");
                 peerConnection.setRemoteDescription(new SimpleSdpObserver(), new SessionDescription(SessionDescription.Type.OFFER, payload.getString("sdp")));
                 peerConnection.createAnswer(new SimpleSdpObserver() {
                     @Override public void onCreateSuccess(SessionDescription sessionDescription) {
@@ -4032,7 +4037,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     }
                 }, new MediaConstraints());
             } else if (type.equals("answer")) {
-                log("=> 主机接受了连接，视频推流通道建立！");
+                log("=> 成功连接到主机 [" + sender + "]，视频画面即将降临！");
                 peerConnection.setRemoteDescription(new SimpleSdpObserver(), new SessionDescription(SessionDescription.Type.ANSWER, payload.getString("sdp")));
             } else if (type.equals("candidate")) {
                 IceCandidate candidate = new IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate"));
@@ -4040,11 +4045,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             }
         }
 
-        public static void startHost(Context context, FrameLayout rootLayer, Intent screenPermData, String wanCode, int quality, String customStun, String customSignal) {
+        public static void startHost(Context context, ViewGroup rootLayer, Intent screenPermData, String wanCode, int quality, String customStun, String customSignal) {
             isHost = true;
             log("=> 你创建了房间。可以关闭此面板返回游戏，画面会自动共享。");
             
-            // 🛡️ 隐私保护机制：监听 Activity 切后台，一旦回桌面立刻断开视频流！
             Activity activity = org.libsdl.app.SDLActivity.mSingleton;
             if (activity != null) {
                 activity.getApplication().registerActivityLifecycleCallbacks(new android.app.Application.ActivityLifecycleCallbacks() {
@@ -4096,13 +4100,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         @Override public void onBufferedAmountChange(long l) {} @Override public void onStateChange() {}
                     });
                 }
-                @Override public void onSignalingChange(PeerConnection.SignalingState s) {} @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { log("=> WebRTC 连接状态: " + s); } @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
+                @Override public void onSignalingChange(PeerConnection.SignalingState s) {} @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { log("=> 连接底层状态: " + s); } @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
             });
 
             DataChannel.Init dcInit = new DataChannel.Init();
             dataChannel = peerConnection.createDataChannel("IkemenInput", dcInit);
 
-            VideoCapturer screenCapturer = new ScreenCapturerAndroid(screenPermData, new MediaProjection.Callback() { @Override public void onStop() { super.onStop(); log("=> 录屏底层服务已被系统中断。"); } });
+            VideoCapturer screenCapturer = new ScreenCapturerAndroid(screenPermData, new MediaProjection.Callback() { @Override public void onStop() { super.onStop(); log("=> 录屏底层服务已被系统断开，画面流停止。"); } });
             surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", EglBase.create().getEglBaseContext());
             VideoSource videoSource = factory.createVideoSource(screenCapturer.isScreencast());
             screenCapturer.initialize(surfaceTextureHelper, context, videoSource.getCapturerObserver());
@@ -4118,7 +4122,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             startSignalingListener(getLocalIpAddress(), customSignal);
         }
 
-        public static void startClient(Context context, FrameLayout rootLayer, String targetCode, String customStun, String customSignal) {
+        public static void startClient(Context context, ViewGroup rootLayer, String targetCode, String customStun, String customSignal) {
             isHost = false;
             PeerConnectionFactory.InitializationOptions initOptions = PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions();
             PeerConnectionFactory.initialize(initOptions);
@@ -4133,21 +4137,29 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 }
                 @Override public void onAddTrack(RtpReceiver receiver, MediaStream[] mediaStreams) {
                     new Handler(Looper.getMainLooper()).post(() -> {
-                        log("=> 视频流接入成功！请不要关闭此界面，该界面即为你的手柄和屏幕！");
+                        log("=> 🎉 视频流接入成功！您的界面已被游戏引擎接管！");
+                        // 🚀 核心覆盖逻辑：彻底清空现有控制台，铺满接收到的游戏画面！
                         rootLayer.removeAllViews();
+                        FrameLayout videoContainer = new FrameLayout(context);
+                        rootLayer.addView(videoContainer, new LinearLayout.LayoutParams(-1, -1));
+
                         SurfaceViewRenderer videoView = new SurfaceViewRenderer(context);
                         videoView.init(EglBase.create().getEglBaseContext(), null);
                         videoView.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT);
-                        rootLayer.addView(videoView, new FrameLayout.LayoutParams(-1, -1));
+                        videoContainer.addView(videoView, new FrameLayout.LayoutParams(-1, -1));
                         
                         VideoTrack track = (VideoTrack) receiver.track();
                         track.addSink(videoView);
-                        buildClientGamepad(context, rootLayer);
+                        buildClientGamepad(context, videoContainer);
                     });
                 }
                 @Override public void onDataChannel(DataChannel channel) { dataChannel = channel; }
-                @Override public void onSignalingChange(PeerConnection.SignalingState s) {} @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) {} @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
+                @Override public void onSignalingChange(PeerConnection.SignalingState s) {} @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { log("=> 连接底层状态: " + s); } @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
             });
+
+            // 🚀 终极修复：WebRTC 单向流陷阱！必须强制声明接收视频流，否则主机绝不会推流！
+            peerConnection.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO, 
+                new RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
 
             startSignalingListener(targetCode, customSignal);
 
@@ -4202,6 +4214,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             btnUp.setOnTouchListener(sender); btnDown.setOnTouchListener(sender); btnLeft.setOnTouchListener(sender); btnRight.setOnTouchListener(sender);
             btnA.setOnTouchListener(sender); btnB.setOnTouchListener(sender); btnC.setOnTouchListener(sender);
             btnX.setOnTouchListener(sender); btnY.setOnTouchListener(sender); btnZ.setOnTouchListener(sender); btnStart.setOnTouchListener(sender);
+            
+            // 加入半透明手柄
+            padLayout.setAlpha(0.6f);
             root.addView(padLayout, new FrameLayout.LayoutParams(-1, -1));
         }
 
@@ -4215,7 +4230,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         InetAddress inetAddress = enumIpAddr.nextElement();
                         if (!inetAddress.isLoopbackAddress() && inetAddress.getAddress().length == 4) { 
                             String ip = inetAddress.getHostAddress();
-                            // 🚀 核心修复：优先抓取 WiFi 和 热点 (AP) 接口，直接过滤掉移动数据网络！
                             if (name.contains("wlan") || name.contains("ap") || name.contains("softap")) { return ip; }
                             backupIp = ip; 
                         }
