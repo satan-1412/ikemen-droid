@@ -207,13 +207,6 @@ public class DesktopSystemView extends Dialog {
     public void show() { super.show(); instance = this; }
 
     @Override
-    public void dismiss() { 
-        super.dismiss(); 
-        if (instance == this) instance = null; 
-        if (currentSndPlayer != null) { currentSndPlayer.release(); currentSndPlayer = null; }
-    }
-
-    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         loadDesktopSettings();
