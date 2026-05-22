@@ -3363,7 +3363,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         updateViewState[0].run(); refreshLayerListUI[0].run(); return root;
     }
     // ======================================================================================
-    // 🎮 模块 8：远程同乐 (云同游大厅)
+    // 🎮 模块 8：远程同乐 (云同游 / 聊天互通 / 极客网络)
     // ======================================================================================
     public static android.widget.TextView logConsole; 
     public static ScrollView logScrollView; 
@@ -3385,13 +3385,18 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         tabBar.addView(btnHost, tabParams); tabBar.addView(btnClient, tabParams);
         root.addView(tabBar);
 
+        FrameLayout contentContainer = new FrameLayout(getContext());
+        LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams(-1, 0, 1f);
+        containerParams.setMargins(0, (int)(10 * density), 0, 0);
+        root.addView(contentContainer, containerParams);
+
         // --- 全局实时日志与聊天面板 ---
         LinearLayout logAndChatPanel = new LinearLayout(getContext());
         logAndChatPanel.setOrientation(LinearLayout.VERTICAL);
         
         ScrollView logScroll = new ScrollView(getContext());
         logConsole = new android.widget.TextView(getContext());
-        logConsole.setTextColor(Color.parseColor("#4CAF50")); 
+        logConsole.setTextColor(Color.parseColor("#4CAF50")); // 黑客绿
         logConsole.setTextSize(11f);
         logConsole.setText(L("=> Ikemen WebRTC 引擎已就绪...\n"));
         logConsole.setTypeface(Typeface.MONOSPACE);
@@ -3401,7 +3406,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         logScrollView = logScroll; 
         
         LinearLayout.LayoutParams logParams = new LinearLayout.LayoutParams(-1, (int)(100 * density));
-        logParams.setMargins(0, (int)(10 * density), 0, 0);
+        logParams.setMargins(0, (int)(5 * density), 0, 0);
         logAndChatPanel.addView(logScroll, logParams);
 
         LinearLayout chatLayout = new LinearLayout(getContext());
@@ -3417,7 +3422,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             String msg = chatInput.getText().toString().trim();
             if(!msg.isEmpty()) { CloudGamingManager.sendChatMessage(msg); chatInput.setText(""); }
         });
-
         root.addView(logAndChatPanel);
 
         // --- ⚙️ 极客网络选项 (局域网直连 / 中转配置) ---
@@ -3467,7 +3471,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 f.wanCode = wanCode; f.quality = qualitySpinner.getSelectedItemPosition();
                 f.customStun = customStunInput.getText().toString().trim(); 
                 f.customSignal = customSignalInput.getText().toString().trim(); 
-                f.uiRoot = root; // 🚀 精准传入 UI 容器
+                f.uiRoot = root; // 🚀 传入底层 UI
                 activity.getFragmentManager().beginTransaction().add(f, "ScreenCapPerm").commitAllowingStateLoss();
             } catch (Exception e) {}
         });
@@ -3495,11 +3499,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             String customStun = customStunInput.getText().toString().trim(); 
             String customSignal = customSignalInput.getText().toString().trim(); 
             CloudGamingManager.log("=> 🚀 启动客户端引擎，寻址目标: [" + code + "] ...");
-            CloudGamingManager.startClient(getContext(), root, code, customStun, customSignal); // 🚀 传入 root
+            CloudGamingManager.startClient(getContext(), root, code, customStun, customSignal); 
         });
         clientPanel.addView(btnJoinRoom, btnParams);
 
-        FrameLayout contentContainer = new FrameLayout(getContext());
         contentContainer.addView(hostScroll); contentContainer.addView(clientScroll);
         root.addView(contentContainer, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -3531,6 +3534,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
         return root;
     }
+
 
 
 
@@ -3966,7 +3970,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
 
     // ======================================================================================
-    // 🧠 核心：云同乐引擎 (自动隐藏大厅 / 解决单向流与通信死结)
+    // 🧠 核心：云同乐引擎 (破解死锁 / 强制主线程调度 / 完美错误捕获)
     // ======================================================================================
     public static class CloudGamingManager {
         public static String playerName = "Player";
@@ -3987,7 +3991,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             String time = new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date());
             new Handler(Looper.getMainLooper()).post(() -> {
                 String fullMsg = "[" + time + "] " + msg;
-                Log.i("IkemenWebRTC", fullMsg); // 强制输出到 Android Logcat 留底
+                Log.i("IkemenWebRTC", fullMsg);
                 if (logConsole != null) { 
                     logConsole.append(fullMsg + "\n"); 
                     if (logScrollView != null) { logScrollView.post(() -> logScrollView.fullScroll(View.FOCUS_DOWN)); }
@@ -4008,25 +4012,24 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     dataChannel.send(new DataChannel.Buffer(buffer, false));
                     log("💬 [我]: " + text);
                 } catch (Exception e) { log("❌ 发送失败"); }
-            } else { log("❌ 错误：聊天与按键通道尚未打通！"); }
+            } else { log("❌ 错误：聊天通道底层尚未连通！"); }
         }
 
         private static void sendSignalingMessage(String targetCode, String type, JSONObject payload, String customSignal) {
             new Thread(() -> {
                 try {
                     JSONObject msg = new JSONObject(); msg.put("type", type); msg.put("payload", payload);
-                    msg.put("senderName", playerName);
-                    msg.put("replyToIp", getLocalIpAddress()); 
+                    msg.put("senderName", playerName); msg.put("replyToIp", getLocalIpAddress()); 
                     String msgStr = msg.toString();
 
                     if (targetCode.contains(".")) {
-                        if (!isHost) { // 加入方发送局域网信令
+                        if (!isHost) { 
                             Socket socket = new Socket(targetCode, 8192);
                             OutputStream os = socket.getOutputStream();
                             os.write((msgStr + "\n").getBytes("UTF-8"));
                             os.flush(); socket.close();
                         }
-                    } else {
+                    } else { 
                         String baseUrl = (customSignal == null || customSignal.isEmpty()) ? "https://ntfy.sh/" : (customSignal.endsWith("/") ? customSignal : customSignal + "/");
                         String topic = "ikemen_webrtc_" + targetCode + (isHost ? "_client" : "_host");
                         URL url = new URL(baseUrl + topic);
@@ -4044,7 +4047,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 try {
                     if (isLan) {
                         lanServer = new ServerSocket(8192);
-                        log("=> 📡 开启局域网监听 (端口 8192)...");
+                        log("=> 📡 开启局域网底层监听 (端口 8192)...");
                         while (!lanServer.isClosed()) {
                             Socket client = lanServer.accept();
                             BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
@@ -4069,37 +4072,51 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             }).start();
         }
 
-        private static void processSignalingMessage(JSONObject msg, String customSignal, boolean fromLan) throws Exception {
-            String type = msg.getString("type"); JSONObject payload = msg.getJSONObject("payload");
-            String sender = msg.optString("senderName", "神秘玩家");
-            String replyToIp = msg.optString("replyToIp", "");
-            
-            if (isHost) {
-                if (fromLan && !replyToIp.isEmpty()) { currentPeerTarget = replyToIp; log("=> 锁定客机内网IP: " + replyToIp); } 
-                else { currentPeerTarget = hostWanCode; } 
-            }
-
-            if (type.equals("offer")) {
-                log("=> 🔔 收到 [" + sender + "] 的入房握手请求，正在打包本地参数...");
-                peerConnection.setRemoteDescription(new SimpleSdpObserver(), new SessionDescription(SessionDescription.Type.OFFER, payload.getString("sdp")));
-                peerConnection.createAnswer(new SimpleSdpObserver() {
-                    @Override public void onCreateSuccess(SessionDescription sessionDescription) {
-                        peerConnection.setLocalDescription(new SimpleSdpObserver(), sessionDescription);
-                        try { JSONObject out = new JSONObject(); out.put("sdp", sessionDescription.description); sendSignalingMessage(currentPeerTarget, "answer", out, customSignal); } catch(Exception e){}
-                        log("=> ✉️ 同意入房请求 (Answer) 已发送！");
+        // 🚀 核心大修：强制主线程安全调度，破解底层死锁！
+        private static void processSignalingMessage(JSONObject msg, String customSignal, boolean fromLan) {
+            new Handler(Looper.getMainLooper()).post(() -> {
+                try {
+                    String type = msg.getString("type"); JSONObject payload = msg.getJSONObject("payload");
+                    String sender = msg.optString("senderName", "神秘玩家");
+                    String replyToIp = msg.optString("replyToIp", "");
+                    
+                    if (isHost) {
+                        if (fromLan && !replyToIp.isEmpty()) { currentPeerTarget = replyToIp; log("=> 🎯 锁定局域网客机IP: " + replyToIp); } 
+                        else { currentPeerTarget = hostWanCode; } 
                     }
-                }, new MediaConstraints());
-            } else if (type.equals("answer")) {
-                log("=> 🎉 验证通过！主机 [" + sender + "] 同意了连接！等待画面降临...");
-                peerConnection.setRemoteDescription(new SimpleSdpObserver(), new SessionDescription(SessionDescription.Type.ANSWER, payload.getString("sdp")));
-            } else if (type.equals("candidate")) {
-                log("=> 🕸️ 收到网络穿透节点 (ICE Candidate)...");
-                IceCandidate candidate = new IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate"));
-                peerConnection.addIceCandidate(candidate);
-            }
+
+                    if (type.equals("offer")) {
+                        log("=> 🔔 收到 [" + sender + "] 的入房请求，正在解析底层参数...");
+                        // 🚀 严格的安全回调链：必须等 setRemote 成功，才能 createAnswer！
+                        peerConnection.setRemoteDescription(new SimpleSdpObserver("Host-SetRemote") {
+                            @Override public void onSetSuccess() {
+                                log("=> ✅ 对方参数解析成功！正在生成本地回传通道...");
+                                peerConnection.createAnswer(new SimpleSdpObserver("Host-CreateAnswer") {
+                                    @Override public void onCreateSuccess(SessionDescription sessionDescription) {
+                                        peerConnection.setLocalDescription(new SimpleSdpObserver("Host-SetLocal") {
+                                            @Override public void onSetSuccess() {
+                                                try { JSONObject out = new JSONObject(); out.put("sdp", sessionDescription.description); sendSignalingMessage(currentPeerTarget, "answer", out, customSignal); } catch(Exception e){}
+                                                log("=> ✉️ 最终同意书 (Answer) 已发出！等待打洞连接...");
+                                            }
+                                        }, sessionDescription);
+                                    }
+                                }, new MediaConstraints());
+                            }
+                        }, new SessionDescription(SessionDescription.Type.OFFER, payload.getString("sdp")));
+                    } else if (type.equals("answer")) {
+                        log("=> 🎉 验证通过！主机 [" + sender + "] 同意了连接！准备物理打通...");
+                        peerConnection.setRemoteDescription(new SimpleSdpObserver("Client-SetRemoteAnswer"){
+                            @Override public void onSetSuccess() { log("=> ✅ 握手参数已对接完毕！"); }
+                        }, new SessionDescription(SessionDescription.Type.ANSWER, payload.getString("sdp")));
+                    } else if (type.equals("candidate")) {
+                        log("=> 🕸️ 收到底层网络穿透节点 (ICE Candidate)...");
+                        IceCandidate candidate = new IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate"));
+                        peerConnection.addIceCandidate(candidate);
+                    }
+                } catch (Exception e) { log("❌ 处理信令崩溃: " + e.getMessage()); }
+            });
         }
 
-        // 🚀 核心修复：处理消息与按键注入
         private static void setupDataChannel(DataChannel channel) {
             dataChannel = channel;
             dataChannel.registerObserver(new DataChannel.Observer() {
@@ -4131,7 +4148,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         }
                     } catch (Exception e) {}
                 }
-                @Override public void onBufferedAmountChange(long l) {} @Override public void onStateChange() { log("=> ⚡ 按键/聊天通道状态: " + dataChannel.state()); }
+                @Override public void onBufferedAmountChange(long l) {} @Override public void onStateChange() { log("=> ⚡ 聊天与按键物理通道状态: " + dataChannel.state()); }
             });
         }
 
@@ -4153,18 +4170,15 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 }
                 @Override public void onDataChannel(DataChannel channel) { 
                     log("=> 🔌 主机检测到客机发起的数据通道，正在对接..."); 
-                    setupDataChannel(channel); // 🚀 核心修复：主机绝不能 createDataChannel，必须被动监听对接！
+                    setupDataChannel(channel); 
                 }
                 @Override public void onSignalingChange(PeerConnection.SignalingState s) {} 
                 @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { 
                     log("=> 🌐 P2P 穿透网络状态: " + s); 
                     if(s == PeerConnection.IceConnectionState.CONNECTED) {
                         log("✅✅✅ 连接完全建立！2秒后自动返回游戏画面！");
-                        // 🚀 核心需求实现：主机连上后自动隐藏联机大厅，切回游戏画面！
                         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                            if (org.libsdl.app.SDLActivity.mSingleton != null) {
-                                org.libsdl.app.SDLActivity.mSingleton.toggleDesktopMode(false);
-                            }
+                            if (org.libsdl.app.SDLActivity.mSingleton != null) org.libsdl.app.SDLActivity.mSingleton.toggleDesktopMode(false);
                         }, 2000);
                     }
                 } 
@@ -4207,9 +4221,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         log("=> 🎉 成功接收视频流轨道！正在摧毁联机大厅并全屏...");
                         try {
-                            uiRoot.removeAllViews(); // 🚀 彻底摧毁大厅
-                            
-                            // 🚀 核心修复：安全嵌套防崩溃
+                            uiRoot.removeAllViews(); 
                             FrameLayout videoContainer = new FrameLayout(context);
                             uiRoot.addView(videoContainer, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
 
@@ -4224,31 +4236,32 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             
                             buildClientGamepad(context, videoContainer);
                             log("=> 🎮 屏幕已被主机接管！尽情战斗吧！");
-                        } catch (Exception e) { Log.e("IkemenWebRTC", "渲染错误: " + e.getMessage()); }
+                        } catch (Exception e) { log("❌ 渲染器初始化崩溃: " + e.getMessage()); }
                     });
                 }
-                @Override public void onDataChannel(DataChannel channel) { } // 客户端主动创建，不需要监听
+                @Override public void onDataChannel(DataChannel channel) { } 
                 @Override public void onSignalingChange(PeerConnection.SignalingState s) {} 
                 @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { log("=> 🌐 P2P 穿透网络状态: " + s); } 
                 @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
             });
 
-            // 🚀 核心修复 1：发起方主动建立数据通道！聊天和按键才能生效！
             DataChannel.Init dcInit = new DataChannel.Init();
             setupDataChannel(peerConnection.createDataChannel("IkemenData", dcInit));
 
-            // 🚀 核心修复 2：强制声明接收视频！破解 WebRTC 单向流不发画面的陷阱！
             peerConnection.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO, 
                 new RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
 
             boolean isTargetLan = targetCode.contains(".");
             startSignalingListener(targetCode, customSignal, isTargetLan);
 
-            peerConnection.createOffer(new SimpleSdpObserver() {
+            peerConnection.createOffer(new SimpleSdpObserver("Client-CreateOffer") {
                 @Override public void onCreateSuccess(SessionDescription sessionDescription) {
-                    peerConnection.setLocalDescription(new SimpleSdpObserver(), sessionDescription);
-                    try { JSONObject out = new JSONObject(); out.put("sdp", sessionDescription.description); sendSignalingMessage(targetCode, "offer", out, customSignal); } catch(Exception e){}
-                    log("=> ✉️ 请求入房握手 (Offer) 已发送，等待主机同意...");
+                    peerConnection.setLocalDescription(new SimpleSdpObserver("Client-SetLocalOffer") {
+                        @Override public void onSetSuccess() {
+                            try { JSONObject out = new JSONObject(); out.put("sdp", sessionDescription.description); sendSignalingMessage(targetCode, "offer", out, customSignal); } catch(Exception e){}
+                            log("=> ✉️ 请求入房握手 (Offer) 已发送！等待主机同意...");
+                        }
+                    }, sessionDescription);
                 }
             }, new MediaConstraints());
         }
@@ -4334,8 +4347,15 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             } catch (Exception ex) {} return backupIp;
         }
 
+        // 🚀 核心大修：内置报错雷达，从此告别“假死不知道原因”！
         public static class SimpleSdpObserver implements SdpObserver {
-            @Override public void onCreateSuccess(SessionDescription sessionDescription) {} @Override public void onSetSuccess() {} @Override public void onCreateFailure(String s) {} @Override public void onSetFailure(String s) {}
+            private String tag = "WebRTC";
+            public SimpleSdpObserver(String tag) { this.tag = tag; }
+            public SimpleSdpObserver() {}
+            @Override public void onCreateSuccess(SessionDescription sessionDescription) {} 
+            @Override public void onSetSuccess() {} 
+            @Override public void onCreateFailure(String s) { log("❌ " + tag + " 崩溃: " + s); } 
+            @Override public void onSetFailure(String s) { log("❌ " + tag + " 挂载失败: " + s); }
         }
     }
 } // 类的结尾
