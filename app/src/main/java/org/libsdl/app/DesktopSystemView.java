@@ -3422,32 +3422,23 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             String customStun = customStunInput.getText().toString().trim();
             String customSignal = customSignalInput.getText().toString().trim();
 
-            // 🚀 核心修复：直接获取 SDL 全局 Activity，彻底解决 Context 转换闪退
             Activity activity = org.libsdl.app.SDLActivity.mSingleton;
             if (activity == null) { Toast.makeText(getContext(), L("❌ 获取主程序句柄失败"), Toast.LENGTH_SHORT).show(); return; }
 
-            MediaProjectionManager mpm = (MediaProjectionManager) activity.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-            Fragment permissionFragment = new Fragment() {
-                boolean isRequested = false;
-                @Override public void onResume() { 
-                    super.onResume();
-                    if (!isRequested) {
-                        isRequested = true;
-                        try { startActivityForResult(mpm.createScreenCaptureIntent(), 1412); } 
-                        catch (Exception e) { Toast.makeText(getContext(), L("❌ 请求权限异常"), Toast.LENGTH_SHORT).show(); }
-                    }
-                }
-                @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {
-                    if (requestCode == 1412 && resultCode == Activity.RESULT_OK) {
-                        CloudGamingManager.startHost(getContext(), rootLayer, data, wanCode, qualitySpinner.getSelectedItemPosition(), customStun, customSignal);
-                        Toast.makeText(getContext(), L("✅ 房间建立成功！等待 2P 接入..."), Toast.LENGTH_LONG).show();
-                    } else { Toast.makeText(getContext(), L("❌ 必须授予录屏权限才能充当主机！"), Toast.LENGTH_SHORT).show(); }
-                    try { getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss(); } catch(Exception e){}
-                }
-            };
-            try { activity.getFragmentManager().beginTransaction().add(permissionFragment, "ScreenCapPerm").commitAllowingStateLoss(); } 
-            catch (Exception e) { Toast.makeText(getContext(), L("❌ Fragment挂载失败"), Toast.LENGTH_SHORT).show(); }
+            try {
+                // 🚀 核心修复：使用规范的静态载体类，完美通过 Android 底层的安全校验
+                ScreenCapFragment f = new ScreenCapFragment();
+                f.wanCode = wanCode;
+                f.quality = qualitySpinner.getSelectedItemPosition();
+                f.customStun = customStun;
+                f.customSignal = customSignal;
+                f.rootLayer = rootLayer;
+                activity.getFragmentManager().beginTransaction().add(f, "ScreenCapPerm").commitAllowingStateLoss();
+            } catch (Exception e) { 
+                Toast.makeText(getContext(), L("❌ 权限模块挂载失败: ") + e.getMessage(), Toast.LENGTH_SHORT).show(); 
+            }
         });
+
         hostPanel.addView(btnCreateRoom, btnParams);
         hostPanel.addView(advancedPanel); // 绑定极客设置面板
 
@@ -3888,7 +3879,41 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
     private static String L(String text) {
         return DynamicGamepadView.L(text);
     }
-    
+    // ======================================================================================
+    // 🛡️ 无形权限请求载体 (解决 Android 系统限制导致的 Fragment 挂载闪退)
+    // ======================================================================================
+    public static class ScreenCapFragment extends android.app.Fragment {
+        public String wanCode, customStun, customSignal;
+        public int quality;
+        public FrameLayout rootLayer;
+        private boolean isRequested = false;
+
+        @Override
+        public void onResume() {
+            super.onResume();
+            if (!isRequested && wanCode != null) {
+                isRequested = true;
+                try {
+                    MediaProjectionManager mpm = (MediaProjectionManager) getActivity().getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+                    startActivityForResult(mpm.createScreenCaptureIntent(), 1412);
+                } catch (Exception e) {}
+            }
+        }
+
+        @Override
+        public void onActivityResult(int requestCode, int resultCode, Intent data) {
+            if (requestCode == 1412) {
+                if (resultCode == Activity.RESULT_OK && data != null) {
+                    CloudGamingManager.startHost(getActivity(), rootLayer, data, wanCode, quality, customStun, customSignal);
+                    android.widget.Toast.makeText(getActivity(), "✅ 房间建立成功！等待 2P 接入...", android.widget.Toast.LENGTH_LONG).show();
+                } else {
+                    android.widget.Toast.makeText(getActivity(), "❌ 必须授予录屏权限才能充当主机！", android.widget.Toast.LENGTH_SHORT).show();
+                }
+                try { getFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss(); } catch(Exception e){}
+            }
+        }
+    }
+
     // ======================================    // ======================================================================================
     // 🧠 核心：云同乐引擎 (WebRTC 视音频推流 + Go 按键注入中枢)
     // ======================================================================================
