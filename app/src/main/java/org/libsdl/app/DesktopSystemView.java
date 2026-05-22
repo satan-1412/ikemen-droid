@@ -3363,7 +3363,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         updateViewState[0].run(); refreshLayerListUI[0].run(); return root;
     }
     // ======================================================================================
-    // 🎮 模块 8：远程同乐 (云同游 / 聊天互通 / 极客网络)
+    // 🎮 模块 8：远程同乐 (云同游大厅)
     // ======================================================================================
     public static android.widget.TextView logConsole; 
     public static ScrollView logScrollView; 
@@ -3385,31 +3385,25 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         tabBar.addView(btnHost, tabParams); tabBar.addView(btnClient, tabParams);
         root.addView(tabBar);
 
-        FrameLayout contentContainer = new FrameLayout(getContext());
-        LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams(-1, 0, 1f);
-        containerParams.setMargins(0, (int)(10 * density), 0, 0);
-        root.addView(contentContainer, containerParams);
-
         // --- 全局实时日志与聊天面板 ---
         LinearLayout logAndChatPanel = new LinearLayout(getContext());
         logAndChatPanel.setOrientation(LinearLayout.VERTICAL);
         
         ScrollView logScroll = new ScrollView(getContext());
         logConsole = new android.widget.TextView(getContext());
-        logConsole.setTextColor(Color.parseColor("#4CAF50")); // 黑客绿
+        logConsole.setTextColor(Color.parseColor("#4CAF50")); 
         logConsole.setTextSize(11f);
         logConsole.setText(L("=> Ikemen WebRTC 引擎已就绪...\n"));
         logConsole.setTypeface(Typeface.MONOSPACE);
         logScroll.addView(logConsole);
         logScroll.setBackgroundColor(Color.parseColor("#000000"));
         logScroll.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
-        logScrollView = logScroll; // 绑定用于自动滚动到底部
+        logScrollView = logScroll; 
         
         LinearLayout.LayoutParams logParams = new LinearLayout.LayoutParams(-1, (int)(100 * density));
-        logParams.setMargins(0, (int)(5 * density), 0, 0);
+        logParams.setMargins(0, (int)(10 * density), 0, 0);
         logAndChatPanel.addView(logScroll, logParams);
 
-        // 主机专属聊天发送框
         LinearLayout chatLayout = new LinearLayout(getContext());
         chatLayout.setOrientation(LinearLayout.HORIZONTAL);
         chatLayout.setPadding(0, (int)(5 * density), 0, 0);
@@ -3429,18 +3423,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         // --- ⚙️ 极客网络选项 (局域网直连 / 中转配置) ---
         LinearLayout advancedPanel = new LinearLayout(getContext());
         advancedPanel.setOrientation(LinearLayout.VERTICAL);
-        advancedPanel.setPadding(0, 0, 0, (int)(10 * density));
+        advancedPanel.setPadding(0, (int)(10 * density), 0, (int)(10 * density));
         advancedPanel.addView(createSubTitle(L("⚙️ 极客网络选项 (留空则默认):")));
         EditText customStunInput = createInput(L("自定义 STUN 穿透节点"), "");
         EditText customSignalInput = createInput(L("自定义 Ntfy 信令总线"), "");
         advancedPanel.addView(customStunInput); advancedPanel.addView(customSignalInput);
-
-        // --- 公用玩家配置区 ---
-        LinearLayout commonConfigPanel = new LinearLayout(getContext());
-        commonConfigPanel.setOrientation(LinearLayout.VERTICAL);
-        commonConfigPanel.addView(createSubTitle(L("👤 玩家昵称:")));
-        EditText playerNameInput = createInput(L("输入昵称 (如: 隆)"), "格斗家_" + (int)(Math.random()*999));
-        commonConfigPanel.addView(playerNameInput);
 
         // ==================== 主机面板 ====================
         ScrollView hostScroll = new ScrollView(getContext());
@@ -3448,7 +3435,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         hostPanel.setOrientation(LinearLayout.VERTICAL);
         hostScroll.addView(hostPanel);
 
-        hostPanel.addView(commonConfigPanel);
+        EditText hostNameInput = createInput(L("输入昵称 (如: 隆)"), "主机_" + (int)(Math.random()*999));
+        hostPanel.addView(createSubTitle(L("👤 你的昵称:"))); hostPanel.addView(hostNameInput);
         hostPanel.addView(advancedPanel);
         
         hostPanel.addView(createSubTitle(L("📡 串流画质选择:")));
@@ -3463,14 +3451,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         roomCodeInput.setGravity(Gravity.CENTER); roomCodeInput.setTextSize(18f); roomCodeInput.setTextColor(Color.parseColor("#FFD700"));
         hostPanel.addView(roomCodeInput);
 
-        Button btnCreateRoom = createButton(L("🚀 建立房间 (请求录屏)"), "#4CAF50");
+        Button btnCreateRoom = createButton(L("🚀 建立房间 (允许录屏后自动监听)"), "#4CAF50");
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-1, -2); btnParams.setMargins(0, (int)(10 * density), 0, 0);
         
         btnCreateRoom.setOnClickListener(v -> {
             String wanCode = String.format("%06d", (int)(Math.random() * 999999));
             String lanIP = CloudGamingManager.getLocalIpAddress(); 
             roomCodeInput.setText(L("外网: ") + wanCode + "  |  " + L("内网: ") + lanIP);
-            CloudGamingManager.playerName = playerNameInput.getText().toString();
+            CloudGamingManager.playerName = hostNameInput.getText().toString();
 
             Activity activity = org.libsdl.app.SDLActivity.mSingleton;
             if (activity == null) return;
@@ -3479,7 +3467,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 f.wanCode = wanCode; f.quality = qualitySpinner.getSelectedItemPosition();
                 f.customStun = customStunInput.getText().toString().trim(); 
                 f.customSignal = customSignalInput.getText().toString().trim(); 
-                f.rootLayer = rootLayer;
+                f.uiRoot = root; // 🚀 精准传入 UI 容器
                 activity.getFragmentManager().beginTransaction().add(f, "ScreenCapPerm").commitAllowingStateLoss();
             } catch (Exception e) {}
         });
@@ -3492,8 +3480,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         clientScroll.addView(clientPanel); clientScroll.setVisibility(View.GONE);
 
         EditText clientNameInput = createInput(L("输入你的玩家昵称"), "挑战者_" + (int)(Math.random()*999));
-        clientPanel.addView(createSubTitle(L("👤 玩家昵称:")));
-        clientPanel.addView(clientNameInput);
+        clientPanel.addView(createSubTitle(L("👤 玩家昵称:"))); clientPanel.addView(clientNameInput);
 
         clientPanel.addView(createSubTitle(L("🔗 输入主机口令 (内网IP 或 6位外网码):")));
         final EditText joinCodeInput = createInput(L("例如: 192.168.43.1 或 886655"), "");
@@ -3507,12 +3494,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             if (code.isEmpty()) return;
             String customStun = customStunInput.getText().toString().trim(); 
             String customSignal = customSignalInput.getText().toString().trim(); 
-            CloudGamingManager.log("=> 🚀 启动客户端引擎，目标: [" + code + "] ...");
-            CloudGamingManager.startClient(getContext(), rootLayer, code, customStun, customSignal);
+            CloudGamingManager.log("=> 🚀 启动客户端引擎，寻址目标: [" + code + "] ...");
+            CloudGamingManager.startClient(getContext(), root, code, customStun, customSignal); // 🚀 传入 root
         });
         clientPanel.addView(btnJoinRoom, btnParams);
 
+        FrameLayout contentContainer = new FrameLayout(getContext());
         contentContainer.addView(hostScroll); contentContainer.addView(clientScroll);
+        root.addView(contentContainer, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         btnHost.setOnClickListener(v -> {
             btnHost.setBackgroundColor(Color.parseColor("#0078D7")); btnClient.setBackgroundColor(Color.parseColor("#333333"));
@@ -3527,19 +3516,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             clientPanel.addView(advancedPanel, 1);
         });
 
-        // --- ⬇️ 核心操作区：最小化与销毁 ---
-        LinearLayout bottomLayout = new LinearLayout(getContext());
-        bottomLayout.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams botParams = new LinearLayout.LayoutParams(-1, -2);
-        botParams.setMargins(0, (int)(15 * density), 0, 0);
-
-        Button btnMinimize = createButton(L("🔽 最小化面板 (返回游戏)"), "#8BC34A");
-        btnMinimize.setOnClickListener(v -> {
-            // ⚠️ 极其重要：主机必须点这个隐藏面板，客机才能看到背后的游戏画面！
-            org.libsdl.app.SDLActivity.mSingleton.toggleDesktopMode(false);
-        });
-
-        Button btnKill = createButton(L("🛑 彻底销毁进程"), "#F44336");
+        // 🛑 保留彻底销毁按钮，满足你手动断开的需求
+        Button btnKill = createButton(L("🛑 断开联机并关闭大厅"), "#F44336");
+        LinearLayout.LayoutParams killParams = new LinearLayout.LayoutParams(-1, -2); killParams.setMargins(0, (int)(10 * density), 0, 0);
         btnKill.setOnClickListener(v -> {
             try {
                 if (CloudGamingManager.peerConnection != null) { CloudGamingManager.peerConnection.close(); CloudGamingManager.peerConnection = null; }
@@ -3548,10 +3527,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             } catch (Exception e) {}
             forceDestroy(); 
         });
-
-        bottomLayout.addView(btnMinimize, new LinearLayout.LayoutParams(0, -2, 1f));
-        bottomLayout.addView(btnKill, new LinearLayout.LayoutParams(0, -2, 1f));
-        root.addView(bottomLayout, botParams);
+        root.addView(btnKill, killParams);
 
         return root;
     }
@@ -3955,12 +3931,12 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         return DynamicGamepadView.L(text);
     }
     // ======================================================================================
-    // 🛡️ 无形权限请求载体 (解决 Android 系统限制导致的 Fragment 挂载闪退)
+    // 🛡️ 无形权限请求载体 
     // ======================================================================================
     public static class ScreenCapFragment extends android.app.Fragment {
         public String wanCode, customStun, customSignal;
         public int quality;
-        public FrameLayout rootLayer;
+        public ViewGroup uiRoot; // 🚀 修复参数名，适配新的 UI 容器
         private boolean isRequested = false;
 
         @Override
@@ -3979,23 +3955,23 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         public void onActivityResult(int requestCode, int resultCode, Intent data) {
             if (requestCode == 1412) {
                 if (resultCode == Activity.RESULT_OK && data != null) {
-                    CloudGamingManager.startHost(getActivity(), rootLayer, data, wanCode, quality, customStun, customSignal);
-                    android.widget.Toast.makeText(getActivity(), "✅ 房间建立成功！等待 2P 接入...", android.widget.Toast.LENGTH_LONG).show();
+                    CloudGamingManager.startHost(getActivity(), uiRoot, data, wanCode, quality, customStun, customSignal);
+                    android.widget.Toast.makeText(getActivity(), "✅ 授权成功！正在等待加入...", android.widget.Toast.LENGTH_LONG).show();
                 } else {
-                    android.widget.Toast.makeText(getActivity(), "❌ 必须授予录屏权限才能充当主机！", android.widget.Toast.LENGTH_SHORT).show();
+                    android.widget.Toast.makeText(getActivity(), "❌ 必须授予录屏权限！", android.widget.Toast.LENGTH_SHORT).show();
                 }
-                // 🚀 核心修复：严禁在此刻销毁 Fragment！否则 Android 系统会直接没收录屏权限令牌！
             }
         }
     }
 
+
     // ======================================================================================
-    // 🧠 核心：云同乐引擎 (强制拉取画面 + 信令隔离追踪 + 双向聊天)
+    // 🧠 核心：云同乐引擎 (自动隐藏大厅 / 解决单向流与通信死结)
     // ======================================================================================
     public static class CloudGamingManager {
         public static String playerName = "Player";
         public static String currentPeerTarget = ""; 
-        public static String hostWanCode = ""; // 主机的外网口令
+        public static String hostWanCode = ""; 
         
         private static PeerConnectionFactory factory;
         public static PeerConnection peerConnection;
@@ -4011,6 +3987,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             String time = new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date());
             new Handler(Looper.getMainLooper()).post(() -> {
                 String fullMsg = "[" + time + "] " + msg;
+                Log.i("IkemenWebRTC", fullMsg); // 强制输出到 Android Logcat 留底
                 if (logConsole != null) { 
                     logConsole.append(fullMsg + "\n"); 
                     if (logScrollView != null) { logScrollView.post(() -> logScrollView.fullScroll(View.FOCUS_DOWN)); }
@@ -4031,7 +4008,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     dataChannel.send(new DataChannel.Buffer(buffer, false));
                     log("💬 [我]: " + text);
                 } catch (Exception e) { log("❌ 发送失败"); }
-            } else { log("❌ 聊天通道未连通！"); }
+            } else { log("❌ 错误：聊天与按键通道尚未打通！"); }
         }
 
         private static void sendSignalingMessage(String targetCode, String type, JSONObject payload, String customSignal) {
@@ -4039,17 +4016,17 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 try {
                     JSONObject msg = new JSONObject(); msg.put("type", type); msg.put("payload", payload);
                     msg.put("senderName", playerName);
-                    msg.put("replyToIp", getLocalIpAddress()); // 携带发送者IP
+                    msg.put("replyToIp", getLocalIpAddress()); 
                     String msgStr = msg.toString();
 
                     if (targetCode.contains(".")) {
-                        if (!isHost) { // 局域网模式，客机主动请求主机
+                        if (!isHost) { // 加入方发送局域网信令
                             Socket socket = new Socket(targetCode, 8192);
                             OutputStream os = socket.getOutputStream();
                             os.write((msgStr + "\n").getBytes("UTF-8"));
                             os.flush(); socket.close();
                         }
-                    } else { // 广域网模式
+                    } else {
                         String baseUrl = (customSignal == null || customSignal.isEmpty()) ? "https://ntfy.sh/" : (customSignal.endsWith("/") ? customSignal : customSignal + "/");
                         String topic = "ikemen_webrtc_" + targetCode + (isHost ? "_client" : "_host");
                         URL url = new URL(baseUrl + topic);
@@ -4067,7 +4044,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 try {
                     if (isLan) {
                         lanServer = new ServerSocket(8192);
-                        log("=> 开启局域网监听，IP: " + myCode + ":8192");
+                        log("=> 📡 开启局域网监听 (端口 8192)...");
                         while (!lanServer.isClosed()) {
                             Socket client = lanServer.accept();
                             BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
@@ -4076,7 +4053,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             client.close();
                         }
                     } else {
-                        log("=> 开启外网监听通道: " + myCode);
+                        log("=> 📡 开启免费公网打洞监听...");
                         String baseUrl = (customSignal == null || customSignal.isEmpty()) ? "https://ntfy.sh/" : (customSignal.endsWith("/") ? customSignal : customSignal + "/");
                         String topic = "ikemen_webrtc_" + myCode + (isHost ? "_host" : "_client");
                         URL url = new URL(baseUrl + topic + "/json");
@@ -4097,30 +4074,32 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             String sender = msg.optString("senderName", "神秘玩家");
             String replyToIp = msg.optString("replyToIp", "");
             
-            // 🚀 核心修复：隔离局域网与外网回传！主机必须瞄准正确的通道回复，否则客机永远收不到信号！
             if (isHost) {
-                if (fromLan && !replyToIp.isEmpty()) { currentPeerTarget = replyToIp; } // 瞄准客机内网 IP
-                else { currentPeerTarget = hostWanCode; } // 瞄准 Ntfy 外网通道
+                if (fromLan && !replyToIp.isEmpty()) { currentPeerTarget = replyToIp; log("=> 锁定客机内网IP: " + replyToIp); } 
+                else { currentPeerTarget = hostWanCode; } 
             }
 
             if (type.equals("offer")) {
-                log("=> 收到 [" + sender + "] 的入房请求，正在推流...");
+                log("=> 🔔 收到 [" + sender + "] 的入房握手请求，正在打包本地参数...");
                 peerConnection.setRemoteDescription(new SimpleSdpObserver(), new SessionDescription(SessionDescription.Type.OFFER, payload.getString("sdp")));
                 peerConnection.createAnswer(new SimpleSdpObserver() {
                     @Override public void onCreateSuccess(SessionDescription sessionDescription) {
                         peerConnection.setLocalDescription(new SimpleSdpObserver(), sessionDescription);
                         try { JSONObject out = new JSONObject(); out.put("sdp", sessionDescription.description); sendSignalingMessage(currentPeerTarget, "answer", out, customSignal); } catch(Exception e){}
+                        log("=> ✉️ 同意入房请求 (Answer) 已发送！");
                     }
                 }, new MediaConstraints());
             } else if (type.equals("answer")) {
-                log("=> 成功连接到主机 [" + sender + "]！准备接收视频流...");
+                log("=> 🎉 验证通过！主机 [" + sender + "] 同意了连接！等待画面降临...");
                 peerConnection.setRemoteDescription(new SimpleSdpObserver(), new SessionDescription(SessionDescription.Type.ANSWER, payload.getString("sdp")));
             } else if (type.equals("candidate")) {
+                log("=> 🕸️ 收到网络穿透节点 (ICE Candidate)...");
                 IceCandidate candidate = new IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate"));
                 peerConnection.addIceCandidate(candidate);
             }
         }
 
+        // 🚀 核心修复：处理消息与按键注入
         private static void setupDataChannel(DataChannel channel) {
             dataChannel = channel;
             dataChannel.registerObserver(new DataChannel.Observer() {
@@ -4128,9 +4107,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     try {
                         byte[] data = new byte[buffer.data.remaining()]; buffer.data.get(data);
                         JSONObject input = new JSONObject(new String(data, "UTF-8"));
-                        
                         if (input.has("chat")) { log("💬 [" + input.getString("senderName") + "]: " + input.getString("chat")); return; }
-                        
                         if(isHost) {
                             String btn = input.getString("btn"); boolean down = input.getBoolean("down");
                             int keyCode = 0;
@@ -4154,23 +4131,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         }
                     } catch (Exception e) {}
                 }
-                @Override public void onBufferedAmountChange(long l) {} @Override public void onStateChange() { log("=> ⚡ 交互数据通道状态变化: " + dataChannel.state()); }
+                @Override public void onBufferedAmountChange(long l) {} @Override public void onStateChange() { log("=> ⚡ 按键/聊天通道状态: " + dataChannel.state()); }
             });
         }
 
-        public static void startHost(Context context, ViewGroup rootLayer, Intent screenPermData, String wanCode, int quality, String customStun, String customSignal) {
+        public static void startHost(Context context, ViewGroup uiRoot, Intent screenPermData, String wanCode, int quality, String customStun, String customSignal) {
             isHost = true; hostWanCode = wanCode; currentPeerTarget = wanCode;
             if (rootEglBase == null) rootEglBase = EglBase.create();
-            log("=> 录屏授权成功！此时可点击【🔽 最小化面板】返回游戏，客机连接后会自动看到画面。");
-            
-            Activity activity = org.libsdl.app.SDLActivity.mSingleton;
-            if (activity != null) {
-                activity.getApplication().registerActivityLifecycleCallbacks(new android.app.Application.ActivityLifecycleCallbacks() {
-                    @Override public void onActivityResumed(Activity a) { if(a == activity && localVideoTrack != null) { localVideoTrack.setEnabled(true); } }
-                    @Override public void onActivityPaused(Activity a) { if(a == activity && localVideoTrack != null) { localVideoTrack.setEnabled(false); } }
-                    @Override public void onActivityCreated(Activity a, Bundle b){} @Override public void onActivityStarted(Activity a){} @Override public void onActivityStopped(Activity a){} @Override public void onActivitySaveInstanceState(Activity a, Bundle b){} @Override public void onActivityDestroyed(Activity a){}
-                });
-            }
+            log("=> 录屏底层通道已打开，正在初始化引擎...");
 
             PeerConnectionFactory.InitializationOptions initOptions = PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions();
             PeerConnectionFactory.initialize(initOptions);
@@ -4183,16 +4151,27 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 @Override public void onIceCandidate(IceCandidate iceCandidate) {
                     try { JSONObject out = new JSONObject(); out.put("sdpMid", iceCandidate.sdpMid); out.put("sdpMLineIndex", iceCandidate.sdpMLineIndex); out.put("candidate", iceCandidate.sdp); sendSignalingMessage(currentPeerTarget, "candidate", out, customSignal); } catch (Exception e){}
                 }
-                @Override public void onDataChannel(DataChannel channel) { setupDataChannel(channel); }
+                @Override public void onDataChannel(DataChannel channel) { 
+                    log("=> 🔌 主机检测到客机发起的数据通道，正在对接..."); 
+                    setupDataChannel(channel); // 🚀 核心修复：主机绝不能 createDataChannel，必须被动监听对接！
+                }
                 @Override public void onSignalingChange(PeerConnection.SignalingState s) {} 
                 @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { 
-                    log("=> 🌐 底层穿透网络状态: " + s); 
-                    if(s == PeerConnection.IceConnectionState.CONNECTED) log("✅ 穿透握手成功！全速传输流媒体中！");
+                    log("=> 🌐 P2P 穿透网络状态: " + s); 
+                    if(s == PeerConnection.IceConnectionState.CONNECTED) {
+                        log("✅✅✅ 连接完全建立！2秒后自动返回游戏画面！");
+                        // 🚀 核心需求实现：主机连上后自动隐藏联机大厅，切回游戏画面！
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            if (org.libsdl.app.SDLActivity.mSingleton != null) {
+                                org.libsdl.app.SDLActivity.mSingleton.toggleDesktopMode(false);
+                            }
+                        }, 2000);
+                    }
                 } 
                 @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
             });
 
-            VideoCapturer screenCapturer = new ScreenCapturerAndroid(screenPermData, new MediaProjection.Callback() { @Override public void onStop() { super.onStop(); log("=> ⚠️ 录屏服务已被系统回收。"); } });
+            VideoCapturer screenCapturer = new ScreenCapturerAndroid(screenPermData, new MediaProjection.Callback() { @Override public void onStop() { super.onStop(); log("=> ⚠️ 录屏被系统强制中断"); } });
             surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", rootEglBase.getEglBaseContext());
             VideoSource videoSource = factory.createVideoSource(screenCapturer.isScreencast());
             screenCapturer.initialize(surfaceTextureHelper, context, videoSource.getCapturerObserver());
@@ -4203,12 +4182,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             localVideoTrack = factory.createVideoTrack("100", videoSource);
             peerConnection.addTrack(localVideoTrack);
+            log("=> 🎥 本地视频推流器已挂载完成！");
 
             startSignalingListener(wanCode, customSignal, false);
             startSignalingListener(getLocalIpAddress(), customSignal, true);
         }
 
-        public static void startClient(Context context, ViewGroup rootLayer, String targetCode, String customStun, String customSignal) {
+        public static void startClient(Context context, ViewGroup uiRoot, String targetCode, String customStun, String customSignal) {
             isHost = false; currentPeerTarget = targetCode;
             if (rootEglBase == null) rootEglBase = EglBase.create();
 
@@ -4225,41 +4205,42 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 }
                 @Override public void onAddTrack(RtpReceiver receiver, MediaStream[] mediaStreams) {
                     new Handler(Looper.getMainLooper()).post(() -> {
-                        log("=> 🎥 视频轨道接收成功！准备渲染画面...");
-                        rootLayer.removeAllViews(); 
-                        FrameLayout videoContainer = new FrameLayout(context);
-                        rootLayer.addView(videoContainer, new LinearLayout.LayoutParams(-1, -1));
+                        log("=> 🎉 成功接收视频流轨道！正在摧毁联机大厅并全屏...");
+                        try {
+                            uiRoot.removeAllViews(); // 🚀 彻底摧毁大厅
+                            
+                            // 🚀 核心修复：安全嵌套防崩溃
+                            FrameLayout videoContainer = new FrameLayout(context);
+                            uiRoot.addView(videoContainer, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
 
-                        SurfaceViewRenderer videoView = new SurfaceViewRenderer(context);
-                        videoView.init(rootEglBase.getEglBaseContext(), null);
-                        videoView.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT);
-                        videoView.setEnableHardwareScaler(true);
-                        videoContainer.addView(videoView, new FrameLayout.LayoutParams(-1, -1));
-                        
-                        VideoTrack track = (VideoTrack) receiver.track();
-                        track.addSink(videoView);
-                        
-                        buildClientGamepad(context, videoContainer);
-                        log("=> 🎮 屏幕接管完毕，手柄已就位！");
+                            SurfaceViewRenderer videoView = new SurfaceViewRenderer(context);
+                            videoView.init(rootEglBase.getEglBaseContext(), null);
+                            videoView.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT);
+                            videoView.setEnableHardwareScaler(true);
+                            videoContainer.addView(videoView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                            
+                            VideoTrack track = (VideoTrack) receiver.track();
+                            track.addSink(videoView);
+                            
+                            buildClientGamepad(context, videoContainer);
+                            log("=> 🎮 屏幕已被主机接管！尽情战斗吧！");
+                        } catch (Exception e) { Log.e("IkemenWebRTC", "渲染错误: " + e.getMessage()); }
                     });
                 }
-                @Override public void onDataChannel(DataChannel channel) { setupDataChannel(channel); }
+                @Override public void onDataChannel(DataChannel channel) { } // 客户端主动创建，不需要监听
                 @Override public void onSignalingChange(PeerConnection.SignalingState s) {} 
-                @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { 
-                    log("=> 🌐 底层穿透网络状态: " + s); 
-                } 
+                @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { log("=> 🌐 P2P 穿透网络状态: " + s); } 
                 @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
             });
 
-            // 🚀 核心修复：发起方(客机) 必须主动创建数据通道！否则通信协议不完整！
+            // 🚀 核心修复 1：发起方主动建立数据通道！聊天和按键才能生效！
             DataChannel.Init dcInit = new DataChannel.Init();
             setupDataChannel(peerConnection.createDataChannel("IkemenData", dcInit));
 
-            // 🚀 核心修复：强制声明需要接收视频画面！破解 WebRTC 单向流黑屏陷阱！
+            // 🚀 核心修复 2：强制声明接收视频！破解 WebRTC 单向流不发画面的陷阱！
             peerConnection.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO, 
                 new RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
 
-            // 决定监听局域网还是外网
             boolean isTargetLan = targetCode.contains(".");
             startSignalingListener(targetCode, customSignal, isTargetLan);
 
@@ -4267,6 +4248,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 @Override public void onCreateSuccess(SessionDescription sessionDescription) {
                     peerConnection.setLocalDescription(new SimpleSdpObserver(), sessionDescription);
                     try { JSONObject out = new JSONObject(); out.put("sdp", sessionDescription.description); sendSignalingMessage(targetCode, "offer", out, customSignal); } catch(Exception e){}
+                    log("=> ✉️ 请求入房握手 (Offer) 已发送，等待主机同意...");
                 }
             }, new MediaConstraints());
         }
