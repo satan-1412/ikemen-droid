@@ -86,7 +86,8 @@ private static int mapToP2(int keyCode) {
         case KeyEvent.KEYCODE_Z:          return KeyEvent.KEYCODE_Z;
         // 保留原有的START和ESC映射（未提及不修改）
         case KeyEvent.KEYCODE_ENTER:      return KeyEvent.KEYCODE_NUMPAD_0; // Start
-        case KeyEvent.KEYCODE_ESCAPE:     return KeyEvent.KEYCODE_NUMPAD_DECIMAL; // Select/Esc 
+        case KeyEvent.KEYCODE_ESCAPE: return KeyEvent.KEYCODE_NUMPAD_DOT; // Select/Esc
+
         default: return keyCode;
     }
 }
