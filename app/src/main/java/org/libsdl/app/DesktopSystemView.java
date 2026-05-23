@@ -4056,28 +4056,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 });
             });
         }
-                tv.setText(msg);
-                tv.setTextColor(Color.WHITE);
-                tv.setTextSize(22f); // 放大字体，醒目粗犷
-                tv.setShadowLayer(8, 0, 0, Color.BLACK); // 极强电竞级描边
-                tv.setTypeface(null, Typeface.BOLD);
-                
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2);
-                lp.topMargin = (int) (150 + Math.random() * 500); // 极大拉开上下距离，防止密集
-                root.addView(tv, lp);
-
-                int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-                tv.setTranslationX(screenWidth);
-
-                ObjectAnimator anim = ObjectAnimator.ofFloat(tv, "translationX", screenWidth, -screenWidth);
-                anim.setDuration(12000); // 极度放慢弹幕速度 (12秒飞过屏幕)
-                anim.setInterpolator(new android.view.animation.LinearInterpolator());
-                anim.start();
-                anim.addListener(new android.animation.AnimatorListenerAdapter() {
-                    @Override public void onAnimationEnd(android.animation.Animator animation) { root.removeView(tv); }
-                });
-            });
-        }
 
         public static void log(String msg) {
             String time = new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date());
