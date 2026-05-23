@@ -516,24 +516,49 @@ public class DesktopSystemView extends Dialog {
         final LinearLayout titleBar = new LinearLayout(getContext()); titleBar.setOrientation(LinearLayout.HORIZONTAL); titleBar.setGravity(Gravity.CENTER_VERTICAL); titleBar.setBackgroundColor(Color.parseColor("#F22D2D30")); 
         TextView title = new TextView(getContext()); title.setText("  " + windowTitle); applyGlobalFontSettings(title, 1.2f, true); titleBar.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
 
+        // 🚀 动态任务栏状态刷新：自动侦测是否有全屏窗口
+        Runnable updateTaskbarState = () -> {
+            if (taskbar == null) return;
+            boolean anyMaximized = false;
+            for (int i = 0; i < windowsLayer.getChildCount(); i++) {
+                View w = windowsLayer.getChildAt(i);
+                if (w.getVisibility() == View.VISIBLE && w.getLayoutParams().width == FrameLayout.LayoutParams.MATCH_PARENT) {
+                    anyMaximized = true; break;
+                }
+            }
+            taskbar.setBackgroundColor(Color.argb(anyMaximized ? 255 : taskbarAlpha, 17, 17, 17));
+        };
+
         LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL);
-        TextView btnMin = new TextView(getContext()); btnMin.setText(" ─ "); applyGlobalFontSettings(btnMin, 1.0f, true); btnMin.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density)); btnMin.setOnClickListener(v -> windowFrame.setVisibility(View.GONE)); controls.addView(btnMin);
+        TextView btnMin = new TextView(getContext()); btnMin.setText(" ─ "); applyGlobalFontSettings(btnMin, 1.0f, true); btnMin.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density)); 
+        btnMin.setOnClickListener(v -> { windowFrame.setVisibility(View.GONE); windowFrame.post(updateTaskbarState); }); controls.addView(btnMin);
 
         final TextView btnMax = new TextView(getContext()); btnMax.setText(" □ "); applyGlobalFontSettings(btnMax, 1.0f, true); btnMax.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density));
         final boolean[] isMaximized = {false}; final int[] savedBounds = new int[4]; 
         btnMax.setOnClickListener(v -> {
-            if (isMaximized[0]) { FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(savedBounds[2], savedBounds[3]); windowFrame.setLayoutParams(lp); windowFrame.setX(savedBounds[0]); windowFrame.setY(savedBounds[1]); btnMax.setText(" □ "); isMaximized[0] = false;
+            if (isMaximized[0]) { 
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(savedBounds[2], savedBounds[3]); 
+                windowFrame.setLayoutParams(lp); windowFrame.setX(savedBounds[0]); windowFrame.setY(savedBounds[1]); 
+                btnMax.setText(" □ "); isMaximized[0] = false;
             } else {
                 savedBounds[0] = (int) windowFrame.getX(); savedBounds[1] = (int) windowFrame.getY(); savedBounds[2] = windowFrame.getWidth(); savedBounds[3] = windowFrame.getHeight();
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -1); lp.bottomMargin = (int)(50 * density); 
-                windowFrame.setLayoutParams(lp); windowFrame.setX(0); windowFrame.setY(0); windowFrame.bringToFront(); btnMax.setText(" ❐ "); isMaximized[0] = true;
+                // 🚀 核心修复：宽和高均采用 MATCH_PARENT，并动态读取真实任务栏高度作为 BottomMargin，彻底无缝铺满适配所有比例！
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT); 
+                lp.bottomMargin = taskbar != null ? taskbar.getHeight() : (int)(50 * density); 
+                windowFrame.setLayoutParams(lp); windowFrame.setX(0); windowFrame.setY(0); windowFrame.bringToFront(); 
+                btnMax.setText(" ❐ "); isMaximized[0] = true;
             }
+            windowFrame.post(updateTaskbarState);
         }); controls.addView(btnMax);
 
         final LinearLayout taskBtn = new LinearLayout(getContext()); taskBtn.setTag("tb_" + windowTitle);
         TextView btnClose = new TextView(getContext()); btnClose.setText(" ✕ "); applyGlobalFontSettings(btnClose, 1.0f, true); btnClose.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(5*density));
         btnClose.setOnTouchListener((v, e) -> { if(e.getAction()==MotionEvent.ACTION_DOWN) v.setBackgroundColor(Color.parseColor("#E81123")); else if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL) v.setBackgroundColor(Color.TRANSPARENT); return false; });
-        btnClose.setOnClickListener(v -> { if (onCloseInterceptor != null) onCloseInterceptor.run(); else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); } });
+        btnClose.setOnClickListener(v -> { 
+            if (onCloseInterceptor != null) onCloseInterceptor.run(); 
+            else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); } 
+            windowFrame.post(updateTaskbarState);
+        });
         controls.addView(btnClose); titleBar.addView(controls, new LinearLayout.LayoutParams(-2, -2)); 
 
         titleBar.setOnTouchListener(new View.OnTouchListener() {
@@ -582,14 +607,19 @@ public class DesktopSystemView extends Dialog {
         taskBtn.setOnClickListener(v -> {
             if (isBtnDragging[0]) return; // 双重防走火
             if (windowFrame.getVisibility() == View.VISIBLE) {
-                // 🔥 修复隐藏逻辑：通过 Index 精准判断它是否在最顶层
                 if (windowsLayer.indexOfChild(windowFrame) == windowsLayer.getChildCount() - 1) { windowFrame.setVisibility(View.GONE); } else { windowFrame.bringToFront(); }
             } else { windowFrame.setVisibility(View.VISIBLE); windowFrame.bringToFront(); }
+            windowFrame.post(updateTaskbarState);
         });
         
         taskBtn.setOnLongClickListener(v -> { 
             if (isBtnDragging[0]) return false; // 拖动中绝不触发菜单
-            showContextMenu(v, finalShortName, () -> { if (onCloseInterceptor != null) onCloseInterceptor.run(); else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); } }); return true; 
+            showContextMenu(v, finalShortName, () -> { 
+                if (onCloseInterceptor != null) onCloseInterceptor.run(); 
+                else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); } 
+                windowFrame.post(updateTaskbarState);
+            }); 
+            return true; 
         });
         taskbarAppsLayout.addView(taskBtn, tbParams);
 
@@ -3362,7 +3392,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
         updateViewState[0].run(); refreshLayerListUI[0].run(); return root;
     }
-    // ======================================================================================
+    // ======================================    // ======================================================================================
     // 🎮 模块 8：远程同乐 (极简连接面板 - 成功后自动隐身)
     // ======================================================================================
     private View buildRemotePlayContent() {
@@ -3896,7 +3926,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
 
     // ======================================================================================
-    // 🧠 核心：云同乐引擎 (弹幕聊天 / 纯净内录 / 独立断开悬浮球 / 完美兼容自设按键)
+    // 🧠 核心：云同乐引擎 (弹幕系统 / 纯净内录拦截直传 / 兼容玩家自设按键 / 局域网秒连)
     // ======================================================================================
     public static class CloudGamingManager {
         public static String playerName = "Player";
@@ -3907,12 +3937,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         public static PeerConnection peerConnection;
         private static SurfaceTextureHelper surfaceTextureHelper;
         private static DataChannel dataChannel;
+        public static DataChannel audioDataChannel; // 🚀 独立高保真音轨数据通道
+        public static android.media.AudioTrack clientAudioTrack; // 客机独立扬声器
         private static boolean isHost = false;
         public static ServerSocket lanServer; 
         private static VideoTrack localVideoTrack; 
         public static EglBase rootEglBase; 
         
-        // UI 控制句柄
         public static SurfaceViewRenderer clientVideoView;
         public static View draggableDisconnectView;
         
@@ -3920,34 +3951,35 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             return !isHost && peerConnection != null && dataChannel != null && dataChannel.state() == DataChannel.State.OPEN;
         }
 
-        // 🚀 核心：全局防遮挡弹幕系统！
+        // 🚀 沉浸式游戏内弹幕通知！
         public static void showDanmaku(String msg) {
             new Handler(Looper.getMainLooper()).post(() -> {
                 Activity activity = org.libsdl.app.SDLActivity.mSingleton;
                 if (activity == null) return;
                 ViewGroup root = activity.findViewById(android.R.id.content);
                 android.widget.TextView tv = new android.widget.TextView(activity);
-                tv.setText(msg);
-                tv.setTextColor(Color.WHITE);
-                tv.setTextSize(18f);
-                tv.setShadowLayer(5, 0, 0, Color.BLACK);
-                tv.setTypeface(null, Typeface.BOLD);
+                tv.setText(msg); tv.setTextColor(Color.WHITE); tv.setTextSize(18f);
+                tv.setShadowLayer(6, 0, 0, Color.BLACK); tv.setTypeface(null, Typeface.BOLD);
                 
                 FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2);
-                lp.topMargin = (int) (150 + Math.random() * 400); // 随机高度，防止多条消息重叠
+                lp.topMargin = (int) (100 + Math.random() * 300); // 随机轨道防止重叠
                 root.addView(tv, lp);
 
                 int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
                 tv.setTranslationX(screenWidth);
 
                 ObjectAnimator anim = ObjectAnimator.ofFloat(tv, "translationX", screenWidth, -screenWidth);
-                anim.setDuration(9000); // 弹幕平滑飞行9秒
+                anim.setDuration(7000); 
                 anim.setInterpolator(new android.view.animation.LinearInterpolator());
                 anim.start();
                 anim.addListener(new android.animation.AnimatorListenerAdapter() {
                     @Override public void onAnimationEnd(android.animation.Animator animation) { root.removeView(tv); }
                 });
             });
+        }
+
+        public static void log(String msg) {
+            Log.i("IkemenWebRTC", msg);
         }
 
         public static void sendChatMessage(String text) {
@@ -3958,10 +3990,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     dataChannel.send(new DataChannel.Buffer(buffer, false));
                     showDanmaku("我: " + text); 
                 } catch (Exception e) {}
-            } else { Toast.makeText(org.libsdl.app.SDLActivity.mSingleton, L("聊天通道未连通！"), Toast.LENGTH_SHORT).show(); }
+            } else { showDanmaku("❌ 错误：通道未连通！"); }
         }
 
-        // 拦截的键盘信号通过这里发送给主机
+        // 被 DynamicGamepadView.java 拦截器调用
         public static void sendGameKey(int keyCode, boolean down) {
             if (dataChannel != null && dataChannel.state() == DataChannel.State.OPEN) {
                 try {
@@ -3972,39 +4004,52 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             }
         }
 
+        // 🚀 发送纯数字截取的内录音频
+        public static void sendAudioConfig(int sampleRate, int channelConfig, int audioFormat) {
+            if (isHost && dataChannel != null && dataChannel.state() == DataChannel.State.OPEN) {
+                try {
+                    JSONObject msg = new JSONObject(); msg.put("audio_config", true); msg.put("sampleRate", sampleRate); msg.put("channelConfig", channelConfig); msg.put("audioFormat", audioFormat);
+                    java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(msg.toString().getBytes("UTF-8"));
+                    dataChannel.send(new DataChannel.Buffer(buffer, false));
+                } catch (Exception e) {}
+            }
+        }
+        public static void sendAudio(byte[] data) {
+            if (isHost && audioDataChannel != null && audioDataChannel.state() == DataChannel.State.OPEN) {
+                try { audioDataChannel.send(new DataChannel.Buffer(java.nio.ByteBuffer.wrap(data), true)); } catch (Exception e) {}
+            }
+        }
+        public static void sendAudio(short[] data) {
+            if (isHost && audioDataChannel != null && audioDataChannel.state() == DataChannel.State.OPEN) {
+                try {
+                    java.nio.ByteBuffer byteBuf = java.nio.ByteBuffer.allocateDirect(data.length * 2);
+                    byteBuf.order(java.nio.ByteOrder.LITTLE_ENDIAN); byteBuf.asShortBuffer().put(data);
+                    audioDataChannel.send(new DataChannel.Buffer(byteBuf, true));
+                } catch (Exception e) {}
+            }
+        }
+
         // 🚀 悬浮且可自由拖拽的断开按钮
         private static void addDraggableDisconnectButton(Activity activity) {
             new Handler(Looper.getMainLooper()).post(() -> {
                 ViewGroup root = activity.findViewById(android.R.id.content);
                 Button btn = new Button(activity);
-                btn.setText(L("🛑 断开"));
-                btn.setBackgroundColor(Color.parseColor("#D32F2F"));
-                btn.setTextColor(Color.WHITE);
-                btn.getBackground().setAlpha(200);
-                
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2);
-                lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-                lp.topMargin = 50;
-                btn.setLayoutParams(lp);
+                btn.setText("🛑 挂断");
+                btn.setBackgroundColor(Color.parseColor("#D32F2F")); btn.setTextColor(Color.WHITE); btn.getBackground().setAlpha(200);
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2); lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL; lp.topMargin = 50; btn.setLayoutParams(lp);
 
                 btn.setOnTouchListener(new View.OnTouchListener() {
                     float dX, dY; long downTime;
                     @Override public boolean onTouch(View view, MotionEvent event) {
                         switch (event.getAction()) {
-                            case MotionEvent.ACTION_DOWN:
-                                dX = view.getX() - event.getRawX(); dY = view.getY() - event.getRawY();
-                                downTime = System.currentTimeMillis(); break;
-                            case MotionEvent.ACTION_MOVE:
-                                view.animate().x(event.getRawX() + dX).y(event.getRawY() + dY).setDuration(0).start(); break;
-                            case MotionEvent.ACTION_UP:
-                                if (System.currentTimeMillis() - downTime < 200) view.performClick(); break;
-                        }
-                        return true;
+                            case MotionEvent.ACTION_DOWN: dX = view.getX() - event.getRawX(); dY = view.getY() - event.getRawY(); downTime = System.currentTimeMillis(); break;
+                            case MotionEvent.ACTION_MOVE: view.animate().x(event.getRawX() + dX).y(event.getRawY() + dY).setDuration(0).start(); break;
+                            case MotionEvent.ACTION_UP: if (System.currentTimeMillis() - downTime < 200) view.performClick(); break;
+                        } return true;
                     }
                 });
                 btn.setOnClickListener(v -> disconnect());
-                draggableDisconnectView = btn;
-                root.addView(btn);
+                draggableDisconnectView = btn; root.addView(btn);
             });
         }
 
@@ -4013,6 +4058,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 if (peerConnection != null) { peerConnection.close(); peerConnection = null; }
                 if (lanServer != null) { lanServer.close(); lanServer = null; }
                 if (localVideoTrack != null) { localVideoTrack.dispose(); localVideoTrack = null; }
+                if (clientAudioTrack != null) { clientAudioTrack.stop(); clientAudioTrack.release(); clientAudioTrack = null; }
                 Activity activity = org.libsdl.app.SDLActivity.mSingleton;
                 if (activity != null) {
                     ViewGroup root = activity.findViewById(android.R.id.content);
@@ -4020,24 +4066,22 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     if (draggableDisconnectView != null) { root.removeView(draggableDisconnectView); draggableDisconnectView = null; }
                 }
                 isHost = false; currentPeerTarget = "";
-                showDanmaku(L("🛑 联机已彻底断开，恢复本地模式"));
+                showDanmaku("🛑 联机已彻底断开，恢复本地模式");
             } catch (Exception e) {}
         }
 
         private static void sendSignalingMessage(String targetCode, String type, JSONObject payload, String customSignal) {
             new Thread(() -> {
                 try {
-                    JSONObject msg = new JSONObject(); msg.put("type", type); msg.put("payload", payload);
-                    msg.put("senderName", playerName); msg.put("replyToIp", getLocalIpAddress()); 
+                    JSONObject msg = new JSONObject(); msg.put("type", type); msg.put("payload", payload); msg.put("senderName", playerName); msg.put("replyToIp", getLocalIpAddress()); 
                     String msgStr = msg.toString();
 
                     if (targetCode.contains(".")) {
-                        if (!isHost) { 
-                            Socket socket = new Socket(targetCode, 8192);
-                            OutputStream os = socket.getOutputStream();
-                            os.write((msgStr + "\n").getBytes("UTF-8"));
-                            os.flush(); socket.close();
-                        }
+                        // 🚀 核心大修：双端都必须允许通过 Socket 打通局域网墙壁！
+                        Socket socket = new Socket(targetCode, 8192);
+                        OutputStream os = socket.getOutputStream();
+                        os.write((msgStr + "\n").getBytes("UTF-8"));
+                        os.flush(); socket.close();
                     } else { 
                         String baseUrl = (customSignal == null || customSignal.isEmpty()) ? "https://ntfy.sh/" : (customSignal.endsWith("/") ? customSignal : customSignal + "/");
                         String topic = "ikemen_webrtc_" + targetCode + (isHost ? "_client" : "_host");
@@ -4107,7 +4151,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             }
                         }, new SessionDescription(SessionDescription.Type.OFFER, payload.getString("sdp")));
                     } else if (type.equals("answer")) {
-                        showDanmaku("🎉 验证通过！准备渲染主机的画面...");
+                        showDanmaku("🎉 主机 [" + sender + "] 同意连接！准备接管屏幕...");
                         peerConnection.setRemoteDescription(new SimpleSdpObserver(), new SessionDescription(SessionDescription.Type.ANSWER, payload.getString("sdp")));
                     } else if (type.equals("candidate")) {
                         IceCandidate candidate = new IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate"));
@@ -4118,25 +4162,46 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         }
 
         private static void setupDataChannel(DataChannel channel) {
+            if (channel.label().equals("IkemenAudio")) {
+                audioDataChannel = channel;
+                audioDataChannel.registerObserver(new DataChannel.Observer() {
+                    @Override public void onMessage(DataChannel.Buffer buffer) {
+                        if (clientAudioTrack != null && clientAudioTrack.getPlayState() == android.media.AudioTrack.PLAYSTATE_PLAYING) {
+                            try { java.nio.ByteBuffer data = buffer.data; byte[] bytes = new byte[data.remaining()]; data.get(bytes); clientAudioTrack.write(bytes, 0, bytes.length); } catch(Exception e){}
+                        }
+                    }
+                    @Override public void onBufferedAmountChange(long l) {} @Override public void onStateChange() {}
+                });
+                return;
+            }
+
             dataChannel = channel;
             dataChannel.registerObserver(new DataChannel.Observer() {
                 @Override public void onMessage(DataChannel.Buffer buffer) {
                     try {
                         byte[] data = new byte[buffer.data.remaining()]; buffer.data.get(data);
                         JSONObject input = new JSONObject(new String(data, "UTF-8"));
-                        if (input.has("chat")) { 
-                            showDanmaku("💬 [" + input.getString("senderName") + "]: " + input.getString("chat")); 
-                            return; 
+                        
+                        if (input.has("audio_config")) {
+                            int sampleRate = input.getInt("sampleRate"); int channelConfig = input.getInt("channelConfig"); int audioFormat = input.getInt("audioFormat");
+                            int minBufSize = android.media.AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat);
+                            if (clientAudioTrack != null) { clientAudioTrack.release(); }
+                            clientAudioTrack = new android.media.AudioTrack(android.media.AudioManager.STREAM_MUSIC, sampleRate, channelConfig, audioFormat, minBufSize * 2, android.media.AudioTrack.MODE_STREAM);
+                            clientAudioTrack.play(); showDanmaku("🔊 高清纯净内录游戏声轨对接成功！"); return;
                         }
+                        if (input.has("chat")) { showDanmaku("💬 [" + input.getString("senderName") + "]: " + input.getString("chat")); return; }
                         if (isHost && input.has("keycode")) {
-                            int keyCode = input.getInt("keycode");
-                            boolean down = input.getBoolean("down");
-                            if (down) org.libsdl.app.SDLActivity.onNativeKeyDown(keyCode);
-                            else org.libsdl.app.SDLActivity.onNativeKeyUp(keyCode);
+                            int keyCode = input.getInt("keycode"); boolean down = input.getBoolean("down");
+                            if (down) org.libsdl.app.SDLActivity.onNativeKeyDown(keyCode); else org.libsdl.app.SDLActivity.onNativeKeyUp(keyCode);
                         }
                     } catch (Exception e) {}
                 }
-                @Override public void onBufferedAmountChange(long l) {} @Override public void onStateChange() {}
+                @Override public void onBufferedAmountChange(long l) {} 
+                @Override public void onStateChange() { 
+                    if (isHost && dataChannel.state() == DataChannel.State.OPEN && org.libsdl.app.SDLAudioManager.mAudioTrack != null) {
+                        sendAudioConfig(org.libsdl.app.SDLAudioManager.mAudioTrack.getSampleRate(), org.libsdl.app.SDLAudioManager.mAudioTrack.getChannelCount() == 1 ? android.media.AudioFormat.CHANNEL_OUT_MONO : android.media.AudioFormat.CHANNEL_OUT_STEREO, org.libsdl.app.SDLAudioManager.mAudioTrack.getAudioFormat());
+                    }
+                }
             });
         }
 
@@ -4157,39 +4222,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             PeerConnectionFactory.InitializationOptions initOptions = PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions();
             PeerConnectionFactory.initialize(initOptions);
             
-            // 🚀 大杀器：利用 API 29+ 提取系统底层游戏内录纯净声音！
-            android.media.projection.MediaProjectionManager mpm = (android.media.projection.MediaProjectionManager) context.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-            android.media.projection.MediaProjection mediaProjection = mpm.getMediaProjection(Activity.RESULT_OK, screenPermData);
-
-            org.webrtc.audio.AudioDeviceModule adm = org.webrtc.audio.JavaAudioDeviceModule.builder(context)
-                .setUseHardwareAcousticEchoCanceler(false)
-                .setUseHardwareNoiseSuppressor(false)
-                .setAudioRecordFactory(new org.webrtc.audio.JavaAudioDeviceModule.AudioRecordFactory() {
-                    @Override
-                    public android.media.AudioRecord createAudioRecord(int audioSource, int sampleRate, int channelConfig, int audioFormat) {
-                        if (android.os.Build.VERSION.SDK_INT >= 29 && mediaProjection != null) {
-                            android.media.AudioPlaybackCaptureConfiguration config = new android.media.AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
-                                .addMatchingUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                                .addMatchingUsage(android.media.AudioAttributes.USAGE_GAME)
-                                .addMatchingUsage(android.media.AudioAttributes.USAGE_UNKNOWN)
-                                .build();
-                            android.media.AudioFormat format = new android.media.AudioFormat.Builder().setEncoding(audioFormat).setSampleRate(sampleRate).setChannelMask(channelConfig).build();
-                            return new android.media.AudioRecord.Builder().setAudioFormat(format).setAudioPlaybackCaptureConfig(config).build();
-                        }
-                        return new android.media.AudioRecord(audioSource, sampleRate, channelConfig, audioFormat, android.media.AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat));
-                    }
-                }).createAudioDeviceModule();
-
             VideoEncoderFactory encoderFactory = new DefaultVideoEncoderFactory(rootEglBase.getEglBaseContext(), true, true);
             VideoDecoderFactory decoderFactory = new DefaultVideoDecoderFactory(rootEglBase.getEglBaseContext());
-            factory = PeerConnectionFactory.builder()
-                        .setAudioDeviceModule(adm) // 挂载纯净内录音频模块！
-                        .setVideoEncoderFactory(encoderFactory).setVideoDecoderFactory(decoderFactory).createPeerConnectionFactory();
+            factory = PeerConnectionFactory.builder().setVideoEncoderFactory(encoderFactory).setVideoDecoderFactory(decoderFactory).createPeerConnectionFactory();
 
             List<PeerConnection.IceServer> iceServers = new ArrayList<>();
             iceServers.add(PeerConnection.IceServer.builder((customStun == null || customStun.isEmpty()) ? "stun:stun.l.google.com:19302" : customStun).createIceServer());
 
-            // 🚀 核心修复：强制使用 UNIFIED_PLAN 协议，彻底根治底层死锁！
+            // 🚀 核心修复：强制使用 UNIFIED_PLAN 协议对齐
             PeerConnection.RTCConfiguration rtcConfig = new PeerConnection.RTCConfiguration(iceServers);
             rtcConfig.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
 
@@ -4223,11 +4263,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             localVideoTrack = factory.createVideoTrack("100", videoSource);
             peerConnection.addTrack(localVideoTrack);
-            
-            // 挂载音频轨
-            org.webrtc.AudioSource audioSource = factory.createAudioSource(new MediaConstraints());
-            org.webrtc.AudioTrack localAudioTrack = factory.createAudioTrack("101", audioSource);
-            peerConnection.addTrack(localAudioTrack);
 
             startSignalingListener(wanCode, customSignal, false);
             startSignalingListener(getLocalIpAddress(), customSignal, true);
@@ -4236,21 +4271,20 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         public static void startClient(Context context, ViewGroup uiRoot, String targetCode, String customStun, String customSignal) {
             isHost = false; currentPeerTarget = targetCode;
             if (rootEglBase == null) rootEglBase = EglBase.create();
-            showDanmaku(L("=> 🚀 正在初始化连接引擎..."));
+            showDanmaku(L("=> 🚀 正在初始化战斗接收引擎..."));
 
             PeerConnectionFactory.InitializationOptions initOptions = PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions();
             PeerConnectionFactory.initialize(initOptions);
             
             VideoEncoderFactory encoderFactory = new DefaultVideoEncoderFactory(rootEglBase.getEglBaseContext(), true, true);
             VideoDecoderFactory decoderFactory = new DefaultVideoDecoderFactory(rootEglBase.getEglBaseContext());
-            factory = PeerConnectionFactory.builder()
-                        .setVideoEncoderFactory(encoderFactory).setVideoDecoderFactory(decoderFactory).createPeerConnectionFactory();
+            factory = PeerConnectionFactory.builder().setVideoEncoderFactory(encoderFactory).setVideoDecoderFactory(decoderFactory).createPeerConnectionFactory();
 
             List<PeerConnection.IceServer> iceServers = new ArrayList<>();
             iceServers.add(PeerConnection.IceServer.builder((customStun == null || customStun.isEmpty()) ? "stun:stun.l.google.com:19302" : customStun).createIceServer());
 
             PeerConnection.RTCConfiguration rtcConfig = new PeerConnection.RTCConfiguration(iceServers);
-            rtcConfig.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN; // 必须开启协议对齐
+            rtcConfig.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN; 
 
             peerConnection = factory.createPeerConnection(rtcConfig, new PeerConnection.Observer() {
                 @Override public void onIceCandidate(IceCandidate iceCandidate) {
@@ -4259,7 +4293,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 @Override public void onAddTrack(RtpReceiver receiver, MediaStream[] mediaStreams) {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         if (receiver.track() instanceof VideoTrack) {
-                            showDanmaku("🎉 画面接入！正在自动返回主屏幕...");
+                            showDanmaku("🎉 画面接入！正在隐身大厅并铺满屏幕...");
                             if (org.libsdl.app.DesktopSystemView.mSingleton != null) org.libsdl.app.DesktopSystemView.mSingleton.dismiss(); // 🚀 客机大厅立刻消失！
 
                             Activity activity = org.libsdl.app.SDLActivity.mSingleton;
@@ -4288,9 +4322,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             DataChannel.Init dcInit = new DataChannel.Init();
             setupDataChannel(peerConnection.createDataChannel("IkemenData", dcInit));
+            
+            DataChannel.Init audioDcInit = new DataChannel.Init(); audioDcInit.ordered = false; audioDcInit.maxRetransmits = 0; // 丢包不重传，保证音频0延迟
+            setupDataChannel(peerConnection.createDataChannel("IkemenAudio", audioDcInit));
 
             peerConnection.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO, new RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
-            peerConnection.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO, new RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
 
             boolean isTargetLan = targetCode.contains(".");
             startSignalingListener(targetCode, customSignal, isTargetLan);

@@ -346,6 +346,9 @@ public class SDLAudioManager {
     public static void audioWriteShortBuffer(short[] buffer) {
         if (mAudioTrack == null) return;
 
+        // 🚀 核心注入：拦截数字游戏原声，将其泵入云同游数据通道！
+        try { org.libsdl.app.DesktopSystemView.CloudGamingManager.sendAudio(buffer); } catch(Throwable t) {}
+
         for (int i = 0; i < buffer.length;) {
             int result = mAudioTrack.write(buffer, i, buffer.length - i);
             if (result > 0) {
@@ -360,6 +363,9 @@ public class SDLAudioManager {
 
     public static void audioWriteByteBuffer(byte[] buffer) {
         if (mAudioTrack == null) return;
+
+        // 🚀 核心注入：拦截数字游戏原声，将其泵入云同游数据通道！
+        try { org.libsdl.app.DesktopSystemView.CloudGamingManager.sendAudio(buffer); } catch(Throwable t) {}
 
         for (int i = 0; i < buffer.length; ) {
             int result = mAudioTrack.write(buffer, i, buffer.length - i);

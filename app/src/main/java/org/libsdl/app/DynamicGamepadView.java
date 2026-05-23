@@ -56,14 +56,14 @@ import java.util.List;
         if (org.libsdl.app.DesktopSystemView.CloudGamingManager.isClientActive()) {
             org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(keyCode, true);
         } else {
-            SDLActivity.onNativeKeyDown(keyCode);
+            sendProxyKeyDown(keyCode);
         }
     }
     public static void sendProxyKeyUp(int keyCode) {
         if (org.libsdl.app.DesktopSystemView.CloudGamingManager.isClientActive()) {
             org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(keyCode, false);
         } else {
-            SDLActivity.onNativeKeyUp(keyCode);
+            sendProxyKeyUp(keyCode);
         }
     }
     // 【新增】定时休眠控制引擎变量
@@ -410,10 +410,10 @@ import java.util.List;
             threadPool.execute(() -> {        
                 try {
                     for (List<Integer> stepCodes : macroSteps) {
-                        for (int code : stepCodes) SDLActivity.onNativeKeyDown(code);
+                        for (int code : stepCodes) sendProxyKeyDown(code);
                         // 【优化】：将 60ms 缩短为 30ms（约两帧），让按压足够快且引擎能稳定识别
                         Thread.sleep(30); 
-                        for (int code : stepCodes) SDLActivity.onNativeKeyUp(code);
+                        for (int code : stepCodes) sendProxyKeyUp(code);
                         // 【优化】：将 50ms 缩短为 20ms（约一帧），让招式衔接如丝般顺滑
                         Thread.sleep(20); 
                     }
@@ -429,9 +429,9 @@ import java.util.List;
             threadPool.execute(() -> {      
                 while (turboRunning) {
                     try {
-                        for (int code : macroSteps.get(0)) SDLActivity.onNativeKeyDown(code);
+                        for (int code : macroSteps.get(0)) sendProxyKeyDown(code);
                         Thread.sleep(turboInterval); 
-                        for (int code : macroSteps.get(0)) SDLActivity.onNativeKeyUp(code);
+                        for (int code : macroSteps.get(0)) sendProxyKeyUp(code);
                         Thread.sleep(turboInterval);                       
                     } catch (InterruptedException e) { break; }
                 }
@@ -1459,11 +1459,11 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                     if (gamepadUIMode == 1) invalidate();
                     if (gamepadUIMode == 2 && isLayoutVisible()) hideLayoutTemporarily();
                     if (isGamepadVibrationOn) triggerHardwareGamepadVibration(event.getDevice());
-                    for (int c : btn.keyCodes) SDLActivity.onNativeKeyDown(c);
+                    for (int c : btn.keyCodes) sendProxyKeyDown(c);
                 } else if (!isDown && btn.isPressed) {
                     btn.isPressed = false;
                     if (gamepadUIMode == 1) invalidate();
-                    for (int c : btn.keyCodes) SDLActivity.onNativeKeyUp(c);
+                    for (int c : btn.keyCodes) sendProxyKeyUp(c);
                 }
             }
         }
@@ -1659,7 +1659,7 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                 } else if (btn.macroSteps.size() > 1) {
                     btn.executeMacro(); // 触发一键连招
                 } else if (!btn.macroSteps.isEmpty()) {
-                    for (int code : btn.macroSteps.get(0)) SDLActivity.onNativeKeyDown(code); // 瞬间触发同按组合键
+                    for (int code : btn.macroSteps.get(0)) sendProxyKeyDown(code); // 瞬间触发同按组合键
                 }
             } else if (btn.isPressed && !isTouchedNow) {
                 btn.isPressed = false;
@@ -1673,10 +1673,10 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                     if (pressDuration < 50) {
                         // 如果按压时间不足50毫秒(不到3帧)，利用View的线程延迟松开操作，保证底层引擎一定能抓到动作
                         postDelayed(() -> {
-                            for (int code : codes) SDLActivity.onNativeKeyUp(code);
+                            for (int code : codes) sendProxyKeyUp(code);
                         }, 50 - pressDuration);
                     } else {
-                        for (int code : codes) SDLActivity.onNativeKeyUp(code);
+                        for (int code : codes) sendProxyKeyUp(code);
                     }
                 }
             }
@@ -1693,11 +1693,11 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                 if (pressed && !btn.isPressed) { 
                     btn.isPressed = true; 
                     triggerVibrate(); // 【新增】摇杆拨动触发震动
-                    for (int c : btn.keyCodes) SDLActivity.onNativeKeyDown(c); 
+                    for (int c : btn.keyCodes) sendProxyKeyDown(c); 
                 } 
                 else if (!pressed && btn.isPressed) { 
                     btn.isPressed = false; 
-                    for (int c : btn.keyCodes) SDLActivity.onNativeKeyUp(c); 
+                    for (int c : btn.keyCodes) sendProxyKeyUp(c); 
                 }
                 break;
             }
