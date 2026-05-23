@@ -50,6 +50,22 @@ import java.util.ArrayList;
 import java.util.List;
 
         public class DynamicGamepadView extends View {
+
+    // 🚀 【新增】云同游按键拦截与转发引擎
+    public static void sendProxyKeyDown(int keyCode) {
+        if (org.libsdl.app.DesktopSystemView.CloudGamingManager.isClientActive()) {
+            org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(keyCode, true);
+        } else {
+            SDLActivity.onNativeKeyDown(keyCode);
+        }
+    }
+    public static void sendProxyKeyUp(int keyCode) {
+        if (org.libsdl.app.DesktopSystemView.CloudGamingManager.isClientActive()) {
+            org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(keyCode, false);
+        } else {
+            SDLActivity.onNativeKeyUp(keyCode);
+        }
+    }
     // 【新增】定时休眠控制引擎变量
     private android.os.Handler sleepTimerHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private Runnable sleepTimerRunnable = null;
