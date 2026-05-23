@@ -3971,7 +3971,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
 
     // ======================================================================================
-    // 🧠 核心：云同乐引擎 (破解死锁 / 强制主线程调度 / 完美错误捕获)
+    // 🧠 核心：云同乐引擎 (修复编解码器缺失导致的 SDPOffer 崩溃 + 全链路雷达日志)
     // ======================================================================================
     public static class CloudGamingManager {
         public static String playerName = "Player";
@@ -3988,6 +3988,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         public static EglBase rootEglBase; 
         public static android.widget.TextView clientMiniLog; 
         
+        // 🚀 全局日志雷达：任何动作必须上报！
         public static void log(String msg) {
             String time = new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date());
             new Handler(Looper.getMainLooper()).post(() -> {
@@ -4012,13 +4013,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(msg.toString().getBytes("UTF-8"));
                     dataChannel.send(new DataChannel.Buffer(buffer, false));
                     log("💬 [我]: " + text);
-                } catch (Exception e) { log("❌ 发送失败"); }
-            } else { log("❌ 错误：聊天通道底层尚未连通！"); }
+                } catch (Exception e) { log("❌ 发送消息失败: " + e.getMessage()); }
+            } else { log("❌ 错误：聊天底层数据通道 (DataChannel) 尚未打通！"); }
         }
 
         private static void sendSignalingMessage(String targetCode, String type, JSONObject payload, String customSignal) {
             new Thread(() -> {
                 try {
+                    log("=> 📤 准备发送信令 [" + type + "] 到目标: " + targetCode);
                     JSONObject msg = new JSONObject(); msg.put("type", type); msg.put("payload", payload);
                     msg.put("senderName", playerName); msg.put("replyToIp", getLocalIpAddress()); 
                     String msgStr = msg.toString();
@@ -4029,6 +4031,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             OutputStream os = socket.getOutputStream();
                             os.write((msgStr + "\n").getBytes("UTF-8"));
                             os.flush(); socket.close();
+                            log("=> ✅ 局域网信令 [" + type + "] 发送成功！");
                         }
                     } else { 
                         String baseUrl = (customSignal == null || customSignal.isEmpty()) ? "https://ntfy.sh/" : (customSignal.endsWith("/") ? customSignal : customSignal + "/");
@@ -4038,8 +4041,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         conn.setRequestMethod("POST"); conn.setDoOutput(true);
                         conn.getOutputStream().write(msgStr.getBytes("UTF-8"));
                         conn.getInputStream().close();
+                        log("=> ✅ 外网穿透信令 [" + type + "] 发送成功！");
                     }
-                } catch (Exception e) {}
+                } catch (Exception e) { log("❌ 发送信令 [" + type + "] 彻底失败: " + e.getMessage()); }
             }).start();
         }
 
@@ -4057,7 +4061,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             client.close();
                         }
                     } else {
-                        log("=> 📡 开启免费公网打洞监听...");
+                        log("=> 📡 开启免费公网打洞监听 (频道: " + myCode + ")...");
                         String baseUrl = (customSignal == null || customSignal.isEmpty()) ? "https://ntfy.sh/" : (customSignal.endsWith("/") ? customSignal : customSignal + "/");
                         String topic = "ikemen_webrtc_" + myCode + (isHost ? "_host" : "_client");
                         URL url = new URL(baseUrl + topic + "/json");
@@ -4069,35 +4073,34 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             if (root.optString("event").equals("message")) { processSignalingMessage(new JSONObject(root.getString("message")), customSignal, false); }
                         }
                     }
-                } catch (Exception e) {}
+                } catch (Exception e) { log("❌ 监听服务器异常崩溃: " + e.getMessage()); }
             }).start();
         }
 
-        // 🚀 核心大修：强制主线程安全调度，破解底层死锁！
         private static void processSignalingMessage(JSONObject msg, String customSignal, boolean fromLan) {
             new Handler(Looper.getMainLooper()).post(() -> {
                 try {
                     String type = msg.getString("type"); JSONObject payload = msg.getJSONObject("payload");
                     String sender = msg.optString("senderName", "神秘玩家");
                     String replyToIp = msg.optString("replyToIp", "");
+                    log("=> 📥 收到来自 [" + sender + "] 的信令包裹: " + type);
                     
                     if (isHost) {
-                        if (fromLan && !replyToIp.isEmpty()) { currentPeerTarget = replyToIp; log("=> 🎯 锁定局域网客机IP: " + replyToIp); } 
+                        if (fromLan && !replyToIp.isEmpty()) { currentPeerTarget = replyToIp; log("=> 🎯 锁定局域网回传 IP: " + replyToIp); } 
                         else { currentPeerTarget = hostWanCode; } 
                     }
 
                     if (type.equals("offer")) {
-                        log("=> 🔔 收到 [" + sender + "] 的入房请求，正在解析底层参数...");
-                        // 🚀 严格的安全回调链：必须等 setRemote 成功，才能 createAnswer！
+                        log("=> 🔔 开始解析对方的 Offer SDP 参数...");
                         peerConnection.setRemoteDescription(new SimpleSdpObserver("Host-SetRemote") {
                             @Override public void onSetSuccess() {
-                                log("=> ✅ 对方参数解析成功！正在生成本地回传通道...");
+                                log("=> ✅ 对方参数解析成功！正在生成同意书 (Answer)...");
                                 peerConnection.createAnswer(new SimpleSdpObserver("Host-CreateAnswer") {
                                     @Override public void onCreateSuccess(SessionDescription sessionDescription) {
                                         peerConnection.setLocalDescription(new SimpleSdpObserver("Host-SetLocal") {
                                             @Override public void onSetSuccess() {
                                                 try { JSONObject out = new JSONObject(); out.put("sdp", sessionDescription.description); sendSignalingMessage(currentPeerTarget, "answer", out, customSignal); } catch(Exception e){}
-                                                log("=> ✉️ 最终同意书 (Answer) 已发出！等待打洞连接...");
+                                                log("=> ✉️ 最终同意书 (Answer) 已放入发送队列！");
                                             }
                                         }, sessionDescription);
                                     }
@@ -4105,16 +4108,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             }
                         }, new SessionDescription(SessionDescription.Type.OFFER, payload.getString("sdp")));
                     } else if (type.equals("answer")) {
-                        log("=> 🎉 验证通过！主机 [" + sender + "] 同意了连接！准备物理打通...");
+                        log("=> 🎉 验证通过！主机 [" + sender + "] 同意了连接！准备对接画面...");
                         peerConnection.setRemoteDescription(new SimpleSdpObserver("Client-SetRemoteAnswer"){
-                            @Override public void onSetSuccess() { log("=> ✅ 握手参数已对接完毕！"); }
+                            @Override public void onSetSuccess() { log("=> ✅ 画面握手参数已彻底对接完毕！等待画面降临..."); }
                         }, new SessionDescription(SessionDescription.Type.ANSWER, payload.getString("sdp")));
                     } else if (type.equals("candidate")) {
-                        log("=> 🕸️ 收到底层网络穿透节点 (ICE Candidate)...");
+                        log("=> 🕸️ 发现对方提供的网络穿透节点 (ICE Candidate)，正在尝试打洞直连...");
                         IceCandidate candidate = new IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate"));
                         peerConnection.addIceCandidate(candidate);
                     }
-                } catch (Exception e) { log("❌ 处理信令崩溃: " + e.getMessage()); }
+                } catch (Exception e) { log("❌ 处理信令期间发生致命崩溃: " + e.getMessage()); }
             });
         }
 
@@ -4149,44 +4152,55 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         }
                     } catch (Exception e) {}
                 }
-                @Override public void onBufferedAmountChange(long l) {} @Override public void onStateChange() { log("=> ⚡ 聊天与按键物理通道状态: " + dataChannel.state()); }
+                @Override public void onBufferedAmountChange(long l) {} 
+                @Override public void onStateChange() { log("=> ⚡ 聊天与按键数据通道状态发生改变: " + dataChannel.state()); }
             });
         }
 
         public static void startHost(Context context, ViewGroup uiRoot, Intent screenPermData, String wanCode, int quality, String customStun, String customSignal) {
             isHost = true; hostWanCode = wanCode; currentPeerTarget = wanCode;
             if (rootEglBase == null) rootEglBase = EglBase.create();
-            log("=> 录屏底层通道已打开，正在初始化引擎...");
+            log("=> 🎥 录屏授权成功！正在为引擎挂载视频编解码器 (VideoCodecs)...");
 
             PeerConnectionFactory.InitializationOptions initOptions = PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions();
             PeerConnectionFactory.initialize(initOptions);
-            factory = PeerConnectionFactory.builder().createPeerConnectionFactory();
+            
+            // 🚀 核心修复：强行注入 Android 硬件编解码器工厂！解决 recv parameters 崩溃天坑！
+            VideoEncoderFactory encoderFactory = new DefaultVideoEncoderFactory(rootEglBase.getEglBaseContext(), true, true);
+            VideoDecoderFactory decoderFactory = new DefaultVideoDecoderFactory(rootEglBase.getEglBaseContext());
+            factory = PeerConnectionFactory.builder()
+                        .setVideoEncoderFactory(encoderFactory)
+                        .setVideoDecoderFactory(decoderFactory)
+                        .createPeerConnectionFactory();
+            log("=> 🛠️ 视频硬解工厂加载完毕！");
 
             List<PeerConnection.IceServer> iceServers = new ArrayList<>();
             iceServers.add(PeerConnection.IceServer.builder((customStun == null || customStun.isEmpty()) ? "stun:stun.l.google.com:19302" : customStun).createIceServer());
 
             peerConnection = factory.createPeerConnection(iceServers, new PeerConnection.Observer() {
                 @Override public void onIceCandidate(IceCandidate iceCandidate) {
+                    log("=> 🕸️ 本地网络节点 (Candidate) 生成，正在发送给对方...");
                     try { JSONObject out = new JSONObject(); out.put("sdpMid", iceCandidate.sdpMid); out.put("sdpMLineIndex", iceCandidate.sdpMLineIndex); out.put("candidate", iceCandidate.sdp); sendSignalingMessage(currentPeerTarget, "candidate", out, customSignal); } catch (Exception e){}
                 }
                 @Override public void onDataChannel(DataChannel channel) { 
-                    log("=> 🔌 主机检测到客机发起的数据通道，正在对接..."); 
+                    log("=> 🔌 主机检测到客机发起的数据通道请求，正在物理对接..."); 
                     setupDataChannel(channel); 
                 }
-                @Override public void onSignalingChange(PeerConnection.SignalingState s) {} 
+                @Override public void onSignalingChange(PeerConnection.SignalingState s) { log("=> 🚦 信令状态机切换为: " + s); } 
                 @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { 
-                    log("=> 🌐 P2P 穿透网络状态: " + s); 
+                    log("=> 🌐 P2P 穿透网络底层状态: " + s); 
                     if(s == PeerConnection.IceConnectionState.CONNECTED) {
-                        log("✅✅✅ 连接完全建立！2秒后自动返回游戏画面！");
+                        log("✅✅✅ 物理通道连接完全建立！2秒后自动返回游戏画面！");
                         new Handler(Looper.getMainLooper()).postDelayed(() -> {
                             if (org.libsdl.app.SDLActivity.mSingleton != null) org.libsdl.app.SDLActivity.mSingleton.toggleDesktopMode(false);
                         }, 2000);
                     }
                 } 
-                @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
+                @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) { log("=> 🧊 ICE收集器状态: " + s); } 
+                @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
             });
 
-            VideoCapturer screenCapturer = new ScreenCapturerAndroid(screenPermData, new MediaProjection.Callback() { @Override public void onStop() { super.onStop(); log("=> ⚠️ 录屏被系统强制中断"); } });
+            VideoCapturer screenCapturer = new ScreenCapturerAndroid(screenPermData, new MediaProjection.Callback() { @Override public void onStop() { super.onStop(); log("=> ⚠️ 系统强制剥夺了录屏服务"); } });
             surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", rootEglBase.getEglBaseContext());
             VideoSource videoSource = factory.createVideoSource(screenCapturer.isScreencast());
             screenCapturer.initialize(surfaceTextureHelper, context, videoSource.getCapturerObserver());
@@ -4197,7 +4211,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             localVideoTrack = factory.createVideoTrack("100", videoSource);
             peerConnection.addTrack(localVideoTrack);
-            log("=> 🎥 本地视频推流器已挂载完成！");
+            log("=> 🎥 游戏画面捕捉源已挂载 (分辨率: " + w + "x" + h + ")");
 
             startSignalingListener(wanCode, customSignal, false);
             startSignalingListener(getLocalIpAddress(), customSignal, true);
@@ -4206,21 +4220,31 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         public static void startClient(Context context, ViewGroup uiRoot, String targetCode, String customStun, String customSignal) {
             isHost = false; currentPeerTarget = targetCode;
             if (rootEglBase == null) rootEglBase = EglBase.create();
+            log("=> 🚀 正在初始化客户端接收引擎...");
 
             PeerConnectionFactory.InitializationOptions initOptions = PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions();
             PeerConnectionFactory.initialize(initOptions);
-            factory = PeerConnectionFactory.builder().createPeerConnectionFactory();
+            
+            // 🚀 核心修复：客户端也必须挂载编解码工厂，否则在 setLocalDescription 时会直接暴毙！
+            VideoEncoderFactory encoderFactory = new DefaultVideoEncoderFactory(rootEglBase.getEglBaseContext(), true, true);
+            VideoDecoderFactory decoderFactory = new DefaultVideoDecoderFactory(rootEglBase.getEglBaseContext());
+            factory = PeerConnectionFactory.builder()
+                        .setVideoEncoderFactory(encoderFactory)
+                        .setVideoDecoderFactory(decoderFactory)
+                        .createPeerConnectionFactory();
+            log("=> 🛠️ 客户端视频硬解工厂加载完毕！");
 
             List<PeerConnection.IceServer> iceServers = new ArrayList<>();
             iceServers.add(PeerConnection.IceServer.builder((customStun == null || customStun.isEmpty()) ? "stun:stun.l.google.com:19302" : customStun).createIceServer());
 
             peerConnection = factory.createPeerConnection(iceServers, new PeerConnection.Observer() {
                 @Override public void onIceCandidate(IceCandidate iceCandidate) {
+                    log("=> 🕸️ 生成本地网络节点 (Candidate)，正在投递...");
                     try { JSONObject out = new JSONObject(); out.put("sdpMid", iceCandidate.sdpMid); out.put("sdpMLineIndex", iceCandidate.sdpMLineIndex); out.put("candidate", iceCandidate.sdp); sendSignalingMessage(targetCode, "candidate", out, customSignal); } catch (Exception e){}
                 }
                 @Override public void onAddTrack(RtpReceiver receiver, MediaStream[] mediaStreams) {
                     new Handler(Looper.getMainLooper()).post(() -> {
-                        log("=> 🎉 成功接收视频流轨道！正在摧毁联机大厅并全屏...");
+                        log("=> 🎉🎉 游戏画面数据流开始涌入！正在全屏渲染...");
                         try {
                             uiRoot.removeAllViews(); 
                             FrameLayout videoContainer = new FrameLayout(context);
@@ -4236,31 +4260,36 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             track.addSink(videoView);
                             
                             buildClientGamepad(context, videoContainer);
-                            log("=> 🎮 屏幕已被主机接管！尽情战斗吧！");
+                            log("=> 🎮 屏幕已被主机接管！可以开始聊天和对战了！");
                         } catch (Exception e) { log("❌ 渲染器初始化崩溃: " + e.getMessage()); }
                     });
                 }
                 @Override public void onDataChannel(DataChannel channel) { } 
-                @Override public void onSignalingChange(PeerConnection.SignalingState s) {} 
-                @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { log("=> 🌐 P2P 穿透网络状态: " + s); } 
-                @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
+                @Override public void onSignalingChange(PeerConnection.SignalingState s) { log("=> 🚦 信令状态机切换为: " + s); } 
+                @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { log("=> 🌐 P2P 穿透网络底层状态: " + s); } 
+                @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) { log("=> 🧊 ICE收集器状态: " + s); }
+                @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
             });
 
+            log("=> 🔌 正在主动搭建聊天与按键高速数据通道...");
             DataChannel.Init dcInit = new DataChannel.Init();
             setupDataChannel(peerConnection.createDataChannel("IkemenData", dcInit));
 
+            log("=> 🎥 正在强制向主机申请画面通道接收权...");
             peerConnection.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO, 
                 new RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
 
             boolean isTargetLan = targetCode.contains(".");
             startSignalingListener(targetCode, customSignal, isTargetLan);
 
+            log("=> 📝 开始打包本地握手协议 (Offer)...");
             peerConnection.createOffer(new SimpleSdpObserver("Client-CreateOffer") {
                 @Override public void onCreateSuccess(SessionDescription sessionDescription) {
+                    log("=> ✅ 握手协议打包完成！正在挂载到本地引擎...");
                     peerConnection.setLocalDescription(new SimpleSdpObserver("Client-SetLocalOffer") {
                         @Override public void onSetSuccess() {
+                            log("=> ✅ 本地引擎挂载成功！发射信令...");
                             try { JSONObject out = new JSONObject(); out.put("sdp", sessionDescription.description); sendSignalingMessage(targetCode, "offer", out, customSignal); } catch(Exception e){}
-                            log("=> ✉️ 请求入房握手 (Offer) 已发送！等待主机同意...");
                         }
                     }, sessionDescription);
                 }
@@ -4348,15 +4377,15 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             } catch (Exception ex) {} return backupIp;
         }
 
-        // 🚀 核心大修：内置报错雷达，从此告别“假死不知道原因”！
+        // 🚀 彻底进化的雷达级监听器：捕捉一切底层崩溃，绝不放过任何死结！
         public static class SimpleSdpObserver implements SdpObserver {
             private String tag = "WebRTC";
             public SimpleSdpObserver(String tag) { this.tag = tag; }
             public SimpleSdpObserver() {}
             @Override public void onCreateSuccess(SessionDescription sessionDescription) {} 
             @Override public void onSetSuccess() {} 
-            @Override public void onCreateFailure(String s) { log("❌ " + tag + " 崩溃: " + s); } 
-            @Override public void onSetFailure(String s) { log("❌ " + tag + " 挂载失败: " + s); }
+            @Override public void onCreateFailure(String s) { log("❌ " + tag + " 创建底层参数崩溃: " + s); } 
+            @Override public void onSetFailure(String s) { log("❌ " + tag + " 挂载底层参数崩溃: " + s); }
         }
     }
 } // 类的结尾
