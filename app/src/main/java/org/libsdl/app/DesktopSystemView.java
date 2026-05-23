@@ -4025,12 +4025,37 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 if (activity == null) return;
                 
                 // 智能寻找最顶层的容器，保证桌面模式也能看到弹幕！
-                ViewGroup root = (ViewGroup) activity.getWindow().getDecorView();
+                ViewGroup tempRoot = (ViewGroup) activity.getWindow().getDecorView();
                 if (org.libsdl.app.DesktopSystemView.mSingleton != null && org.libsdl.app.DesktopSystemView.mSingleton.isShowing()) {
-                    root = (ViewGroup) org.libsdl.app.DesktopSystemView.mSingleton.getWindow().getDecorView();
+                    tempRoot = (ViewGroup) org.libsdl.app.DesktopSystemView.mSingleton.getWindow().getDecorView();
                 }
+                
+                // 🚀 核心修复：强制声明为 final，满足 Java 匿名内部类的编译要求
+                final ViewGroup finalRoot = tempRoot;
+                final android.widget.TextView tv = new android.widget.TextView(activity);
 
-                android.widget.TextView tv = new android.widget.TextView(activity);
+                tv.setText(msg);
+                tv.setTextColor(Color.WHITE);
+                tv.setTextSize(22f); // 放大字体，醒目粗犷
+                tv.setShadowLayer(8, 0, 0, Color.BLACK); // 极强电竞级描边
+                tv.setTypeface(null, Typeface.BOLD);
+                
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2);
+                lp.topMargin = (int) (150 + Math.random() * 500); // 极大拉开上下距离，防止密集
+                finalRoot.addView(tv, lp);
+
+                int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+                tv.setTranslationX(screenWidth);
+
+                ObjectAnimator anim = ObjectAnimator.ofFloat(tv, "translationX", screenWidth, -screenWidth);
+                anim.setDuration(12000); // 极度放慢弹幕速度 (12秒飞过屏幕)
+                anim.setInterpolator(new android.view.animation.LinearInterpolator());
+                anim.start();
+                anim.addListener(new android.animation.AnimatorListenerAdapter() {
+                    @Override public void onAnimationEnd(android.animation.Animator animation) { finalRoot.removeView(tv); }
+                });
+            });
+        }
                 tv.setText(msg);
                 tv.setTextColor(Color.WHITE);
                 tv.setTextSize(22f); // 放大字体，醒目粗犷
