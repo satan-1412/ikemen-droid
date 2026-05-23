@@ -3363,7 +3363,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         updateViewState[0].run(); refreshLayerListUI[0].run(); return root;
     }
     // ======================================================================================
-    // 🎮 模块 8：远程同乐 (云同游 / 聊天互通 / 极客网络)
+    // 🎮 模块 8：远程同乐 (云同游大厅 - 修复 UI 重复挂载闪退版)
     // ======================================================================================
     public static android.widget.TextView logConsole; 
     public static ScrollView logScrollView; 
@@ -3385,6 +3385,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         tabBar.addView(btnHost, tabParams); tabBar.addView(btnClient, tabParams);
         root.addView(tabBar);
 
+        // 🚀 修复点：这里是第一次且唯一一次添加内容容器
         FrameLayout contentContainer = new FrameLayout(getContext());
         LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams(-1, 0, 1f);
         containerParams.setMargins(0, (int)(10 * density), 0, 0);
@@ -3396,7 +3397,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         
         ScrollView logScroll = new ScrollView(getContext());
         logConsole = new android.widget.TextView(getContext());
-        logConsole.setTextColor(Color.parseColor("#4CAF50")); // 黑客绿
+        logConsole.setTextColor(Color.parseColor("#4CAF50")); 
         logConsole.setTextSize(11f);
         logConsole.setText(L("=> Ikemen WebRTC 引擎已就绪...\n"));
         logConsole.setTypeface(Typeface.MONOSPACE);
@@ -3406,7 +3407,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         logScrollView = logScroll; 
         
         LinearLayout.LayoutParams logParams = new LinearLayout.LayoutParams(-1, (int)(100 * density));
-        logParams.setMargins(0, (int)(5 * density), 0, 0);
+        logParams.setMargins(0, (int)(10 * density), 0, 0);
         logAndChatPanel.addView(logScroll, logParams);
 
         LinearLayout chatLayout = new LinearLayout(getContext());
@@ -3422,6 +3423,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             String msg = chatInput.getText().toString().trim();
             if(!msg.isEmpty()) { CloudGamingManager.sendChatMessage(msg); chatInput.setText(""); }
         });
+
         root.addView(logAndChatPanel);
 
         // --- ⚙️ 极客网络选项 (局域网直连 / 中转配置) ---
@@ -3471,7 +3473,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 f.wanCode = wanCode; f.quality = qualitySpinner.getSelectedItemPosition();
                 f.customStun = customStunInput.getText().toString().trim(); 
                 f.customSignal = customSignalInput.getText().toString().trim(); 
-                f.uiRoot = root; // 🚀 传入底层 UI
+                f.uiRoot = root; // 传入底层 UI
                 activity.getFragmentManager().beginTransaction().add(f, "ScreenCapPerm").commitAllowingStateLoss();
             } catch (Exception e) {}
         });
@@ -3503,8 +3505,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         });
         clientPanel.addView(btnJoinRoom, btnParams);
 
+        // 装载滑动面板
         contentContainer.addView(hostScroll); contentContainer.addView(clientScroll);
-        root.addView(contentContainer, new LinearLayout.LayoutParams(-1, 0, 1f));
+        // 🚀 修复点：已删除了上一版本中导致闪退的那句重复的 root.addView(contentContainer) 致命代码！
 
         btnHost.setOnClickListener(v -> {
             btnHost.setBackgroundColor(Color.parseColor("#0078D7")); btnClient.setBackgroundColor(Color.parseColor("#333333"));
@@ -3516,10 +3519,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             btnClient.setBackgroundColor(Color.parseColor("#0078D7")); btnHost.setBackgroundColor(Color.parseColor("#333333"));
             clientScroll.setVisibility(View.VISIBLE); hostScroll.setVisibility(View.GONE);
             if(advancedPanel.getParent() != null) ((ViewGroup)advancedPanel.getParent()).removeView(advancedPanel);
-            clientPanel.addView(advancedPanel, 1);
+            clientPanel.addView(advancedPanel, 2); // 放入昵称下方
         });
 
-        // 🛑 保留彻底销毁按钮，满足你手动断开的需求
+        // 🛑 满足你“手动断开”需求的红色彻底关闭按钮 (多余的那个已经被我彻底删了)
         Button btnKill = createButton(L("🛑 断开联机并关闭大厅"), "#F44336");
         LinearLayout.LayoutParams killParams = new LinearLayout.LayoutParams(-1, -2); killParams.setMargins(0, (int)(10 * density), 0, 0);
         btnKill.setOnClickListener(v -> {
@@ -3534,8 +3537,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
         return root;
     }
-
-
 
 
     // 🌉 Go 引擎底层抽象桥接
