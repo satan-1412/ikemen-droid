@@ -4014,6 +4014,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         public static SurfaceViewRenderer clientVideoView;
         public static View draggableDisconnectView;
         
+        // 增加独立观战频道列队
+        public static List<PeerConnection> spectatorPCs = new ArrayList<>();
+        public static List<DataChannel> spectatorDCs = new ArrayList<>();
+        
         public static boolean isClientActive() {
             return !isHost && peerConnection != null && dataChannel != null && dataChannel.state() == DataChannel.State.OPEN;
         }
@@ -4024,36 +4028,38 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 Activity activity = org.libsdl.app.SDLActivity.mSingleton;
                 if (activity == null) return;
                 
-                // 智能寻找最顶层的容器，保证桌面模式也能看到弹幕！
-                ViewGroup tempRoot = (ViewGroup) activity.getWindow().getDecorView();
+                // 分别挂载到游戏底层和系统弹窗，杜绝切换时的幽灵隐藏
+                ViewGroup gameRoot = (ViewGroup) activity.getWindow().getDecorView();
+                addDanmakuToView(activity, gameRoot, msg);
+                
                 if (org.libsdl.app.DesktopSystemView.mSingleton != null && org.libsdl.app.DesktopSystemView.mSingleton.isShowing()) {
-                    tempRoot = (ViewGroup) org.libsdl.app.DesktopSystemView.mSingleton.getWindow().getDecorView();
+                    ViewGroup desktopRoot = (ViewGroup) org.libsdl.app.DesktopSystemView.mSingleton.getWindow().getDecorView();
+                    addDanmakuToView(activity, desktopRoot, msg);
                 }
-                
-                // 🚀 核心修复：强制声明为 final，满足 Java 匿名内部类的编译要求
-                final ViewGroup finalRoot = tempRoot;
-                final android.widget.TextView tv = new android.widget.TextView(activity);
+            });
+        }
+        
+        private static void addDanmakuToView(Context context, final ViewGroup root, String msg) {
+            final android.widget.TextView tv = new android.widget.TextView(context);
+            tv.setText(msg);
+            tv.setTextColor(Color.WHITE);
+            tv.setTextSize(22f); 
+            tv.setShadowLayer(8, 0, 0, Color.BLACK); 
+            tv.setTypeface(null, Typeface.BOLD);
+            
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2);
+            lp.topMargin = (int) (150 + Math.random() * 500); 
+            root.addView(tv, lp);
 
-                tv.setText(msg);
-                tv.setTextColor(Color.WHITE);
-                tv.setTextSize(22f); // 放大字体，醒目粗犷
-                tv.setShadowLayer(8, 0, 0, Color.BLACK); // 极强电竞级描边
-                tv.setTypeface(null, Typeface.BOLD);
-                
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2);
-                lp.topMargin = (int) (150 + Math.random() * 500); // 极大拉开上下距离，防止密集
-                finalRoot.addView(tv, lp);
+            int screenWidth = context.getResources().getDisplayMetrics().widthPixels;
+            tv.setTranslationX(screenWidth);
 
-                int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-                tv.setTranslationX(screenWidth);
-
-                ObjectAnimator anim = ObjectAnimator.ofFloat(tv, "translationX", screenWidth, -screenWidth);
-                anim.setDuration(12000); // 极度放慢弹幕速度 (12秒飞过屏幕)
-                anim.setInterpolator(new android.view.animation.LinearInterpolator());
-                anim.start();
-                anim.addListener(new android.animation.AnimatorListenerAdapter() {
-                    @Override public void onAnimationEnd(android.animation.Animator animation) { finalRoot.removeView(tv); }
-                });
+            ObjectAnimator anim = ObjectAnimator.ofFloat(tv, "translationX", screenWidth, -screenWidth);
+            anim.setDuration(12000); 
+            anim.setInterpolator(new android.view.animation.LinearInterpolator());
+            anim.start();
+            anim.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator animation) { root.removeView(tv); }
             });
         }
 
@@ -4066,14 +4072,75 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         }
 
         public static void sendChatMessage(String text) {
-            if (dataChannel != null && dataChannel.state() == DataChannel.State.OPEN) {
-                try {
-                    JSONObject msg = new JSONObject(); msg.put("chat", text); msg.put("senderName", playerName);
-                    java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(msg.toString().getBytes("UTF-8"));
-                    dataChannel.send(new DataChannel.Buffer(buffer, false));
-                    showDanmaku("我: " + text); 
-                } catch (Exception e) {}
-            } else { showDanmaku("❌ 错误：通道未连通，消息被吞噬！"); }
+            try {
+                JSONObject msg = new JSONObject(); msg.put("chat", text); msg.put("senderName", playerName);
+                java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(msg.toString().getBytes("UTF-8"));
+                DataChannel.Buffer dcBuffer = new DataChannel.Buffer(buffer, false);
+                
+                if (dataChannel != null && dataChannel.state() == DataChannel.State.OPEN) {
+                    dataChannel.send(dcBuffer);
+                }
+                if (isHost && spectatorDCs != null) {
+                    for (DataChannel dc : spectatorDCs) {
+                        if (dc.state() == DataChannel.State.OPEN) dc.send(dcBuffer);
+                    }
+                }
+                showDanmaku("我: " + text); 
+            } catch (Exception e) { showDanmaku("❌ 错误：通道未连通，消息被吞噬！"); }
+        }
+        
+        public static void broadcastChat(String text) {
+            try {
+                JSONObject msg = new JSONObject(); msg.put("chat", text); msg.put("isBroadcast", true);
+                java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(msg.toString().getBytes("UTF-8"));
+                DataChannel.Buffer dcBuffer = new DataChannel.Buffer(buffer, false);
+                if (dataChannel != null && dataChannel.state() == DataChannel.State.OPEN) dataChannel.send(dcBuffer);
+                if (spectatorDCs != null) {
+                    for (DataChannel dc : spectatorDCs) {
+                        if (dc.state() == DataChannel.State.OPEN) dc.send(dcBuffer);
+                    }
+                }
+            } catch (Exception e) {}
+        }
+
+        private static void addSpectatorChatView() {
+            new Handler(Looper.getMainLooper()).post(() -> {
+                Activity activity = org.libsdl.app.SDLActivity.mSingleton;
+                if (activity == null) return;
+                ViewGroup root = activity.findViewById(android.R.id.content);
+                
+                LinearLayout chatLayout = new LinearLayout(activity);
+                chatLayout.setOrientation(LinearLayout.HORIZONTAL);
+                chatLayout.setBackgroundColor(Color.parseColor("#AA000000"));
+                chatLayout.setPadding(20, 20, 20, 20);
+                
+                EditText chatInput = new EditText(activity);
+                chatInput.setHint(L("观战模式中，在此输入弹幕..."));
+                chatInput.setTextColor(Color.WHITE);
+                chatInput.setHintTextColor(Color.LTGRAY);
+                chatInput.setSingleLine(true);
+                
+                Button btnSend = new Button(activity);
+                btnSend.setText(L("发送"));
+                btnSend.setTextColor(Color.WHITE);
+                btnSend.setBackgroundColor(Color.parseColor("#2196F3"));
+                
+                chatLayout.addView(chatInput, new LinearLayout.LayoutParams(0, -2, 1f));
+                chatLayout.addView(btnSend, new LinearLayout.LayoutParams(-2, -2));
+                
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2);
+                lp.gravity = Gravity.BOTTOM;
+                lp.bottomMargin = 150;
+                root.addView(chatLayout, lp);
+                
+                btnSend.setOnClickListener(v -> {
+                    String msg = chatInput.getText().toString().trim();
+                    if(!msg.isEmpty()) { 
+                        sendChatMessage(msg); 
+                        chatInput.setText(""); 
+                    }
+                });
+            });
         }
 
         public static void sendGameKey(int keyCode, boolean down) {
@@ -4136,6 +4203,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         public static void disconnect() {
             try {
                 if (peerConnection != null) { peerConnection.close(); peerConnection = null; }
+                if (spectatorPCs != null) { for(PeerConnection pc : spectatorPCs) { pc.close(); } spectatorPCs.clear(); }
+                if (spectatorDCs != null) spectatorDCs.clear();
                 if (lanServer != null) { lanServer.close(); lanServer = null; }
                 if (localVideoTrack != null) { localVideoTrack.dispose(); localVideoTrack = null; }
                 if (clientAudioTrack != null) { clientAudioTrack.stop(); clientAudioTrack.release(); clientAudioTrack = null; }
@@ -4215,6 +4284,56 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     }
 
                     if (type.equals("offer")) {
+                        if (dataChannel != null && dataChannel.state() == DataChannel.State.OPEN) {
+                            showDanmaku("👀 [" + sender + "] 请求作为观众加入！");
+                            List<PeerConnection.IceServer> iceServers = new ArrayList<>();
+                            iceServers.add(PeerConnection.IceServer.builder((savedStun == null || savedStun.isEmpty()) ? "stun:stun.l.google.com:19302" : savedStun).createIceServer());
+                            PeerConnection.RTCConfiguration rtcConf = new PeerConnection.RTCConfiguration(iceServers);
+                            rtcConf.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
+                            
+                            PeerConnection spectatorPC = factory.createPeerConnection(rtcConf, new PeerConnection.Observer() {
+                                @Override public void onIceCandidate(IceCandidate iceCandidate) {
+                                    try { JSONObject out = new JSONObject(); out.put("sdpMid", iceCandidate.sdpMid); out.put("sdpMLineIndex", iceCandidate.sdpMLineIndex); out.put("candidate", iceCandidate.sdp); sendSignalingMessage(replyToIp.isEmpty() ? hostWanCode : replyToIp, "candidate", out, customSignal); } catch (Exception e){}
+                                }
+                                @Override public void onDataChannel(DataChannel channel) { 
+                                    channel.registerObserver(new DataChannel.Observer() {
+                                        @Override public void onMessage(DataChannel.Buffer buffer) {
+                                            try {
+                                                byte[] data = new byte[buffer.data.remaining()]; buffer.data.get(data);
+                                                JSONObject input = new JSONObject(new String(data, "UTF-8"));
+                                                if (input.has("chat")) { 
+                                                    String chatStr = input.getString("chat");
+                                                    String fullMsg = "💬 [" + input.optString("senderName", "观众") + "]: " + chatStr;
+                                                    showDanmaku(fullMsg); 
+                                                    broadcastChat(fullMsg);
+                                                }
+                                            } catch(Exception e){}
+                                        }
+                                        @Override public void onBufferedAmountChange(long l) {} @Override public void onStateChange() {}
+                                    });
+                                    spectatorDCs.add(channel);
+                                }
+                                @Override public void onSignalingChange(PeerConnection.SignalingState s) {} @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) {} @Override public void onIceGatheringChange(PeerConnection.IceGatheringState s) {} @Override public void onIceConnectionReceivingChange(boolean b) {} @Override public void onIceCandidatesRemoved(IceCandidate[] c) {} @Override public void onAddStream(MediaStream s) {} @Override public void onRemoveStream(MediaStream s) {} @Override public void onRenegotiationNeeded() {}
+                            });
+                            spectatorPC.addTrack(localVideoTrack);
+                            spectatorPCs.add(spectatorPC);
+
+                            spectatorPC.setRemoteDescription(new SimpleSdpObserver() {
+                                @Override public void onSetSuccess() {
+                                    spectatorPC.createAnswer(new SimpleSdpObserver() {
+                                        @Override public void onCreateSuccess(SessionDescription sessionDescription) {
+                                            spectatorPC.setLocalDescription(new SimpleSdpObserver() {
+                                                @Override public void onSetSuccess() {
+                                                    try { JSONObject out = new JSONObject(); out.put("sdp", sessionDescription.description); out.put("isSpectator", true); sendSignalingMessage(replyToIp.isEmpty() ? hostWanCode : replyToIp, "answer", out, customSignal); } catch(Exception e){}
+                                                }
+                                            }, sessionDescription);
+                                        }
+                                    }, new MediaConstraints());
+                                }
+                            }, new SessionDescription(SessionDescription.Type.OFFER, payload.getString("sdp")));
+                            return;
+                        }
+
                         showDanmaku("🔔 [" + sender + "] 请求加入游戏！");
                         peerConnection.setRemoteDescription(new SimpleSdpObserver() {
                             @Override public void onSetSuccess() {
@@ -4230,7 +4349,12 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             }
                         }, new SessionDescription(SessionDescription.Type.OFFER, payload.getString("sdp")));
                     } else if (type.equals("answer")) {
-                        showDanmaku("🎉 主机 [" + sender + "] 验证通过！准备渲染画面...");
+                        if (payload.optBoolean("isSpectator", false)) {
+                            showDanmaku("👀 房间已满，您已作为观众加入！");
+                            addSpectatorChatView();
+                        } else {
+                            showDanmaku("🎉 主机 [" + sender + "] 验证通过！准备渲染画面...");
+                        }
                         peerConnection.setRemoteDescription(new SimpleSdpObserver(), new SessionDescription(SessionDescription.Type.ANSWER, payload.getString("sdp")));
                     } else if (type.equals("candidate")) {
                         IceCandidate candidate = new IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate"));
@@ -4268,7 +4392,17 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             clientAudioTrack = new android.media.AudioTrack(android.media.AudioManager.STREAM_MUSIC, sampleRate, channelConfig, audioFormat, minBufSize * 2, android.media.AudioTrack.MODE_STREAM);
                             clientAudioTrack.play(); showDanmaku("🔊 高保真游戏原声信道打通！"); return;
                         }
-                        if (input.has("chat")) { showDanmaku("💬 [" + input.getString("senderName") + "]: " + input.getString("chat")); return; }
+                        if (input.has("chat")) { 
+                            String chatStr = input.getString("chat");
+                            if (input.has("isBroadcast")) {
+                                showDanmaku(chatStr);
+                            } else {
+                                String fullMsg = "💬 [" + input.getString("senderName") + "]: " + chatStr;
+                                showDanmaku(fullMsg); 
+                                if (isHost) broadcastChat(fullMsg);
+                            }
+                            return; 
+                        }
                         if (isHost && input.has("keycode")) {
                             int keyCode = input.getInt("keycode"); boolean down = input.getBoolean("down");
                             if (down) org.libsdl.app.SDLActivity.onNativeKeyDown(keyCode); else org.libsdl.app.SDLActivity.onNativeKeyUp(keyCode);
@@ -4382,6 +4516,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             clientVideoView.init(rootEglBase.getEglBaseContext(), null);
                             clientVideoView.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT);
                             clientVideoView.setEnableHardwareScaler(true);
+                            
+                            // 【补丁】将获取到的视频流轨道绑定到画面上进行真实渲染
+                            VideoTrack videoTrack = (VideoTrack) receiver.track();
+                            videoTrack.addSink(clientVideoView);
                             
                             // 🚀 核心：强行塞入第0层，让客机自己设置的 DynamicGamepadView 完美悬浮在它上方！
                             root.addView(clientVideoView, 0, new FrameLayout.LayoutParams(-1, -1));
