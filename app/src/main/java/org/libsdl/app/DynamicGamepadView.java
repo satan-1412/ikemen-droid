@@ -51,19 +51,19 @@ import java.util.List;
 
         public class DynamicGamepadView extends View {
 
-    // 🚀 【新增】云同游按键拦截与转发引擎
+    // 🚀 【神级补丁】云同游按键智能透传引擎
     public static void sendProxyKeyDown(int keyCode) {
         if (org.libsdl.app.DesktopSystemView.CloudGamingManager.isClientActive()) {
             org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(keyCode, true);
         } else {
-            sendProxyKeyDown(keyCode);
+            org.libsdl.app.SDLActivity.onNativeKeyDown(keyCode);
         }
     }
     public static void sendProxyKeyUp(int keyCode) {
         if (org.libsdl.app.DesktopSystemView.CloudGamingManager.isClientActive()) {
             org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(keyCode, false);
         } else {
-            sendProxyKeyUp(keyCode);
+            org.libsdl.app.SDLActivity.onNativeKeyUp(keyCode);
         }
     }
     // 【新增】定时休眠控制引擎变量

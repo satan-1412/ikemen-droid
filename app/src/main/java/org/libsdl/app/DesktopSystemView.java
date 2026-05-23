@@ -3392,21 +3392,24 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
         updateViewState[0].run(); refreshLayerListUI[0].run(); return root;
     }
-    // ======================================    // ======================================================================================
-    // 🎮 模块 8：远程同乐 (极简连接面板 - 成功后自动隐身)
     // ======================================================================================
+    // 🎮 模块 8：电竞级远程同乐引擎 (专业 UI + 弹幕聊天)
+    // ======================================================================================
+    public static android.widget.TextView logConsole; 
+    public static ScrollView logScrollView; 
+
     private View buildRemotePlayContent() {
         LinearLayout root = new LinearLayout(getContext());
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        root.setBackgroundColor(Color.parseColor("#151515")); // 更深的电竞黑
         root.setPadding((int)(15 * density), (int)(15 * density), (int)(15 * density), (int)(15 * density));
 
         LinearLayout tabBar = new LinearLayout(getContext());
         tabBar.setOrientation(LinearLayout.HORIZONTAL);
         tabBar.setGravity(Gravity.CENTER);
         
-        Button btnHost = createButton(L("🏠 创建房间 (我是主机)"), "#0078D7");
-        Button btnClient = createButton(L("🔗 加入房间 (我是手柄)"), "#333333");
+        Button btnHost = createButton(L("🏠 建立联机主机"), "#0078D7");
+        Button btnClient = createButton(L("🔗 作为客机加入"), "#333333");
         LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, -2, 1f);
         tabParams.setMargins(0, 0, (int)(5 * density), 0);
         tabBar.addView(btnHost, tabParams); tabBar.addView(btnClient, tabParams);
@@ -3423,8 +3426,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         hostPanel.setOrientation(LinearLayout.VERTICAL);
         hostScroll.addView(hostPanel);
 
+        hostPanel.addView(createSubTitle(L("👤 你的昵称:"))); 
         EditText hostNameInput = createInput(L("输入昵称 (如: 隆)"), "主机_" + (int)(Math.random()*999));
-        hostPanel.addView(createSubTitle(L("👤 你的昵称:"))); hostPanel.addView(hostNameInput);
+        hostPanel.addView(hostNameInput);
         
         hostPanel.addView(createSubTitle(L("📡 串流画质选择 (局域网选原画):")));
         Spinner qualitySpinner = new Spinner(getContext());
@@ -3438,8 +3442,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         roomCodeInput.setGravity(Gravity.CENTER); roomCodeInput.setTextSize(18f); roomCodeInput.setTextColor(Color.parseColor("#FFD700"));
         hostPanel.addView(roomCodeInput);
 
-        Button btnCreateRoom = createButton(L("🚀 建立房间 (允许录屏后自动监听)"), "#4CAF50");
-        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-1, -2); btnParams.setMargins(0, (int)(15 * density), 0, 0);
+        Button btnCreateRoom = createButton(L("🚀 启动主机引擎 (允许录屏后自动监听)"), "#4CAF50");
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-1, -2); btnParams.setMargins(0, (int)(10 * density), 0, 0);
+        
         btnCreateRoom.setOnClickListener(v -> {
             String wanCode = String.format("%06d", (int)(Math.random() * 999999));
             String lanIP = CloudGamingManager.getLocalIpAddress(); 
@@ -3451,7 +3456,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             try {
                 ScreenCapFragment f = new ScreenCapFragment();
                 f.wanCode = wanCode; f.quality = qualitySpinner.getSelectedItemPosition();
-                f.customStun = ""; f.customSignal = ""; f.uiRoot = root; 
+                f.customStun = CloudGamingManager.savedStun; f.customSignal = CloudGamingManager.savedSignal; f.uiRoot = root; 
                 activity.getFragmentManager().beginTransaction().add(f, "ScreenCapPerm").commitAllowingStateLoss();
             } catch (Exception e) {}
         });
@@ -3463,10 +3468,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         clientPanel.setOrientation(LinearLayout.VERTICAL);
         clientScroll.addView(clientPanel); clientScroll.setVisibility(View.GONE);
 
+        clientPanel.addView(createSubTitle(L("👤 玩家昵称:"))); 
         EditText clientNameInput = createInput(L("输入你的玩家昵称"), "挑战者_" + (int)(Math.random()*999));
-        clientPanel.addView(createSubTitle(L("👤 玩家昵称:"))); clientPanel.addView(clientNameInput);
+        clientPanel.addView(clientNameInput);
 
-        clientPanel.addView(createSubTitle(L("🔗 输入主机口令 (内网IP 或 外网码):")));
+        clientPanel.addView(createSubTitle(L("🔗 输入主机口令 (内网IP 或 6位外网码):")));
         final EditText joinCodeInput = createInput(L("例如: 192.168.43.1 或 886655"), "");
         joinCodeInput.setGravity(Gravity.CENTER); joinCodeInput.setTextSize(18f);
         clientPanel.addView(joinCodeInput);
@@ -3476,11 +3482,70 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             String code = joinCodeInput.getText().toString().trim();
             CloudGamingManager.playerName = clientNameInput.getText().toString();
             if (code.isEmpty()) return;
-            CloudGamingManager.startClient(getContext(), root, code, "", ""); 
+            CloudGamingManager.startClient(getContext(), root, code, CloudGamingManager.savedStun, CloudGamingManager.savedSignal); 
         });
         clientPanel.addView(btnJoinRoom, btnParams);
 
         contentContainer.addView(hostScroll); contentContainer.addView(clientScroll);
+
+        // --- ⚙️ 极客网络选项与系统日志 (永远常驻最底部显示) ---
+        LinearLayout globalBottomPanel = new LinearLayout(getContext());
+        globalBottomPanel.setOrientation(LinearLayout.VERTICAL);
+        globalBottomPanel.setPadding(0, (int)(10 * density), 0, 0);
+
+        globalBottomPanel.addView(createSubTitle(L("⚙️ 自定义网络打洞通道 (留空则默认):")));
+        LinearLayout customLayout = new LinearLayout(getContext());
+        customLayout.setOrientation(LinearLayout.HORIZONTAL);
+        EditText customStunInput = createInput(L("STUN 节点"), CloudGamingManager.savedStun);
+        EditText customSignalInput = createInput(L("Ntfy 总线"), CloudGamingManager.savedSignal);
+        
+        customStunInput.addTextChangedListener(new TextWatcher() { 
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) { CloudGamingManager.savedStun = s.toString(); } 
+        });
+        customSignalInput.addTextChangedListener(new TextWatcher() { 
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) { CloudGamingManager.savedSignal = s.toString(); } 
+        });
+
+        customLayout.addView(customStunInput, new LinearLayout.LayoutParams(0, -2, 1f));
+        customLayout.addView(customSignalInput, new LinearLayout.LayoutParams(0, -2, 1f));
+        globalBottomPanel.addView(customLayout);
+
+        // 全局实时日志大厅
+        ScrollView logScroll = new ScrollView(getContext());
+        logConsole = new android.widget.TextView(getContext());
+        logConsole.setTextColor(Color.parseColor("#4CAF50")); 
+        logConsole.setTextSize(11f);
+        logConsole.setText(L("=> Ikemen 电竞云联机引擎已就绪...\n"));
+        logConsole.setTypeface(Typeface.MONOSPACE);
+        logScroll.addView(logConsole);
+        logScroll.setBackgroundColor(Color.parseColor("#0A0A0A"));
+        logScroll.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
+        logScrollView = logScroll; 
+        
+        LinearLayout.LayoutParams logParams = new LinearLayout.LayoutParams(-1, (int)(100 * density));
+        logParams.setMargins(0, (int)(10 * density), 0, 0);
+        globalBottomPanel.addView(logScroll, logParams);
+
+        // 全局聊天与发送框
+        LinearLayout chatLayout = new LinearLayout(getContext());
+        chatLayout.setOrientation(LinearLayout.HORIZONTAL);
+        chatLayout.setPadding(0, (int)(5 * density), 0, 0);
+        EditText chatInput = createInput(L("输入聊天内容... 发送后将变为弹幕"), "");
+        Button btnSendChat = createButton(L("✉️ 发送弹幕"), "#2196F3");
+        chatLayout.addView(chatInput, new LinearLayout.LayoutParams(0, -2, 1f));
+        chatLayout.addView(btnSendChat, new LinearLayout.LayoutParams(-2, -2));
+        globalBottomPanel.addView(chatLayout);
+        
+        btnSendChat.setOnClickListener(v -> {
+            String msg = chatInput.getText().toString().trim();
+            if(!msg.isEmpty()) { CloudGamingManager.sendChatMessage(msg); chatInput.setText(""); }
+        });
+
+        root.addView(globalBottomPanel);
 
         btnHost.setOnClickListener(v -> {
             btnHost.setBackgroundColor(Color.parseColor("#0078D7")); btnClient.setBackgroundColor(Color.parseColor("#333333"));
@@ -3926,19 +3991,21 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
 
     // ======================================================================================
-    // 🧠 核心：云同乐引擎 (弹幕系统 / 纯净内录拦截直传 / 兼容玩家自设按键 / 局域网秒连)
+    // 🧠 核心：云同乐引擎 (强制顶层极客弹幕 / 纯净内录直传 / 兼容自定义键盘 / 隐藏大厅)
     // ======================================================================================
     public static class CloudGamingManager {
         public static String playerName = "Player";
         public static String currentPeerTarget = ""; 
         public static String hostWanCode = ""; 
+        public static String savedStun = "";
+        public static String savedSignal = "";
         
         private static PeerConnectionFactory factory;
         public static PeerConnection peerConnection;
         private static SurfaceTextureHelper surfaceTextureHelper;
         private static DataChannel dataChannel;
-        public static DataChannel audioDataChannel; // 🚀 独立高保真音轨数据通道
-        public static android.media.AudioTrack clientAudioTrack; // 客机独立扬声器
+        public static DataChannel audioDataChannel; 
+        public static android.media.AudioTrack clientAudioTrack; 
         private static boolean isHost = false;
         public static ServerSocket lanServer; 
         private static VideoTrack localVideoTrack; 
@@ -3951,25 +4018,34 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             return !isHost && peerConnection != null && dataChannel != null && dataChannel.state() == DataChannel.State.OPEN;
         }
 
-        // 🚀 沉浸式游戏内弹幕通知！
+        // 🚀 核心：全局防遮挡极客弹幕系统！不管在大厅还是游戏，强行覆盖系统最高层！
         public static void showDanmaku(String msg) {
             new Handler(Looper.getMainLooper()).post(() -> {
                 Activity activity = org.libsdl.app.SDLActivity.mSingleton;
                 if (activity == null) return;
-                ViewGroup root = activity.findViewById(android.R.id.content);
+                
+                // 智能寻找最顶层的容器，保证桌面模式也能看到弹幕！
+                ViewGroup root = (ViewGroup) activity.getWindow().getDecorView();
+                if (org.libsdl.app.DesktopSystemView.mSingleton != null && org.libsdl.app.DesktopSystemView.mSingleton.isShowing()) {
+                    root = (ViewGroup) org.libsdl.app.DesktopSystemView.mSingleton.getWindow().getDecorView();
+                }
+
                 android.widget.TextView tv = new android.widget.TextView(activity);
-                tv.setText(msg); tv.setTextColor(Color.WHITE); tv.setTextSize(18f);
-                tv.setShadowLayer(6, 0, 0, Color.BLACK); tv.setTypeface(null, Typeface.BOLD);
+                tv.setText(msg);
+                tv.setTextColor(Color.WHITE);
+                tv.setTextSize(22f); // 放大字体，醒目粗犷
+                tv.setShadowLayer(8, 0, 0, Color.BLACK); // 极强电竞级描边
+                tv.setTypeface(null, Typeface.BOLD);
                 
                 FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2);
-                lp.topMargin = (int) (100 + Math.random() * 300); // 随机轨道防止重叠
+                lp.topMargin = (int) (150 + Math.random() * 500); // 极大拉开上下距离，防止密集
                 root.addView(tv, lp);
 
                 int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
                 tv.setTranslationX(screenWidth);
 
                 ObjectAnimator anim = ObjectAnimator.ofFloat(tv, "translationX", screenWidth, -screenWidth);
-                anim.setDuration(7000); 
+                anim.setDuration(12000); // 极度放慢弹幕速度 (12秒飞过屏幕)
                 anim.setInterpolator(new android.view.animation.LinearInterpolator());
                 anim.start();
                 anim.addListener(new android.animation.AnimatorListenerAdapter() {
@@ -3979,7 +4055,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         }
 
         public static void log(String msg) {
-            Log.i("IkemenWebRTC", msg);
+            String time = new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date());
+            new Handler(Looper.getMainLooper()).post(() -> {
+                Log.i("IkemenWebRTC", "[" + time + "] " + msg);
+                if (logConsole != null) { logConsole.append("[" + time + "] " + msg + "\n"); if (logScrollView != null) { logScrollView.post(() -> logScrollView.fullScroll(View.FOCUS_DOWN)); } }
+            });
         }
 
         public static void sendChatMessage(String text) {
@@ -3990,10 +4070,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     dataChannel.send(new DataChannel.Buffer(buffer, false));
                     showDanmaku("我: " + text); 
                 } catch (Exception e) {}
-            } else { showDanmaku("❌ 错误：通道未连通！"); }
+            } else { showDanmaku("❌ 错误：通道未连通，消息被吞噬！"); }
         }
 
-        // 被 DynamicGamepadView.java 拦截器调用
         public static void sendGameKey(int keyCode, boolean down) {
             if (dataChannel != null && dataChannel.state() == DataChannel.State.OPEN) {
                 try {
@@ -4004,7 +4083,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             }
         }
 
-        // 🚀 发送纯数字截取的内录音频
         public static void sendAudioConfig(int sampleRate, int channelConfig, int audioFormat) {
             if (isHost && dataChannel != null && dataChannel.state() == DataChannel.State.OPEN) {
                 try {
@@ -4029,13 +4107,12 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             }
         }
 
-        // 🚀 悬浮且可自由拖拽的断开按钮
         private static void addDraggableDisconnectButton(Activity activity) {
             new Handler(Looper.getMainLooper()).post(() -> {
                 ViewGroup root = activity.findViewById(android.R.id.content);
                 Button btn = new Button(activity);
-                btn.setText("🛑 挂断");
-                btn.setBackgroundColor(Color.parseColor("#D32F2F")); btn.setTextColor(Color.WHITE); btn.getBackground().setAlpha(200);
+                btn.setText(L("🛑 彻底断开同游"));
+                btn.setBackgroundColor(Color.parseColor("#D32F2F")); btn.setTextColor(Color.WHITE); btn.getBackground().setAlpha(220);
                 FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2); lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL; lp.topMargin = 50; btn.setLayoutParams(lp);
 
                 btn.setOnTouchListener(new View.OnTouchListener() {
@@ -4066,7 +4143,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     if (draggableDisconnectView != null) { root.removeView(draggableDisconnectView); draggableDisconnectView = null; }
                 }
                 isHost = false; currentPeerTarget = "";
-                showDanmaku("🛑 联机已彻底断开，恢复本地模式");
+                showDanmaku(L("🛑 联机已彻底断开，手柄回归本地模式。"));
             } catch (Exception e) {}
         }
 
@@ -4077,7 +4154,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     String msgStr = msg.toString();
 
                     if (targetCode.contains(".")) {
-                        // 🚀 核心大修：双端都必须允许通过 Socket 打通局域网墙壁！
                         Socket socket = new Socket(targetCode, 8192);
                         OutputStream os = socket.getOutputStream();
                         os.write((msgStr + "\n").getBytes("UTF-8"));
@@ -4136,7 +4212,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     }
 
                     if (type.equals("offer")) {
-                        showDanmaku("🔔 [" + sender + "] 请求加入游戏！正在握手...");
+                        showDanmaku("🔔 [" + sender + "] 请求加入游戏！");
                         peerConnection.setRemoteDescription(new SimpleSdpObserver() {
                             @Override public void onSetSuccess() {
                                 peerConnection.createAnswer(new SimpleSdpObserver() {
@@ -4151,13 +4227,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             }
                         }, new SessionDescription(SessionDescription.Type.OFFER, payload.getString("sdp")));
                     } else if (type.equals("answer")) {
-                        showDanmaku("🎉 主机 [" + sender + "] 同意连接！准备接管屏幕...");
+                        showDanmaku("🎉 主机 [" + sender + "] 验证通过！准备渲染画面...");
                         peerConnection.setRemoteDescription(new SimpleSdpObserver(), new SessionDescription(SessionDescription.Type.ANSWER, payload.getString("sdp")));
                     } else if (type.equals("candidate")) {
                         IceCandidate candidate = new IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate"));
                         peerConnection.addIceCandidate(candidate);
                     }
-                } catch (Exception e) { Log.e("IkemenWebRTC", "信令处理失败: " + e.getMessage()); }
+                } catch (Exception e) { log("❌ 信令异常: " + e.getMessage()); }
             });
         }
 
@@ -4187,7 +4263,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             int minBufSize = android.media.AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat);
                             if (clientAudioTrack != null) { clientAudioTrack.release(); }
                             clientAudioTrack = new android.media.AudioTrack(android.media.AudioManager.STREAM_MUSIC, sampleRate, channelConfig, audioFormat, minBufSize * 2, android.media.AudioTrack.MODE_STREAM);
-                            clientAudioTrack.play(); showDanmaku("🔊 高清纯净内录游戏声轨对接成功！"); return;
+                            clientAudioTrack.play(); showDanmaku("🔊 高保真游戏原声信道打通！"); return;
                         }
                         if (input.has("chat")) { showDanmaku("💬 [" + input.getString("senderName") + "]: " + input.getString("chat")); return; }
                         if (isHost && input.has("keycode")) {
@@ -4208,13 +4284,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         public static void startHost(Context context, ViewGroup uiRoot, Intent screenPermData, String wanCode, int quality, String customStun, String customSignal) {
             isHost = true; hostWanCode = wanCode; currentPeerTarget = wanCode;
             if (rootEglBase == null) rootEglBase = EglBase.create();
-            showDanmaku(L("=> 🎥 引擎启动中... 成功后大厅将自动隐身。"));
+            showDanmaku(L("=> 🎥 主机引擎已点火..."));
             
             Activity activity = org.libsdl.app.SDLActivity.mSingleton;
             if (activity != null) {
                 activity.getApplication().registerActivityLifecycleCallbacks(new android.app.Application.ActivityLifecycleCallbacks() {
-                    @Override public void onActivityResumed(Activity a) { if(a == activity && localVideoTrack != null) { localVideoTrack.setEnabled(true); showDanmaku("▶️ 游戏切回前台，画面已恢复推流"); } }
-                    @Override public void onActivityPaused(Activity a) { if(a == activity && localVideoTrack != null) { localVideoTrack.setEnabled(false); showDanmaku("⏸️ 警告：游戏切后台，防偷窥黑屏已启动！"); } }
+                    @Override public void onActivityResumed(Activity a) { if(a == activity && localVideoTrack != null) { localVideoTrack.setEnabled(true); showDanmaku("▶️ 已恢复画面共享"); } }
+                    @Override public void onActivityPaused(Activity a) { if(a == activity && localVideoTrack != null) { localVideoTrack.setEnabled(false); showDanmaku("⏸️ 绝对防偷窥黑屏保护已启动！"); } }
                     @Override public void onActivityCreated(Activity a, Bundle b){} @Override public void onActivityStarted(Activity a){} @Override public void onActivityStopped(Activity a){} @Override public void onActivitySaveInstanceState(Activity a, Bundle b){} @Override public void onActivityDestroyed(Activity a){}
                 });
             }
@@ -4229,7 +4305,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             List<PeerConnection.IceServer> iceServers = new ArrayList<>();
             iceServers.add(PeerConnection.IceServer.builder((customStun == null || customStun.isEmpty()) ? "stun:stun.l.google.com:19302" : customStun).createIceServer());
 
-            // 🚀 核心修复：强制使用 UNIFIED_PLAN 协议对齐
             PeerConnection.RTCConfiguration rtcConfig = new PeerConnection.RTCConfiguration(iceServers);
             rtcConfig.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
 
@@ -4241,9 +4316,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 @Override public void onSignalingChange(PeerConnection.SignalingState s) {} 
                 @Override public void onIceConnectionChange(PeerConnection.IceConnectionState s) { 
                     if(s == PeerConnection.IceConnectionState.CONNECTED) {
-                        showDanmaku("✅ 连接成功！1秒后大厅自动隐身返回游戏...");
+                        showDanmaku("✅ 通道彻底打通！1秒后自动为您切回游戏...");
                         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                            if (org.libsdl.app.DesktopSystemView.mSingleton != null) org.libsdl.app.DesktopSystemView.mSingleton.dismiss(); // 主机自动滚回游戏！
+                            if (org.libsdl.app.DesktopSystemView.mSingleton != null) org.libsdl.app.DesktopSystemView.mSingleton.dismiss(); 
                             if (activity != null) addDraggableDisconnectButton(activity);
                         }, 1000);
                     }
@@ -4271,7 +4346,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         public static void startClient(Context context, ViewGroup uiRoot, String targetCode, String customStun, String customSignal) {
             isHost = false; currentPeerTarget = targetCode;
             if (rootEglBase == null) rootEglBase = EglBase.create();
-            showDanmaku(L("=> 🚀 正在初始化战斗接收引擎..."));
+            showDanmaku(L("=> 🚀 客机引擎开始寻址..."));
 
             PeerConnectionFactory.InitializationOptions initOptions = PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions();
             PeerConnectionFactory.initialize(initOptions);
@@ -4294,7 +4369,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         if (receiver.track() instanceof VideoTrack) {
                             showDanmaku("🎉 画面接入！正在隐身大厅并铺满屏幕...");
-                            if (org.libsdl.app.DesktopSystemView.mSingleton != null) org.libsdl.app.DesktopSystemView.mSingleton.dismiss(); // 🚀 客机大厅立刻消失！
+                            if (org.libsdl.app.DesktopSystemView.mSingleton != null) org.libsdl.app.DesktopSystemView.mSingleton.dismiss(); 
 
                             Activity activity = org.libsdl.app.SDLActivity.mSingleton;
                             if (activity == null) return;
@@ -4305,11 +4380,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             clientVideoView.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT);
                             clientVideoView.setEnableHardwareScaler(true);
                             
-                            // 🚀 核心：把接收到的画面直接塞到最底层！这样你的 DynamicGamepadView 原班虚拟按键就会自动覆盖在它上面！
+                            // 🚀 核心：强行塞入第0层，让客机自己设置的 DynamicGamepadView 完美悬浮在它上方！
                             root.addView(clientVideoView, 0, new FrameLayout.LayoutParams(-1, -1));
                             
                             addDraggableDisconnectButton(activity);
-                            showDanmaku("🎮 屏幕接管完毕，请用自己的键位操作！");
+                            showDanmaku("🎮 屏幕接管完毕，请用你自定义的键位干翻对面！");
                         }
                     });
                 }
@@ -4323,7 +4398,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             DataChannel.Init dcInit = new DataChannel.Init();
             setupDataChannel(peerConnection.createDataChannel("IkemenData", dcInit));
             
-            DataChannel.Init audioDcInit = new DataChannel.Init(); audioDcInit.ordered = false; audioDcInit.maxRetransmits = 0; // 丢包不重传，保证音频0延迟
+            DataChannel.Init audioDcInit = new DataChannel.Init(); audioDcInit.ordered = false; audioDcInit.maxRetransmits = 0; 
             setupDataChannel(peerConnection.createDataChannel("IkemenAudio", audioDcInit));
 
             peerConnection.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO, new RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
@@ -4351,7 +4426,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         java.net.InetAddress inetAddress = enumIpAddr.nextElement();
                         if (!inetAddress.isLoopbackAddress() && inetAddress.getAddress().length == 4) { 
                             String ip = inetAddress.getHostAddress();
-                            if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) { return ip; } // 强力索敌局域网
+                            if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) { return ip; } 
                             backupIp = ip; 
                         }
                     }
@@ -4362,8 +4437,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         public static class SimpleSdpObserver implements SdpObserver {
             @Override public void onCreateSuccess(SessionDescription sessionDescription) {} 
             @Override public void onSetSuccess() {} 
-            @Override public void onCreateFailure(String s) { Log.e("IkemenWebRTC", "❌ 创建崩溃: " + s); } 
-            @Override public void onSetFailure(String s) { Log.e("IkemenWebRTC", "❌ 挂载崩溃: " + s); }
+            @Override public void onCreateFailure(String s) {} 
+            @Override public void onSetFailure(String s) {}
         }
     }
 } // 类的结尾
