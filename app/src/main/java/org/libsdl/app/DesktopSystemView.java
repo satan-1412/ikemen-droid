@@ -4014,6 +4014,26 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         public static SurfaceViewRenderer clientVideoView;
         public static View draggableDisconnectView;
         
+        // 🚀 新增：全屏游戏画面容器与身份判定
+        public static ViewGroup clientContainer;
+        public static boolean isHostActive() { return peerConnection != null && isHost; }
+        
+        private static void bringUiToFront(ViewGroup root) {
+            java.util.List<View> toBring = new java.util.ArrayList<>();
+            findUiViews(root, toBring);
+            for (View v : toBring) v.bringToFront();
+        }
+        private static void findUiViews(ViewGroup root, java.util.List<View> result) {
+            for (int i = 0; i < root.getChildCount(); i++) {
+                View child = root.getChildAt(i);
+                if (child.getClass().getSimpleName().equals("DynamicGamepadView") || child == draggableDisconnectView) {
+                    result.add(child);
+                } else if (child instanceof ViewGroup && child != clientContainer) {
+                    findUiViews((ViewGroup) child, result);
+                }
+            }
+        }
+
         // 增加独立观战频道列队
         public static List<PeerConnection> spectatorPCs = new ArrayList<>();
         public static List<DataChannel> spectatorDCs = new ArrayList<>();
@@ -4206,6 +4226,32 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 if (spectatorPCs != null) { for(PeerConnection pc : spectatorPCs) { pc.close(); } spectatorPCs.clear(); }
                 if (spectatorDCs != null) spectatorDCs.clear();
                 if (lanServer != null) { lanServer.close(); lanServer = null; }
+                
+                // 【清理画面容器并唤醒本地游戏】
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    Activity activity = org.libsdl.app.SDLActivity.mSingleton;
+                    if (activity != null) {
+                        ViewGroup root = (ViewGroup) activity.getWindow().getDecorView();
+                        if (clientContainer != null && clientContainer.getParent() != null) {
+                            ((ViewGroup) clientContainer.getParent()).removeView(clientContainer);
+                        }
+                        clientContainer = null;
+                        
+                        // 🎮 唤醒本地游戏引擎继续运行
+                        try { org.libsdl.app.SDLActivity.nativeResume(); } catch(Exception e){}
+                    }
+                    if (clientVideoView != null) {
+                        if (clientVideoView.getParent() != null) {
+                            ((ViewGroup) clientVideoView.getParent()).removeView(clientVideoView);
+                        }
+                        clientVideoView.release();
+                        clientVideoView = null;
+                    }
+                    if (draggableDisconnectView != null && draggableDisconnectView.getParent() != null) {
+                        ((ViewGroup) draggableDisconnectView.getParent()).removeView(draggableDisconnectView);
+                        draggableDisconnectView = null;
+                    }
+                });
                 if (localVideoTrack != null) { localVideoTrack.dispose(); localVideoTrack = null; }
                 if (clientAudioTrack != null) { clientAudioTrack.stop(); clientAudioTrack.release(); clientAudioTrack = null; }
                 Activity activity = org.libsdl.app.SDLActivity.mSingleton;
@@ -4512,17 +4558,32 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             if (activity == null) return;
                             ViewGroup root = activity.findViewById(android.R.id.content);
                             
+                            // 🚀 核心：创建全新的黑色全屏背景层，完全遮挡本地游戏画面
+                            if (clientContainer != null && clientContainer.getParent() != null) {
+                                ((ViewGroup) clientContainer.getParent()).removeView(clientContainer);
+                            }
+                            clientContainer = new FrameLayout(context);
+                            clientContainer.setBackgroundColor(Color.BLACK); 
+                            
                             clientVideoView = new SurfaceViewRenderer(context);
                             clientVideoView.init(rootEglBase.getEglBaseContext(), null);
                             clientVideoView.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT);
                             clientVideoView.setEnableHardwareScaler(true);
+                            clientVideoView.setZOrderMediaOverlay(true); // 保证视频层悬浮于黑底之上
                             
-                            // 【补丁】将获取到的视频流轨道绑定到画面上进行真实渲染
                             VideoTrack videoTrack = (VideoTrack) receiver.track();
                             videoTrack.addSink(clientVideoView);
                             
-                            // 🚀 核心：强行塞入第0层，让客机自己设置的 DynamicGamepadView 完美悬浮在它上方！
-                            root.addView(clientVideoView, 0, new FrameLayout.LayoutParams(-1, -1));
+                            clientContainer.addView(clientVideoView, new FrameLayout.LayoutParams(-1, -1));
+                            
+                            // 覆盖在系统最顶层
+                            root.addView(clientContainer, new FrameLayout.LayoutParams(-1, -1));
+                            
+                            // 自动将自定义按键、宏和断开按钮拉至屏幕最前方，防止被画面遮挡
+                            bringUiToFront(root);
+                            
+                            // 🎮 触发本地引擎暂停（同桌面模式一样停止本地运算与声音）
+                            try { org.libsdl.app.SDLActivity.nativePause(); } catch(Exception e){}
                             
                             addDraggableDisconnectButton(activity);
                             showDanmaku("🎮 屏幕接管完毕，请用你自定义的键位干翻对面！");

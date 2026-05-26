@@ -51,46 +51,53 @@ import java.util.List;
 
         public class DynamicGamepadView extends View {
 
-    // 🚀 【神级补丁】云同游按键智能透传引擎
+    // 🚀 【神级补丁】云同游双端按键位置自动纠正引擎
     public static void sendProxyKeyDown(int keyCode) {
         if (org.libsdl.app.DesktopSystemView.CloudGamingManager.isClientActive()) {
-            org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(mapToP2(keyCode), true);
+            // 加入端（客机）：强行将虚拟按键及宏映射为手柄(Joystick)输入发给主机
+            org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(mapToGamepad(keyCode), true);
         } else {
+            // 主机端与纯单机模式：保持绝对原样，不干扰任何本地操作
             org.libsdl.app.SDLActivity.onNativeKeyDown(keyCode);
         }
     }
+    
     public static void sendProxyKeyUp(int keyCode) {
         if (org.libsdl.app.DesktopSystemView.CloudGamingManager.isClientActive()) {
-            org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(mapToP2(keyCode), false);
+            org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(mapToGamepad(keyCode), false);
         } else {
             org.libsdl.app.SDLActivity.onNativeKeyUp(keyCode);
         }
     }
     
-// 【修改】自动将加入端的按键映射为主机端的P2默认键位 (方向原生上下左右，攻击键ABCXYZDW一一对应)
-private static int mapToP2(int keyCode) {
-    switch(keyCode) {
-        // 方向键：改为原生上下左右键值
-        case KeyEvent.KEYCODE_DPAD_UP:    return KeyEvent.KEYCODE_DPAD_UP;
-        case KeyEvent.KEYCODE_DPAD_DOWN:  return KeyEvent.KEYCODE_DPAD_DOWN;
-        case KeyEvent.KEYCODE_DPAD_LEFT:  return KeyEvent.KEYCODE_DPAD_LEFT;
-        case KeyEvent.KEYCODE_DPAD_RIGHT: return KeyEvent.KEYCODE_DPAD_RIGHT;       
-        // 攻击键：ABCXYZDW 完全一一对应自身键值
-        case KeyEvent.KEYCODE_A:          return KeyEvent.KEYCODE_A;
-        case KeyEvent.KEYCODE_B:          return KeyEvent.KEYCODE_B;
-        case KeyEvent.KEYCODE_C:          return KeyEvent.KEYCODE_C;
-        case KeyEvent.KEYCODE_D:          return KeyEvent.KEYCODE_D;
-        case KeyEvent.KEYCODE_W:          return KeyEvent.KEYCODE_W;
-        case KeyEvent.KEYCODE_X:          return KeyEvent.KEYCODE_X;
-        case KeyEvent.KEYCODE_Y:          return KeyEvent.KEYCODE_Y;
-        case KeyEvent.KEYCODE_Z:          return KeyEvent.KEYCODE_Z;
-        // 保留原有的START和ESC映射（未提及不修改）
-        case KeyEvent.KEYCODE_ENTER:      return KeyEvent.KEYCODE_NUMPAD_0; // Start
-        case KeyEvent.KEYCODE_ESCAPE: return KeyEvent.KEYCODE_NUMPAD_DOT; // Select/Esc
-
-        default: return keyCode;
+    // 【强制转为手柄】加入端专属：严格根据 config.ini 中 [Joystick] 的设定，将按键转换为安卓原生手柄键值
+    private static int mapToGamepad(int keyCode) {
+        switch(keyCode) {
+            // 方向键 -> 手柄十字键 (DP_U / DP_D / DP_L / DP_R)
+            case KeyEvent.KEYCODE_DPAD_UP:    return KeyEvent.KEYCODE_DPAD_UP;
+            case KeyEvent.KEYCODE_DPAD_DOWN:  return KeyEvent.KEYCODE_DPAD_DOWN;
+            case KeyEvent.KEYCODE_DPAD_LEFT:  return KeyEvent.KEYCODE_DPAD_LEFT;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: return KeyEvent.KEYCODE_DPAD_RIGHT;       
+            
+            // 核心攻击键 -> 手柄 ABXY 与肩键 (对照 config.ini 中的 Joystick 映射)
+            case KeyEvent.KEYCODE_A:          return KeyEvent.KEYCODE_BUTTON_A;      // a = A
+            case KeyEvent.KEYCODE_B:          return KeyEvent.KEYCODE_BUTTON_B;      // b = B
+            case KeyEvent.KEYCODE_C:          return KeyEvent.KEYCODE_BUTTON_R2;     // c = RT
+            case KeyEvent.KEYCODE_X:          return KeyEvent.KEYCODE_BUTTON_X;      // x = X
+            case KeyEvent.KEYCODE_Y:          return KeyEvent.KEYCODE_BUTTON_Y;      // y = Y
+            case KeyEvent.KEYCODE_Z:          return KeyEvent.KEYCODE_BUTTON_R1;     // z = RB
+            case KeyEvent.KEYCODE_D:          return KeyEvent.KEYCODE_BUTTON_L1;     // d = LB
+            case KeyEvent.KEYCODE_W:          return KeyEvent.KEYCODE_BUTTON_L2;     // w = LT
+            
+            // 系统键 -> 手柄 START 与 BACK
+            case KeyEvent.KEYCODE_ENTER:      return KeyEvent.KEYCODE_BUTTON_START;  // start = START
+            case KeyEvent.KEYCODE_ESCAPE:     return KeyEvent.KEYCODE_BUTTON_SELECT; // menu = BACK
+            
+            // 其他不在 Joystick 区域的按键 (如 F1~F5 甚至空格等自定义宏组合)，原模原样透传
+            default: return keyCode; 
+        }
     }
-}
+
     // 【新增】定时休眠控制引擎变量
     private android.os.Handler sleepTimerHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private Runnable sleepTimerRunnable = null;
