@@ -1,4 +1,5 @@
 video/ik_logo.webm
+video/ik_credits.webm
 stages/stage3d_outline.def
 stages/stage0-720.sff
 stages/stage3d.def
@@ -17,11 +18,13 @@ stages/stage3d.glb
 stages/stage0-720.def
 stages/interactivestage.def
 stages/interactivestage.sff
-stages/attachedchar/interactivestage.air
-stages/attachedchar/interactivestage.sff
-stages/attachedchar/interactivestage.snd
-stages/attachedchar/interactivestage.zss
-stages/attachedchar/interactivestagechar.def
+stages/interactivestage/interactivestageChar.air
+stages/interactivestage/interactivestageChar.sff
+stages/interactivestage/interactivestageChar.snd
+stages/interactivestage/interactivestageChar.zss
+stages/interactivestage/interactivestagechar.def
+stages/interactivestage/wobble.frag
+stages/interactivestage/wobble.frag.spv
 chars/kfm720/kfm.snd
 chars/kfm720/ending.sff
 chars/kfm720/intro.def
@@ -159,6 +162,7 @@ font/name14.def
 data/fight.snd
 data/common.snd
 data/common1.cns.zss
+data/credits.def
 data/demo.zss
 data/system.base.def
 data/fightfx.air
