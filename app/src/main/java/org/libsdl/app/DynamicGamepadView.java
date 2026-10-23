@@ -218,6 +218,7 @@ import java.util.List;
         public int globalBtnColor = Color.GRAY;
         public int globalPressedColor = Color.WHITE;
         public int globalPressedAlpha = 150;
+        public int targetShapeMode = 0; // 0=普通皮肤/填充模式, 1=全局透明线框(带键值), 2=全局纯净线框(无键值)
         
         public GamepadStyle(String name) { this.styleName = name; }
         
@@ -225,9 +226,10 @@ import java.util.List;
             JSONObject obj = new JSONObject();
             obj.put("name", styleName); obj.put("joyBaseUri", joyBaseUri);
             obj.put("joyKnobUri", joyKnobUri); obj.put("btnNormalUri", btnNormalUri);
-            obj.put("btnSquareUri", btnSquareUri); // 【新增】
+            obj.put("btnSquareUri", btnSquareUri);
             obj.put("btnPressedUri", btnPressedUri); obj.put("btnColor", globalBtnColor);
             obj.put("pressedColor", globalPressedColor); obj.put("pressedAlpha", globalPressedAlpha);
+            obj.put("targetShapeMode", targetShapeMode);
             return obj;
         }
         
@@ -236,11 +238,12 @@ import java.util.List;
             style.joyBaseUri = obj.optString("joyBaseUri", "");
             style.joyKnobUri = obj.optString("joyKnobUri", "");
             style.btnNormalUri = obj.optString("btnNormalUri", "");
-            style.btnSquareUri = obj.optString("btnSquareUri", ""); // 【新增】
+            style.btnSquareUri = obj.optString("btnSquareUri", "");
             style.btnPressedUri = obj.optString("btnPressedUri", "");
             style.globalBtnColor = obj.optInt("btnColor", Color.GRAY);
             style.globalPressedColor = obj.optInt("pressedColor", Color.WHITE);
             style.globalPressedAlpha = obj.optInt("pressedAlpha", 150);
+            style.targetShapeMode = obj.optInt("targetShapeMode", 0);
             return style;
         }
     }
@@ -684,24 +687,43 @@ import java.util.List;
         GamepadStyle style1 = new GamepadStyle(L("01. 原生渐变引擎 (System Default)"));
         style1.joyBaseUri = ""; style1.joyKnobUri = ""; style1.btnNormalUri = ""; style1.btnPressedUri = "";
         style1.globalPressedColor = 0; 
+        style1.targetShapeMode = 0;
         styleList.add(style1);
+
+        // 2. 全局透明白边 (带键值模式)
+        GamepadStyle style2 = new GamepadStyle(L("02. 极简透明白边 (带键值)"));
+        style2.joyBaseUri = ""; style2.joyKnobUri = ""; style2.btnNormalUri = ""; style2.btnSquareUri = ""; style2.btnPressedUri = "";
+        style2.globalBtnColor = Color.WHITE;
+        style2.globalPressedColor = Color.WHITE;
+        style2.globalPressedAlpha = 150;
+        style2.targetShapeMode = 1;
+        styleList.add(style2);
+
+        // 3. 全局纯净白边 (无键值模式)
+        GamepadStyle style3 = new GamepadStyle(L("03. 极简纯净白边 (无键值)"));
+        style3.joyBaseUri = ""; style3.joyKnobUri = ""; style3.btnNormalUri = ""; style3.btnSquareUri = ""; style3.btnPressedUri = "";
+        style3.globalBtnColor = Color.WHITE;
+        style3.globalPressedColor = Color.WHITE;
+        style3.globalPressedAlpha = 150;
+        style3.targetShapeMode = 2;
+        styleList.add(style3);
 
         int size = 400; // 统一生成高清 400x400 贴图
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         // 核心数据矩阵：{风格名称, 底盘底色, 底盘边框, 摇杆底色, 摇杆边框, 按键底色, 按键边框, 按下特效高亮色}
-String[][] themes = {
-            {L("02. 经典街机 (Retro Arcade)"), "#0C141E", "#90CAF9", "#D32F2F", "#B71C1C", "#1A2B42", "#90CAF9", "#4CAF50"},
-            {L("03. 赛博朋克霓虹 (Cyberpunk)"), "#110022", "#00FFFF", "#FF007F", "#FF00FF", "#110022", "#00FFFF", "#FF00FF"},
-            {L("04. 暗物质黑武士 (Dark Matter)"), "#111111", "#333333", "#444444", "#111111", "#1A1A1A", "#333333", "#FFFFFF"},
-            {L("05. 皇家奢华黑金 (Luxury Gold)"), "#1A1813", "#D4AF37", "#C5B358", "#8A793D", "#26241D", "#D4AF37", "#FFDF00"},
-            {L("06. SFC 经典主机 (SNES Classic)"), "#D3D3D3", "#A9A9A9", "#4A4E69", "#2F3241", "#D3D3D3", "#A9A9A9", "#7B68EE"},
-            {L("07. 生化毒液 (Toxic Acid)"), "#0F1A0F", "#39FF14", "#2E8B57", "#00FF00", "#142214", "#39FF14", "#ADFF2F"},
-            {L("08. 猩红之月 (Blood Moon)"), "#1A0505", "#DC143C", "#8B0000", "#660000", "#240A0A", "#DC143C", "#FF0000"},
-            {L("09. 深海幽蓝 (Ocean Depth)"), "#001F3F", "#00BFFF", "#0074D9", "#00008B", "#001A33", "#00BFFF", "#1E90FF"},
-            {L("10. 极简拟物白 (White Glass)"), "#F5F5F5", "#E0E0E0", "#FFFFFF", "#CCCCCC", "#FAFAFA", "#E0E0E0", "#87CEEB"},
-            {L("11. 紫晶矿石 (Royal Amethyst)"), "#20102B", "#9932CC", "#8A2BE2", "#4B0082", "#2A1538", "#9932CC", "#DDA0DD"},
-            {L("12. 熔岩火山核心 (Magma Core)"), "#2B0F0E", "#FF4500", "#FF8C00", "#8B0000", "#361311", "#FF4500", "#FFFF00"}
+        String[][] themes = {
+            {L("04. 经典街机 (Retro Arcade)"), "#0C141E", "#90CAF9", "#D32F2F", "#B71C1C", "#1A2B42", "#90CAF9", "#4CAF50"},
+            {L("05. 赛博朋克霓虹 (Cyberpunk)"), "#110022", "#00FFFF", "#FF007F", "#FF00FF", "#110022", "#00FFFF", "#FF00FF"},
+            {L("06. 暗物质黑武士 (Dark Matter)"), "#111111", "#333333", "#444444", "#111111", "#1A1A1A", "#333333", "#FFFFFF"},
+            {L("07. 皇家奢华黑金 (Luxury Gold)"), "#1A1813", "#D4AF37", "#C5B358", "#8A793D", "#26241D", "#D4AF37", "#FFDF00"},
+            {L("08. SFC 经典主机 (SNES Classic)"), "#D3D3D3", "#A9A9A9", "#4A4E69", "#2F3241", "#D3D3D3", "#A9A9A9", "#7B68EE"},
+            {L("09. 生化毒液 (Toxic Acid)"), "#0F1A0F", "#39FF14", "#2E8B57", "#00FF00", "#142214", "#39FF14", "#ADFF2F"},
+            {L("10. 猩红之月 (Blood Moon)"), "#1A0505", "#DC143C", "#8B0000", "#660000", "#240A0A", "#DC143C", "#FF0000"},
+            {L("11. 深海幽蓝 (Ocean Depth)"), "#001F3F", "#00BFFF", "#0074D9", "#00008B", "#001A33", "#00BFFF", "#1E90FF"},
+            {L("12. 极简拟物白 (White Glass)"), "#F5F5F5", "#E0E0E0", "#FFFFFF", "#CCCCCC", "#FAFAFA", "#E0E0E0", "#87CEEB"},
+            {L("13. 紫晶矿石 (Royal Amethyst)"), "#20102B", "#9932CC", "#8A2BE2", "#4B0082", "#2A1538", "#9932CC", "#DDA0DD"},
+            {L("14. 熔岩火山核心 (Magma Core)"), "#2B0F0E", "#FF4500", "#FF8C00", "#8B0000", "#361311", "#FF4500", "#FFFF00"}
         };
 
         // 批量自动绘制并存入沙盒
@@ -2421,18 +2443,47 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                             refreshJoystickStyle(); 
                             for (VirtualButton b : buttons) {
                                 if (!b.isDirectional) {
-                                    b.color = style.globalBtnColor; // 同步底色
-                                    if (b.shape == SHAPE_CIRCLE) {
-                                        b.customImageUri = style.btnNormalUri != null ? style.btnNormalUri : ""; 
+                                    if (style.targetShapeMode == 1) {
+                                        // 全局应用：透明白边框（保留键值显示）
+                                        b.shape = isCircleShape(b.shape) ? SHAPE_HOLLOW_CIRCLE_TEXT : SHAPE_HOLLOW_SQUARE_TEXT;
+                                        b.customImageUri = "";
+                                        b.customPressedUri = "";
+                                        b.skinBitmap = null;
+                                        b.pressedSkinBitmap = null;
+                                        b.color = Color.WHITE;
+                                        b.textColor = Color.WHITE;
+                                        b.alpha = 220;
+                                    } else if (style.targetShapeMode == 2) {
+                                        // 全局应用：纯净透明白边框（无键值显示）
+                                        b.shape = isCircleShape(b.shape) ? SHAPE_HOLLOW_CIRCLE_PURE : SHAPE_HOLLOW_SQUARE_PURE;
+                                        b.customImageUri = "";
+                                        b.customPressedUri = "";
+                                        b.skinBitmap = null;
+                                        b.pressedSkinBitmap = null;
+                                        b.color = Color.WHITE;
+                                        b.textColor = Color.WHITE;
+                                        b.alpha = 220;
                                     } else {
-                                        // 【彻底修复】：如果是方形，绝不借用圆图！有方形专图就用，没有就直接置空（让系统画出纯色渐变方块）
-                                        b.customImageUri = (style.btnSquareUri != null && !style.btnSquareUri.isEmpty()) ? style.btnSquareUri : ""; 
+                                        // 常规风格：如果是透明框，自动还原为默认实心圆/方
+                                        if (isHollowShape(b.shape)) {
+                                            b.shape = isCircleShape(b.shape) ? SHAPE_CIRCLE : SHAPE_SQUARE;
+                                        }
+                                        b.color = style.globalBtnColor;
+                                        if (b.shape == SHAPE_CIRCLE) {
+                                            b.customImageUri = style.btnNormalUri != null ? style.btnNormalUri : ""; 
+                                        } else {
+                                            b.customImageUri = (style.btnSquareUri != null && !style.btnSquareUri.isEmpty()) ? style.btnSquareUri : ""; 
+                                        }
+                                        b.customPressedUri = style.btnPressedUri != null ? style.btnPressedUri : "";
+                                        b.pressedEffectColor = style.globalPressedColor; 
+                                        b.pressedEffectAlpha = style.globalPressedAlpha;
+                                        b.loadSkinFromUri(getContext());
                                     }
-                                    b.customPressedUri = style.btnPressedUri != null ? style.btnPressedUri : "";
-                                    b.pressedEffectColor = style.globalPressedColor; 
-                                    b.pressedEffectAlpha = style.globalPressedAlpha;
-                                    b.loadSkinFromUri(getContext());
                                 }
+                            }
+                            if (style.targetShapeMode > 0) {
+                                joyColor = Color.WHITE;
+                                joyAlpha = 200;
                             }
                             saveConfig(); invalidate(); Toast.makeText(getContext(), L("已应用风格: ") + style.styleName, Toast.LENGTH_SHORT).show();
                         }).setNegativeButton(L("取消"), null).show();
@@ -4551,20 +4602,27 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
                 } catch(Exception e) { menuSkinBitmap = null; }
             } else { menuSkinBitmap = null; }
 
-             String styleJson = prefs.getString("StyleList_" + slot, "");
+            String styleJson = prefs.getString("StyleList_" + slot, "");
             if (!styleJson.isEmpty()) {
                 JSONArray styleArr = new JSONArray(styleJson);
                 styleList.clear();
                 for (int i=0; i<styleArr.length(); i++) styleList.add(GamepadStyle.fromJson(styleArr.getJSONObject(i)));
                 
-                // 【无损抢救】：自动检测旧版本。如果发现旧版系统预设缺失方形贴图，静默重置12个系统预设，完美保留玩家自定义风格！
-                if (styleList.size() > 1 && (styleList.get(1).btnSquareUri == null || styleList.get(1).btnSquareUri.isEmpty())) {
+                // 【无损热升级】：检测本地缓存是否缺少透明白边预设；若缺少，静默重置系统预设并保留自定义风格
+                boolean hasHollowPreset = false;
+                for (GamepadStyle s : styleList) {
+                    if (s.targetShapeMode > 0 || (s.styleName != null && s.styleName.contains("透明白边"))) {
+                        hasHollowPreset = true;
+                        break;
+                    }
+                }
+                if (!hasHollowPreset || (styleList.size() > 1 && (styleList.get(1).btnSquareUri == null || styleList.get(1).btnSquareUri.isEmpty()))) {
                     List<GamepadStyle> userStyles = new ArrayList<>();
                     for (int i = 0; i < styleList.size(); i++) {
-                        if (i >= 12 || !styleList.get(i).styleName.matches("^[0-1][0-9]\\..*")) userStyles.add(styleList.get(i));
+                        if (i >= 14 || !styleList.get(i).styleName.matches("^[0-1][0-9]\\..*")) userStyles.add(styleList.get(i));
                     }
-                    generateVideoArcadeStyle(); // 重置完美的系统风格
-                    styleList.addAll(userStyles); // 无损把玩家的心血加回尾部
+                    generateVideoArcadeStyle();
+                    styleList.addAll(userStyles);
                 }
             } else {
                 generateVideoArcadeStyle();
