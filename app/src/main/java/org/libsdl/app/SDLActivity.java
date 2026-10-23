@@ -578,6 +578,23 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         mSurface = createSDLSurface(this);
         mSurface.setZOrderOnTop(false);
         mSurface.setZOrderMediaOverlay(true);
+        if (mSurface.getHolder() != null) {
+            // 强制启用 32 位 RGBA_8888 真彩色缓冲，消除渐变与暗部色阶断层
+            mSurface.getHolder().setFormat(android.graphics.PixelFormat.RGBA_8888);
+            if (Build.VERSION.SDK_INT >= 30) {
+                mSurface.getHolder().addCallback(new android.view.SurfaceHolder.Callback() {
+                    @Override
+                    public void surfaceCreated(android.view.SurfaceHolder holder) {
+                        try {
+                            // 通知系统合成器优先按整数倍刷新周期对齐（如 120Hz），消除 90Hz 屏幕下的 3:2 下拉抖动，且不限制超 60 帧主程序渲染
+                            holder.getSurface().setFrameRate(60.0f, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
+                        } catch ( Throwable ignored ) {}
+                    }
+                    @Override public void surfaceChanged(android.view.SurfaceHolder holder, int format, int width, int height) {}
+                    @Override public void surfaceDestroyed(android.view.SurfaceHolder holder) {}
+                });
+            }
+        }
 
         FrameLayout rootLayout = new FrameLayout(this);
         rootLayout.addView(mSurface, new ViewGroup.LayoutParams(
@@ -1312,17 +1329,16 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-    
-            // [新增逻辑]：最高优先级拦截物理手柄与摇杆按键，交由自定义键位系统接管
+        // [全手柄兼容拦截]：覆盖标准手柄、摇杆及 PS2 转接器等非标外设 (BUTTON_1~16 及外置 DPAD)
         if (org.libsdl.app.DynamicGamepadView.instance != null) {
             int source = event.getSource();
-            // 判断来源是否为物理手柄或摇杆
+            int keyCode = event.getKeyCode();
+            boolean isExternalDpad = ((source & android.view.InputDevice.SOURCE_DPAD) == android.view.InputDevice.SOURCE_DPAD) && (event.getDeviceId() > 0);
             if ((source & android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD ||
-                (source & android.view.InputDevice.SOURCE_JOYSTICK) == android.view.InputDevice.SOURCE_JOYSTICK) {
+                (source & android.view.InputDevice.SOURCE_JOYSTICK) == android.view.InputDevice.SOURCE_JOYSTICK ||
+                KeyEvent.isGamepadButton(keyCode) || isExternalDpad) {
                 
-                // 将事件抛给动态手柄面板
                 boolean handled = org.libsdl.app.DynamicGamepadView.instance.onPhysicalGamepadKeyEvent(event);
-                // 如果自定义面板接管了该按键，直接返回 true 拦截，禁止原版 SDL 处理
                 if (handled) {
                     return true;
                 }

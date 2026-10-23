@@ -51,51 +51,12 @@ import java.util.List;
 
         public class DynamicGamepadView extends View {
 
-    // 🚀 【神级补丁】云同游双端按键位置自动纠正引擎
     public static void sendProxyKeyDown(int keyCode) {
-        if (org.libsdl.app.DesktopSystemView.CloudGamingManager.isClientActive()) {
-            // 加入端（客机）：强行将虚拟按键及宏映射为手柄(Joystick)输入发给主机
-            org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(mapToGamepad(keyCode), true);
-        } else {
-            // 主机端与纯单机模式：保持绝对原样，不干扰任何本地操作
-            org.libsdl.app.SDLActivity.onNativeKeyDown(keyCode);
-        }
+        org.libsdl.app.SDLActivity.onNativeKeyDown(keyCode);
     }
     
     public static void sendProxyKeyUp(int keyCode) {
-        if (org.libsdl.app.DesktopSystemView.CloudGamingManager.isClientActive()) {
-            org.libsdl.app.DesktopSystemView.CloudGamingManager.sendGameKey(mapToGamepad(keyCode), false);
-        } else {
-            org.libsdl.app.SDLActivity.onNativeKeyUp(keyCode);
-        }
-    }
-    
-    // 【强制转为手柄】加入端专属：严格根据 config.ini 中 [Joystick] 的设定，将按键转换为安卓原生手柄键值
-    private static int mapToGamepad(int keyCode) {
-        switch(keyCode) {
-            // 方向键 -> 手柄十字键 (DP_U / DP_D / DP_L / DP_R)
-            case KeyEvent.KEYCODE_DPAD_UP:    return KeyEvent.KEYCODE_DPAD_UP;
-            case KeyEvent.KEYCODE_DPAD_DOWN:  return KeyEvent.KEYCODE_DPAD_DOWN;
-            case KeyEvent.KEYCODE_DPAD_LEFT:  return KeyEvent.KEYCODE_DPAD_LEFT;
-            case KeyEvent.KEYCODE_DPAD_RIGHT: return KeyEvent.KEYCODE_DPAD_RIGHT;       
-            
-            // 核心攻击键 -> 手柄 ABXY 与肩键 (对照 config.ini 中的 Joystick 映射)
-            case KeyEvent.KEYCODE_A:          return KeyEvent.KEYCODE_BUTTON_A;      // a = A
-            case KeyEvent.KEYCODE_B:          return KeyEvent.KEYCODE_BUTTON_B;      // b = B
-            case KeyEvent.KEYCODE_C:          return KeyEvent.KEYCODE_BUTTON_R2;     // c = RT
-            case KeyEvent.KEYCODE_X:          return KeyEvent.KEYCODE_BUTTON_X;      // x = X
-            case KeyEvent.KEYCODE_Y:          return KeyEvent.KEYCODE_BUTTON_Y;      // y = Y
-            case KeyEvent.KEYCODE_Z:          return KeyEvent.KEYCODE_BUTTON_R1;     // z = RB
-            case KeyEvent.KEYCODE_D:          return KeyEvent.KEYCODE_BUTTON_L1;     // d = LB
-            case KeyEvent.KEYCODE_W:          return KeyEvent.KEYCODE_BUTTON_L2;     // w = LT
-            
-            // 系统键 -> 手柄 START 与 BACK
-            case KeyEvent.KEYCODE_ENTER:      return KeyEvent.KEYCODE_BUTTON_START;  // start = START
-            case KeyEvent.KEYCODE_ESCAPE:     return KeyEvent.KEYCODE_BUTTON_SELECT; // menu = BACK
-            
-            // 其他不在 Joystick 区域的按键 (如 F1~F5 甚至空格等自定义宏组合)，原模原样透传
-            default: return keyCode; 
-        }
+        org.libsdl.app.SDLActivity.onNativeKeyUp(keyCode);
     }
 
     // 【新增】定时休眠控制引擎变量
@@ -169,9 +130,11 @@ import java.util.List;
         public boolean isAutoHideEnabled = true; // 自动隐藏开关
     public int autoHideSeconds = 5;          // 自动隐藏延迟时间（秒）
     
-    // 【新增】全局按压反馈变量
+    // 【新增】全局按压反馈与按下变色控制变量
     public boolean isGlobalFeedbackEnabled = true; 
     public int globalFeedbackScaleInt = 85; // 85代表缩小至85%，115代表放大至115%，100代表不变
+    public boolean isPressHighlightEnabled = true; // 全局是否允许按下变色/高亮发光
+    private final android.graphics.Path joyArrowPath = new android.graphics.Path(); // 复用摇杆指示路径，杜绝 onDraw 内存分配
     // ================= 新增：物理手柄系统核心变量 =================
     public float gamepadDeadzone = 0.2f;      // 摇杆死区/灵敏度 (0.01~1.0)
     public int gamepadUIMode = 1;             // 手柄联动模式: 0=无反应, 1=屏幕按键同步发光, 2=按下手柄时自动隐藏虚拟按键
@@ -324,9 +287,32 @@ import java.util.List;
     public static final String[] TEXT_COLOR_NAMES = {"⬜", "⬛", "🟥", "🟨", "🟦", "🟩"};
     public static final int[] TEXT_COLOR_VALUES = {Color.WHITE, Color.BLACK, Color.RED, Color.YELLOW, Color.BLUE, Color.GREEN};
 
-    public static final String[] SHAPE_NAMES = {"⭕", "🔲"};
+    public static final String[] SHAPE_NAMES = {
+        "⭕ 实心圆", 
+        "🔲 实心方", 
+        "◯ 透明圆框 (带键值)", 
+        "▢ 透明方框 (带键值)", 
+        "⚪ 纯净圆框 (无键值)", 
+        "⬜ 纯净方框 (无键值)"
+    };
     public static final int SHAPE_CIRCLE = 0;
     public static final int SHAPE_SQUARE = 1;
+    public static final int SHAPE_HOLLOW_CIRCLE_TEXT = 2;
+    public static final int SHAPE_HOLLOW_SQUARE_TEXT = 3;
+    public static final int SHAPE_HOLLOW_CIRCLE_PURE = 4;
+    public static final int SHAPE_HOLLOW_SQUARE_PURE = 5;
+
+    public static boolean isCircleShape(int shape) {
+        return shape == SHAPE_CIRCLE || shape == SHAPE_HOLLOW_CIRCLE_TEXT || shape == SHAPE_HOLLOW_CIRCLE_PURE;
+    }
+
+    public static boolean isHollowShape(int shape) {
+        return shape >= SHAPE_HOLLOW_CIRCLE_TEXT && shape <= SHAPE_HOLLOW_SQUARE_PURE;
+    }
+
+    public static boolean isPureNoTextShape(int shape) {
+        return shape == SHAPE_HOLLOW_CIRCLE_PURE || shape == SHAPE_HOLLOW_SQUARE_PURE;
+    }
 
         public static class VirtualButton {
         public String id;
@@ -436,21 +422,82 @@ import java.util.List;
         }
         
 
-         public void executeMacro() {
+        // 严格对齐 60FPS 逻辑帧 (1 Tick ≈ 16.67ms) 的高精度等待辅助方法
+        private static void waitLogicFrames(int frames) {
+            long targetNanos = frames * 16_666_667L;
+            long start = System.nanoTime();
+            while (System.nanoTime() - start < targetNanos) {
+                long remaining = targetNanos - (System.nanoTime() - start);
+                if (remaining > 2_000_000L) {
+                    java.util.concurrent.locks.LockSupport.parkNanos(remaining - 1_000_000L);
+                }
+            }
+        }
+
+        private static boolean isDirectionKey(int code) {
+            return code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN ||
+                   code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT;
+        }
+
+        public void executeMacro() {
             if (macroSteps.size() <= 1 || isMacroPlaying) return;
             isMacroPlaying = true;
-            threadPool.execute(() -> {        
+            threadPool.execute(() -> {
+                java.util.Set<Integer> activeKeys = new java.util.HashSet<>();
                 try {
-                    for (List<Integer> stepCodes : macroSteps) {
-                        for (int code : stepCodes) sendProxyKeyDown(code);
-                        // 【优化】：将 60ms 缩短为 30ms（约两帧），让按压足够快且引擎能稳定识别
-                        Thread.sleep(30); 
-                        for (int code : stepCodes) sendProxyKeyUp(code);
-                        // 【优化】：将 50ms 缩短为 20ms（约一帧），让招式衔接如丝般顺滑
-                        Thread.sleep(20); 
+                    for (int i = 0; i < macroSteps.size(); i++) {
+                        List<Integer> nextStep = macroSteps.get(i);
+                        if (nextStep.isEmpty()) {
+                            // 空步骤代表显式归中 (Neutral)
+                            for (int k : activeKeys) sendProxyKeyUp(k);
+                            activeKeys.clear();
+                            waitLogicFrames(2);
+                            continue;
+                        }
+
+                        // 若相邻两步完全相同（如 66 前冲：RIGHT/RIGHT），必须完全松开并插入 2 帧归中
+                        if (activeKeys.size() == nextStep.size() && activeKeys.containsAll(nextStep)) {
+                            for (int k : activeKeys) sendProxyKeyUp(k);
+                            activeKeys.clear();
+                            waitLogicFrames(2);
+                        } else {
+                            // 平滑过渡：如果从单方向切往另一单方向（如简写 DOWN/RIGHT），自动插入 1 帧斜向过渡防止断招
+                            if (activeKeys.size() == 1 && nextStep.size() == 1) {
+                                int prevKey = activeKeys.iterator().next();
+                                int currKey = nextStep.get(0);
+                                if (isDirectionKey(prevKey) && isDirectionKey(currKey) && prevKey != currKey) {
+                                    sendProxyKeyDown(currKey);
+                                    activeKeys.add(currKey);
+                                    waitLogicFrames(1);
+                                }
+                            }
+                            // 释放当前步不再需要的按键，保留需要持续按住的公用按键
+                            java.util.Iterator<Integer> it = activeKeys.iterator();
+                            while (it.hasNext()) {
+                                int held = it.next();
+                                if (!nextStep.contains(held)) {
+                                    sendProxyKeyUp(held);
+                                    it.remove();
+                                }
+                            }
+                        }
+
+                        // 按下当前步新增的按键
+                        for (int code : nextStep) {
+                            if (!activeKeys.contains(code)) {
+                                sendProxyKeyDown(code);
+                                activeKeys.add(code);
+                            }
+                        }
+
+                        // 每步维持 2 个逻辑帧（最后一步收招维持 3 帧），确保 Ikemen GO 100% 捕获
+                        waitLogicFrames(i == macroSteps.size() - 1 ? 3 : 2);
                     }
-                } catch (InterruptedException e) { }
-                isMacroPlaying = false;
+                } finally {
+                    for (int k : activeKeys) sendProxyKeyUp(k);
+                    activeKeys.clear();
+                    isMacroPlaying = false;
+                }
             });
         }
                         
@@ -503,7 +550,7 @@ import java.util.List;
         super(context);
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         loadLanguagePack(context); // 【新增】初始化时立即加载语言补丁
-        setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        setLayerType(View.LAYER_TYPE_HARDWARE, null); // 启用 GPU 硬件加速，消除低端机软绘掉帧
         paintText.setTypeface(Typeface.DEFAULT_BOLD);
         loadConfig(currentSlot);
         // 在构造函数内添加：
@@ -1066,16 +1113,33 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             currentMenuSkin = menuPressedSkinBitmap;
         }
 
-        if (currentMenuSkin != null && !currentMenuSkin.isRecycled()) {
+        boolean allowMenuHighlight = isMenuPreviewPress && isPressHighlightEnabled;
+        drawMenuColor = (allowMenuHighlight && menuPressedEffectColor != 0) ? menuPressedEffectColor : menuColor;
+        drawMenuAlpha = (allowMenuHighlight && menuPressedEffectColor != 0) ? menuPressedEffectAlpha : currentMenuAlpha;
+
+        if (currentMenuSkin != null && !currentMenuSkin.isRecycled() && !isHollowShape(menuShape)) {
             paintBtn.setAlpha(currentMenuAlpha);
             canvas.drawBitmap(currentMenuSkin, null, menuButtonRect, paintBtn);
             
-            if (isMenuPreviewPress && menuPressedSkinBitmap == null && menuPressedEffectColor != 0) {
+            if (allowMenuHighlight && menuPressedSkinBitmap == null && menuPressedEffectColor != 0) {
                 paintBtn.setColor(menuPressedEffectColor);
                 paintBtn.setAlpha(menuPressedEffectAlpha);
-                if (menuShape == SHAPE_CIRCLE) canvas.drawCircle(menuButtonRect.centerX(), menuButtonRect.centerY(), Math.min(mw, mh) / 2f, paintBtn);
+                if (isCircleShape(menuShape)) canvas.drawCircle(menuButtonRect.centerX(), menuButtonRect.centerY(), Math.min(mw, mh) / 2f, paintBtn);
                 else canvas.drawRoundRect(menuButtonRect, 20 * menuScale, 20 * menuScale, paintBtn);
             }
+        } else if (isHollowShape(menuShape)) {
+            paintMenu.setShader(null);
+            paintMenu.clearShadowLayer();
+            paintMenu.setStyle(Paint.Style.STROKE);
+            paintMenu.setStrokeWidth(Math.max(3f, 4.5f * menuScale));
+            paintMenu.setColor(drawMenuColor);
+            paintMenu.setAlpha(drawMenuAlpha);
+            if (isCircleShape(menuShape)) {
+                canvas.drawCircle(menuButtonRect.centerX(), menuButtonRect.centerY(), Math.min(mw, mh) / 2f, paintMenu);
+            } else {
+                canvas.drawRoundRect(menuButtonRect, 20 * menuScale, 20 * menuScale, paintMenu);
+            }
+            paintMenu.setStyle(Paint.Style.FILL);
         } else {
             int baseColor = Color.argb(drawMenuAlpha, Color.red(drawMenuColor), Color.green(drawMenuColor), Color.blue(drawMenuColor));
             int darkColor = Color.argb(drawMenuAlpha, Math.max(0, Color.red(drawMenuColor)-80), Math.max(0, Color.green(drawMenuColor)-80), Math.max(0, Color.blue(drawMenuColor)-80));
@@ -1084,13 +1148,13 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             RadialGradient gradient = new RadialGradient(menuButtonRect.centerX() - drawRadius * 0.3f, menuButtonRect.centerY() - drawRadius * 0.3f, drawRadius * 1.3f, baseColor, darkColor, Shader.TileMode.CLAMP);
             paintMenu.setShader(gradient);
             
-            if (isMenuPreviewPress) {
+            if (allowMenuHighlight) {
                 paintMenu.setShadowLayer(25.0f, 0.0f, 0.0f, drawMenuColor);
             } else if (currentMenuAlpha > 80) {
                 paintMenu.setShadowLayer(8f * menuScale, 0, 4f * menuScale, Color.argb(currentMenuAlpha/2, 0, 0, 0));
             } else { paintMenu.clearShadowLayer(); }
 
-            if (menuShape == SHAPE_CIRCLE) {
+            if (isCircleShape(menuShape)) {
                 canvas.drawCircle(menuButtonRect.centerX(), menuButtonRect.centerY(), Math.min(mw, mh) / 2f, paintMenu);
             } else {
                 canvas.drawRoundRect(menuButtonRect, 20 * menuScale, 20 * menuScale, paintMenu);
@@ -1098,26 +1162,26 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             paintMenu.clearShadowLayer(); paintMenu.setShader(null);
         }
         
-        paintText.setColor(menuTextColor);
-        paintText.setAlpha(currentMenuAlpha);
-        paintText.setTextSize(38f * menuScale * (menuTextSizeFactor / 100f));
-        // 【修复：文本阴影透明度动态跟随菜单整体透明度，解决幽灵文字残留问题】
-        int menuBaseShadowColor = (menuTextColor == Color.BLACK) ? Color.WHITE : Color.BLACK;
-        paintText.setShadowLayer(3f, 1f, 1f, Color.argb(currentMenuAlpha, Color.red(menuBaseShadowColor), Color.green(menuBaseShadowColor), Color.blue(menuBaseShadowColor)));
-                paintText.setTextAlign(Paint.Align.CENTER);
-        float textOffset = (paintText.descent() - paintText.ascent()) / 2 - paintText.descent();
-        // 【修改】如果自定义名字不为空，才绘制文字
-        if (menuButtonName != null && !menuButtonName.trim().isEmpty()) {
-            canvas.drawText(menuButtonName, menuButtonRect.centerX(), menuButtonRect.centerY() + textOffset, paintText);
+        float textOffset = 0f;
+        if (!isPureNoTextShape(menuShape)) {
+            paintText.setColor(menuTextColor);
+            paintText.setAlpha(currentMenuAlpha);
+            paintText.setTextSize(38f * menuScale * (menuTextSizeFactor / 100f));
+            int menuBaseShadowColor = (menuTextColor == Color.BLACK) ? Color.WHITE : Color.BLACK;
+            paintText.setShadowLayer(3f, 1f, 1f, Color.argb(currentMenuAlpha, Color.red(menuBaseShadowColor), Color.green(menuBaseShadowColor), Color.blue(menuBaseShadowColor)));
+            paintText.setTextAlign(Paint.Align.CENTER);
+            textOffset = (paintText.descent() - paintText.ascent()) / 2 - paintText.descent();
+            if (menuButtonName != null && !menuButtonName.trim().isEmpty()) {
+                canvas.drawText(menuButtonName, menuButtonRect.centerX(), menuButtonRect.centerY() + textOffset, paintText);
+            }
+            paintText.clearShadowLayer();
         }
-        paintText.clearShadowLayer();
-
 
         if (isEditMode) {
             paintBtn.setStyle(Paint.Style.STROKE); 
-            paintBtn.setColor(isMenuLocked ? Color.RED : Color.GREEN); // 红色代表已锁定，绿色代表可拖动
+            paintBtn.setColor(isMenuLocked ? Color.RED : Color.GREEN);
             paintBtn.setStrokeWidth(5f); 
-            if (menuShape == SHAPE_CIRCLE) {
+            if (isCircleShape(menuShape)) {
                 canvas.drawCircle(menuButtonRect.centerX(), menuButtonRect.centerY(), Math.min(mw, mh) / 2f, paintBtn);
             } else {
                 canvas.drawRect(menuButtonRect, paintBtn); 
@@ -1125,34 +1189,29 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             paintBtn.setStyle(Paint.Style.FILL);
         }
         
-        
         if (isEditMode) {
-            canvas.drawColor(gridBgColor); // 【修改：使用自定义背景色】
+            canvas.drawColor(gridBgColor);
             if (isGridSnapMode) {
-                paintBtn.setColor(gridLineColor); // 【修改：使用自定义网格线颜色】
-                paintBtn.setAlpha(gridLineAlpha); // 【修改：使用自定义网格线透明度】
+                paintBtn.setColor(gridLineColor);
+                paintBtn.setAlpha(gridLineAlpha);
                 paintBtn.setStrokeWidth(1f);
                 for (int i = 0; i < getWidth(); i += gridSize) canvas.drawLine(i, 0, i, getHeight(), paintBtn);
                 for (int i = 0; i < getHeight(); i += gridSize) canvas.drawLine(0, i, getWidth(), i, paintBtn);
             }
-                        paintText.setTextSize(Math.max(20f, getHeight() * 0.05f)); // 【修复】动态字体大小
+            paintText.setTextSize(Math.max(20f, getHeight() * 0.05f));
             paintText.setShadowLayer(5f, 2f, 2f, Color.BLACK);
-            canvas.drawText(L("【编辑模式】拖动调整，轻触设置"), getWidth() / 2f, getHeight() * 0.12f, paintText); // 【修复】动态高度位置          
+            canvas.drawText(L("【编辑模式】拖动调整，轻触设置"), getWidth() / 2f, getHeight() * 0.12f, paintText);
         }
 
-              // 核心按键绘制逻辑
+        // 核心按键绘制逻辑
         for (VirtualButton btn : buttons) {
             if (joystickMode > 0 && btn.isDirectional) continue;
 
-                        int idleAlpha = (int)(btn.alpha * 0.6f); 
-            // 【修复】：去掉 Math.max 限制，让编辑模式完全反映真实透明度
-            // 【关键修复：彻底解决隐藏后按下闪烁的问题】按下状态绝对不能写死 255，必须跟随用户设定的最大透明度 btn.alpha
-            int currentAlpha = isEditMode ? btn.alpha : (btn.isPressed ? btn.alpha : idleAlpha);
-            
-            // 【超级新增】：允许在编辑模式下，对当前正编辑的按键进行“按下态”强行预览
+            int idleAlpha = isHollowShape(btn.shape) ? btn.alpha : (int)(btn.alpha * 0.6f);
             boolean isPreviewPress = btn.isPressed && (!isEditMode || btn == currentlyEditingButton);
+            boolean allowPressColor = isPreviewPress && isPressHighlightEnabled;
+            int currentAlpha = isEditMode ? btn.alpha : (allowPressColor ? btn.alpha : idleAlpha);
             
-            // 【优化】结合全局与独立的缩放或放大反馈
             float currentScale = 1.0f;
             if (isPreviewPress) {
                 if (btn.useCustomFeed) {
@@ -1164,90 +1223,95 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             float drawRadius = btn.radius * currentScale;
             tempRect.set(btn.cx - drawRadius, btn.cy - drawRadius, btn.cx + drawRadius, btn.cy + drawRadius);
             
-            // ==== 新增：按键皮肤与按下特效渲染逻辑 ====
             Bitmap currentSkin = btn.skinBitmap;
-            if (isPreviewPress && btn.pressedSkinBitmap != null) {
+            if (allowPressColor && btn.pressedSkinBitmap != null) {
                 currentSkin = btn.pressedSkinBitmap;
             }
 
-            if (currentSkin != null) {
+            if (isHollowShape(btn.shape)) {
+                // 极简透明边框模式（支持带字与无字纯净版，受按下变色开关精确控制）
+                int strokeColor = (allowPressColor && btn.pressedEffectColor != 0) ? btn.pressedEffectColor : btn.color;
+                int strokeAlpha = (allowPressColor && btn.pressedEffectColor != 0) ? btn.pressedEffectAlpha : currentAlpha;
+                paintBtn.setShader(null);
+                paintBtn.clearShadowLayer();
+                paintBtn.setStyle(Paint.Style.STROKE);
+                paintBtn.setStrokeWidth(Math.max(3f, drawRadius * 0.06f));
+                paintBtn.setColor(strokeColor);
+                paintBtn.setAlpha(strokeAlpha);
+                if (isCircleShape(btn.shape)) {
+                    canvas.drawCircle(btn.cx, btn.cy, drawRadius, paintBtn);
+                } else {
+                    canvas.drawRoundRect(tempRect, drawRadius * 0.25f, drawRadius * 0.25f, paintBtn);
+                }
+                paintBtn.setStyle(Paint.Style.FILL);
+            } else if (currentSkin != null) {
                 paintBtn.setAlpha(currentAlpha);
                 canvas.drawBitmap(currentSkin, null, tempRect, paintBtn);
                 
-                // 自定义皮肤的纯色按下泛光补充 (只有当玩家设置了特效颜色时才画)
-                if (isPreviewPress && btn.pressedSkinBitmap == null && btn.pressedEffectColor != 0) {
+                if (allowPressColor && btn.pressedSkinBitmap == null && btn.pressedEffectColor != 0) {
                     paintBtn.setColor(btn.pressedEffectColor);
                     paintBtn.setAlpha(btn.pressedEffectAlpha);
-                    if (btn.shape == SHAPE_CIRCLE) canvas.drawCircle(btn.cx, btn.cy, btn.radius, paintBtn);
+                    if (isCircleShape(btn.shape)) canvas.drawCircle(btn.cx, btn.cy, btn.radius, paintBtn);
                     else canvas.drawRoundRect(tempRect, btn.radius*0.3f, btn.radius*0.3f, paintBtn);
                 }
             } else {
-            
-                // 原版渐变渲染
-                int drawColor = (isPreviewPress && btn.pressedEffectColor != 0) ? btn.pressedEffectColor : btn.color;
-                int drawAlpha = (isPreviewPress && btn.pressedEffectColor != 0) ? btn.pressedEffectAlpha : currentAlpha;
+                int drawColor = (allowPressColor && btn.pressedEffectColor != 0) ? btn.pressedEffectColor : btn.color;
+                int drawAlpha = (allowPressColor && btn.pressedEffectColor != 0) ? btn.pressedEffectAlpha : currentAlpha;
                 
                 int baseColor = Color.argb(drawAlpha, Color.red(drawColor), Color.green(drawColor), Color.blue(drawColor));
                 int darkColor = Color.argb(drawAlpha, Math.max(0, Color.red(drawColor)-80), Math.max(0, Color.green(drawColor)-80), Math.max(0, Color.blue(drawColor)-80));
                 
-                // 【修改1：渐变圆心和半径】
                 RadialGradient gradient = new RadialGradient(btn.cx - drawRadius * 0.3f, btn.cy - drawRadius * 0.3f, drawRadius * 1.3f, baseColor, darkColor, Shader.TileMode.CLAMP);
                 paintBtn.setShader(gradient);
                 
-                if (isPreviewPress) {
+                if (allowPressColor) {
                     paintBtn.setShadowLayer(25.0f, 0.0f, 0.0f, drawColor);
                 } else if (currentAlpha > 80) {
                     paintBtn.setShadowLayer(10.0f, 0.0f, 5.0f, Color.argb(currentAlpha/2, 0, 0, 0));
                 } else { paintBtn.clearShadowLayer(); }          
                 
-                // 【修改2和3：画圆和画圆角的半径】
-                if (btn.shape == SHAPE_CIRCLE) canvas.drawCircle(btn.cx, btn.cy, drawRadius, paintBtn);
+                if (isCircleShape(btn.shape)) canvas.drawCircle(btn.cx, btn.cy, drawRadius, paintBtn);
                 else canvas.drawRoundRect(tempRect, drawRadius*0.3f, drawRadius*0.3f, paintBtn);
                 
                 paintBtn.clearShadowLayer(); paintBtn.setShader(null);                
             }
-        
 
-                      // 绘制文字
-            paintText.setColor(btn.textColor);
-            paintText.setAlpha(currentAlpha);
-            // 如果有多行，适当缩小一点字体，防止文字超出按键边缘
-            boolean isMultiLine = btn.id.contains("\n");
-            // 【修改】在此基础上增加玩家定制的字体大小百分比系数 (textSizeFactor)
-            paintText.setTextSize(drawRadius * (isMultiLine ? 0.45f : 0.6f) * (btn.textSizeFactor / 100f));           
-            paintText.setTextAlign(Paint.Align.CENTER); 
-            // 【修复：动态解析 ARGB，让阴影的透明度与按键本身的透明度 (currentAlpha) 强行同步】
-            int btnBaseShadowColor = (btn.textColor == Color.BLACK) ? Color.WHITE : Color.BLACK;
-            paintText.setShadowLayer(3f, 1f, 1f, Color.argb(currentAlpha, Color.red(btnBaseShadowColor), Color.green(btnBaseShadowColor), Color.blue(btnBaseShadowColor)));
-            
-            // 【优化】单行直接绘制，多行拆分并重新计算 Y 轴居中偏移
-            textOffset = (paintText.descent() - paintText.ascent()) / 2 - paintText.descent();
-            
-            if (!isMultiLine) {
-                canvas.drawText(btn.id, btn.cx, btn.cy + textOffset, paintText);
-            } else {
-                String[] lines = btn.displayLines; // 【优化】直接读取缓存，杜绝内存垃圾
-                float lineHeight = paintText.descent() - paintText.ascent();
-                // 计算多行文本的总偏移，使其整体垂直居中
-                float startY = btn.cy + textOffset - (lines.length - 1) * lineHeight / 2f;
-                for (int i = 0; i < lines.length; i++) {
-                    canvas.drawText(lines[i], btn.cx, startY + (i * lineHeight), paintText);
+            // 绘制文字（若为纯净无字描边模式，在非编辑状态下不绘制任何键值字符）
+            if (!isPureNoTextShape(btn.shape) || isEditMode) {
+                paintText.setColor(btn.textColor);
+                paintText.setAlpha(currentAlpha);
+                boolean isMultiLine = btn.id.contains("\n");
+                paintText.setTextSize(drawRadius * (isMultiLine ? 0.45f : 0.6f) * (btn.textSizeFactor / 100f));           
+                paintText.setTextAlign(Paint.Align.CENTER); 
+                int btnBaseShadowColor = (btn.textColor == Color.BLACK) ? Color.WHITE : Color.BLACK;
+                paintText.setShadowLayer(3f, 1f, 1f, Color.argb(currentAlpha, Color.red(btnBaseShadowColor), Color.green(btnBaseShadowColor), Color.blue(btnBaseShadowColor)));
+                
+                textOffset = (paintText.descent() - paintText.ascent()) / 2 - paintText.descent();
+                
+                if (!isMultiLine) {
+                    canvas.drawText(btn.id, btn.cx, btn.cy + textOffset, paintText);
+                } else {
+                    String[] lines = btn.displayLines;
+                    float lineHeight = paintText.descent() - paintText.ascent();
+                    float startY = btn.cy + textOffset - (lines.length - 1) * lineHeight / 2f;
+                    for (int i = 0; i < lines.length; i++) {
+                        canvas.drawText(lines[i], btn.cx, startY + (i * lineHeight), paintText);
+                    }
                 }
+                paintText.clearShadowLayer();
             }
-            paintText.clearShadowLayer();
             
             // 编辑模式的外框与判定范围
             if (isEditMode) {
                 paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setStrokeWidth(4f); paintBtn.setColor(Color.WHITE); paintBtn.setAlpha(255);
-                if (btn.shape == SHAPE_CIRCLE) canvas.drawCircle(btn.cx, btn.cy, btn.radius + 6, paintBtn);
+                if (isCircleShape(btn.shape)) canvas.drawCircle(btn.cx, btn.cy, btn.radius + 6, paintBtn);
                 else canvas.drawRoundRect(btn.cx - btn.radius - 6, btn.cy - btn.radius - 6, btn.cx + btn.radius + 6, btn.cy + btn.radius + 6, btn.radius*0.3f, btn.radius*0.3f, paintBtn);
                 
-                // 【修正】直接使用类头部的 dashPaint，不要再 new Paint()
-                if (btn.shape == SHAPE_CIRCLE) canvas.drawCircle(btn.cx, btn.cy, btn.hitboxRadius, dashPaint);
+                if (isCircleShape(btn.shape)) canvas.drawCircle(btn.cx, btn.cy, btn.hitboxRadius, dashPaint);
                 else canvas.drawRoundRect(btn.cx - btn.hitboxRadius, btn.cy - btn.hitboxRadius, btn.cx + btn.hitboxRadius, btn.cy + btn.hitboxRadius, btn.radius*0.3f, btn.radius*0.3f, dashPaint);
                 paintBtn.setStyle(Paint.Style.FILL);
             }
-        } 
+        }
     }
    
 
@@ -1288,12 +1352,12 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                 else paintBtn.clearShadowLayer();
                 canvas.save();
                 canvas.rotate(targetAngle, joyBaseX, joyBaseY);
-                android.graphics.Path path = new android.graphics.Path();
-                path.moveTo(joyBaseX + joyRadius * 0.8f, joyBaseY); 
-                path.lineTo(joyBaseX + joyRadius * 0.65f, joyBaseY - 12); 
-                path.lineTo(joyBaseX + joyRadius * 0.65f, joyBaseY + 12); 
-                path.close();
-                canvas.drawPath(path, paintBtn);
+                joyArrowPath.reset();
+                joyArrowPath.moveTo(joyBaseX + joyRadius * 0.8f, joyBaseY); 
+                joyArrowPath.lineTo(joyBaseX + joyRadius * 0.65f, joyBaseY - 12); 
+                joyArrowPath.lineTo(joyBaseX + joyRadius * 0.65f, joyBaseY + 12); 
+                joyArrowPath.close();
+                canvas.drawPath(joyArrowPath, paintBtn);
                 canvas.restore();
             }
             paintBtn.clearShadowLayer();
@@ -1364,7 +1428,6 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                 paintBtn.setColor(joyColor); paintBtn.setAlpha(currentAlpha);
                 canvas.drawCircle(joyKnobX, joyKnobY, joyRadius * 0.35f, paintBtn);
         } else if (joystickMode == 2 || (joystickMode == JOYSTICK_MODE_STYLE && joySkinKnobBitmap == null)) { 
-                    } else if (joystickMode == 2 || (joystickMode == JOYSTICK_MODE_STYLE && joySkinKnobBitmap == null)) { 
             paintBtn.setColor(Color.parseColor("#AAAAAA")); paintBtn.setStrokeWidth(25f);
             paintBtn.setStyle(Paint.Style.STROKE); paintBtn.setAlpha(currentAlpha);
             canvas.drawLine(joyBaseX, joyBaseY, joyKnobX, joyKnobY, paintBtn); 
@@ -1468,16 +1531,16 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             // 优先检查玩家自定义绑定的物理键
             boolean match = (btn.boundGamepadKeyCode == keyCode);
             
-            // 兜底逻辑：如果这个虚拟按键还没被自定义绑定过，我们给标准手柄一个默认支持
+            // 兜底逻辑：兼容标准手柄与 PS2 转接器等非标外设 (BUTTON_1~16)，统一模拟为键盘虚拟键
             if (!match && btn.boundGamepadKeyCode == 0) {
-                if (keyCode == KeyEvent.KEYCODE_BUTTON_A && btn.id.equals("A")) match = true;
-                else if (keyCode == KeyEvent.KEYCODE_BUTTON_B && btn.id.equals("B")) match = true;
-                else if (keyCode == KeyEvent.KEYCODE_BUTTON_X && btn.id.equals("X")) match = true;
-                else if (keyCode == KeyEvent.KEYCODE_BUTTON_Y && btn.id.equals("Y")) match = true;
-                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_R1 || keyCode == KeyEvent.KEYCODE_BUTTON_C) && btn.id.equals("C")) match = true;
-                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_BUTTON_Z) && btn.id.equals("Z")) match = true;
-                else if (keyCode == KeyEvent.KEYCODE_BUTTON_START && btn.id.equals("START")) match = true;
-                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_SELECT || keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL) && btn.id.equals("ESC")) match = true;
+                if ((keyCode == KeyEvent.KEYCODE_BUTTON_A || keyCode == KeyEvent.KEYCODE_BUTTON_3) && btn.id.equals("A")) match = true;
+                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_B || keyCode == KeyEvent.KEYCODE_BUTTON_2) && btn.id.equals("B")) match = true;
+                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_X || keyCode == KeyEvent.KEYCODE_BUTTON_4) && btn.id.equals("X")) match = true;
+                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_Y || keyCode == KeyEvent.KEYCODE_BUTTON_1) && btn.id.equals("Y")) match = true;
+                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_R1 || keyCode == KeyEvent.KEYCODE_BUTTON_C || keyCode == KeyEvent.KEYCODE_BUTTON_6 || keyCode == KeyEvent.KEYCODE_BUTTON_8) && btn.id.equals("C")) match = true;
+                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_L1 || keyCode == KeyEvent.KEYCODE_BUTTON_Z || keyCode == KeyEvent.KEYCODE_BUTTON_5 || keyCode == KeyEvent.KEYCODE_BUTTON_7) && btn.id.equals("Z")) match = true;
+                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_START || keyCode == KeyEvent.KEYCODE_BUTTON_10) && btn.id.equals("START")) match = true;
+                else if ((keyCode == KeyEvent.KEYCODE_BUTTON_SELECT || keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL || keyCode == KeyEvent.KEYCODE_BUTTON_9) && btn.id.equals("ESC")) match = true;
                 else if (keyCode == KeyEvent.KEYCODE_DPAD_UP && btn.id.equals("UP")) match = true;
                 else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN && btn.id.equals("DOWN")) match = true;
                 else if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && btn.id.equals("LEFT")) match = true;
@@ -1505,8 +1568,22 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
         public boolean onPhysicalGamepadMotionEvent(MotionEvent event) {
         if (testFeedbackText != null) return true; // 测试模式屏蔽摇杆
         
+        // 融合主摇杆 (AXIS_X/Y)、PS2 苦力帽十字键 (AXIS_HAT_X/Y) 与副摇杆轴 (AXIS_Z/RZ)
         float x = event.getAxisValue(MotionEvent.AXIS_X);
         float y = event.getAxisValue(MotionEvent.AXIS_Y);
+        float hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X);
+        float hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y);
+        if (Math.abs(hatX) > 0.5f || Math.abs(hatY) > 0.5f) {
+            x = hatX;
+            y = hatY;
+        } else if (Math.abs(x) <= gamepadDeadzone && Math.abs(y) <= gamepadDeadzone) {
+            float zx = event.getAxisValue(MotionEvent.AXIS_Z);
+            float zy = event.getAxisValue(MotionEvent.AXIS_RZ);
+            if (Math.abs(zx) > gamepadDeadzone || Math.abs(zy) > gamepadDeadzone) {
+                x = zx;
+                y = zy;
+            }
+        }
         
         boolean up = y < -gamepadDeadzone;
         boolean down = y > gamepadDeadzone;
@@ -1642,10 +1719,10 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                         
                         float angle = (float) Math.toDegrees(Math.atan2(dy, dx));
                         if (angle < 0) angle += 360;
-                        boolean up = angle > 200 && angle < 340, down = angle > 20 && angle < 160;
-                        boolean left = angle > 110 && angle < 250, right = angle < 70 || angle > 290;
-                        // 触发阈值同步缩小
-                        if (dist < joyRadius * 0.2f) up = down = left = right = false;
+                        // 拓宽 4 个斜向扇区至 58 度，提升蹲防 (1) 与波升搓招 (236/623) 斜向锁死率
+                        boolean up = angle > 196 && angle < 344, down = angle > 16 && angle < 164;
+                        boolean left = angle > 106 && angle < 254, right = angle < 74 || angle > 286;
+                        if (dist < joyRadius * 0.18f) up = down = left = right = false;
                         triggerDirection("UP", up); triggerDirection("DOWN", down); triggerDirection("LEFT", left); triggerDirection("RIGHT", right);
                     }
                 }
@@ -1658,61 +1735,67 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             }
         }        
 
-        // --- 【核心修复】全局防卡键扫描 ---
-                for (VirtualButton btn : buttons) {
+        // --- 【防吞键与最近邻防误触扫描】 ---
+        // 预计算每个触控点距离最近的按键核心，避免密集按键滑过时边缘判定区互相抢占
+        int pointerCount = event.getPointerCount();
+        VirtualButton[] nearestCoreOwner = new VirtualButton[pointerCount];
+        for (int i = 0; i < pointerCount; i++) {
+            if (event.getPointerId(i) == joyPointerId) continue;
+            if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_CANCEL) && i == actionIndex) continue;
+            float px = event.getX(i), py = event.getY(i);
+            float minDistSq = Float.MAX_VALUE;
+            for (VirtualButton b : buttons) {
+                if (joystickMode > 0 && b.isDirectional) continue;
+                float dSq = (px - b.cx) * (px - b.cx) + (py - b.cy) * (py - b.cy);
+                if (dSq < (b.radius * b.radius) && dSq < minDistSq) {
+                    minDistSq = dSq;
+                    nearestCoreOwner[i] = b;
+                }
+            }
+        }
+
+        for (VirtualButton btn : buttons) {
             if (joystickMode > 0 && btn.isDirectional) continue;
             boolean isTouchedNow = false;
-            for (int i = 0; i < event.getPointerCount(); i++) {
+            for (int i = 0; i < pointerCount; i++) {
                 if (event.getPointerId(i) == joyPointerId) continue;
                 if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_CANCEL) && i == actionIndex) continue;
+                // 若该手指已明确按在另一个按键的核心圆内，则不触发周边按键的外扩虚线框，杜绝误触
+                if (nearestCoreOwner[i] != null && nearestCoreOwner[i] != btn) continue;
 
                 float px = event.getX(i), py = event.getY(i);
-                // 【修改】使用 hitboxRadius 替代 radius 进行碰撞检测，扩大触摸范围
-                    if (btn.shape == SHAPE_CIRCLE) {
+                if (isCircleShape(btn.shape)) {
                     float dx = px - btn.cx;
                     float dy = py - btn.cy;
                     if ((dx * dx + dy * dy) < (btn.hitboxRadius * btn.hitboxRadius)) isTouchedNow = true;
                 } else {
-                
                     if (px > btn.cx - btn.hitboxRadius && px < btn.cx + btn.hitboxRadius && py > btn.cy - btn.hitboxRadius && py < btn.cy + btn.hitboxRadius) isTouchedNow = true;
                 }
             }
             
-                       // 【修改】区分触发：连发、宏、普通单点
-                        if (!btn.isPressed && isTouchedNow) {
+            if (!btn.isPressed && isTouchedNow) {
                 btn.isPressed = true;
-                btn.pressTimestamp = System.currentTimeMillis(); // 瞬间打卡记录时间
-                // 【应用独立震动】
+                btn.pressTimestamp = System.currentTimeMillis();
                 triggerVibrate(btn.useCustomVib ? btn.customVib : vibrationIntensity);
-            
                 
                 if (btn.isTurbo) {
-                    btn.startTurbo(); // 触发独立连发引擎
+                    btn.startTurbo();
                 } else if (btn.macroSteps.size() > 1) {
-                    btn.executeMacro(); // 触发一键连招
+                    btn.executeMacro();
                 } else if (!btn.macroSteps.isEmpty()) {
-                    for (int code : btn.macroSteps.get(0)) sendProxyKeyDown(code); // 瞬间触发同按组合键
+                    for (int code : btn.macroSteps.get(0)) sendProxyKeyDown(code);
                 }
             } else if (btn.isPressed && !isTouchedNow) {
                 btn.isPressed = false;
                 
                 if (btn.isTurbo) {
-                    btn.stopTurbo(); // 松开即停止连发
+                    btn.stopTurbo();
                 } else if (btn.macroSteps.size() <= 1 && !btn.macroSteps.isEmpty()) {
-                    long pressDuration = System.currentTimeMillis() - btn.pressTimestamp;
-                    final List<Integer> codes = btn.macroSteps.get(0);
-                    
-                    if (pressDuration < 50) {
-                        // 如果按压时间不足50毫秒(不到3帧)，利用View的线程延迟松开操作，保证底层引擎一定能抓到动作
-                        postDelayed(() -> {
-                            for (int code : codes) sendProxyKeyUp(code);
-                        }, 50 - pressDuration);
-                    } else {
-                        for (int code : codes) sendProxyKeyUp(code);
-                    }
+                    // 立即派发释放信号，杜绝 50ms 延迟造成的 66 前冲连点粘连吞键
+                    for (int code : btn.macroSteps.get(0)) sendProxyKeyUp(code);
                 }
             }
-        }    
+        }
         invalidate();   // <--- 【补上这行】刷新屏幕
         return true;    // <--- 【补上这行】结束触控事件
     }                   // <--- 【补上这个大括号】把 onTouchEvent 关上
@@ -2871,6 +2954,7 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
         final int[] tempVibInt = {vibrationIntensity};
         final boolean[] tempFeedOn = {isGlobalFeedbackEnabled};
         final int[] tempFeedScale = {globalFeedbackScaleInt};
+        final boolean[] tempHighlightOn = {isPressHighlightEnabled};
         final int[] tempGlobalAlpha = {joyAlpha}; // 初始值参考摇杆透明度
         int initialPressedAlpha = 150;
         if (!buttons.isEmpty()) initialPressedAlpha = buttons.get(0).pressedEffectAlpha;
@@ -2965,8 +3049,19 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
 
         layout.addView(createTitle("")); // 占位空行
 
-        // ================= 3. 形变反馈设置 =================
+        // ================= 3. 形变与变色反馈设置 =================
         layout.addView(createTitle(L("🗜️ 按压视觉反馈控制")));
+        final Button toggleHighlightBtn = new Button(getContext());
+        toggleHighlightBtn.setText(tempHighlightOn[0] ? L("按下变色与发光：已开启") : L("按下变色与发光：已关闭 (静态透明框推荐)"));
+        toggleHighlightBtn.setTextColor(Color.WHITE);
+        toggleHighlightBtn.setBackgroundColor(tempHighlightOn[0] ? Color.parseColor("#4CAF50") : Color.parseColor("#555555"));
+        toggleHighlightBtn.setOnClickListener(v -> {
+            tempHighlightOn[0] = !tempHighlightOn[0];
+            toggleHighlightBtn.setText(tempHighlightOn[0] ? L("按下变色与发光：已开启") : L("按下变色与发光：已关闭 (静态透明框推荐)"));
+            toggleHighlightBtn.setBackgroundColor(tempHighlightOn[0] ? Color.parseColor("#4CAF50") : Color.parseColor("#555555"));
+        });
+        layout.addView(toggleHighlightBtn);
+
         final Button toggleFeedBtn = new Button(getContext());
         toggleFeedBtn.setText(tempFeedOn[0] ? L("按压视觉反馈：已开启") : L("按压视觉反馈：已关闭") );
         toggleFeedBtn.setTextColor(Color.WHITE);
@@ -2999,6 +3094,7 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             vibrationIntensity = tempVibInt[0];
             isGlobalFeedbackEnabled = tempFeedOn[0];
             globalFeedbackScaleInt = tempFeedScale[0];
+            isPressHighlightEnabled = tempHighlightOn[0];
             joyAlpha = tempGlobalAlpha[0];
             menuAlpha = tempGlobalAlpha[0];
             
@@ -4180,9 +4276,10 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                 array.put(obj);
             }
             editor.putString(KEY_LAYOUT_PREFIX + currentSlot, array.toString());
-            // 【新增：保存全局反馈设置】
+            // 【新增：保存全局反馈与按下变色设置】
             editor.putBoolean("GlobalFeedbackOn_" + currentSlot, isGlobalFeedbackEnabled);
             editor.putInt("GlobalFeedbackScale_" + currentSlot, globalFeedbackScaleInt);
+            editor.putBoolean("PressHighlightOn_" + currentSlot, isPressHighlightEnabled);
                 
             editor.putInt("JoystickMode_" + currentSlot, joystickMode);
             editor.putFloat("JoyX_" + currentSlot, joyBaseX);
@@ -4310,9 +4407,10 @@ editor.putInt("AutoHideSec_" + currentSlot, autoHideSeconds);
             joyColor = prefs.getInt("JoyColor_" + slot, Color.parseColor("#FF5555"));
             isJoyLocked = prefs.getBoolean("JoyLocked_" + slot, false);           isVibrationOn = prefs.getBoolean("Vibration_" + slot, true);
             vibrationIntensity = prefs.getInt("VibIntensity_" + slot, 30);
-            // 【新增：读取全局反馈设置】
+            // 【新增：读取全局反馈与按下变色设置】
             isGlobalFeedbackEnabled = prefs.getBoolean("GlobalFeedbackOn_" + slot, true);
-            globalFeedbackScaleInt = prefs.getInt("GlobalFeedbackScale_" + slot, 85);         
+            globalFeedbackScaleInt = prefs.getInt("GlobalFeedbackScale_" + slot, 85);
+            isPressHighlightEnabled = prefs.getBoolean("PressHighlightOn_" + slot, true);
             joySkinBaseUri = prefs.getString("JoySkinBase_" + slot, "");
             joySkinKnobUri = prefs.getString("JoySkinKnob_" + slot, "");
             

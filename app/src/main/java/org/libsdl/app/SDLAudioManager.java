@@ -164,17 +164,25 @@ public class SDLAudioManager {
         }
 
         if (!isCapture) {
-            if (is64Bit && Build.VERSION.SDK_INT >= 17) {
-                AudioManager am = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
-                String framesPerBuffer = am.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER);
-                if (framesPerBuffer != null) {
-                    int hardwareFrames = Integer.parseInt(framesPerBuffer);
-                    minBufferSize = hardwareFrames * frameSize * 2;
-                    Log.v(TAG, "Aggressive Profile: Fast Track Audio Enabled. Buffer size forced to: " + minBufferSize);
+            if (Build.VERSION.SDK_INT >= 17 && mContext != null) {
+                try {
+                    AudioManager am = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+                    String framesPerBuffer = am.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER);
+                    if (framesPerBuffer != null) {
+                        int hardwareFrames = Integer.parseInt(framesPerBuffer);
+                        if (hardwareFrames > 0) {
+                            // 64位采用 2 倍硬件周期极低延迟，32位采用 3 倍硬件周期兼顾防爆音与 FastMixer 对齐
+                            int multiplier = is64Bit ? 2 : 3;
+                            int alignedSize = hardwareFrames * frameSize * multiplier;
+                            minBufferSize = Math.max(minBufferSize, alignedSize);
+                            Log.v(TAG, "FastMixer Aligned Audio Profile (" + (is64Bit ? "64-bit" : "32-bit") + "). Buffer size: " + minBufferSize);
+                        }
+                    }
+                } catch (Exception e) {
+                    minBufferSize = minBufferSize * 2;
                 }
             } else {
                 minBufferSize = minBufferSize * 2;
-                Log.v(TAG, "Stable Profile: Double Buffering Enabled. Buffer size expanded to: " + minBufferSize);
             }
         }
 
@@ -345,9 +353,6 @@ public class SDLAudioManager {
 
     public static void audioWriteShortBuffer(short[] buffer) {
         if (mAudioTrack == null) return;
-
-        // 🚀 核心注入：拦截数字游戏原声，将其泵入云同游数据通道！
-        try { org.libsdl.app.DesktopSystemView.CloudGamingManager.sendAudio(buffer); } catch(Throwable t) {}
 
         for (int i = 0; i < buffer.length;) {
             int result = mAudioTrack.write(buffer, i, buffer.length - i);
