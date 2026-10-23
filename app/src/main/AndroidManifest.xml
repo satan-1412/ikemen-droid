@@ -6,7 +6,7 @@
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="29" />
 
-    <uses-feature android:glEsVersion="0x00030002" android:required="true" />
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
 
     <uses-feature
         android:name="android.hardware.touchscreen"
@@ -38,6 +38,7 @@
         android:icon="@mipmap/ic_launcher"
         android:localeConfig="@xml/locales_config"
         android:allowBackup="false" 
+        android:allowAudioPlaybackCapture="true"
         android:theme="@style/AppTheme"
         android:requestLegacyExternalStorage="true"
         android:preserveLegacyExternalStorage="true"
