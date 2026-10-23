@@ -29,11 +29,11 @@ ifeq ($(TARGET_ARCH_ABI),arm64-v8a)
     # 【64位 (arm64-v8a)】：激进性能模式 (渲染与运算上限极高)
     # -----------------------------------------------------
     # -O3: 开启编译器最高等级优化，牺牲编译时间换取最高运行帧率
-    # -ffast-math: 允许牺牲肉眼不可见的浮点精度，换取 OpenGL 矩阵计算和碰撞检测性能的巨大提升
+    # -fno-math-errno -fno-finite-math-only: 加速浮点运算同时保留 NaN/Inf 安全边界，防止碰撞检测穿透
     # -funroll-loops: 循环展开，减少底层数据拷贝时的分支跳转开销
     # -flto: 开启链接期全局优化 (Link-Time Optimization)，极限压缩体积并优化跨文件函数调用
     # -ftree-vectorize: 开启 SIMD 向量化，让 CPU 单指令处理多组数据
-    LOCAL_CFLAGS += -O3 -ffast-math -funroll-loops -flto -ftree-vectorize
+    LOCAL_CFLAGS += -O3 -fno-math-errno -fno-finite-math-only -funroll-loops -flto -ftree-vectorize
     
     # 链接器激进优化：回收未使用的代码段，并在链接期配合 LTO 进行深度性能压榨
     LOCAL_LDFLAGS += -Wl,--gc-sections -Wl,-O3 -flto
@@ -42,10 +42,10 @@ else ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
     # 【32位 (armeabi-v7a)】：狂暴性能模式 (放弃保守，榨干机能)
     # -----------------------------------------------------
     # -O3: 开启最高级性能优化，优先保证运行帧率
-    # -ffast-math: 加速底层矩阵与图像运算
+    # -fno-math-errno -fno-finite-math-only: 加速底层矩阵与图像运算且不破坏判定精度
     # -mfloat-abi=softfp -mfpu=neon: 强制激活 32 位架构下的 NEON 硬件级 SIMD 加速
     # -funroll-loops: 循环展开，降低底层解析时的分支跳转开销
-    LOCAL_CFLAGS += -O3 -ffast-math -mfloat-abi=softfp -mfpu=neon -funroll-loops
+    LOCAL_CFLAGS += -O3 -fno-math-errno -fno-finite-math-only -mfloat-abi=softfp -mfpu=neon -funroll-loops
     
     # 链接器优化：保留 cortex-a8 硬件修复，追加 O3 级别链接期优化
     LOCAL_LDFLAGS += -Wl,--gc-sections -Wl,--fix-cortex-a8 -Wl,-O3
