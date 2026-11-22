@@ -1042,8 +1042,6 @@ public class DesktopSystemView extends Dialog {
         btn.setOnTouchListener((v, e) -> { if (e.getAction() == MotionEvent.ACTION_DOWN) v.setAlpha(0.7f); else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) v.setAlpha(1.0f); return false; }); return btn; 
     }
 
-    @Override public void onBackPressed() { } 
-
     // ======================================================================================
     // 🎨 模块 1：SFF 检视工坊
     // ======================================================================================
