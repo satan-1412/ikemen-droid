@@ -91,6 +91,16 @@ public class DesktopSystemView extends Dialog {
         this.hide(); 
     }
     
+    @Override
+    public void onBackPressed() {
+        // 按系统返回键退出桌面模式时，统一走 toggleDesktopMode(false) 确保恢复横屏与游戏
+        if (SDLActivity.mSingleton != null) {
+            SDLActivity.mSingleton.toggleDesktopMode(false);
+        } else {
+            this.hide();
+        }
+    }
+
     // 留给真正需要彻底清理内存时的后门
     public void forceDestroy() {
         super.dismiss();
@@ -98,6 +108,74 @@ public class DesktopSystemView extends Dialog {
     }
 
     public static DesktopSystemView instance;
+    private boolean isDesktopPortrait = false;
+    private TextView orientationToggleBtn = null;
+
+    public void applySavedDesktopOrientation() {
+        if (prefs != null) {
+            isDesktopPortrait = prefs.getBoolean("dt_portraitMode", false);
+        }
+        updateOrientationBtnText();
+        if (SDLActivity.mSingleton != null) {
+            SDLActivity.mSingleton.setDesktopOrientation(isDesktopPortrait);
+        }
+    }
+
+    private void updateOrientationBtnText() {
+        if (orientationToggleBtn != null) {
+            orientationToggleBtn.setText(isDesktopPortrait ? L("🖥️ 切横屏") : L("📱 切竖屏"));
+        }
+    }
+
+    public void onScreenOrientationChanged() {
+        if (rootLayer == null) return;
+        rootLayer.postDelayed(() -> {
+            try {
+                if (getContext() == null) return;
+                int screenW = getContext().getResources().getDisplayMetrics().widthPixels;
+                int screenH = getContext().getResources().getDisplayMetrics().heightPixels;
+                if (screenW <= 0 || screenH <= 0) return;
+
+                if (taskbar != null) {
+                    int dynamicTaskbarHeight = Math.max((int)(40 * density), screenH / 14);
+                    ViewGroup.LayoutParams tbLp = taskbar.getLayoutParams();
+                    if (tbLp != null) {
+                        tbLp.height = dynamicTaskbarHeight;
+                        taskbar.setLayoutParams(tbLp);
+                    }
+                }
+                int tbH = (taskbar != null && taskbar.getHeight() > 0) ? taskbar.getHeight() : Math.max((int)(40 * density), screenH / 14);
+
+                if (windowsLayer != null) {
+                    for (int i = 0; i < windowsLayer.getChildCount(); i++) {
+                        View w = windowsLayer.getChildAt(i);
+                        ViewGroup.LayoutParams lp = w.getLayoutParams();
+                        if (lp instanceof FrameLayout.LayoutParams) {
+                            FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) lp;
+                            if (flp.width == FrameLayout.LayoutParams.MATCH_PARENT) {
+                                flp.bottomMargin = tbH;
+                                w.setLayoutParams(flp);
+                                w.setX(0);
+                                w.setY(0);
+                            } else {
+                                int newW = Math.min(flp.width > 0 ? flp.width : (int)(screenW * 0.85f), (int)(screenW * 0.92f));
+                                int newH = Math.min(flp.height > 0 ? flp.height : (int)((screenH - tbH) * 0.85f), (int)((screenH - tbH) * 0.90f));
+                                flp.width = Math.max((int)(220 * density), newW);
+                                flp.height = Math.max((int)(220 * density), newH);
+                                w.setLayoutParams(flp);
+                                float clampedX = Math.max(0, Math.min(w.getX(), Math.max(0, screenW - flp.width)));
+                                float clampedY = Math.max(0, Math.min(w.getY(), Math.max(0, screenH - tbH - flp.height)));
+                                w.setX(clampedX);
+                                w.setY(clampedY);
+                            }
+                        }
+                    }
+                }
+                setupDesktopIcons();
+                applyImmersiveMode(getWindow());
+            } catch (Exception ignored) {}
+        }, 120);
+    }
     
     private void updateUI(final TextView status, final String msg) {
         new Handler(Looper.getMainLooper()).post(() -> {
@@ -269,6 +347,31 @@ public class DesktopSystemView extends Dialog {
         taskbarScroll.addView(taskbarAppsLayout, new ViewGroup.LayoutParams(-2, -1));
         taskbar.addView(taskbarScroll, new LinearLayout.LayoutParams(0, -1, 1f));
 
+        // 【新增】：任务栏右侧横竖屏切换按钮（仅影响桌面模式，回游戏强制恢复横屏）
+        isDesktopPortrait = prefs.getBoolean("dt_portraitMode", false);
+        orientationToggleBtn = new TextView(getContext());
+        updateOrientationBtnText();
+        applyGlobalFontSettings(orientationToggleBtn, 1.0f, true);
+        orientationToggleBtn.setGravity(Gravity.CENTER);
+        orientationToggleBtn.setPadding((int)(12*density), (int)(6*density), (int)(12*density), (int)(6*density));
+        GradientDrawable oriBg = new GradientDrawable();
+        oriBg.setColor(Color.parseColor("#330078D7"));
+        oriBg.setCornerRadius(6f * density);
+        oriBg.setStroke((int)(1 * density), Color.parseColor("#0078D7"));
+        orientationToggleBtn.setBackground(oriBg);
+        orientationToggleBtn.setOnClickListener(v -> {
+            isDesktopPortrait = !isDesktopPortrait;
+            prefs.edit().putBoolean("dt_portraitMode", isDesktopPortrait).apply();
+            updateOrientationBtnText();
+            if (SDLActivity.mSingleton != null) {
+                SDLActivity.mSingleton.setDesktopOrientation(isDesktopPortrait);
+            }
+            Toast.makeText(getContext(), isDesktopPortrait ? L("📱 已切换为桌面竖屏模式 (返回游戏自动恢复横屏)") : L("🖥️ 已切换为桌面横屏模式"), Toast.LENGTH_SHORT).show();
+        });
+        LinearLayout.LayoutParams oriParams = new LinearLayout.LayoutParams(-2, -2);
+        oriParams.setMargins((int)(8*density), 0, (int)(4*density), 0);
+        taskbar.addView(orientationToggleBtn, oriParams);
+
         setContentView(rootLayer);
         rootLayer.post(() -> setupDesktopIcons());
     }
@@ -413,6 +516,7 @@ public class DesktopSystemView extends Dialog {
         createDesktopIcon("stage_editor", "🗺️", L("地图编辑器")); 
         createDesktopIcon("text_decipher", "🔣", L("乱码解字板")); 
         createDesktopIcon("def_scanner", "🗂️", L("DEF生成器"));
+        createDesktopIcon("clsn_editor", "⚔️", L("判定框工坊"));
     }
 
     private void createDesktopIcon(final String id, String iconStr, String name) {
@@ -457,7 +561,8 @@ public class DesktopSystemView extends Dialog {
                             else if (id.equals("gif_extractor")) openAppWindow(L("🎞️ GIF拆解器"), buildGifExtractorContent(), null);
                             else if (id.equals("stage_editor")) openAppWindow(L("🗺️ 地图编辑器"), buildStageEditorContent(), null);
                             else if (id.equals("text_decipher")) openAppWindow(L("🔣 乱码解字板"), buildDecipherBoardContent(), null);
-                            else if (id.equals("def_scanner")) openAppWindow(L("🗂️ 自动 DEF 扫描器"), buildDefScannerContent(), null);
+                            else if (id.equals("def_scanner")) openAppWindow(L("🗂️ DEF生成器"), buildDefScannerContent(), null);
+                            else if (id.equals("clsn_editor")) openAppWindow(L("⚔️ 判定框工坊 (打击/防御框)"), buildClsnEditorContent("", ""), null);
                             lastClickTime = 0; 
                         } else lastClickTime = clickTime;
                     }
@@ -897,6 +1002,14 @@ public class DesktopSystemView extends Dialog {
                                         Toast.makeText(getContext(), L("❌ 格式不支持，请选择支持的 3D 格式"), Toast.LENGTH_SHORT).show();
                                     }
                                 }
+                                else if (targetType == 14) {
+                                    if (absPath.toLowerCase().endsWith(".air") || absPath.toLowerCase().endsWith(".txt")) {
+                                        if (listener != null) listener.onFileSelected(f);
+                                        pDialog.dismiss();
+                                    } else {
+                                        Toast.makeText(getContext(), L("❌ 请选择 .air 或 .txt 动作文件"), Toast.LENGTH_SHORT).show();
+                                    }
+                                }
                                 else if (targetType == 12 || targetType == 13) {
                                     if(listener != null) listener.onFileSelected(f); pDialog.dismiss(); 
                                 }
@@ -1020,104 +1133,196 @@ public class DesktopSystemView extends Dialog {
         final String winTitle = L("🎨 检视: ") + charName;
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.parseColor("#1E1E1E"));
 
-        List<Integer> groupList = new ArrayList<>();
-        groupList.add(-999); 
-        if (allFrames != null) {
-            for (GoEngineBridge.SffFrame f : allFrames) { if (!groupList.contains(f.group)) { groupList.add(f.group); } }
-        }
-        
-        final List<GoEngineBridge.SffFrame> currentGroupFrames = new ArrayList<>();
-        final int[] currentFrameIndex = {0}; final boolean[] isPlaying = {false}; 
+        final List<GoEngineBridge.SffFrame> masterFrames = new ArrayList<>();
+        if (allFrames != null) masterFrames.addAll(allFrames);
 
+        final List<Integer> groupList = new ArrayList<>();
+        final Runnable rebuildGroupList = () -> {
+            groupList.clear();
+            groupList.add(-999);
+            for (GoEngineBridge.SffFrame f : masterFrames) {
+                if (!groupList.contains(f.group)) groupList.add(f.group);
+            }
+        };
+        rebuildGroupList.run();
+
+        final List<GoEngineBridge.SffFrame> currentGroupFrames = new ArrayList<>();
+        final int[] currentSelectedGroup = {-999};
+        final int[] currentFrameIndex = {0};
+        final boolean[] isPlaying = {false};
+        final boolean[] showAxisCross = {true};
         final String[] currentActPath = {""};
+        final GoEngineBridge.SffFrame[] activeFrameRef = {null};
+        final Bitmap[] activeBmpRef = {null};
 
         TextView infoText = new TextView(getContext()); infoText.setPadding((int)(5*density), (int)(4*density), (int)(5*density), (int)(2*density)); applyGlobalFontSettings(infoText, 0.85f, false); infoText.setTextColor(Color.parseColor("#0078D7")); root.addView(infoText);
 
         FrameLayout canvasFrame = new FrameLayout(getContext()); LinearLayout.LayoutParams canvasParams = new LinearLayout.LayoutParams(-1, 0, 1f); canvasParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density)); canvasFrame.setLayoutParams(canvasParams);
         Bitmap bgBmp = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888); Canvas bgCanvas = new Canvas(bgBmp); Paint bgPaint = new Paint(); bgPaint.setColor(Color.parseColor("#181818")); bgCanvas.drawRect(0,0,10,10,bgPaint); bgCanvas.drawRect(10,10,20,20,bgPaint); bgPaint.setColor(Color.parseColor("#252526")); bgCanvas.drawRect(10,0,20,10,bgPaint); bgCanvas.drawRect(0,10,10,20,bgPaint);
-        BitmapDrawable tileBg = new BitmapDrawable(getContext().getResources(), bgBmp); tileBg.setTileModeXY(android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT); 
+        BitmapDrawable tileBg = new BitmapDrawable(getContext().getResources(), bgBmp); tileBg.setTileModeXY(android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT);
         GradientDrawable canvasBorder = new GradientDrawable(); canvasBorder.setStroke((int)(1*density), Color.parseColor("#3F3F46")); canvasFrame.setBackground(new LayerDrawable(new android.graphics.drawable.Drawable[]{tileBg, canvasBorder}));
 
-        final ImageView previewImg = new ImageView(getContext()); previewImg.setScaleType(ImageView.ScaleType.MATRIX); canvasFrame.addView(previewImg, new FrameLayout.LayoutParams(-1, -1)); root.addView(canvasFrame);
         final Matrix imageMatrix = new Matrix(); final Matrix savedMatrix = new Matrix(); final int[] touchMode = {0}; final PointF startPoint = new PointF(); final PointF midPoint = new PointF(); final float[] oldDist = {1f}; final boolean[] isMatrixInitialized = {false};
+
+        final ImageView previewImg = new ImageView(getContext()); previewImg.setScaleType(ImageView.ScaleType.MATRIX); canvasFrame.addView(previewImg, new FrameLayout.LayoutParams(-1, -1));
+
+        // 【新增】：轴心十字线叠加层，实时跟随缩放与平移
+        final View axisOverlay = new View(getContext()) {
+            private final Paint axisPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(Canvas canvas) {
+                super.onDraw(canvas);
+                if (!showAxisCross[0] || activeFrameRef[0] == null) return;
+                float[] pts = new float[]{ activeFrameRef[0].x, activeFrameRef[0].y };
+                imageMatrix.mapPoints(pts);
+                axisPaint.setColor(Color.argb(190, 0, 255, 180));
+                axisPaint.setStrokeWidth(Math.max(1.5f, density));
+                canvas.drawLine(0, pts[1], getWidth(), pts[1], axisPaint);
+                canvas.drawLine(pts[0], 0, pts[0], getHeight(), axisPaint);
+                axisPaint.setColor(Color.YELLOW);
+                canvas.drawCircle(pts[0], pts[1], 3.5f * density, axisPaint);
+            }
+        };
+        canvasFrame.addView(axisOverlay, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(canvasFrame);
 
         canvasFrame.setOnTouchListener((v, event) -> {
             switch (event.getAction() & MotionEvent.ACTION_MASK) {
                 case MotionEvent.ACTION_DOWN: savedMatrix.set(imageMatrix); startPoint.set(event.getX(), event.getY()); touchMode[0] = 1; break;
-                case MotionEvent.ACTION_POINTER_DOWN: oldDist[0] = (float)Math.sqrt(Math.pow(event.getX(0)-event.getX(1), 2) + Math.pow(event.getY(0)-event.getY(1), 2)); if (oldDist[0] > 10f) { savedMatrix.set(imageMatrix); midPoint.set((event.getX(0)+event.getX(1))/2, (event.getY(0)+event.getY(1))/2); touchMode[0] = 2; } break;
-                case MotionEvent.ACTION_UP: case MotionEvent.ACTION_POINTER_UP: touchMode[0] = 0; break;
+                case MotionEvent.ACTION_POINTER_DOWN:
+                    if (event.getPointerCount() >= 2) {
+                        oldDist[0] = (float)Math.sqrt(Math.pow(event.getX(0)-event.getX(1), 2) + Math.pow(event.getY(0)-event.getY(1), 2));
+                        if (oldDist[0] > 10f) { savedMatrix.set(imageMatrix); midPoint.set((event.getX(0)+event.getX(1))/2, (event.getY(0)+event.getY(1))/2); touchMode[0] = 2; }
+                    }
+                    break;
+                case MotionEvent.ACTION_UP: case MotionEvent.ACTION_POINTER_UP: case MotionEvent.ACTION_CANCEL: touchMode[0] = 0; break;
                 case MotionEvent.ACTION_MOVE:
-                    if (touchMode[0] == 1) { imageMatrix.set(savedMatrix); imageMatrix.postTranslate(event.getX() - startPoint.x, event.getY() - startPoint.y); } 
-                    else if (touchMode[0] == 2) { float newDist = (float)Math.sqrt(Math.pow(event.getX(0)-event.getX(1), 2) + Math.pow(event.getY(0)-event.getY(1), 2)); if (newDist > 10f) { imageMatrix.set(savedMatrix); float scale = newDist / oldDist[0]; imageMatrix.postScale(scale, scale, midPoint.x, midPoint.y); } } break;
-            } previewImg.setImageMatrix(imageMatrix); return true;
+                    if (touchMode[0] == 1) { imageMatrix.set(savedMatrix); imageMatrix.postTranslate(event.getX() - startPoint.x, event.getY() - startPoint.y); }
+                    else if (touchMode[0] == 2 && event.getPointerCount() >= 2) {
+                        float newDist = (float)Math.sqrt(Math.pow(event.getX(0)-event.getX(1), 2) + Math.pow(event.getY(0)-event.getY(1), 2));
+                        if (newDist > 10f && oldDist[0] > 10f) { imageMatrix.set(savedMatrix); float scale = newDist / oldDist[0]; imageMatrix.postScale(scale, scale, midPoint.x, midPoint.y); }
+                    }
+                    break;
+            }
+            previewImg.setImageMatrix(imageMatrix);
+            axisOverlay.invalidate();
+            return true;
         });
 
         LinearLayout bottomToolArea = new LinearLayout(getContext()); bottomToolArea.setOrientation(LinearLayout.VERTICAL);
-        
-        HorizontalScrollView controlsScroll = new HorizontalScrollView(getContext()); 
-        controlsScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout controls = new LinearLayout(getContext()); 
-        controls.setOrientation(LinearLayout.HORIZONTAL); 
-        controls.setGravity(Gravity.CENTER_VERTICAL); 
-        // 压缩控制栏内边距，释放更多屏幕空间
+        HorizontalScrollView controlsScroll = new HorizontalScrollView(getContext()); controlsScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER_VERTICAL);
         controls.setPadding((int)(5*density), (int)(5*density), (int)(5*density), (int)(10*density));
-        
-        // 【按键等宽布局设置】限制在固定宽度，超出屏幕支持横向滑动
-        LinearLayout.LayoutParams uniformBtnParams = new LinearLayout.LayoutParams((int)(115*density), -2);
-        uniformBtnParams.setMargins((int)(4*density), 0, (int)(4*density), 0);
-        
-        // 【按键加宽布局设置】专门用于控制播放的三个按键
-        LinearLayout.LayoutParams wideBtnParams = new LinearLayout.LayoutParams((int)(140*density), -2);
-        wideBtnParams.setMargins((int)(4*density), 0, (int)(4*density), 0);
+
+        LinearLayout.LayoutParams uniformBtnParams = new LinearLayout.LayoutParams((int)(115*density), -2); uniformBtnParams.setMargins((int)(4*density), 0, (int)(4*density), 0);
+        LinearLayout.LayoutParams wideBtnParams = new LinearLayout.LayoutParams((int)(140*density), -2); wideBtnParams.setMargins((int)(4*density), 0, (int)(4*density), 0);
 
         Button btnDefaultAct = createButton(L("🎨 内置色表"), "#4CAF50");
         Button btnAutoAct = createButton(L("🪄 自动色表"), "#9C27B0");
         Button btnManualAct = createButton(L("🎨 手动色表"), "#9C27B0");
-        Button btnGroup = createButton(L("📁 动作编组"), "#1E1E1E"); // 新增：合并后的动作编组按键
-        Button btnPrev = createButton(L("⏪ 上一帧"), "#3F3F46"); 
-        Button btnPlay = createButton(L("▶️ 播放"), "#0078D7"); 
-        Button btnNext = createButton(L("⏭️ 下一帧"), "#3F3F46"); 
-        Button btnSpeed = createButton(L("⚙️ 调速"), "#3F3F46"); 
-        Button btnExportNative = createButton(L("💾 原生导出"), "#3F3F46"); 
+        Button btnGroup = createButton(L("📁 动作编组"), "#1E1E1E");
+        Button btnPrev = createButton(L("⏪ 上一帧"), "#3F3F46");
+        Button btnPlay = createButton(L("▶️ 播放"), "#0078D7");
+        Button btnNext = createButton(L("⏭️ 下一帧"), "#3F3F46");
+        Button btnSpeed = createButton(L("⚙️ 调速"), "#3F3F46");
+        Button btnAxisToggle = createButton(L("🎯 轴心线: 开"), "#00897B");
+        Button btnResetView = createButton(L("🔍 复位视图"), "#3F3F46");
+        Button btnOpenClsn = createButton(L("⚔️ 画判定框"), "#D81B60");
+        Button btnExportNative = createButton(L("💾 导出帧"), "#3F3F46");
+        Button btnBatchExport = createButton(L("📦 批量导出组"), "#0288D1");
         Button btnReplace = createButton(L("🔄 图像替换"), "#4CAF50");
-        
-        final int[] currentDelay = {16}; 
+        Button btnAddFrame = createButton(L("➕ 新增帧"), "#2E7D32");
+        Button btnOffsetAxis = createButton(L("📐 调整轴心"), "#5C6BC0");
+        Button btnDeleteFrame = createButton(L("🗑️ 删除帧"), "#E81123");
+
+        final int[] currentDelay = {16};
         btnSpeed.setOnClickListener(v -> {
             final Dialog spdDialog = new Dialog(getContext()); spdDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
             LinearLayout spdLayout = new LinearLayout(getContext()); spdLayout.setOrientation(LinearLayout.VERTICAL); spdLayout.setBackgroundColor(Color.parseColor("#2D2D30")); spdLayout.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
             TextView title = new TextView(getContext()); title.setText(L("调整播放速度 (FPS)")); applyGlobalFontSettings(title, 1.0f, true); title.setGravity(Gravity.CENTER); spdLayout.addView(title);
-            SeekBar speedBar = new SeekBar(getContext()); speedBar.setMax(59); speedBar.setProgress((1000/currentDelay[0])-1);
-            speedBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() { public void onProgressChanged(SeekBar s, int p, boolean b) { currentDelay[0] = 1000 / (p + 1); title.setText(L("调整播放速度: ") + (p+1) + " FPS"); } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){} });
+            SeekBar speedBar = new SeekBar(getContext()); speedBar.setMax(59); speedBar.setProgress(Math.max(0, Math.min(59, (1000 / Math.max(1, currentDelay[0])) - 1)));
+            speedBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() { public void onProgressChanged(SeekBar s, int p, boolean b) { currentDelay[0] = Math.max(16, 1000 / (p + 1)); title.setText(L("调整播放速度: ") + (p+1) + " FPS"); } public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){} });
             spdLayout.addView(speedBar, new LinearLayout.LayoutParams((int)(250*density), -2)); spdDialog.setContentView(spdLayout); spdDialog.show();
         });
 
         final Handler uiHandler = new Handler(Looper.getMainLooper());
-        final Handler playHandler = new Handler();
+        final Handler playHandler = new Handler(Looper.getMainLooper());
+        final long[] renderSeq = {0};
+
         Runnable updateFrameAction = new Runnable() {
             @Override public void run() {
-                if (currentGroupFrames.isEmpty()) return;
+                if (currentGroupFrames.isEmpty()) {
+                    activeFrameRef[0] = null;
+                    previewImg.setImageBitmap(null);
+                    infoText.setText(L("⚠️ 当前分组无可用帧"));
+                    axisOverlay.invalidate();
+                    return;
+                }
                 if (currentFrameIndex[0] < 0) currentFrameIndex[0] = currentGroupFrames.size() - 1;
                 if (currentFrameIndex[0] >= currentGroupFrames.size()) currentFrameIndex[0] = 0;
                 final GoEngineBridge.SffFrame targetFrame = currentGroupFrames.get(currentFrameIndex[0]);
+                final long seq = ++renderSeq[0];
                 new Thread(() -> {
                     try {
                         byte[] bmpData = Api.decodeSffFrame(sffPath, targetFrame.group, targetFrame.item, currentActPath[0]);
                         final Bitmap bmp = (bmpData != null && bmpData.length > 0) ? BitmapFactory.decodeByteArray(bmpData, 0, bmpData.length) : null;
                         uiHandler.post(() -> {
-                            if (bmp != null) {
+                            if (seq != renderSeq[0]) return;
+                            activeFrameRef[0] = targetFrame;
+                            activeBmpRef[0] = bmp;
+                            if (bmp != null && bmp.getWidth() > 0 && bmp.getHeight() > 0) {
                                 previewImg.setImageBitmap(bmp);
-                                if (!isMatrixInitialized[0] && canvasFrame.getWidth() > 0) {
+                                if (!isMatrixInitialized[0] && canvasFrame.getWidth() > 0 && canvasFrame.getHeight() > 0) {
                                     float scale = Math.min((float)canvasFrame.getWidth() / bmp.getWidth(), (float)canvasFrame.getHeight() / bmp.getHeight());
-                                    if (scale > 1.5f) scale = 1.5f; float dx = (canvasFrame.getWidth() - bmp.getWidth() * scale) / 2f; float dy = (canvasFrame.getHeight() - bmp.getHeight() * scale) / 2f;
+                                    if (scale > 1.5f) scale = 1.5f;
+                                    float dx = (canvasFrame.getWidth() - bmp.getWidth() * scale) / 2f;
+                                    float dy = (canvasFrame.getHeight() - bmp.getHeight() * scale) / 2f;
                                     imageMatrix.setScale(scale, scale); imageMatrix.postTranslate(dx, dy); previewImg.setImageMatrix(imageMatrix); isMatrixInitialized[0] = true;
                                 }
                             } else { previewImg.setImageBitmap(null); }
+                            axisOverlay.invalidate();
                             infoText.setText(String.format(L("帧: ") + "%d / %d | " + L("动作: ") + "%d | " + L("索引: ") + "%d | " + L("尺寸: ") + "%dx%d | " + L("轴心: ") + "%d, %d", currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.width, targetFrame.height, targetFrame.x, targetFrame.y));
                         });
-                    } catch(Exception e){}
+                    } catch (Throwable ignored) {}
                 }).start();
             }
         };
+
+        Runnable reloadFromDisk = () -> {
+            new Thread(() -> {
+                List<GoEngineBridge.SffFrame> refreshed = GoEngineBridge.getAllFrames(sffPath);
+                uiHandler.post(() -> {
+                    masterFrames.clear();
+                    if (refreshed != null) masterFrames.addAll(refreshed);
+                    rebuildGroupList.run();
+                    currentGroupFrames.clear();
+                    if (currentSelectedGroup[0] == -999) currentGroupFrames.addAll(masterFrames);
+                    else {
+                        for (GoEngineBridge.SffFrame fr : masterFrames) {
+                            if (fr.group == currentSelectedGroup[0]) currentGroupFrames.add(fr);
+                        }
+                    }
+                    if (currentFrameIndex[0] >= currentGroupFrames.size()) currentFrameIndex[0] = Math.max(0, currentGroupFrames.size() - 1);
+                    updateFrameAction.run();
+                });
+            }).start();
+        };
+
+        btnAxisToggle.setOnClickListener(v -> {
+            showAxisCross[0] = !showAxisCross[0];
+            btnAxisToggle.setText(showAxisCross[0] ? L("🎯 轴心线: 开") : L("🎯 轴心线: 关"));
+            axisOverlay.invalidate();
+        });
+
+        btnResetView.setOnClickListener(v -> {
+            isMatrixInitialized[0] = false;
+            updateFrameAction.run();
+        });
+
+        btnOpenClsn.setOnClickListener(v -> {
+            isPlaying[0] = false; playHandler.removeCallbacksAndMessages(null);
+            btnPlay.setText(L("▶️ 播放")); btnPlay.setBackgroundColor(Color.parseColor("#0078D7"));
+            openAppWindow(L("⚔️ 判定框工坊 (打击/防御框)"), buildClsnEditorContent(sffPath, currentActPath[0]), null);
+        });
 
         btnDefaultAct.setOnClickListener(v -> {
             currentActPath[0] = "";
@@ -1126,7 +1331,8 @@ public class DesktopSystemView extends Dialog {
         });
 
         btnAutoAct.setOnClickListener(v -> {
-            File[] actFiles = new File(sffPath).getParentFile().listFiles((d, name) -> name.toLowerCase().endsWith(".act"));
+            File parentDir = new File(sffPath).getParentFile();
+            File[] actFiles = (parentDir != null) ? parentDir.listFiles((d, name) -> name.toLowerCase().endsWith(".act")) : null;
             if (actFiles != null && actFiles.length > 0) {
                 currentActPath[0] = actFiles[0].getAbsolutePath();
                 Toast.makeText(getContext(), L("✅ 已自动挂载: ") + actFiles[0].getName(), Toast.LENGTH_SHORT).show();
@@ -1145,50 +1351,33 @@ public class DesktopSystemView extends Dialog {
         });
 
         btnGroup.setOnClickListener(v -> {
-            final Dialog groupDialog = new Dialog(getContext()); 
+            final Dialog groupDialog = new Dialog(getContext());
             groupDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            LinearLayout gLayout = new LinearLayout(getContext()); 
-            gLayout.setOrientation(LinearLayout.VERTICAL); 
-            gLayout.setBackgroundColor(Color.parseColor("#2D2D30")); 
-            gLayout.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
-            
-            TextView title = new TextView(getContext()); 
-            title.setText(L("选择动作编组")); 
-            applyGlobalFontSettings(title, 1.1f, true); 
-            title.setGravity(Gravity.CENTER); 
-            title.setPadding(0, 0, 0, (int)(10*density));
-            gLayout.addView(title);
+            LinearLayout gLayout = new LinearLayout(getContext()); gLayout.setOrientation(LinearLayout.VERTICAL); gLayout.setBackgroundColor(Color.parseColor("#2D2D30")); gLayout.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+            TextView title = new TextView(getContext()); title.setText(L("选择动作编组")); applyGlobalFontSettings(title, 1.1f, true); title.setGravity(Gravity.CENTER); title.setPadding(0, 0, 0, (int)(10*density)); gLayout.addView(title);
 
-            // 【新增】动作组搜索栏
             EditText searchInput = createInput(L("🔍 输入动作组号搜索..."), "");
-            LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(-1, -2);
-            searchParams.setMargins(0, 0, 0, (int)(15*density));
-            gLayout.addView(searchInput, searchParams);
+            LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(-1, -2); searchParams.setMargins(0, 0, 0, (int)(15*density)); gLayout.addView(searchInput, searchParams);
 
             ScrollView gScroll = new ScrollView(getContext());
-            final LinearLayout gList = new LinearLayout(getContext());
-            gList.setOrientation(LinearLayout.VERTICAL);
+            final LinearLayout gList = new LinearLayout(getContext()); gList.setOrientation(LinearLayout.VERTICAL);
 
             for (final int g : groupList) {
                 String btnText = (g == -999) ? L("📂 所有动作") : L("📁 动作组 ") + g;
-                Button groupBtn = createButton(btnText, "#1E1E1E");
-                groupBtn.setTag(String.valueOf(g)); // 挂载tag，方便搜索精确匹配数字
-                LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-1, -2); 
-                gp.setMargins(0, 0, 0, (int)(5*density));
+                Button groupBtn = createButton(btnText, "#1E1E1E"); groupBtn.setTag(String.valueOf(g));
+                LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-1, -2); gp.setMargins(0, 0, 0, (int)(5*density));
                 groupBtn.setOnClickListener(gv -> {
+                    currentSelectedGroup[0] = g;
                     currentGroupFrames.clear();
-                    if (allFrames != null) {
-                        if (g == -999) currentGroupFrames.addAll(allFrames); 
-                        else for (GoEngineBridge.SffFrame f : allFrames) { if (f.group == g) currentGroupFrames.add(f); }
-                    }
+                    if (g == -999) currentGroupFrames.addAll(masterFrames);
+                    else for (GoEngineBridge.SffFrame f : masterFrames) { if (f.group == g) currentGroupFrames.add(f); }
                     currentFrameIndex[0] = 0; updateFrameAction.run();
                     btnGroup.setText(btnText);
                     groupDialog.dismiss();
                 });
                 gList.addView(groupBtn, gp);
             }
-            
-            // 【新增】实时监听搜索输入，动态过滤列表
+
             searchInput.addTextChangedListener(new TextWatcher() {
                 @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                 @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -1197,43 +1386,35 @@ public class DesktopSystemView extends Dialog {
                     for (int i = 0; i < gList.getChildCount(); i++) {
                         View child = gList.getChildAt(i);
                         if (child instanceof Button) {
-                            String tag = (String) child.getTag();
+                            String tag = String.valueOf(child.getTag());
                             String text = ((Button) child).getText().toString();
-                            // 如果搜索框为空，或者按钮文本包含搜索词，或者Tag直接匹配，则显示
-                            if (query.isEmpty() || text.contains(query) || tag.equals(query)) {
-                                child.setVisibility(View.VISIBLE);
-                            } else {
-                                child.setVisibility(View.GONE);
-                            }
+                            child.setVisibility((query.isEmpty() || text.contains(query) || tag.equals(query)) ? View.VISIBLE : View.GONE);
                         }
                     }
                 }
             });
 
             gScroll.addView(gList);
-            gLayout.addView(gScroll, new LinearLayout.LayoutParams((int)(250*density), (int)(300*density))); 
-            groupDialog.setContentView(gLayout); 
-            groupDialog.show();
+            gLayout.addView(gScroll, new LinearLayout.LayoutParams((int)(250*density), (int)(300*density)));
+            groupDialog.setContentView(gLayout); groupDialog.show();
         });
 
         btnReplace.setOnClickListener(v -> {
-            if (currentGroupFrames.isEmpty()) return;
+            if (currentGroupFrames.isEmpty() || currentFrameIndex[0] < 0 || currentFrameIndex[0] >= currentGroupFrames.size()) return;
             isPlaying[0] = false; playHandler.removeCallbacksAndMessages(null);
             btnPlay.setText(L("▶️ 播放")); btnPlay.setBackgroundColor(Color.parseColor("#0078D7"));
             final GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
-            
+
             showWin10FilePicker(L("选择替换用的图像或所在目录"), 7, null, null, selectedFile -> {
                 FileCallback doReplace = finalFile -> {
                     new Thread(() -> {
-                        // 补齐 Go 引擎强制要求的 axisX 和 axisY 轴心点参数
                         boolean success = Api.replaceSffFrame(sffPath, f.group, f.item, (short)f.x, (short)f.y, finalFile.getAbsolutePath());
                         uiHandler.post(() -> {
-                            if (success) { 
-                                Toast.makeText(getContext(), L("✅ ") + f.group + "-" + f.item + L(" 帧已替换！"), Toast.LENGTH_SHORT).show(); 
-                                updateFrameAction.run(); 
-                            } 
-                            else { 
-                                Toast.makeText(getContext(), L("❌ 替换失败：格式不兼容！SFFv1 只能使用 PCX，SFFv2 禁止使用 PCX！"), Toast.LENGTH_LONG).show(); 
+                            if (success) {
+                                Toast.makeText(getContext(), L("✅ ") + f.group + "-" + f.item + L(" 帧已替换！"), Toast.LENGTH_SHORT).show();
+                                reloadFromDisk.run();
+                            } else {
+                                Toast.makeText(getContext(), L("❌ 替换失败：格式不兼容！SFFv1 只能使用 PCX，SFFv2 禁止使用 PCX！"), Toast.LENGTH_LONG).show();
                             }
                         });
                     }).start();
@@ -1242,109 +1423,210 @@ public class DesktopSystemView extends Dialog {
             });
         });
 
-        if (allFrames != null) currentGroupFrames.addAll(allFrames);
+        // 【新增】：向 SFF 注入新增帧 (复用底层 Api.addSffFrame)
+        btnAddFrame.setOnClickListener(v -> {
+            isPlaying[0] = false; playHandler.removeCallbacksAndMessages(null);
+            btnPlay.setText(L("▶️ 播放")); btnPlay.setBackgroundColor(Color.parseColor("#0078D7"));
+            showWin10FilePicker(L("选择要新增的图像素材"), 7, null, null, selectedFile -> {
+                FileCallback doAdd = finalFile -> {
+                    final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                    LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+                    GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#4CAF50")); border.setCornerRadius(12*density); box.setBackground(border);
+                    box.addView(createSubTitle(L("➕ 新增 SFF 图像帧参数")));
+                    int defG = (activeFrameRef[0] != null) ? activeFrameRef[0].group : 0;
+                    int defI = (activeFrameRef[0] != null) ? (activeFrameRef[0].item + 1) : 0;
+                    EditText gIn = createInput(L("动作组 (Group)"), String.valueOf(defG)); gIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(gIn);
+                    EditText iIn = createInput(L("索引项 (Item)"), String.valueOf(defI)); iIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(iIn);
+                    EditText xIn = createInput(L("轴心 X"), "0"); xIn.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED); box.addView(xIn);
+                    EditText yIn = createInput(L("轴心 Y"), "0"); yIn.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED); box.addView(yIn);
+                    Button bConf = createButton(L("✔️ 确认新增帧"), "#4CAF50");
+                    bConf.setOnClickListener(cv -> {
+                        int g = 0, it = 0, ax = 0, ay = 0;
+                        try { g = Integer.parseInt(gIn.getText().toString().trim()); } catch (Exception ignored) {}
+                        try { it = Integer.parseInt(iIn.getText().toString().trim()); } catch (Exception ignored) {}
+                        try { ax = Integer.parseInt(xIn.getText().toString().trim()); } catch (Exception ignored) {}
+                        try { ay = Integer.parseInt(yIn.getText().toString().trim()); } catch (Exception ignored) {}
+                        final int fg = g, fi = it; final short fax = (short)ax, fay = (short)ay;
+                        new Thread(() -> {
+                            boolean ok = Api.addSffFrame(sffPath, fg, fi, fax, fay, finalFile.getAbsolutePath());
+                            uiHandler.post(() -> {
+                                if (ok) { Toast.makeText(getContext(), L("✅ 新增帧成功！"), Toast.LENGTH_SHORT).show(); d.dismiss(); reloadFromDisk.run(); }
+                                else { Toast.makeText(getContext(), L("❌ 新增失败：可能编号重复或图像格式不兼容"), Toast.LENGTH_LONG).show(); }
+                            });
+                        }).start();
+                    });
+                    box.addView(bConf, new LinearLayout.LayoutParams(-1, -2)); d.setContentView(box); d.show();
+                };
+                if (selectedFile.isDirectory()) showImageGridPicker(selectedFile, doAdd); else doAdd.onFileSelected(selectedFile);
+            });
+        });
+
+        // 【新增】：调整单帧/整组轴心偏移 (复用底层 Api.offsetSffCoords)
+        btnOffsetAxis.setOnClickListener(v -> {
+            if (currentGroupFrames.isEmpty() || currentFrameIndex[0] < 0 || currentFrameIndex[0] >= currentGroupFrames.size()) return;
+            final GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
+            final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#5C6BC0")); border.setCornerRadius(12*density); box.setBackground(border);
+            box.addView(createSubTitle(L("📐 调整轴心偏移 (当前: ") + f.x + ", " + f.y + ")"));
+            EditText dxIn = createInput(L("X 偏移增量 (如 -5 或 10)"), "0"); dxIn.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED); box.addView(dxIn);
+            EditText dyIn = createInput(L("Y 偏移增量 (如 -5 或 10)"), "0"); dyIn.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED); box.addView(dyIn);
+            Button bSingle = createButton(L("✔️ 仅调整当前帧"), "#0078D7");
+            Button bGroup = createButton(L("✔️ 调整当前动作整组"), "#FF9800");
+            View.OnClickListener applyOffset = ev -> {
+                int dx = 0, dy = 0;
+                try { dx = Integer.parseInt(dxIn.getText().toString().trim()); } catch (Exception ignored) {}
+                try { dy = Integer.parseInt(dyIn.getText().toString().trim()); } catch (Exception ignored) {}
+                final short sdx = (short)dx, sdy = (short)dy;
+                final boolean singleOnly = (ev == bSingle);
+                new Thread(() -> {
+                    boolean ok = Api.offsetSffCoords(sffPath, f.group, f.item, sdx, sdy, singleOnly);
+                    uiHandler.post(() -> {
+                        if (ok) { Toast.makeText(getContext(), L("✅ 轴心坐标已更新！"), Toast.LENGTH_SHORT).show(); d.dismiss(); reloadFromDisk.run(); }
+                        else { Toast.makeText(getContext(), L("❌ 轴心修改失败"), Toast.LENGTH_SHORT).show(); }
+                    });
+                }).start();
+            };
+            bSingle.setOnClickListener(applyOffset); bGroup.setOnClickListener(applyOffset);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, (int)(8*density), 0, 0);
+            box.addView(bSingle, lp); box.addView(bGroup, lp); d.setContentView(box); d.show();
+        });
+
+        // 【新增】：删除当前帧 (带二次确认防误删)
+        btnDeleteFrame.setOnClickListener(v -> {
+            if (currentGroupFrames.isEmpty() || currentFrameIndex[0] < 0 || currentFrameIndex[0] >= currentGroupFrames.size()) return;
+            final GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
+            final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#E81123")); border.setCornerRadius(12*density); box.setBackground(border);
+            box.addView(createSubTitle(L("⚠️ 确认永久删除帧 ") + f.group + "-" + f.item + " ?"));
+            Button bDel = createButton(L("🗑️ 确认永久删除"), "#E81123");
+            Button bCan = createButton(L("❌ 取消"), "#333333");
+            bDel.setOnClickListener(dv -> {
+                d.dismiss();
+                new Thread(() -> {
+                    boolean ok = Api.deleteSffFrame(sffPath, f.group, f.item);
+                    uiHandler.post(() -> {
+                        if (ok) { Toast.makeText(getContext(), L("✅ 帧已永久删除！"), Toast.LENGTH_SHORT).show(); reloadFromDisk.run(); }
+                        else { Toast.makeText(getContext(), L("❌ 删除失败"), Toast.LENGTH_SHORT).show(); }
+                    });
+                }).start();
+            });
+            bCan.setOnClickListener(cv -> d.dismiss());
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, (int)(8*density), 0, 0);
+            box.addView(bDel, lp); box.addView(bCan, lp); d.setContentView(box); d.show();
+        });
+
+        // 【新增】：批量导出当前分组所有帧为 PNG
+        btnBatchExport.setOnClickListener(v -> {
+            if (currentGroupFrames.isEmpty()) return;
+            final List<GoEngineBridge.SffFrame> snapshot = new ArrayList<>(currentGroupFrames);
+            Toast.makeText(getContext(), L("📦 正在批量导出 ") + snapshot.size() + L(" 张 PNG..."), Toast.LENGTH_SHORT).show();
+            new Thread(() -> {
+                int okCount = 0;
+                String baseName = new File(sffPath).getName().replaceAll("\\.[^.]+$", "");
+                File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports/" + baseName + "_Batch");
+                if (!outDir.exists()) outDir.mkdirs();
+                for (GoEngineBridge.SffFrame fr : snapshot) {
+                    try {
+                        byte[] pngData = Api.decodeSffFrame(sffPath, fr.group, fr.item, currentActPath[0]);
+                        if (pngData != null && pngData.length > 0) {
+                            File outFile = new File(outDir, baseName + "_G" + fr.group + "_I" + fr.item + ".png");
+                            try (FileOutputStream fos = new FileOutputStream(outFile)) { fos.write(pngData); }
+                            okCount++;
+                        }
+                    } catch (Throwable ignored) {}
+                }
+                final int exported = okCount;
+                uiHandler.post(() -> Toast.makeText(getContext(), L("✅ 批量导出完成: ") + exported + " / " + snapshot.size() + "\n" + outDir.getAbsolutePath(), Toast.LENGTH_LONG).show());
+            }).start();
+        });
+
+        currentGroupFrames.addAll(masterFrames);
         canvasFrame.post(updateFrameAction);
 
-        // playHandler 在上方已声明，此处直接使用即可
         Runnable playRunnable = new Runnable() { @Override public void run() { if (isPlaying[0] && !currentGroupFrames.isEmpty()) { currentFrameIndex[0]++; updateFrameAction.run(); playHandler.postDelayed(this, currentDelay[0]); } } };
 
         btnPrev.setOnClickListener(v -> { currentFrameIndex[0]--; updateFrameAction.run(); }); btnNext.setOnClickListener(v -> { currentFrameIndex[0]++; updateFrameAction.run(); });
         btnPlay.setOnClickListener(v -> {
             if (currentGroupFrames.isEmpty()) return; isPlaying[0] = !isPlaying[0];
-            btnPlay.setText(isPlaying[0] ? L("⏸️ 暂停") : L("▶️ 播放")); 
+            btnPlay.setText(isPlaying[0] ? L("⏸️ 暂停") : L("▶️ 播放"));
             btnPlay.setBackgroundColor(isPlaying[0] ? Color.parseColor("#E81123") : Color.parseColor("#0078D7"));
             if (isPlaying[0]) playHandler.post(playRunnable); else playHandler.removeCallbacksAndMessages(null);
         });
 
         btnExportNative.setOnClickListener(v -> {
-            if(currentGroupFrames.isEmpty()) return; GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
-            
+            if (currentGroupFrames.isEmpty() || currentFrameIndex[0] < 0 || currentFrameIndex[0] >= currentGroupFrames.size()) return;
+            GoEngineBridge.SffFrame f = currentGroupFrames.get(currentFrameIndex[0]);
+
             final Dialog formatDialog = new Dialog(getContext());
             formatDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            LinearLayout fLayout = new LinearLayout(getContext());
-            fLayout.setOrientation(LinearLayout.VERTICAL);
-            fLayout.setBackgroundColor(Color.parseColor("#2D2D30"));
-            fLayout.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
-            
-            TextView title = new TextView(getContext());
-            title.setText(L("选择导出格式"));
-            applyGlobalFontSettings(title, 1.1f, true);
-            title.setGravity(Gravity.CENTER);
-            title.setPadding(0, 0, 0, (int)(15*density));
-            fLayout.addView(title);
-            
+            LinearLayout fLayout = new LinearLayout(getContext()); fLayout.setOrientation(LinearLayout.VERTICAL); fLayout.setBackgroundColor(Color.parseColor("#2D2D30")); fLayout.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+
+            TextView title = new TextView(getContext()); title.setText(L("选择导出格式")); applyGlobalFontSettings(title, 1.1f, true); title.setGravity(Gravity.CENTER); title.setPadding(0, 0, 0, (int)(15*density)); fLayout.addView(title);
             Button btnPcx = createButton(L("💾 导出为 PCX (原生)"), "#0078D7");
             Button btnPng = createButton(L("💾 导出为 PNG (通用)"), "#4CAF50");
-            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams((int)(200*density), -2);
-            bp.setMargins(0, 0, 0, (int)(10*density));
-            
+            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams((int)(200*density), -2); bp.setMargins(0, 0, 0, (int)(10*density));
+
             View.OnClickListener exportAction = ev -> {
                 boolean wantPng = (ev == btnPng);
                 formatDialog.dismiss();
-                
                 new Thread(() -> {
-                    File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports"); 
+                    File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports");
                     if (!outDir.exists()) outDir.mkdirs();
                     try {
                         String finalPath = "";
                         if (wantPng) {
-                            // 💡 核心巧妙点：纯 Java 层实现 PCX 到 PNG 的自动转换！
-                            // 绕开原生导出，直接调用底层解码引擎，将色表与图像合并渲染为无损 PNG 字节流
                             byte[] pngData = Api.decodeSffFrame(sffPath, f.group, f.item, currentActPath[0]);
                             if (pngData != null && pngData.length > 0) {
                                 String exportName = new File(sffPath).getName().replaceAll("\\.[^.]+$", "");
                                 File outFile = new File(outDir, exportName + "_G" + f.group + "_I" + f.item + ".png");
-                                FileOutputStream fos = new FileOutputStream(outFile);
-                                fos.write(pngData);
-                                fos.close();
+                                try (FileOutputStream fos = new FileOutputStream(outFile)) { fos.write(pngData); }
                                 finalPath = outFile.getAbsolutePath();
                             }
                         } else {
-                            // 玩家选择了 PCX (原生格式)：直接调用你底层的 exportSffFrameNative
-                            // Go 引擎中 SFFv1 依然会完美走 PCX 的原生抽离写入逻辑
                             finalPath = Api.exportSffFrameNative(sffPath, f.group, f.item, currentActPath[0], outDir.getAbsolutePath());
                         }
-                        
                         final String outResult = finalPath;
                         uiHandler.post(() -> {
-                            if (outResult != null && !outResult.isEmpty()) {
-                                Toast.makeText(getContext(), L("✅ 导出成功: ") + outResult, Toast.LENGTH_LONG).show();
-                            } else {
-                                Toast.makeText(getContext(), L("❌ 导出失败：解析异常或写入失败"), Toast.LENGTH_LONG).show();
-                            }
+                            if (outResult != null && !outResult.isEmpty()) Toast.makeText(getContext(), L("✅ 导出成功: ") + outResult, Toast.LENGTH_LONG).show();
+                            else Toast.makeText(getContext(), L("❌ 导出失败：解析异常或写入失败"), Toast.LENGTH_LONG).show();
                         });
                     } catch (Exception e) {
                         uiHandler.post(() -> Toast.makeText(getContext(), L("❌ 导出崩溃: ") + e.getMessage(), Toast.LENGTH_LONG).show());
                     }
                 }).start();
             };
-            
-            btnPcx.setOnClickListener(exportAction);
-            btnPng.setOnClickListener(exportAction);
-            fLayout.addView(btnPcx, bp);
-            fLayout.addView(btnPng, bp);
-            
-            formatDialog.setContentView(fLayout);
-            formatDialog.show();
+
+            btnPcx.setOnClickListener(exportAction); btnPng.setOnClickListener(exportAction);
+            fLayout.addView(btnPcx, bp); fLayout.addView(btnPng, bp);
+            formatDialog.setContentView(fLayout); formatDialog.show();
         });
 
         controls.addView(btnDefaultAct, uniformBtnParams);
-        controls.addView(btnAutoAct, uniformBtnParams); 
-        controls.addView(btnManualAct, uniformBtnParams); 
-        controls.addView(btnGroup, uniformBtnParams); // 加入统一的动作编组控件
-        controls.addView(btnPrev, wideBtnParams);     // 应用加宽布局
-        controls.addView(btnPlay, wideBtnParams);     // 应用加宽布局
-        controls.addView(btnNext, wideBtnParams);     // 应用加宽布局
-        controls.addView(btnSpeed, uniformBtnParams); 
-        controls.addView(btnExportNative, uniformBtnParams); 
+        controls.addView(btnAutoAct, uniformBtnParams);
+        controls.addView(btnManualAct, uniformBtnParams);
+        controls.addView(btnGroup, uniformBtnParams);
+        controls.addView(btnPrev, wideBtnParams);
+        controls.addView(btnPlay, wideBtnParams);
+        controls.addView(btnNext, wideBtnParams);
+        controls.addView(btnSpeed, uniformBtnParams);
+        controls.addView(btnAxisToggle, uniformBtnParams);
+        controls.addView(btnResetView, uniformBtnParams);
+        controls.addView(btnOpenClsn, uniformBtnParams);
+        controls.addView(btnExportNative, uniformBtnParams);
+        controls.addView(btnBatchExport, uniformBtnParams);
         controls.addView(btnReplace, uniformBtnParams);
-        
+        controls.addView(btnAddFrame, uniformBtnParams);
+        controls.addView(btnOffsetAxis, uniformBtnParams);
+        controls.addView(btnDeleteFrame, uniformBtnParams);
+
         controlsScroll.addView(controls);
         bottomToolArea.addView(controlsScroll);
         root.addView(bottomToolArea);
-        
+
         openAppWindow(winTitle, root, () -> {
-            isPlaying[0] = false; playHandler.removeCallbacksAndMessages(null); 
+            isPlaying[0] = false; playHandler.removeCallbacksAndMessages(null);
             View win = windowsLayer.findViewWithTag(winTitle); if (win != null) windowsLayer.removeView(win);
             View tbBtn = taskbarAppsLayout.findViewWithTag("tb_" + winTitle); if (tbBtn != null) taskbarAppsLayout.removeView(tbBtn);
         });
@@ -1399,134 +1681,220 @@ public class DesktopSystemView extends Dialog {
     private void showSndViewerWindow(String sndPath, String sndName, List<GoEngineBridge.SndNode> allNodes) {
         final String winTitle = L("🎵 检视: ") + sndName;
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        final Handler uiHandler = new Handler(Looper.getMainLooper());
+        final List<GoEngineBridge.SndNode> safeNodes = (allNodes != null) ? allNodes : new ArrayList<>();
 
-        List<Integer> groupList = new ArrayList<>();
-        groupList.add(-999);
-        if (allNodes != null) {
-            for (GoEngineBridge.SndNode n : allNodes) { if (!groupList.contains(n.group)) { groupList.add(n.group); } }
-        }
+        // 【新增】：顶部搜索过滤与快捷操作栏
+        LinearLayout topTools = new LinearLayout(getContext()); topTools.setOrientation(LinearLayout.HORIZONTAL); topTools.setGravity(Gravity.CENTER_VERTICAL);
+        topTools.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(4*density));
+        final EditText searchSnd = createInput(L("🔍 搜索组号或编号 (如 0 或 0-1)..."), "");
+        Button btnStopPlay = createButton(L("⏹️ 停止"), "#E81123");
+        Button btnBatchWav = createButton(L("📦 批量导出组"), "#0288D1");
+        topTools.addView(searchSnd, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout.LayoutParams topBtnP = new LinearLayout.LayoutParams(-2, -2); topBtnP.setMargins((int)(6*density), 0, 0, 0);
+        topTools.addView(btnStopPlay, topBtnP);
+        topTools.addView(btnBatchWav, topBtnP);
+        root.addView(topTools);
 
         ScrollView scroll = new ScrollView(getContext()); LinearLayout listLayout = new LinearLayout(getContext()); listLayout.setOrientation(LinearLayout.VERTICAL); scroll.addView(listLayout, new FrameLayout.LayoutParams(-1, -1));
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f); scrollParams.setMargins((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density)); root.addView(scroll, scrollParams);
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f); scrollParams.setMargins((int)(10*density), (int)(6*density), (int)(10*density), (int)(6*density)); root.addView(scroll, scrollParams);
 
         HorizontalScrollView groupScroll = new HorizontalScrollView(getContext()); groupScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout groupToolBelt = new LinearLayout(getContext()); groupToolBelt.setOrientation(LinearLayout.HORIZONTAL); groupToolBelt.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density)); groupToolBelt.setBackgroundColor(Color.parseColor("#2D2D30"));
+        LinearLayout groupToolBelt = new LinearLayout(getContext()); groupToolBelt.setOrientation(LinearLayout.HORIZONTAL); groupToolBelt.setPadding((int)(12*density), (int)(10*density), (int)(12*density), (int)(10*density)); groupToolBelt.setBackgroundColor(Color.parseColor("#2D2D30"));
 
         final int[] currentSelectedGroup = {-999};
+        final String[] searchFilter = {""};
+
+        Runnable stopAudioSafely = () -> {
+            try {
+                if (currentSndPlayer != null) {
+                    if (currentSndPlayer.isPlaying()) currentSndPlayer.stop();
+                    currentSndPlayer.release();
+                    currentSndPlayer = null;
+                }
+            } catch (Exception ignored) { currentSndPlayer = null; }
+        };
+        btnStopPlay.setOnClickListener(v -> stopAudioSafely.run());
 
         final Runnable[] refreshList = {null};
+        final Runnable[] rebuildGroupBelt = {null};
+
         refreshList[0] = () -> {
-            listLayout.removeAllViews(); int selectedGroup = currentSelectedGroup[0];
-            if (allNodes != null) {
-                for (GoEngineBridge.SndNode n : allNodes) {
-                    if (selectedGroup != -999 && n.group != selectedGroup) continue;
-                    LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
-                    GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#2D2D30")); bg.setCornerRadius(8f*density); row.setBackground(bg);
-                    LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, -2); rowParams.setMargins(0, 0, 0, (int)(8*density));
-                    TextView info = new TextView(getContext()); info.setText(String.format(L("🎵 动作组 (Group): %d | 索引 (Item): %d"), n.group, n.item)); applyGlobalFontSettings(info, 0.9f, false); row.addView(info, new LinearLayout.LayoutParams(0, -2, 1f));
+            listLayout.removeAllViews();
+            int selectedGroup = currentSelectedGroup[0];
+            String q = searchFilter[0].trim();
+            for (final GoEngineBridge.SndNode n : safeNodes) {
+                if (selectedGroup != -999 && n.group != selectedGroup) continue;
+                if (!q.isEmpty()) {
+                    String tag = n.group + "-" + n.item;
+                    if (!tag.contains(q) && !String.valueOf(n.group).equals(q) && !String.valueOf(n.item).equals(q)) continue;
+                }
+                LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
+                GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#2D2D30")); bg.setCornerRadius(8f*density); row.setBackground(bg);
+                LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, -2); rowParams.setMargins(0, 0, 0, (int)(8*density));
+                TextView info = new TextView(getContext()); info.setText(String.format(L("🎵 动作组 (Group): %d | 索引 (Item): %d"), n.group, n.item)); applyGlobalFontSettings(info, 0.9f, false); row.addView(info, new LinearLayout.LayoutParams(0, -2, 1f));
 
-                    Button btnPlay = createButton(L("▶️ 试听"), "#FF9800"); btnPlay.setPadding((int)(15*density), (int)(8*density), (int)(15*density), (int)(8*density));
-                    btnPlay.setOnClickListener(v -> {
-                        try {
-                            if (currentSndPlayer != null) { currentSndPlayer.release(); currentSndPlayer = null; }
-                            byte[] wavData = Api.extractSndAudio(sndPath, n.group, n.item);
-                            if(wavData != null && wavData.length > 0) {
-                                File tempWav = new File(getContext().getCacheDir(), "ikemen_preview.wav"); FileOutputStream fos = new FileOutputStream(tempWav); fos.write(wavData); fos.close();
-                                currentSndPlayer = new MediaPlayer(); currentSndPlayer.setDataSource(tempWav.getAbsolutePath()); currentSndPlayer.prepare(); currentSndPlayer.start();
-                            }
-                        } catch (Exception e) {}
-                    });
-                    
-                    Button btnExport = createButton(L("💾 导出"), "#0078D7"); LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, -2); btnParams.setMargins((int)(10*density), 0, 0, 0);
-                    btnExport.setOnClickListener(v -> {
+                // 【防卡顿/防闪退】：试听提取改到后台线程
+                Button btnPlay = createButton(L("▶️ 试听"), "#FF9800"); btnPlay.setPadding((int)(15*density), (int)(8*density), (int)(15*density), (int)(8*density));
+                btnPlay.setOnClickListener(v -> {
+                    stopAudioSafely.run();
+                    new Thread(() -> {
                         try {
                             byte[] wavData = Api.extractSndAudio(sndPath, n.group, n.item);
-                            if(wavData != null) {
-                                File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports"); if (!outDir.exists()) outDir.mkdirs();
-                                File outFile = new File(outDir, sndName.replace(".snd", "") + "_G" + n.group + "_I" + n.item + ".wav"); FileOutputStream fos = new FileOutputStream(outFile); fos.write(wavData); fos.close();
-                                Toast.makeText(getContext(), L("✅ 已导出: ") + outFile.getAbsolutePath(), Toast.LENGTH_SHORT).show();
+                            if (wavData != null && wavData.length > 0) {
+                                final File tempWav = new File(getContext().getCacheDir(), "ikemen_preview.wav");
+                                try (FileOutputStream fos = new FileOutputStream(tempWav)) { fos.write(wavData); }
+                                uiHandler.post(() -> {
+                                    try {
+                                        stopAudioSafely.run();
+                                        currentSndPlayer = new MediaPlayer();
+                                        currentSndPlayer.setDataSource(tempWav.getAbsolutePath());
+                                        currentSndPlayer.setOnCompletionListener(mp -> stopAudioSafely.run());
+                                        currentSndPlayer.prepare();
+                                        currentSndPlayer.start();
+                                    } catch (Exception e) {
+                                        Toast.makeText(getContext(), L("❌ 音频试听失败"), Toast.LENGTH_SHORT).show();
+                                    }
+                                });
+                            } else {
+                                uiHandler.post(() -> Toast.makeText(getContext(), L("❌ 无法解码该音频节点"), Toast.LENGTH_SHORT).show());
                             }
-                        } catch (Exception e) {}
-                    });
-                    
-                                       Button btnReplace = createButton(L("🔄 替换"), "#4CAF50");
-                    btnReplace.setOnClickListener(v -> {
-                        if (currentSndPlayer != null) { currentSndPlayer.release(); currentSndPlayer = null; }
-                        showWin10FilePicker(L("选择替换用的音频或所在目录"), 8, null, null, selectedFile -> {
-                            FileCallback doReplace = finalFile -> {
-                                new Thread(() -> {
-                                    boolean success = Api.replaceSndAudio(sndPath, n.group, n.item, finalFile.getAbsolutePath());
-                                    new Handler(Looper.getMainLooper()).post(() -> {
-                                        if (success) { Toast.makeText(getContext(), L("✅ ") + n.group + "-" + n.item + L(" 音频已替换！"), Toast.LENGTH_SHORT).show(); } 
-                                        else { Toast.makeText(getContext(), L("❌ 音频格式不支持，替换失败"), Toast.LENGTH_LONG).show(); }
-                                    });
-                                }).start();
-                            };
-                            // 如果选的是文件夹，打开音频列表扫描器；如果是文件，直接替换
-                            if (selectedFile.isDirectory()) showAudioListPicker(selectedFile, doReplace); else doReplace.onFileSelected(selectedFile);
-                        });
-                    });
+                        } catch (Throwable ignored) {}
+                    }).start();
+                });
 
+                // 【防卡顿】：导出改到后台线程
+                Button btnExport = createButton(L("💾 导出"), "#0078D7"); LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, -2); btnParams.setMargins((int)(10*density), 0, 0, 0);
+                btnExport.setOnClickListener(v -> {
+                    new Thread(() -> {
+                        try {
+                            byte[] wavData = Api.extractSndAudio(sndPath, n.group, n.item);
+                            if (wavData != null && wavData.length > 0) {
+                                File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports");
+                                if (!outDir.exists()) outDir.mkdirs();
+                                String base = sndName.replaceAll("(?i)\\.snd$", "");
+                                final File outFile = new File(outDir, base + "_G" + n.group + "_I" + n.item + ".wav");
+                                try (FileOutputStream fos = new FileOutputStream(outFile)) { fos.write(wavData); }
+                                uiHandler.post(() -> Toast.makeText(getContext(), L("✅ 已导出: ") + outFile.getAbsolutePath(), Toast.LENGTH_SHORT).show());
+                            }
+                        } catch (Exception e) {
+                            uiHandler.post(() -> Toast.makeText(getContext(), L("❌ 导出失败"), Toast.LENGTH_SHORT).show());
+                        }
+                    }).start();
+                });
 
-                    Button btnDelete = createButton(L("🗑️ 删除"), "#E81123");
-                    btnDelete.setOnClickListener(v -> {
+                Button btnReplace = createButton(L("🔄 替换"), "#4CAF50");
+                btnReplace.setOnClickListener(v -> {
+                    stopAudioSafely.run();
+                    showWin10FilePicker(L("选择替换用的音频或所在目录"), 8, null, null, selectedFile -> {
+                        FileCallback doReplace = finalFile -> {
+                            new Thread(() -> {
+                                boolean success = Api.replaceSndAudio(sndPath, n.group, n.item, finalFile.getAbsolutePath());
+                                uiHandler.post(() -> {
+                                    if (success) { Toast.makeText(getContext(), L("✅ ") + n.group + "-" + n.item + L(" 音频已替换！"), Toast.LENGTH_SHORT).show(); }
+                                    else { Toast.makeText(getContext(), L("❌ 音频格式不支持，替换失败"), Toast.LENGTH_LONG).show(); }
+                                });
+                            }).start();
+                        };
+                        if (selectedFile.isDirectory()) showAudioListPicker(selectedFile, doReplace); else doReplace.onFileSelected(selectedFile);
+                    });
+                });
+
+                Button btnDelete = createButton(L("🗑️ 删除"), "#E81123");
+                btnDelete.setOnClickListener(v -> {
+                    final Dialog cd = new Dialog(getContext()); cd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                    LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(20*density), (int)(20*density), (int)(20*density), (int)(20*density));
+                    GradientDrawable bdr = new GradientDrawable(); bdr.setColor(Color.parseColor("#252526")); bdr.setStroke((int)(2*density), Color.parseColor("#E81123")); bdr.setCornerRadius(12*density); box.setBackground(bdr);
+                    box.addView(createSubTitle(L("⚠️ 确认永久删除音频 ") + n.group + "-" + n.item + " ?"));
+                    Button bOk = createButton(L("🗑️ 确认永久删除"), "#E81123");
+                    Button bNo = createButton(L("❌ 取消"), "#333333");
+                    bOk.setOnClickListener(dv -> {
+                        cd.dismiss();
+                        stopAudioSafely.run();
                         new Thread(() -> {
                             boolean success = api.Api.deleteSndAudio(sndPath, n.group, n.item);
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                if (success) { 
-                                    Toast.makeText(getContext(), L("✅ 音频已永久删除！"), Toast.LENGTH_SHORT).show(); 
+                            uiHandler.post(() -> {
+                                if (success) {
+                                    Toast.makeText(getContext(), L("✅ 音频已永久删除！"), Toast.LENGTH_SHORT).show();
                                     new Thread(() -> {
                                         List<GoEngineBridge.SndNode> newNodes = GoEngineBridge.scanSnd(sndPath);
-                                        new Handler(Looper.getMainLooper()).post(() -> { allNodes.clear(); allNodes.addAll(newNodes); refreshList[0].run(); });
+                                        uiHandler.post(() -> { safeNodes.clear(); safeNodes.addAll(newNodes); rebuildGroupBelt[0].run(); refreshList[0].run(); });
                                     }).start();
                                 } else { Toast.makeText(getContext(), L("❌ 删除失败"), Toast.LENGTH_SHORT).show(); }
                             });
                         }).start();
                     });
+                    bNo.setOnClickListener(cv -> cd.dismiss());
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, (int)(8*density), 0, 0);
+                    box.addView(bOk, lp); box.addView(bNo, lp); cd.setContentView(box); cd.show();
+                });
 
-                    HorizontalScrollView hsv = new HorizontalScrollView(getContext());
-                    hsv.setHorizontalScrollBarEnabled(false);
-                    LinearLayout btnContainer = new LinearLayout(getContext());
-                    btnContainer.setOrientation(LinearLayout.HORIZONTAL);
-                    
-                    btnContainer.addView(btnPlay); 
-                    btnContainer.addView(btnExport, btnParams); 
-                    btnContainer.addView(btnReplace, btnParams); 
-                    btnContainer.addView(btnDelete, btnParams);
-                    
-                    hsv.addView(btnContainer);
-                    row.addView(hsv); 
-                    listLayout.addView(row, rowParams);
-                }
+                HorizontalScrollView hsv = new HorizontalScrollView(getContext()); hsv.setHorizontalScrollBarEnabled(false);
+                LinearLayout btnContainer = new LinearLayout(getContext()); btnContainer.setOrientation(LinearLayout.HORIZONTAL);
+                btnContainer.addView(btnPlay); btnContainer.addView(btnExport, btnParams); btnContainer.addView(btnReplace, btnParams); btnContainer.addView(btnDelete, btnParams);
+                hsv.addView(btnContainer); row.addView(hsv); listLayout.addView(row, rowParams);
             }
         };
 
+        searchSnd.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) { searchFilter[0] = s.toString(); refreshList[0].run(); }
+        });
+
+        btnBatchWav.setOnClickListener(v -> {
+            final int selG = currentSelectedGroup[0];
+            final List<GoEngineBridge.SndNode> targets = new ArrayList<>();
+            for (GoEngineBridge.SndNode n : safeNodes) {
+                if (selG == -999 || n.group == selG) targets.add(n);
+            }
+            if (targets.isEmpty()) return;
+            Toast.makeText(getContext(), L("📦 正在批量导出 ") + targets.size() + L(" 个 WAV 音频..."), Toast.LENGTH_SHORT).show();
+            new Thread(() -> {
+                int okCount = 0;
+                String base = sndName.replaceAll("(?i)\\.snd$", "");
+                File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports/" + base + "_SND");
+                if (!outDir.exists()) outDir.mkdirs();
+                for (GoEngineBridge.SndNode n : targets) {
+                    try {
+                        byte[] wavData = Api.extractSndAudio(sndPath, n.group, n.item);
+                        if (wavData != null && wavData.length > 0) {
+                            File outFile = new File(outDir, base + "_G" + n.group + "_I" + n.item + ".wav");
+                            try (FileOutputStream fos = new FileOutputStream(outFile)) { fos.write(wavData); }
+                            okCount++;
+                        }
+                    } catch (Throwable ignored) {}
+                }
+                final int exported = okCount;
+                uiHandler.post(() -> Toast.makeText(getContext(), L("✅ 批量导出完成: ") + exported + " / " + targets.size() + "\n" + outDir.getAbsolutePath(), Toast.LENGTH_LONG).show());
+            }).start();
+        });
+
         Button btnAddSnd = createButton(L("➕ 新增音频"), "#4CAF50");
-        LinearLayout.LayoutParams btnAddParams = new LinearLayout.LayoutParams(-2, -2);
-        btnAddParams.setMargins(0, 0, (int)(15*density), 0);
+        LinearLayout.LayoutParams btnAddParams = new LinearLayout.LayoutParams(-2, -2); btnAddParams.setMargins(0, 0, (int)(15*density), 0);
         btnAddSnd.setOnClickListener(v -> {
             showWin10FilePicker(L("选择要强行注入的音频文件"), 8, null, null, selectedFile -> {
                 FileCallback doAdd = finalFile -> {
                     final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
                     LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
                     GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
-                    
+
                     box.addView(createSubTitle(L("➕ 设定目标音频编号")));
                     EditText gIn = createInput(L("所属组 (Group)"), "0"); gIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(gIn);
                     EditText iIn = createInput(L("索引项 (Item)"), "0"); iIn.setInputType(InputType.TYPE_CLASS_NUMBER); box.addView(iIn);
-                    
+
                     Button bConf = createButton(L("✔️ 执行注入合并"), "#4CAF50");
                     bConf.setOnClickListener(v2 -> {
-                        int addG = 0, addI = 0; try { addG = Integer.parseInt(gIn.getText().toString()); addI = Integer.parseInt(iIn.getText().toString()); } catch(Exception e){}
+                        int addG = 0, addI = 0; try { addG = Integer.parseInt(gIn.getText().toString().trim()); addI = Integer.parseInt(iIn.getText().toString().trim()); } catch (Exception ignored) {}
                         final int fg = addG, fi = addI;
                         new Thread(() -> {
                             boolean success = api.Api.addSndAudio(sndPath, fg, fi, finalFile.getAbsolutePath());
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                if (success) { 
+                            uiHandler.post(() -> {
+                                if (success) {
                                     Toast.makeText(getContext(), L("✅ 音频强行注入成功！"), Toast.LENGTH_SHORT).show(); d.dismiss();
                                     new Thread(() -> {
                                         List<GoEngineBridge.SndNode> newNodes = GoEngineBridge.scanSnd(sndPath);
-                                        new Handler(Looper.getMainLooper()).post(() -> { allNodes.clear(); allNodes.addAll(newNodes); refreshList[0].run(); });
+                                        uiHandler.post(() -> { safeNodes.clear(); safeNodes.addAll(newNodes); rebuildGroupBelt[0].run(); refreshList[0].run(); });
                                     }).start();
                                 } else { Toast.makeText(getContext(), L("❌ 注入失败，可能编号重复或格式不可读"), Toast.LENGTH_LONG).show(); }
                             });
@@ -1537,24 +1905,29 @@ public class DesktopSystemView extends Dialog {
                 if (selectedFile.isDirectory()) showAudioListPicker(selectedFile, doAdd); else doAdd.onFileSelected(selectedFile);
             });
         });
-        groupToolBelt.addView(btnAddSnd, btnAddParams);
 
-        for (final int g : groupList) {
-            String btnText = (g == -999) ? L("📂 所有音频") : L("📁 音频组 ") + g;
-            Button groupBtn = createButton(btnText, "#1E1E1E");
-            LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-2, -2); gp.setMargins(0, 0, (int)(5*density), 0);
-            groupBtn.setOnClickListener(v -> {
-                currentSelectedGroup[0] = g; refreshList[0].run();
-            });
-            groupToolBelt.addView(groupBtn, gp);
-        }
+        rebuildGroupBelt[0] = () -> {
+            groupToolBelt.removeAllViews();
+            groupToolBelt.addView(btnAddSnd, btnAddParams);
+            List<Integer> groupList = new ArrayList<>();
+            groupList.add(-999);
+            for (GoEngineBridge.SndNode n : safeNodes) { if (!groupList.contains(n.group)) groupList.add(n.group); }
+            for (final int g : groupList) {
+                String btnText = (g == -999) ? L("📂 所有音频") : L("📁 音频组 ") + g;
+                Button groupBtn = createButton(btnText, "#1E1E1E");
+                LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-2, -2); gp.setMargins(0, 0, (int)(5*density), 0);
+                groupBtn.setOnClickListener(v -> { currentSelectedGroup[0] = g; refreshList[0].run(); });
+                groupToolBelt.addView(groupBtn, gp);
+            }
+        };
+        rebuildGroupBelt[0].run();
         groupScroll.addView(groupToolBelt);
         root.addView(groupScroll);
-        
-        refreshList[0].run(); 
+
+        refreshList[0].run();
 
         openAppWindow(winTitle, root, () -> {
-            if (currentSndPlayer != null) { currentSndPlayer.release(); currentSndPlayer = null; }
+            stopAudioSafely.run();
             View win = windowsLayer.findViewWithTag(winTitle); if (win != null) windowsLayer.removeView(win);
             View tbBtn = taskbarAppsLayout.findViewWithTag("tb_" + winTitle); if (tbBtn != null) taskbarAppsLayout.removeView(tbBtn);
         });
@@ -3659,9 +4032,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
         btnScan.setOnClickListener(v -> {
             showWin10FilePicker(L("选择你要扫描的根目录"), 13, null, null, dir -> {
-                if(!dir.isDirectory()) { Toast.makeText(getContext(), L("❌ 请选择文件夹！"), Toast.LENGTH_SHORT).show(); return; }
+                if (dir == null || !dir.isDirectory()) { Toast.makeText(getContext(), L("❌ 请选择文件夹！"), Toast.LENGTH_SHORT).show(); return; }
                 contentArea.removeAllViews(); txtStatus.setText(L("  🚀 正在深度扫描全文，请稍候..."));
-                
+
                 final List<String> stageResults = new ArrayList<>();
                 final List<String> charNormalResults = new ArrayList<>();
                 final List<String> charRiskResults = new ArrayList<>();
@@ -3670,98 +4043,614 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     List<File> allDefs = new ArrayList<>();
                     class DefScanner {
                         void scan(File targetDir) {
-                            File[] fs = targetDir.listFiles(); if(fs==null) return;
-                            for(File f:fs){ if(f.isDirectory() && !f.isHidden()) scan(f); else if(f.getName().toLowerCase().endsWith(".def")) allDefs.add(f); }
+                            File[] fs = targetDir.listFiles(); if (fs == null) return;
+                            for (File f : fs) { if (f.isDirectory() && !f.isHidden()) scan(f); else if (f.getName().toLowerCase().endsWith(".def")) allDefs.add(f); }
                         }
                     }
                     new DefScanner().scan(dir);
 
                     for (File defF : allDefs) {
-                        try {
-                            // 根据你的要求：全文扫描，绝不只扫前50行
-                            java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(defF));
+                        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(defF), "UTF-8"))) {
                             String line; boolean isStage = false; boolean isChar = false;
                             while ((line = br.readLine()) != null) {
+                                int commentIdx = line.indexOf(';');
+                                if (commentIdx >= 0) line = line.substring(0, commentIdx);
                                 String lower = line.toLowerCase().trim();
+                                if (lower.isEmpty()) continue;
                                 if (lower.startsWith("[stageinfo]") || lower.startsWith("[bgdef]")) { isStage = true; break; }
-                                if (lower.startsWith("[files]") || lower.contains("cmd =") || lower.contains("cns =")) { isChar = true; } // 不立即 break，防止误判
+                                if (lower.startsWith("[files]") || lower.matches("^cmd\\s*=.*") || lower.matches("^cns\\s*=.*")) { isChar = true; }
                             }
-                            br.close();
 
-                            String folderName = defF.getParentFile().getName();
-                            String defNameNoExt = defF.getName().substring(0, defF.getName().lastIndexOf("."));
+                            File parentF = defF.getParentFile();
+                            String folderName = (parentF != null) ? parentF.getName() : "";
+                            String rawName = defF.getName();
+                            int dotIdx = rawName.lastIndexOf(".");
+                            String defNameNoExt = (dotIdx > 0) ? rawName.substring(0, dotIdx) : rawName;
 
                             if (isStage) {
-                                stageResults.add(folderName + "/" + defF.getName());
+                                stageResults.add(folderName + "/" + rawName);
                             } else if (isChar) {
                                 if (folderName.equalsIgnoreCase(defNameNoExt)) {
                                     charNormalResults.add(defNameNoExt);
                                 } else {
-                                    charRiskResults.add(L("文件夹名称：") + folderName + L(" - def名称:") + defF.getName());
+                                    charRiskResults.add(folderName + "/" + rawName);
                                 }
                             }
-                        } catch (Exception e) {}
+                        } catch (Exception ignored) {}
                     }
 
                     new Handler(Looper.getMainLooper()).post(() -> {
-                        txtStatus.setText(L("  ✅ 扫描完毕！共分析 ") + allDefs.size() + L(" 个 DEF。"));
-                        
-                        StringBuilder finalExportText = new StringBuilder();
+                        txtStatus.setText(L("  ✅ 扫描完毕！DEF: ") + allDefs.size() + L(" | 地图: ") + stageResults.size() + L(" | 正常角色: ") + charNormalResults.size() + L(" | 风险角色: ") + charRiskResults.size());
+
+                        final StringBuilder finalExportText = new StringBuilder();
                         finalExportText.append("; ==================================\n");
                         finalExportText.append("; 🗺️ 地图列表 (Stages)\n");
                         finalExportText.append("; ==================================\n");
-                        contentArea.addView(createTitle(L("🗺️ 地图列表 (Stages)")));
-                        for (String s : stageResults) { 
-                            TextView tv = new TextView(getContext()); tv.setText(s); tv.setTextColor(Color.parseColor("#4CAF50")); applyGlobalFontSettings(tv, 0.9f, false); contentArea.addView(tv); 
+                        contentArea.addView(createTitle(L("🗺️ 地图列表 (Stages) - ") + stageResults.size()));
+                        for (String s : stageResults) {
+                            TextView tv = new TextView(getContext()); tv.setText(s); tv.setTextColor(Color.parseColor("#4CAF50")); applyGlobalFontSettings(tv, 0.9f, false); contentArea.addView(tv);
                             finalExportText.append(s).append("\n");
                         }
 
                         finalExportText.append("\n; ==================================\n");
                         finalExportText.append("; 🥷 角色列表 - 正常 (Characters)\n");
                         finalExportText.append("; ==================================\n");
-                        contentArea.addView(createTitle(L("🥷 角色列表 (正常匹配)")));
-                        for (String s : charNormalResults) { 
-                            TextView tv = new TextView(getContext()); tv.setText(s); tv.setTextColor(Color.parseColor("#0078D7")); applyGlobalFontSettings(tv, 0.9f, false); contentArea.addView(tv); 
+                        contentArea.addView(createTitle(L("🥷 角色列表 (正常匹配) - ") + charNormalResults.size()));
+                        for (String s : charNormalResults) {
+                            TextView tv = new TextView(getContext()); tv.setText(s); tv.setTextColor(Color.parseColor("#0078D7")); applyGlobalFontSettings(tv, 0.9f, false); contentArea.addView(tv);
                             finalExportText.append(s).append("\n");
                         }
 
                         finalExportText.append("\n; ==================================\n");
-                        finalExportText.append("; ⚠️ 角色列表 - 风险类 (文件夹与 DEF 不一致)\n");
+                        finalExportText.append("; ⚠️ 角色列表 - 风险类 (文件夹与 DEF 不一致，已转为相对路径格式)\n");
                         finalExportText.append("; ==================================\n");
-                        contentArea.addView(createTitle(L("⚠️ 角色列表 (风险类)")));
-                        for (String s : charRiskResults) { 
-                            TextView tv = new TextView(getContext()); tv.setText(s); tv.setTextColor(Color.parseColor("#E81123")); applyGlobalFontSettings(tv, 0.9f, false); contentArea.addView(tv); 
-                            finalExportText.append("; ").append(s).append("\n"); // 风险类默认注释掉，防止直接报错
+                        contentArea.addView(createTitle(L("⚠️ 角色列表 (风险类/完整路径) - ") + charRiskResults.size()));
+                        for (String s : charRiskResults) {
+                            TextView tv = new TextView(getContext()); tv.setText(s); tv.setTextColor(Color.parseColor("#FF9800")); applyGlobalFontSettings(tv, 0.9f, false); contentArea.addView(tv);
+                            finalExportText.append(s).append("\n");
                         }
 
+                        LinearLayout actionRow = new LinearLayout(getContext()); actionRow.setOrientation(LinearLayout.HORIZONTAL);
+                        Button btnCopy = createButton(L("📋 一键复制结果"), "#0078D7");
+                        btnCopy.setOnClickListener(cpBtn -> {
+                            try {
+                                android.content.ClipboardManager cm = (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                                if (cm != null) {
+                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("select_def", finalExportText.toString()));
+                                    Toast.makeText(getContext(), L("✅ 已复制到剪贴板，可直接粘贴到 select.def！"), Toast.LENGTH_SHORT).show();
+                                }
+                            } catch (Exception e) { Toast.makeText(getContext(), L("❌ 复制失败"), Toast.LENGTH_SHORT).show(); }
+                        });
+
                         Button btnExport = createButton(L("💾 导出并保存为 txt 文件 (供 select.def 使用)"), "#FF9800");
-                        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2); bp.setMargins(0, (int)(25*density), 0, (int)(25*density));
                         btnExport.setOnClickListener(expBtn -> {
                             final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
                             LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(Color.parseColor("#252526")); box.setPadding((int)(20*density),(int)(20*density),(int)(20*density),(int)(20*density));
                             GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#0078D7")); border.setCornerRadius(15*density); box.setBackground(border);
-                            
+
                             box.addView(createSubTitle(L("自定义导出文件名 (默认保存在 Download 目录):")));
                             EditText nameInput = createInput("", "select_export.txt"); box.addView(nameInput);
-                            
+
                             Button bConfirm = createButton(L("✔️ 确认导出"), "#4CAF50");
                             bConfirm.setOnClickListener(confBtn -> {
                                 try {
                                     File outDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                                    File outFile = new File(outDir, nameInput.getText().toString());
-                                    FileOutputStream fos = new FileOutputStream(outFile);
-                                    fos.write(finalExportText.toString().getBytes("UTF-8")); fos.close();
+                                    String fname = nameInput.getText().toString().trim();
+                                    if (fname.isEmpty()) fname = "select_export.txt";
+                                    File outFile = new File(outDir, fname);
+                                    try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                                        fos.write(finalExportText.toString().getBytes("UTF-8"));
+                                    }
                                     Toast.makeText(getContext(), L("✅ 成功导出到:\n") + outFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
                                     d.dismiss();
                                 } catch (Exception e) { Toast.makeText(getContext(), L("❌ 导出失败"), Toast.LENGTH_SHORT).show(); }
                             });
                             box.addView(bConfirm, new LinearLayout.LayoutParams(-1, -2)); d.setContentView(box); d.show();
                         });
-                        contentArea.addView(btnExport, bp);
+
+                        LinearLayout.LayoutParams lpCopy = new LinearLayout.LayoutParams(0, -2, 1f); lpCopy.setMargins(0, (int)(20*density), (int)(8*density), (int)(20*density));
+                        LinearLayout.LayoutParams lpExp = new LinearLayout.LayoutParams(0, -2, 1.5f); lpExp.setMargins(0, (int)(20*density), 0, (int)(20*density));
+                        actionRow.addView(btnCopy, lpCopy);
+                        actionRow.addView(btnExport, lpExp);
+                        contentArea.addView(actionRow);
                     });
                 }).start();
             });
         });
+        return root;
+    }
+
+    // ======================================================================================
+    // ⚔️ 模块 8：判定框工坊 (AIR 打击框 Clsn1 / 防御框 Clsn2 可视化绘制与代码生成)
+    // ======================================================================================
+    private static class ClsnBox {
+        int type; // 1 = Clsn1 打击框 (红), 2 = Clsn2 防御框 (蓝)
+        int x1, y1, x2, y2;
+        ClsnBox(int type, int x1, int y1, int x2, int y2) {
+            this.type = type;
+            this.x1 = Math.min(x1, x2);
+            this.y1 = Math.min(y1, y2);
+            this.x2 = Math.max(x1, x2);
+            this.y2 = Math.max(y1, y2);
+        }
+    }
+
+    private View buildClsnEditorContent(String initSffPath, String initActPath) {
+        LinearLayout root = new LinearLayout(getContext());
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.parseColor("#181818"));
+        final Handler uiHandler = new Handler(Looper.getMainLooper());
+
+        final String[] sffPathRef = { initSffPath != null ? initSffPath : "" };
+        final String[] actPathRef = { initActPath != null ? initActPath : "" };
+        final List<GoEngineBridge.SffFrame> allFrames = new ArrayList<>();
+        final List<GoEngineBridge.SffFrame> groupFrames = new ArrayList<>();
+        final int[] frameIdx = {0};
+        final Bitmap[] curBmp = {null};
+        final GoEngineBridge.SffFrame[] curFrame = {null};
+
+        // 每个帧 (key = "group,item") 对应一组判定框
+        final java.util.Map<String, List<ClsnBox>> frameBoxesMap = new java.util.LinkedHashMap<>();
+        // 工具模式: 0=拖拽缩放画布, 1=绘制打击框(Clsn1), 2=绘制防御框(Clsn2)
+        final int[] editMode = {1};
+        final boolean[] showClsn1 = {true};
+        final boolean[] showClsn2 = {true};
+        final float[] canvasScale = {2.0f};
+        final float[] originX = {0f};
+        final float[] originY = {0f};
+        final boolean[] originInited = {false};
+
+        final TextView statusBar = new TextView(getContext());
+        statusBar.setText(L("⚔️ 请先加载 SFF 人物文件，再选择红框(打击)或蓝框(防御)在画布上拖拽绘制"));
+        applyGlobalFontSettings(statusBar, 0.85f, false);
+        statusBar.setTextColor(Color.parseColor("#80CBC4"));
+        statusBar.setPadding((int)(8*density), (int)(5*density), (int)(8*density), (int)(5*density));
+        root.addView(statusBar);
+
+        // 自定义可视化绘制画布
+        final View clsnCanvas = new View(getContext()) {
+            private final Paint gridPaint = new Paint();
+            private final Paint axisPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint fill1 = new Paint();
+            private final Paint stroke1 = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint fill2 = new Paint();
+            private final Paint stroke2 = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint bmpPaint = new Paint();
+            private boolean isDrawing = false;
+            private int dragStartX, dragStartY, dragCurX, dragCurY;
+            private float panStartX, panStartY, savedOriginX, savedOriginY;
+            private float pinchDist = 0f, savedScale = 2f;
+            private int pointerMode = 0;
+
+            {
+                gridPaint.setColor(Color.argb(35, 255, 255, 255));
+                gridPaint.setStrokeWidth(1f);
+                axisPaint.setColor(Color.argb(200, 255, 235, 59));
+                axisPaint.setStrokeWidth(Math.max(1.5f, density));
+                fill1.setColor(Color.argb(80, 244, 67, 54)); fill1.setStyle(Paint.Style.FILL);
+                stroke1.setColor(Color.parseColor("#FF5252")); stroke1.setStyle(Paint.Style.STROKE); stroke1.setStrokeWidth(Math.max(2f, 1.5f * density));
+                fill2.setColor(Color.argb(80, 33, 150, 243)); fill2.setStyle(Paint.Style.FILL);
+                stroke2.setColor(Color.parseColor("#40C4FF")); stroke2.setStyle(Paint.Style.STROKE); stroke2.setStrokeWidth(Math.max(2f, 1.5f * density));
+                labelPaint.setColor(Color.WHITE); labelPaint.setTextSize(10f * density); labelPaint.setFakeBoldText(true);
+                bmpPaint.setFilterBitmap(false);
+            }
+
+            private String currentKey() {
+                if (curFrame[0] == null) return "";
+                return curFrame[0].group + "," + curFrame[0].item;
+            }
+
+            private int screenToMugenX(float sx) {
+                float sc = Math.max(0.1f, canvasScale[0]);
+                return Math.round((sx - originX[0]) / sc);
+            }
+
+            private int screenToMugenY(float sy) {
+                float sc = Math.max(0.1f, canvasScale[0]);
+                return Math.round((sy - originY[0]) / sc);
+            }
+
+            @Override
+            protected void onDraw(Canvas canvas) {
+                super.onDraw(canvas);
+                canvas.drawColor(Color.parseColor("#1A1A1D"));
+                if (!originInited[0] && getWidth() > 0 && getHeight() > 0) {
+                    originX[0] = getWidth() * 0.5f;
+                    originY[0] = getHeight() * 0.72f;
+                    originInited[0] = true;
+                }
+                float sc = Math.max(0.1f, canvasScale[0]);
+                float step = 16f * sc;
+                if (step >= 8f) {
+                    for (float x = originX[0] % step; x < getWidth(); x += step) canvas.drawLine(x, 0, x, getHeight(), gridPaint);
+                    for (float y = originY[0] % step; y < getHeight(); y += step) canvas.drawLine(0, y, getWidth(), y, gridPaint);
+                }
+
+                // 原点十字轴 (0,0)
+                canvas.drawLine(0, originY[0], getWidth(), originY[0], axisPaint);
+                canvas.drawLine(originX[0], 0, originX[0], getHeight(), axisPaint);
+
+                // 绘制当前 SFF 帧（按 MUGEN 真实轴心 x, y 定位）
+                if (curBmp[0] != null && !curBmp[0].isRecycled() && curFrame[0] != null) {
+                    float left = originX[0] - curFrame[0].x * sc;
+                    float top = originY[0] - curFrame[0].y * sc;
+                    android.graphics.RectF dst = new android.graphics.RectF(left, top, left + curBmp[0].getWidth() * sc, top + curBmp[0].getHeight() * sc);
+                    canvas.drawBitmap(curBmp[0], null, dst, bmpPaint);
+                }
+
+                // 绘制已保存的判定框
+                String key = currentKey();
+                List<ClsnBox> boxes = frameBoxesMap.get(key);
+                if (boxes != null) {
+                    int c1Idx = 0, c2Idx = 0;
+                    for (ClsnBox b : boxes) {
+                        if (b.type == 1 && !showClsn1[0]) continue;
+                        if (b.type == 2 && !showClsn2[0]) continue;
+                        float l = originX[0] + b.x1 * sc;
+                        float t = originY[0] + b.y1 * sc;
+                        float r = originX[0] + b.x2 * sc;
+                        float bt = originY[0] + b.y2 * sc;
+                        canvas.drawRect(l, t, r, bt, b.type == 1 ? fill1 : fill2);
+                        canvas.drawRect(l, t, r, bt, b.type == 1 ? stroke1 : stroke2);
+                        String tag = (b.type == 1) ? ("Clsn1[" + (c1Idx++) + "]") : ("Clsn2[" + (c2Idx++) + "]");
+                        canvas.drawText(tag, l + 3f * density, t + 12f * density, labelPaint);
+                    }
+                }
+
+                // 绘制正在拖拽中的预览框
+                if (isDrawing) {
+                    int rx1 = Math.min(dragStartX, dragCurX), ry1 = Math.min(dragStartY, dragCurY);
+                    int rx2 = Math.max(dragStartX, dragCurX), ry2 = Math.max(dragStartY, dragCurY);
+                    float l = originX[0] + rx1 * sc, t = originY[0] + ry1 * sc;
+                    float r = originX[0] + rx2 * sc, bt = originY[0] + ry2 * sc;
+                    canvas.drawRect(l, t, r, bt, editMode[0] == 1 ? fill1 : fill2);
+                    canvas.drawRect(l, t, r, bt, editMode[0] == 1 ? stroke1 : stroke2);
+                    canvas.drawText(rx1 + "," + ry1 + " ~ " + rx2 + "," + ry2, l + 4f * density, Math.max(14f * density, t - 4f * density), labelPaint);
+                }
+            }
+
+            @Override
+            public boolean onTouchEvent(MotionEvent event) {
+                int action = event.getActionMasked();
+                if (editMode[0] == 0) {
+                    switch (action) {
+                        case MotionEvent.ACTION_DOWN:
+                            panStartX = event.getX(); panStartY = event.getY();
+                            savedOriginX = originX[0]; savedOriginY = originY[0];
+                            pointerMode = 1;
+                            break;
+                        case MotionEvent.ACTION_POINTER_DOWN:
+                            if (event.getPointerCount() >= 2) {
+                                pinchDist = (float) Math.hypot(event.getX(0) - event.getX(1), event.getY(0) - event.getY(1));
+                                savedScale = canvasScale[0];
+                                pointerMode = 2;
+                            }
+                            break;
+                        case MotionEvent.ACTION_MOVE:
+                            if (pointerMode == 1) {
+                                originX[0] = savedOriginX + (event.getX() - panStartX);
+                                originY[0] = savedOriginY + (event.getY() - panStartY);
+                                invalidate();
+                            } else if (pointerMode == 2 && event.getPointerCount() >= 2 && pinchDist > 10f) {
+                                float nd = (float) Math.hypot(event.getX(0) - event.getX(1), event.getY(0) - event.getY(1));
+                                canvasScale[0] = Math.max(0.3f, Math.min(10f, savedScale * (nd / pinchDist)));
+                                invalidate();
+                            }
+                            break;
+                        case MotionEvent.ACTION_UP:
+                        case MotionEvent.ACTION_POINTER_UP:
+                        case MotionEvent.ACTION_CANCEL:
+                            pointerMode = 0;
+                            break;
+                    }
+                    return true;
+                } else {
+                    if (curFrame[0] == null) return true;
+                    switch (action) {
+                        case MotionEvent.ACTION_DOWN:
+                            dragStartX = screenToMugenX(event.getX());
+                            dragStartY = screenToMugenY(event.getY());
+                            dragCurX = dragStartX; dragCurY = dragStartY;
+                            isDrawing = true;
+                            invalidate();
+                            break;
+                        case MotionEvent.ACTION_MOVE:
+                            if (isDrawing) {
+                                dragCurX = screenToMugenX(event.getX());
+                                dragCurY = screenToMugenY(event.getY());
+                                invalidate();
+                            }
+                            break;
+                        case MotionEvent.ACTION_UP:
+                        case MotionEvent.ACTION_CANCEL:
+                            if (isDrawing) {
+                                isDrawing = false;
+                                if (Math.abs(dragCurX - dragStartX) >= 2 && Math.abs(dragCurY - dragStartY) >= 2) {
+                                    String key = currentKey();
+                                    List<ClsnBox> list = frameBoxesMap.get(key);
+                                    if (list == null) { list = new ArrayList<>(); frameBoxesMap.put(key, list); }
+                                    ClsnBox nb = new ClsnBox(editMode[0], dragStartX, dragStartY, dragCurX, dragCurY);
+                                    list.add(nb);
+                                    statusBar.setText((nb.type == 1 ? L("🟥 已添加打击框 Clsn1: ") : L("🟦 已添加防御框 Clsn2: ")) + nb.x1 + ", " + nb.y1 + ", " + nb.x2 + ", " + nb.y2);
+                                }
+                                invalidate();
+                            }
+                            break;
+                    }
+                    return true;
+                }
+            }
+        };
+        LinearLayout.LayoutParams canvasLp = new LinearLayout.LayoutParams(-1, 0, 1f);
+        canvasLp.setMargins((int)(6*density), 0, (int)(6*density), (int)(6*density));
+        root.addView(clsnCanvas, canvasLp);
+
+        Runnable renderCurrentFrame = () -> {
+            if (groupFrames.isEmpty()) {
+                curFrame[0] = null; curBmp[0] = null;
+                clsnCanvas.invalidate();
+                return;
+            }
+            if (frameIdx[0] < 0) frameIdx[0] = groupFrames.size() - 1;
+            if (frameIdx[0] >= groupFrames.size()) frameIdx[0] = 0;
+            final GoEngineBridge.SffFrame tf = groupFrames.get(frameIdx[0]);
+            new Thread(() -> {
+                try {
+                    byte[] data = Api.decodeSffFrame(sffPathRef[0], tf.group, tf.item, actPathRef[0]);
+                    final Bitmap bmp = (data != null && data.length > 0) ? BitmapFactory.decodeByteArray(data, 0, data.length) : null;
+                    uiHandler.post(() -> {
+                        curFrame[0] = tf;
+                        curBmp[0] = bmp;
+                        String key = tf.group + "," + tf.item;
+                        List<ClsnBox> list = frameBoxesMap.get(key);
+                        int c1 = 0, c2 = 0;
+                        if (list != null) { for (ClsnBox b : list) { if (b.type == 1) c1++; else c2++; } }
+                        statusBar.setText(L("帧: ") + (frameIdx[0] + 1) + "/" + groupFrames.size() + " | [" + tf.group + "," + tf.item + "] | " + L("打击框:") + c1 + " | " + L("防御框:") + c2);
+                        clsnCanvas.invalidate();
+                    });
+                } catch (Throwable ignored) {}
+            }).start();
+        };
+
+        Runnable loadSffAction = () -> {
+            if (sffPathRef[0].isEmpty()) return;
+            statusBar.setText(L("⏳ 正在加载 SFF 帧序列..."));
+            new Thread(() -> {
+                List<GoEngineBridge.SffFrame> loaded = GoEngineBridge.getAllFrames(sffPathRef[0]);
+                uiHandler.post(() -> {
+                    allFrames.clear(); groupFrames.clear();
+                    if (loaded != null) { allFrames.addAll(loaded); groupFrames.addAll(loaded); }
+                    frameIdx[0] = 0;
+                    if (groupFrames.isEmpty()) statusBar.setText(L("❌ 未能从 SFF 读取到有效帧"));
+                    else renderCurrentFrame.run();
+                });
+            }).start();
+        };
+
+        HorizontalScrollView barScroll = new HorizontalScrollView(getContext()); barScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout bar = new LinearLayout(getContext()); bar.setOrientation(LinearLayout.HORIZONTAL); bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding((int)(6*density), (int)(4*density), (int)(6*density), (int)(8*density));
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2); bp.setMargins((int)(4*density), 0, (int)(4*density), 0);
+
+        Button btnLoadSff = createButton(L("📂 加载 SFF"), "#0078D7");
+        Button btnLoadAct = createButton(L("🎨 色表"), "#9C27B0");
+        Button btnLoadAir = createButton(L("📄 导入 AIR"), "#5C6BC0");
+        Button btnModePan = createButton(L("🖐️ 移动画布"), "#3F3F46");
+        Button btnModeAtk = createButton(L("🟥 打击框(Clsn1)"), "#D32F2F");
+        Button btnModeDef = createButton(L("🟦 防御框(Clsn2)"), "#1976D2");
+        Button btnUndo = createButton(L("↩️ 撤销"), "#455A64");
+        Button btnClear = createButton(L("🗑️ 清空帧"), "#616161");
+        Button btnPrev = createButton(L("⏪ 上一帧"), "#3F3F46");
+        Button btnNext = createButton(L("⏭️ 下一帧"), "#3F3F46");
+        Button btnGroup = createButton(L("📁 选组"), "#3F3F46");
+        Button btnToggleC1 = createButton(L("👁️ 打击:开"), "#B71C1C");
+        Button btnToggleC2 = createButton(L("👁️ 防御:开"), "#0D47A1");
+        Button btnExportAir = createButton(L("📋 生成/导出 AIR"), "#2E7D32");
+
+        Runnable updateModeHighlight = () -> {
+            btnModePan.setBackgroundColor(editMode[0] == 0 ? Color.parseColor("#0078D7") : Color.parseColor("#3F3F46"));
+            btnModeAtk.setBackgroundColor(editMode[0] == 1 ? Color.parseColor("#FF1744") : Color.parseColor("#5D2020"));
+            btnModeDef.setBackgroundColor(editMode[0] == 2 ? Color.parseColor("#00B0FF") : Color.parseColor("#1A3A5C"));
+        };
+        updateModeHighlight.run();
+
+        btnModePan.setOnClickListener(v -> { editMode[0] = 0; updateModeHighlight.run(); });
+        btnModeAtk.setOnClickListener(v -> { editMode[0] = 1; updateModeHighlight.run(); });
+        btnModeDef.setOnClickListener(v -> { editMode[0] = 2; updateModeHighlight.run(); });
+
+        btnLoadSff.setOnClickListener(v -> showWin10FilePicker(L("选择 SFF 人物文件"), 4, null, null, f -> {
+            if (f.isDirectory()) showSffGridPicker(f, picked -> { sffPathRef[0] = picked.getAbsolutePath(); loadSffAction.run(); });
+            else { sffPathRef[0] = f.getAbsolutePath(); loadSffAction.run(); }
+        }));
+
+        btnLoadAct.setOnClickListener(v -> showWin10FilePicker(L("选择 ACT 调色板"), 9, null, null, f -> {
+            actPathRef[0] = f.getAbsolutePath(); renderCurrentFrame.run();
+        }));
+
+        // 解析已有 .air 文件中的 Clsn1 / Clsn2 并映射到对应帧
+        btnLoadAir.setOnClickListener(v -> showWin10FilePicker(L("选择要导入的 .air 动作文件"), 14, null, null, f -> {
+            new Thread(() -> {
+                int importedCount = 0;
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(f), "UTF-8"))) {
+                    List<ClsnBox> pendingBoxes = new ArrayList<>();
+                    List<ClsnBox> defaultBoxes = new ArrayList<>();
+                    boolean inDefault = false;
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        int cIdx = line.indexOf(';');
+                        if (cIdx >= 0) line = line.substring(0, cIdx);
+                        String t = line.trim();
+                        if (t.isEmpty()) continue;
+                        String low = t.toLowerCase();
+                        if (low.startsWith("[begin action")) {
+                            pendingBoxes.clear(); defaultBoxes.clear(); inDefault = false;
+                        } else if (low.startsWith("clsn1default:") || low.startsWith("clsn2default:")) {
+                            inDefault = true;
+                        } else if (low.startsWith("clsn1:") || low.startsWith("clsn2:")) {
+                            inDefault = false;
+                        } else if (low.startsWith("clsn1[") || low.startsWith("clsn2[")) {
+                            int eq = t.indexOf('=');
+                            if (eq > 0) {
+                                String[] nums = t.substring(eq + 1).split(",");
+                                if (nums.length >= 4) {
+                                    int bType = low.startsWith("clsn1[") ? 1 : 2;
+                                    ClsnBox b = new ClsnBox(bType, Integer.parseInt(nums[0].trim()), Integer.parseInt(nums[1].trim()), Integer.parseInt(nums[2].trim()), Integer.parseInt(nums[3].trim()));
+                                    if (inDefault) defaultBoxes.add(b); else pendingBoxes.add(b);
+                                }
+                            }
+                        } else if (t.matches("^-?\\d+\\s*,\\s*-?\\d+\\s*,.*")) {
+                            String[] parts = t.split(",");
+                            if (parts.length >= 2) {
+                                String key = parts[0].trim() + "," + parts[1].trim();
+                                List<ClsnBox> use = !pendingBoxes.isEmpty() ? pendingBoxes : defaultBoxes;
+                                if (!use.isEmpty()) {
+                                    frameBoxesMap.put(key, new ArrayList<>(use));
+                                    importedCount += use.size();
+                                }
+                                pendingBoxes.clear();
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+                final int total = importedCount;
+                uiHandler.post(() -> {
+                    Toast.makeText(getContext(), L("✅ AIR 导入完成，共解析判定框: ") + total, Toast.LENGTH_SHORT).show();
+                    clsnCanvas.invalidate();
+                });
+            }).start();
+        }));
+
+        btnUndo.setOnClickListener(v -> {
+            if (curFrame[0] == null) return;
+            String key = curFrame[0].group + "," + curFrame[0].item;
+            List<ClsnBox> list = frameBoxesMap.get(key);
+            if (list != null && !list.isEmpty()) {
+                list.remove(list.size() - 1);
+                clsnCanvas.invalidate();
+                renderCurrentFrame.run();
+            }
+        });
+
+        btnClear.setOnClickListener(v -> {
+            if (curFrame[0] == null) return;
+            frameBoxesMap.remove(curFrame[0].group + "," + curFrame[0].item);
+            clsnCanvas.invalidate();
+            renderCurrentFrame.run();
+        });
+
+        btnPrev.setOnClickListener(v -> { frameIdx[0]--; renderCurrentFrame.run(); });
+        btnNext.setOnClickListener(v -> { frameIdx[0]++; renderCurrentFrame.run(); });
+
+        btnGroup.setOnClickListener(v -> {
+            if (allFrames.isEmpty()) return;
+            List<Integer> gs = new ArrayList<>(); gs.add(-999);
+            for (GoEngineBridge.SffFrame fr : allFrames) { if (!gs.contains(fr.group)) gs.add(fr.group); }
+            final Dialog gd = new Dialog(getContext()); gd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout gl = new LinearLayout(getContext()); gl.setOrientation(LinearLayout.VERTICAL); gl.setBackgroundColor(Color.parseColor("#2D2D30")); gl.setPadding((int)(16*density), (int)(16*density), (int)(16*density), (int)(16*density));
+            ScrollView sv = new ScrollView(getContext()); LinearLayout list = new LinearLayout(getContext()); list.setOrientation(LinearLayout.VERTICAL);
+            for (final int g : gs) {
+                Button b = createButton(g == -999 ? L("📂 所有动作") : L("📁 动作组 ") + g, "#1E1E1E");
+                b.setOnClickListener(gv -> {
+                    groupFrames.clear();
+                    if (g == -999) groupFrames.addAll(allFrames);
+                    else for (GoEngineBridge.SffFrame fr : allFrames) { if (fr.group == g) groupFrames.add(fr); }
+                    frameIdx[0] = 0; renderCurrentFrame.run(); gd.dismiss();
+                });
+                list.addView(b, new LinearLayout.LayoutParams(-1, -2));
+            }
+            sv.addView(list); gl.addView(sv, new LinearLayout.LayoutParams((int)(220*density), (int)(280*density)));
+            gd.setContentView(gl); gd.show();
+        });
+
+        btnToggleC1.setOnClickListener(v -> {
+            showClsn1[0] = !showClsn1[0];
+            btnToggleC1.setText(showClsn1[0] ? L("👁️ 打击:开") : L("👁️ 打击:关"));
+            clsnCanvas.invalidate();
+        });
+        btnToggleC2.setOnClickListener(v -> {
+            showClsn2[0] = !showClsn2[0];
+            btnToggleC2.setText(showClsn2[0] ? L("👁️ 防御:开") : L("👁️ 防御:关"));
+            clsnCanvas.invalidate();
+        });
+
+        btnExportAir.setOnClickListener(v -> {
+            StringBuilder sb = new StringBuilder();
+            int actionNum = (curFrame[0] != null) ? curFrame[0].group : 0;
+            sb.append("[Begin Action ").append(actionNum).append("]\n");
+            boolean hasAny = false;
+            for (java.util.Map.Entry<String, List<ClsnBox>> entry : frameBoxesMap.entrySet()) {
+                List<ClsnBox> boxes = entry.getValue();
+                if (boxes == null || boxes.isEmpty()) continue;
+                hasAny = true;
+                List<ClsnBox> c1 = new ArrayList<>(), c2 = new ArrayList<>();
+                for (ClsnBox b : boxes) { if (b.type == 1) c1.add(b); else c2.add(b); }
+                if (!c1.isEmpty()) {
+                    sb.append("Clsn1: ").append(c1.size()).append("\n");
+                    for (int i = 0; i < c1.size(); i++) {
+                        ClsnBox b = c1.get(i);
+                        sb.append("  Clsn1[").append(i).append("] = ").append(b.x1).append(", ").append(b.y1).append(", ").append(b.x2).append(", ").append(b.y2).append("\n");
+                    }
+                }
+                if (!c2.isEmpty()) {
+                    sb.append("Clsn2: ").append(c2.size()).append("\n");
+                    for (int i = 0; i < c2.size(); i++) {
+                        ClsnBox b = c2.get(i);
+                        sb.append("  Clsn2[").append(i).append("] = ").append(b.x1).append(", ").append(b.y1).append(", ").append(b.x2).append(", ").append(b.y2).append("\n");
+                    }
+                }
+                sb.append(entry.getKey()).append(", 0, 0, 5\n\n");
+            }
+            if (!hasAny) {
+                Toast.makeText(getContext(), L("⚠️ 当前尚未绘制任何打击框或防御框"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            final String airCode = sb.toString();
+            final Dialog d = new Dialog(getContext()); d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(16*density), (int)(16*density), (int)(16*density), (int)(16*density));
+            GradientDrawable border = new GradientDrawable(); border.setColor(Color.parseColor("#252526")); border.setStroke((int)(2*density), Color.parseColor("#4CAF50")); border.setCornerRadius(12*density); box.setBackground(border);
+            box.addView(createSubTitle(L("📋 生成的 AIR 判定框代码:")));
+            EditText codeView = createInput("", airCode); codeView.setSingleLine(false); codeView.setMinLines(6); codeView.setMaxLines(12);
+            box.addView(codeView, new LinearLayout.LayoutParams((int)(320*density), -2));
+            LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL);
+            Button bCopy = createButton(L("📋 复制代码"), "#0078D7");
+            Button bSave = createButton(L("💾 导出 .air"), "#4CAF50");
+            bCopy.setOnClickListener(cv -> {
+                try {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (cm != null) {
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("air_clsn", codeView.getText().toString()));
+                        Toast.makeText(getContext(), L("✅ AIR 判定框代码已复制到剪贴板！"), Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ignored) {}
+            });
+            bSave.setOnClickListener(sv -> {
+                try {
+                    File outDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "IkemenExports");
+                    if (!outDir.exists()) outDir.mkdirs();
+                    File outFile = new File(outDir, "clsn_action_" + actionNum + ".air");
+                    try (FileOutputStream fos = new FileOutputStream(outFile)) { fos.write(codeView.getText().toString().getBytes("UTF-8")); }
+                    Toast.makeText(getContext(), L("✅ 已导出 AIR 文件: ") + outFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
+                    d.dismiss();
+                } catch (Exception e) { Toast.makeText(getContext(), L("❌ 导出失败"), Toast.LENGTH_SHORT).show(); }
+            });
+            LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(0, -2, 1f); rp.setMargins((int)(4*density), (int)(10*density), (int)(4*density), 0);
+            row.addView(bCopy, rp); row.addView(bSave, rp);
+            box.addView(row); d.setContentView(box); d.show();
+        });
+
+        bar.addView(btnLoadSff, bp); bar.addView(btnLoadAct, bp); bar.addView(btnLoadAir, bp);
+        bar.addView(btnModePan, bp); bar.addView(btnModeAtk, bp); bar.addView(btnModeDef, bp);
+        bar.addView(btnUndo, bp); bar.addView(btnClear, bp);
+        bar.addView(btnPrev, bp); bar.addView(btnNext, bp); bar.addView(btnGroup, bp);
+        bar.addView(btnToggleC1, bp); bar.addView(btnToggleC2, bp);
+        bar.addView(btnExportAir, bp);
+        barScroll.addView(bar);
+        root.addView(barScroll);
+
+        if (!sffPathRef[0].isEmpty()) {
+            root.post(loadSffAction);
+        }
         return root;
     }
 

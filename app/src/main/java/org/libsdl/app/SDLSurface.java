@@ -105,6 +105,12 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
             return;
         }
 
+        // 【防闪退保护】：桌面模式激活时（尤其是切换竖屏），屏蔽游戏画布的尺寸重载与自动唤醒
+        if (SDLActivity.mSingleton.isDesktopModeActive()) {
+            Log.v("SDL", "Desktop mode active, skip surfaceChanged resize/resume.");
+            return;
+        }
+
         mWidth = width;
         mHeight = height;
         int nDeviceWidth = width;

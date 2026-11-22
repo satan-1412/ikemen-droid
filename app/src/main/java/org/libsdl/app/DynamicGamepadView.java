@@ -2370,7 +2370,7 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             dialog.dismiss(); 
         }));
         // 【新增：桌面系统模式入口】
-        layout.addView(createMenuButton(L("💻 进入桌面/梦工厂模式"), v -> { 
+        layout.addView(createMenuButton(L("💻 进入桌面模式"), v -> { 
             if (getContext() instanceof SDLActivity) {
                 ((SDLActivity) getContext()).toggleDesktopMode(true);
             }

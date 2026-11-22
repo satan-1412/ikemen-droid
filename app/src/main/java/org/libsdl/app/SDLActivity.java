@@ -1265,6 +1265,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             mCurrentLocale = newConfig.locale;
             SDLActivity.onNativeLocaleChanged();
         }
+
+        // 【新增】：屏幕横竖屏切换时通知桌面系统重排窗口与任务栏
+        if (this.isDesktopModeActive && org.libsdl.app.DesktopSystemView.mSingleton != null) {
+            org.libsdl.app.DesktopSystemView.mSingleton.onScreenOrientationChanged();
+        }
     }
 
     @Override
@@ -2288,22 +2293,37 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     // === 桌面系统模式新增方法 开始 ===
+    public boolean isDesktopModeActive() {
+        return this.isDesktopModeActive;
+    }
+
+    public void setDesktopOrientation(final boolean portrait) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (!isDesktopModeActive) return;
+                try {
+                    setRequestedOrientation(portrait
+                        ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                        : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+                } catch (Exception e) {
+                    Log.e(TAG, "setDesktopOrientation error: " + e.getMessage());
+                }
+            }
+        });
+    }
+
     public void toggleDesktopMode(final boolean active) {
         this.isDesktopModeActive = active;
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
                 if (active) {
-                    // 🚀 如果桌面是第一次打开，就创建它；如果已经存在，就直接唤醒旧的！
-                    if (org.libsdl.app.DesktopSystemView.mSingleton == null) {
-                        org.libsdl.app.DesktopSystemView.mSingleton = new DesktopSystemView(SDLActivity.this);
-                    }
-                    org.libsdl.app.DesktopSystemView.mSingleton.show();
-                    
+                    // 1. 先暂停游戏与音频，避免桌面旋转触发引擎渲染冲突
                     SDLActivity.mHasFocus = false;
                     SDLActivity.mNextNativeState = NativeState.PAUSED;
                     SDLActivity.handleNativeState();
-                    
+
                     try {
                         if (SDLAudioManager.mAudioTrack != null && 
                             SDLAudioManager.mAudioTrack.getState() == android.media.AudioTrack.STATE_INITIALIZED) {
@@ -2311,23 +2331,37 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                         }
                     } catch (Exception e) {}
 
+                    // 2. 如果桌面是第一次打开，就创建它；如果已经存在，就直接唤醒旧的！
+                    if (org.libsdl.app.DesktopSystemView.mSingleton == null) {
+                        org.libsdl.app.DesktopSystemView.mSingleton = new DesktopSystemView(SDLActivity.this);
+                    }
+                    org.libsdl.app.DesktopSystemView.mSingleton.show();
+                    org.libsdl.app.DesktopSystemView.mSingleton.applySavedDesktopOrientation();
+
                 } else {
-                    // 1. 隐身桌面弹窗，保留联机进程和日志！绝对不要置为 null！
+                    // 1. 隐身桌面弹窗，保留窗口和状态，不销毁实例
                     if (org.libsdl.app.DesktopSystemView.mSingleton != null) {
-                        org.libsdl.app.DesktopSystemView.mSingleton.dismiss(); // 这里会触发我们刚才重写的 hide()
+                        org.libsdl.app.DesktopSystemView.mSingleton.dismiss();
                     }
 
-                    // 2. 瞬间把焦点还给游戏画布 (必须在唤醒引擎前执行)
+                    // 2. 【强制横屏】：无论桌面处于横屏还是竖屏，回到游戏内一律恢复横屏！
+                    try {
+                        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+                    } catch (Exception e) {
+                        Log.e(TAG, "restore landscape error: " + e.getMessage());
+                    }
+
+                    // 3. 把焦点还给游戏画布 (必须在唤醒引擎前执行)
                     if (mSurface != null) {
                         mSurface.requestFocus();
                     }
 
-                    // 3. 唤醒引擎 (已移除 setWindowStyle，避开 500ms 强制休眠陷阱)
+                    // 4. 唤醒引擎
                     SDLActivity.mHasFocus = true;
                     SDLActivity.mNextNativeState = NativeState.RESUMED;
                     SDLActivity.handleNativeState();
                     
-                    // 4. 恢复声音
+                    // 5. 恢复声音
                     try {
                         if (SDLAudioManager.mAudioTrack != null && 
                             SDLAudioManager.mAudioTrack.getState() == android.media.AudioTrack.STATE_INITIALIZED) {
