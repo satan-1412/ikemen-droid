@@ -314,24 +314,35 @@ public class DesktopSystemView extends Dialog {
         taskbar = new LinearLayout(getContext());
         taskbar.setOrientation(LinearLayout.HORIZONTAL);
         taskbar.setGravity(Gravity.CENTER_VERTICAL);
-        taskbar.setPadding((int)(4*density), 0, (int)(15*density), 0);
-        taskbar.setBackgroundColor(Color.argb(taskbarAlpha, 17, 17, 17)); 
+        taskbar.setPadding((int)(8*density), 0, (int)(12*density), 0);
+        GradientDrawable taskbarGlass = new GradientDrawable();
+        taskbarGlass.setColor(Color.argb(taskbarAlpha, 20, 24, 32));
+        taskbarGlass.setStroke((int)(1 * density), Color.parseColor("#2AFFFFFF"));
+        taskbar.setBackground(taskbarGlass);
         FrameLayout.LayoutParams taskbarParams = new FrameLayout.LayoutParams(-1, dynamicTaskbarHeight);
         taskbarParams.gravity = Gravity.BOTTOM;
         rootLayer.addView(taskbar, taskbarParams);
 
         final LinearLayout startBtn = new LinearLayout(getContext());
         startBtn.setOrientation(LinearLayout.HORIZONTAL); startBtn.setGravity(Gravity.CENTER);
-        startBtn.setPadding((int)(10*density), (int)(8*density), (int)(15*density), (int)(8*density));
-        
-        TextView btnIcon = new TextView(getContext()); btnIcon.setText("⊞"); btnIcon.setTextColor(Color.parseColor("#00A4EF")); btnIcon.setTextSize(20f);
-        TextView btnText = new TextView(getContext()); btnText.setText(L(" 进入游戏")); applyGlobalFontSettings(btnText, 1.2f, true); 
+        startBtn.setPadding((int)(12*density), (int)(6*density), (int)(14*density), (int)(6*density));
+        GradientDrawable startNormalBg = new GradientDrawable();
+        startNormalBg.setColor(Color.parseColor("#2200A4EF"));
+        startNormalBg.setCornerRadius(8f * density);
+        startNormalBg.setStroke((int)(1 * density), Color.parseColor("#5500A4EF"));
+        GradientDrawable startPressedBg = new GradientDrawable();
+        startPressedBg.setColor(Color.parseColor("#5500A4EF"));
+        startPressedBg.setCornerRadius(8f * density);
+        startBtn.setBackground(startNormalBg);
+
+        TextView btnIcon = new TextView(getContext()); btnIcon.setText("⊞"); btnIcon.setTextColor(Color.parseColor("#38BDF8")); btnIcon.setTextSize(18f);
+        TextView btnText = new TextView(getContext()); btnText.setText(L(" 进入游戏")); applyGlobalFontSettings(btnText, 1.1f, true);
         startBtn.addView(btnIcon); startBtn.addView(btnText);
-        
+
         startBtn.setOnTouchListener((v, event) -> {
-            if (event.getAction() == MotionEvent.ACTION_DOWN) { v.setBackgroundColor(Color.parseColor("#33FFFFFF")); }
+            if (event.getAction() == MotionEvent.ACTION_DOWN) { v.setBackground(startPressedBg); }
             else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
-                v.setBackgroundColor(Color.TRANSPARENT);
+                v.setBackground(startNormalBg);
                 if (event.getAction() == MotionEvent.ACTION_UP) { hide(); if (SDLActivity.mSingleton != null) SDLActivity.mSingleton.toggleDesktopMode(false); }
             }
             return true;
@@ -343,21 +354,21 @@ public class DesktopSystemView extends Dialog {
         taskbarAppsLayout = new LinearLayout(getContext());
         taskbarAppsLayout.setOrientation(LinearLayout.HORIZONTAL);
         taskbarAppsLayout.setGravity(Gravity.CENTER_VERTICAL);
-        taskbarAppsLayout.setPadding((int)(15*density), 0, (int)(20*density), 0);
+        taskbarAppsLayout.setPadding((int)(12*density), 0, (int)(12*density), 0);
         taskbarScroll.addView(taskbarAppsLayout, new ViewGroup.LayoutParams(-2, -1));
         taskbar.addView(taskbarScroll, new LinearLayout.LayoutParams(0, -1, 1f));
 
-        // 【新增】：任务栏右侧横竖屏切换按钮（仅影响桌面模式，回游戏强制恢复横屏）
+        // 任务栏右侧横竖屏切换按钮（仅影响桌面模式，回游戏强制恢复横屏）
         isDesktopPortrait = prefs.getBoolean("dt_portraitMode", false);
         orientationToggleBtn = new TextView(getContext());
         updateOrientationBtnText();
-        applyGlobalFontSettings(orientationToggleBtn, 1.0f, true);
+        applyGlobalFontSettings(orientationToggleBtn, 0.95f, true);
         orientationToggleBtn.setGravity(Gravity.CENTER);
-        orientationToggleBtn.setPadding((int)(12*density), (int)(6*density), (int)(12*density), (int)(6*density));
+        orientationToggleBtn.setPadding((int)(10*density), (int)(5*density), (int)(10*density), (int)(5*density));
         GradientDrawable oriBg = new GradientDrawable();
-        oriBg.setColor(Color.parseColor("#330078D7"));
-        oriBg.setCornerRadius(6f * density);
-        oriBg.setStroke((int)(1 * density), Color.parseColor("#0078D7"));
+        oriBg.setColor(Color.parseColor("#2A38BDF8"));
+        oriBg.setCornerRadius(8f * density);
+        oriBg.setStroke((int)(1 * density), Color.parseColor("#6638BDF8"));
         orientationToggleBtn.setBackground(oriBg);
         orientationToggleBtn.setOnClickListener(v -> {
             isDesktopPortrait = !isDesktopPortrait;
@@ -369,8 +380,27 @@ public class DesktopSystemView extends Dialog {
             Toast.makeText(getContext(), isDesktopPortrait ? L("📱 已切换为桌面竖屏模式 (返回游戏自动恢复横屏)") : L("🖥️ 已切换为桌面横屏模式"), Toast.LENGTH_SHORT).show();
         });
         LinearLayout.LayoutParams oriParams = new LinearLayout.LayoutParams(-2, -2);
-        oriParams.setMargins((int)(8*density), 0, (int)(4*density), 0);
+        oriParams.setMargins((int)(6*density), 0, (int)(6*density), 0);
         taskbar.addView(orientationToggleBtn, oriParams);
+
+        // PC 系统托盘实时时钟
+        final TextView trayClock = new TextView(getContext());
+        applyGlobalFontSettings(trayClock, 0.95f, true);
+        trayClock.setTextColor(Color.parseColor("#E2E8F0"));
+        trayClock.setGravity(Gravity.CENTER);
+        trayClock.setPadding((int)(8*density), (int)(4*density), (int)(8*density), (int)(4*density));
+        final java.text.SimpleDateFormat clockFmt = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault());
+        final Runnable clockTick = new Runnable() {
+            @Override public void run() {
+                if (trayClock.isAttachedToWindow()) {
+                    trayClock.setText(clockFmt.format(new java.util.Date()));
+                    trayClock.postDelayed(this, 15000);
+                }
+            }
+        };
+        trayClock.setText(clockFmt.format(new java.util.Date()));
+        trayClock.postDelayed(clockTick, 15000);
+        taskbar.addView(trayClock, new LinearLayout.LayoutParams(-2, -2));
 
         setContentView(rootLayer);
         rootLayer.post(() -> setupDesktopIcons());
@@ -586,22 +616,242 @@ public class DesktopSystemView extends Dialog {
         menuOverlay.addView(menu, params); rootLayer.addView(menuOverlay, new FrameLayout.LayoutParams(-1, -1)); menuOverlay.bringToFront();
     }
 
+    private String resolveWindowLayoutKey(String windowTitle) {
+        if (windowTitle == null) return "default";
+        if (windowTitle.contains(L("🎨 检视: ")) || windowTitle.contains("SFF")) return "sff_viewer";
+        if (windowTitle.contains(L("⚔️ 判定框")) || windowTitle.contains("Clsn")) return "clsn_editor";
+        if (windowTitle.contains(L("地图")) || windowTitle.contains("Stage")) return "stage_editor";
+        if (windowTitle.contains(L("色表")) || windowTitle.contains("ACT")) return "palette_editor";
+        if (windowTitle.contains("GIF")) return "gif_viewer";
+        return "win_" + Math.abs(windowTitle.hashCode());
+    }
+
+    private View findTaggedViewRecursive(View root, String tag) {
+        if (root == null) return null;
+        if (tag.equals(root.getTag())) return root;
+        if (root instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) root;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                View found = findTaggedViewRecursive(vg.getChildAt(i), tag);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private void applyCustomWindowLayout(String layoutKey, FrameLayout windowFrame, View contentHost, View contentView, boolean isMaximized) {
+        int defW = prefs.getInt("wlay_global_w", 78);
+        int defH = prefs.getInt("wlay_global_h", 84);
+        int defPL = prefs.getInt("wlay_global_pl", 4);
+        int defPR = prefs.getInt("wlay_global_pr", 4);
+        int defPT = prefs.getInt("wlay_global_pt", 4);
+        int defPB = prefs.getInt("wlay_global_pb", 4);
+        int defPrev = prefs.getInt("wlay_global_prev", 65);
+        int defGap = prefs.getInt("wlay_global_gap", 6);
+
+        int wPct = prefs.getInt("wlay_" + layoutKey + "_w", defW);
+        int hPct = prefs.getInt("wlay_" + layoutKey + "_h", defH);
+        int padL = prefs.getInt("wlay_" + layoutKey + "_pl", defPL);
+        int padR = prefs.getInt("wlay_" + layoutKey + "_pr", defPR);
+        int padT = prefs.getInt("wlay_" + layoutKey + "_pt", defPT);
+        int padB = prefs.getInt("wlay_" + layoutKey + "_pb", defPB);
+        int prevPct = prefs.getInt("wlay_" + layoutKey + "_prev", defPrev);
+        int gapDp = prefs.getInt("wlay_" + layoutKey + "_gap", defGap);
+
+        int screenW = getContext().getResources().getDisplayMetrics().widthPixels;
+        int screenH = getContext().getResources().getDisplayMetrics().heightPixels;
+        int tbH = (taskbar != null && taskbar.getHeight() > 0) ? taskbar.getHeight() : Math.max((int)(40 * density), screenH / 14);
+
+        if (!isMaximized && windowFrame != null) {
+            int w = Math.max((int)(240 * density), (int)(screenW * (wPct / 100f)));
+            int h = Math.max((int)(200 * density), (int)((screenH - tbH) * (hPct / 100f)));
+            ViewGroup.LayoutParams flp = windowFrame.getLayoutParams();
+            if (flp != null) {
+                flp.width = w;
+                flp.height = h;
+                windowFrame.setLayoutParams(flp);
+            }
+        }
+        if (contentHost != null) {
+            contentHost.setPadding((int)(padL * density), (int)(padT * density), (int)(padR * density), (int)(padB * density));
+        }
+
+        // 动态调整预览区、左右分栏和工具栏间距
+        View vLeft = findTaggedViewRecursive(contentView, "layout_left");
+        View vCenter = findTaggedViewRecursive(contentView, "layout_center");
+        View vRight = findTaggedViewRecursive(contentView, "layout_right");
+        View vPreview = findTaggedViewRecursive(contentView, "layout_preview");
+        View vToolbar = findTaggedViewRecursive(contentView, "layout_toolbar");
+
+        float centerWeight = Math.max(0.3f, Math.min(0.95f, prevPct / 100f));
+        float sideWeight = Math.max(0.05f, 1.0f - centerWeight);
+        int gapPx = (int)(gapDp * density);
+
+        if (vCenter != null && vCenter.getLayoutParams() instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams clp = (LinearLayout.LayoutParams) vCenter.getLayoutParams();
+            if (vLeft != null && vRight != null) {
+                clp.weight = centerWeight * 4.5f;
+                clp.setMargins(gapPx, 0, gapPx, 0);
+                vCenter.setLayoutParams(clp);
+                if (vLeft.getLayoutParams() instanceof LinearLayout.LayoutParams) {
+                    LinearLayout.LayoutParams llp = (LinearLayout.LayoutParams) vLeft.getLayoutParams();
+                    llp.weight = sideWeight * 2.5f;
+                    vLeft.setLayoutParams(llp);
+                }
+                if (vRight.getLayoutParams() instanceof LinearLayout.LayoutParams) {
+                    LinearLayout.LayoutParams rlp = (LinearLayout.LayoutParams) vRight.getLayoutParams();
+                    rlp.weight = sideWeight * 2.0f;
+                    vRight.setLayoutParams(rlp);
+                }
+            } else if (vLeft != null) {
+                clp.weight = centerWeight * 3.0f;
+                clp.setMargins(gapPx, 0, 0, 0);
+                vCenter.setLayoutParams(clp);
+            }
+        }
+        if (vPreview != null && vPreview.getLayoutParams() instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams plp = (LinearLayout.LayoutParams) vPreview.getLayoutParams();
+            plp.weight = Math.max(1f, centerWeight * 10f);
+            plp.setMargins(gapPx, gapPx, gapPx, gapPx);
+            vPreview.setLayoutParams(plp);
+        }
+        if (vToolbar != null && vToolbar.getLayoutParams() instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams tlp = (LinearLayout.LayoutParams) vToolbar.getLayoutParams();
+            tlp.setMargins(0, gapPx / 2, 0, 0);
+            vToolbar.setLayoutParams(tlp);
+        }
+    }
+
+    private void showWindowLayoutDialog(final String windowTitle, final String layoutKey, final FrameLayout windowFrame, final View contentHost, final View contentView, final boolean[] isMaximized) {
+        final Dialog d = new Dialog(getContext());
+        if (d.getWindow() != null) d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        ScrollView sv = new ScrollView(getContext());
+        LinearLayout box = new LinearLayout(getContext());
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding((int)(16*density), (int)(16*density), (int)(16*density), (int)(16*density));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor("#F51E2430"));
+        bg.setCornerRadius(12f * density);
+        bg.setStroke((int)(1.5f * density), Color.parseColor("#38BDF8"));
+        box.setBackground(bg);
+
+        box.addView(createSubTitle(L("📐 自定义工具布局与边距")));
+        TextView hint = new TextView(getContext());
+        hint.setText(L("拖动滑块即可实时调整窗口边界、上下左右间距及预览区大小"));
+        applyGlobalFontSettings(hint, 0.85f, false);
+        hint.setTextColor(Color.parseColor("#94A3B8"));
+        box.addView(hint);
+
+        final int[] vals = new int[] {
+            prefs.getInt("wlay_" + layoutKey + "_w", prefs.getInt("wlay_global_w", 78)),
+            prefs.getInt("wlay_" + layoutKey + "_h", prefs.getInt("wlay_global_h", 84)),
+            prefs.getInt("wlay_" + layoutKey + "_prev", prefs.getInt("wlay_global_prev", 65)),
+            prefs.getInt("wlay_" + layoutKey + "_gap", prefs.getInt("wlay_global_gap", 6)),
+            prefs.getInt("wlay_" + layoutKey + "_pl", prefs.getInt("wlay_global_pl", 4)),
+            prefs.getInt("wlay_" + layoutKey + "_pr", prefs.getInt("wlay_global_pr", 4)),
+            prefs.getInt("wlay_" + layoutKey + "_pt", prefs.getInt("wlay_global_pt", 4)),
+            prefs.getInt("wlay_" + layoutKey + "_pb", prefs.getInt("wlay_global_pb", 4))
+        };
+        final String[] labels = new String[] {
+            L("窗口宽度 (%)"), L("窗口高度 (%)"), L("预览视口比例 (%)"), L("内部区块间距 (dp)"),
+            L("左边距 (dp)"), L("右边距 (dp)"), L("上边距 (dp)"), L("下边距 (dp)")
+        };
+        final int[] mins = new int[] { 40, 40, 30, 0, 0, 0, 0, 0 };
+        final int[] maxs = new int[] { 100, 98, 92, 24, 48, 48, 48, 48 };
+        final String[] prefSuffix = new String[] { "_w", "_h", "_prev", "_gap", "_pl", "_pr", "_pt", "_pb" };
+
+        Runnable liveApply = () -> {
+            SharedPreferences.Editor ed = prefs.edit();
+            for (int i = 0; i < vals.length; i++) ed.putInt("wlay_" + layoutKey + prefSuffix[i], vals[i]);
+            ed.apply();
+            applyCustomWindowLayout(layoutKey, windowFrame, contentHost, contentView, isMaximized[0]);
+        };
+
+        for (int i = 0; i < vals.length; i++) {
+            final int idx = i;
+            TextView lbl = new TextView(getContext());
+            lbl.setText(labels[idx] + ": " + vals[idx]);
+            applyGlobalFontSettings(lbl, 0.9f, false);
+            lbl.setPadding(0, (int)(6*density), 0, (int)(2*density));
+            box.addView(lbl);
+
+            SeekBar sb = new SeekBar(getContext());
+            sb.setMax(maxs[idx] - mins[idx]);
+            sb.setProgress(Math.max(0, Math.min(maxs[idx] - mins[idx], vals[idx] - mins[idx])));
+            sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                    vals[idx] = mins[idx] + progress;
+                    lbl.setText(labels[idx] + ": " + vals[idx]);
+                    if (fromUser) liveApply.run();
+                }
+                @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+                @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+            });
+            box.addView(sb, new LinearLayout.LayoutParams((int)(300*density), -2));
+        }
+
+        LinearLayout btnRow = new LinearLayout(getContext());
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button btnSaveAll = createButton(L("🌐 设为全局默认"), "#0284C7");
+        Button btnReset = createButton(L("♻️ 恢复默认"), "#475569");
+        Button btnDone = createButton(L("✅ 完成"), "#16A34A");
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(0, -2, 1f);
+        blp.setMargins((int)(3*density), (int)(12*density), (int)(3*density), 0);
+
+        btnSaveAll.setOnClickListener(v -> {
+            SharedPreferences.Editor ed = prefs.edit();
+            for (int i = 0; i < vals.length; i++) ed.putInt("wlay_global" + prefSuffix[i], vals[i]);
+            ed.apply();
+            Toast.makeText(getContext(), L("✅ 已设为所有工具的默认布局"), Toast.LENGTH_SHORT).show();
+        });
+        btnReset.setOnClickListener(v -> {
+            SharedPreferences.Editor ed = prefs.edit();
+            for (int i = 0; i < prefSuffix.length; i++) ed.remove("wlay_" + layoutKey + prefSuffix[i]);
+            ed.apply();
+            applyCustomWindowLayout(layoutKey, windowFrame, contentHost, contentView, isMaximized[0]);
+            Toast.makeText(getContext(), L("♻️ 已恢复默认布局"), Toast.LENGTH_SHORT).show();
+            d.dismiss();
+        });
+        btnDone.setOnClickListener(v -> d.dismiss());
+
+        btnRow.addView(btnSaveAll, blp);
+        btnRow.addView(btnReset, blp);
+        btnRow.addView(btnDone, blp);
+        box.addView(btnRow);
+
+        sv.addView(box);
+        d.setContentView(sv);
+        d.show();
+    }
+
     private void openAppWindow(String windowTitle, View contentView, final Runnable onCloseInterceptor) {
         View existingWin = windowsLayer.findViewWithTag(windowTitle);
         if (existingWin != null) { existingWin.setVisibility(View.VISIBLE); existingWin.bringToFront(); return; }
 
-        final FrameLayout windowFrame = new FrameLayout(getContext()); windowFrame.setTag(windowTitle); windowFrame.setClickable(true); 
+        final String layoutKey = resolveWindowLayoutKey(windowTitle);
+        final FrameLayout windowFrame = new FrameLayout(getContext()); windowFrame.setTag(windowTitle); windowFrame.setClickable(true);
         View winMediaBg = createMediaBackground(customWindowBg, 255, false);
-        if (winMediaBg != null) windowFrame.addView(winMediaBg, new FrameLayout.LayoutParams(-1, -1));
-        else { GradientDrawable winBg = new GradientDrawable(); winBg.setColor(Color.parseColor("#FA1E1E1E")); winBg.setStroke(2, Color.parseColor("#3F3F46")); windowFrame.setBackground(winBg); }
-        windowFrame.setElevation(25f * density); 
+        if (winMediaBg != null) {
+            windowFrame.addView(winMediaBg, new FrameLayout.LayoutParams(-1, -1));
+        } else {
+            GradientDrawable winBg = new GradientDrawable();
+            winBg.setColor(Color.parseColor("#F5181C24"));
+            winBg.setCornerRadius(10f * density);
+            winBg.setStroke((int)(1.5f * density), Color.parseColor("#3A4356"));
+            windowFrame.setBackground(winBg);
+        }
+        windowFrame.setElevation(25f * density);
 
         LinearLayout winContainer = new LinearLayout(getContext()); winContainer.setOrientation(LinearLayout.VERTICAL); windowFrame.addView(winContainer, new FrameLayout.LayoutParams(-1, -1));
 
-        final LinearLayout titleBar = new LinearLayout(getContext()); titleBar.setOrientation(LinearLayout.HORIZONTAL); titleBar.setGravity(Gravity.CENTER_VERTICAL); titleBar.setBackgroundColor(Color.parseColor("#F22D2D30")); 
-        TextView title = new TextView(getContext()); title.setText("  " + windowTitle); applyGlobalFontSettings(title, 1.2f, true); titleBar.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        final LinearLayout titleBar = new LinearLayout(getContext()); titleBar.setOrientation(LinearLayout.HORIZONTAL); titleBar.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable tbTitleBg = new GradientDrawable();
+        tbTitleBg.setColor(Color.parseColor("#F2202632"));
+        tbTitleBg.setCornerRadii(new float[]{10f*density, 10f*density, 10f*density, 10f*density, 0, 0, 0, 0});
+        titleBar.setBackground(tbTitleBg);
+        TextView title = new TextView(getContext()); title.setText("  " + windowTitle); applyGlobalFontSettings(title, 1.12f, true); title.setTextColor(Color.parseColor("#F1F5F9")); titleBar.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        // 🚀 动态任务栏状态刷新：自动侦测是否有全屏窗口
+        // 动态任务栏状态刷新：自动侦测是否有全屏窗口
         Runnable updateTaskbarState = () -> {
             if (taskbar == null) return;
             boolean anyMaximized = false;
@@ -611,71 +861,121 @@ public class DesktopSystemView extends Dialog {
                     anyMaximized = true; break;
                 }
             }
-            taskbar.setBackgroundColor(Color.argb(anyMaximized ? 255 : taskbarAlpha, 17, 17, 17));
+            GradientDrawable tbGlass = new GradientDrawable();
+            tbGlass.setColor(Color.argb(anyMaximized ? 255 : taskbarAlpha, 20, 24, 32));
+            tbGlass.setStroke((int)(1 * density), Color.parseColor("#2AFFFFFF"));
+            taskbar.setBackground(tbGlass);
         };
 
-        LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL);
-        TextView btnMin = new TextView(getContext()); btnMin.setText(" ─ "); applyGlobalFontSettings(btnMin, 1.0f, true); btnMin.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density)); 
+        final FrameLayout contentHost = new FrameLayout(getContext());
+        contentHost.addView(contentView, new FrameLayout.LayoutParams(-1, -1));
+        final boolean[] isMaximized = {false}; final int[] savedBounds = new int[4];
+
+        LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER_VERTICAL);
+        TextView btnLayout = new TextView(getContext()); btnLayout.setText(" 📐 "); applyGlobalFontSettings(btnLayout, 0.95f, true); btnLayout.setPadding((int)(10*density), (int)(5*density), (int)(10*density), (int)(6*density));
+        btnLayout.setOnClickListener(v -> showWindowLayoutDialog(windowTitle, layoutKey, windowFrame, contentHost, contentView, isMaximized));
+        controls.addView(btnLayout);
+
+        TextView btnMin = new TextView(getContext()); btnMin.setText(" ─ "); applyGlobalFontSettings(btnMin, 1.0f, true); btnMin.setPadding((int)(12*density), (int)(5*density), (int)(12*density), (int)(8*density));
         btnMin.setOnClickListener(v -> { windowFrame.setVisibility(View.GONE); windowFrame.post(updateTaskbarState); }); controls.addView(btnMin);
 
-        final TextView btnMax = new TextView(getContext()); btnMax.setText(" □ "); applyGlobalFontSettings(btnMax, 1.0f, true); btnMax.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(8*density));
-        final boolean[] isMaximized = {false}; final int[] savedBounds = new int[4]; 
+        final TextView btnMax = new TextView(getContext()); btnMax.setText(" □ "); applyGlobalFontSettings(btnMax, 1.0f, true); btnMax.setPadding((int)(12*density), (int)(5*density), (int)(12*density), (int)(8*density));
         btnMax.setOnClickListener(v -> {
-            if (isMaximized[0]) { 
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(savedBounds[2], savedBounds[3]); 
-                windowFrame.setLayoutParams(lp); windowFrame.setX(savedBounds[0]); windowFrame.setY(savedBounds[1]); 
+            if (isMaximized[0]) {
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(savedBounds[2], savedBounds[3]);
+                windowFrame.setLayoutParams(lp); windowFrame.setX(savedBounds[0]); windowFrame.setY(savedBounds[1]);
                 btnMax.setText(" □ "); isMaximized[0] = false;
             } else {
                 savedBounds[0] = (int) windowFrame.getX(); savedBounds[1] = (int) windowFrame.getY(); savedBounds[2] = windowFrame.getWidth(); savedBounds[3] = windowFrame.getHeight();
-                // 🚀 核心修复：宽和高均采用 MATCH_PARENT，并动态读取真实任务栏高度作为 BottomMargin，彻底无缝铺满适配所有比例！
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT); 
-                lp.bottomMargin = taskbar != null ? taskbar.getHeight() : (int)(50 * density); 
-                windowFrame.setLayoutParams(lp); windowFrame.setX(0); windowFrame.setY(0); windowFrame.bringToFront(); 
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+                lp.bottomMargin = taskbar != null ? taskbar.getHeight() : (int)(50 * density);
+                windowFrame.setLayoutParams(lp); windowFrame.setX(0); windowFrame.setY(0); windowFrame.bringToFront();
                 btnMax.setText(" ❐ "); isMaximized[0] = true;
             }
             windowFrame.post(updateTaskbarState);
         }); controls.addView(btnMax);
 
         final LinearLayout taskBtn = new LinearLayout(getContext()); taskBtn.setTag("tb_" + windowTitle);
-        TextView btnClose = new TextView(getContext()); btnClose.setText(" ✕ "); applyGlobalFontSettings(btnClose, 1.0f, true); btnClose.setPadding((int)(15*density), (int)(5*density), (int)(15*density), (int)(5*density));
+        TextView btnClose = new TextView(getContext()); btnClose.setText(" ✕ "); applyGlobalFontSettings(btnClose, 1.0f, true); btnClose.setPadding((int)(12*density), (int)(5*density), (int)(12*density), (int)(5*density));
         btnClose.setOnTouchListener((v, e) -> { if(e.getAction()==MotionEvent.ACTION_DOWN) v.setBackgroundColor(Color.parseColor("#E81123")); else if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL) v.setBackgroundColor(Color.TRANSPARENT); return false; });
-        btnClose.setOnClickListener(v -> { 
-            if (onCloseInterceptor != null) onCloseInterceptor.run(); 
-            else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); } 
+        btnClose.setOnClickListener(v -> {
+            if (onCloseInterceptor != null) onCloseInterceptor.run();
+            else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); }
             windowFrame.post(updateTaskbarState);
         });
-        controls.addView(btnClose); titleBar.addView(controls, new LinearLayout.LayoutParams(-2, -2)); 
+        controls.addView(btnClose); titleBar.addView(controls, new LinearLayout.LayoutParams(-2, -2));
 
         titleBar.setOnTouchListener(new View.OnTouchListener() {
             float dX, dY;
             @Override public boolean onTouch(View v, MotionEvent event) {
                 if (isMaximized[0]) return true;
-                if (event.getAction() == MotionEvent.ACTION_DOWN) { dX = windowFrame.getX() - mouseX; dY = windowFrame.getY() - mouseY; windowFrame.bringToFront(); } 
+                if (event.getAction() == MotionEvent.ACTION_DOWN) { dX = windowFrame.getX() - mouseX; dY = windowFrame.getY() - mouseY; windowFrame.bringToFront(); }
                 else if (event.getAction() == MotionEvent.ACTION_MOVE) { windowFrame.setX(mouseX + dX); windowFrame.setY(mouseY + dY); } return true;
             }
         });
 
-        winContainer.addView(titleBar, new LinearLayout.LayoutParams(-1, (int)(35*density)));
-        View sep = new View(getContext()); sep.setBackgroundColor(Color.parseColor("#0078D7")); winContainer.addView(sep, new LinearLayout.LayoutParams(-1, (int)(1.5f*density)));
-        winContainer.addView(contentView, new LinearLayout.LayoutParams(-1, -1));
+        winContainer.addView(titleBar, new LinearLayout.LayoutParams(-1, (int)(38*density)));
+        View sep = new View(getContext()); sep.setBackgroundColor(Color.parseColor("#38BDF8")); winContainer.addView(sep, new LinearLayout.LayoutParams(-1, (int)(1.5f*density)));
+        winContainer.addView(contentHost, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        // PC 风格右下角拖拽调窗手柄，任意工具窗口皆可自由拉大缩小
+        TextView resizeHandle = new TextView(getContext());
+        resizeHandle.setText("◢");
+        resizeHandle.setTextColor(Color.parseColor("#8838BDF8"));
+        resizeHandle.setTextSize(12f);
+        resizeHandle.setGravity(Gravity.BOTTOM | Gravity.RIGHT);
+        resizeHandle.setPadding(0, 0, (int)(2*density), (int)(1*density));
+        FrameLayout.LayoutParams rhLp = new FrameLayout.LayoutParams((int)(24*density), (int)(24*density), Gravity.BOTTOM | Gravity.RIGHT);
+        resizeHandle.setOnTouchListener(new View.OnTouchListener() {
+            float startRawX, startRawY; int startW, startH;
+            @Override public boolean onTouch(View v, MotionEvent event) {
+                if (isMaximized[0]) return true;
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startRawX = event.getRawX(); startRawY = event.getRawY();
+                        startW = windowFrame.getWidth(); startH = windowFrame.getHeight();
+                        windowFrame.bringToFront();
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        int sW = getContext().getResources().getDisplayMetrics().widthPixels;
+                        int sH = getContext().getResources().getDisplayMetrics().heightPixels;
+                        int newW = Math.max((int)(240*density), Math.min(sW, startW + (int)(event.getRawX() - startRawX)));
+                        int newH = Math.max((int)(200*density), Math.min(sH - (taskbar != null ? taskbar.getHeight() : 0), startH + (int)(event.getRawY() - startRawY)));
+                        ViewGroup.LayoutParams lp = windowFrame.getLayoutParams();
+                        lp.width = newW; lp.height = newH;
+                        windowFrame.setLayoutParams(lp);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        int sW2 = Math.max(1, getContext().getResources().getDisplayMetrics().widthPixels);
+                        int sH2 = Math.max(1, getContext().getResources().getDisplayMetrics().heightPixels - (taskbar != null ? taskbar.getHeight() : 0));
+                        int pctW = Math.max(40, Math.min(100, Math.round(windowFrame.getWidth() * 100f / sW2)));
+                        int pctH = Math.max(40, Math.min(98, Math.round(windowFrame.getHeight() * 100f / sH2)));
+                        prefs.edit().putInt("wlay_" + layoutKey + "_w", pctW).putInt("wlay_" + layoutKey + "_h", pctH).apply();
+                        return true;
+                }
+                return false;
+            }
+        });
+        windowFrame.addView(resizeHandle, rhLp);
 
         taskBtn.setOrientation(LinearLayout.HORIZONTAL); taskBtn.setGravity(Gravity.CENTER); taskBtn.setPadding((int)(10*density), (int)(5*density), (int)(10*density), (int)(5*density));
-        GradientDrawable tbBg = new GradientDrawable(); tbBg.setColor(Color.parseColor("#22FFFFFF")); taskBtn.setBackground(tbBg);
-        LinearLayout.LayoutParams tbParams = new LinearLayout.LayoutParams(-2, -1); tbParams.setMargins(0,0,(int)(5*density),0);
-        
+        GradientDrawable tbBg = new GradientDrawable(); tbBg.setColor(Color.parseColor("#26FFFFFF")); tbBg.setCornerRadius(6f * density); taskBtn.setBackground(tbBg);
+        LinearLayout.LayoutParams tbParams = new LinearLayout.LayoutParams(-2, -1); tbParams.setMargins(0, (int)(4*density), (int)(6*density), (int)(4*density));
+
         String rawName = windowTitle.replace(L("🎨 检视: "), "").replace(L("📦 "), "").replace(L("🎵 检视: "), "").replace(L("🎞️ GIF拆解: "), "").trim();
         final String finalShortName = rawName.length() > 8 ? rawName.substring(0, 8) + ".." : rawName;
-        TextView tbText = new TextView(getContext()); tbText.setText("▤ " + finalShortName); applyGlobalFontSettings(tbText, 1.1f, false); taskBtn.addView(tbText);
-        
+        TextView tbText = new TextView(getContext()); tbText.setText("▤ " + finalShortName); applyGlobalFontSettings(tbText, 1.05f, false); taskBtn.addView(tbText);
+
         final boolean[] isBtnDragging = {false};
         taskBtn.setOnTouchListener(new View.OnTouchListener() {
-            float startX; float initialTranslation; 
+            float startX; float initialTranslation;
             @Override public boolean onTouch(View v, MotionEvent event) {
                 switch(event.getAction()) {
-                    case MotionEvent.ACTION_DOWN: startX = event.getRawX(); initialTranslation = v.getTranslationX(); isBtnDragging[0] = false; v.setBackgroundColor(Color.parseColor("#44FFFFFF")); return false; 
-                    case MotionEvent.ACTION_MOVE: 
-                        float dx = event.getRawX() - startX; 
-                        if (Math.abs(dx) > 10 * density) { isBtnDragging[0] = true; v.getParent().requestDisallowInterceptTouchEvent(true); v.cancelLongPress(); /* 🔥 移动时强制取消长按事件 */ }
+                    case MotionEvent.ACTION_DOWN: startX = event.getRawX(); initialTranslation = v.getTranslationX(); isBtnDragging[0] = false; v.setBackgroundColor(Color.parseColor("#44FFFFFF")); return false;
+                    case MotionEvent.ACTION_MOVE:
+                        float dx = event.getRawX() - startX;
+                        if (Math.abs(dx) > 10 * density) { isBtnDragging[0] = true; v.getParent().requestDisallowInterceptTouchEvent(true); v.cancelLongPress(); }
                         if (isBtnDragging[0]) { v.setTranslationX(initialTranslation + dx); v.bringToFront(); } return true;
                     case MotionEvent.ACTION_UP: case MotionEvent.ACTION_CANCEL:
                         v.setBackground(tbBg);
@@ -683,47 +983,48 @@ public class DesktopSystemView extends Dialog {
                             float currentCenter = v.getX() + v.getTranslationX() + v.getWidth() / 2f; int newIndex = taskbarAppsLayout.getChildCount() - 1;
                             for (int i = 0; i < taskbarAppsLayout.getChildCount(); i++) { View child = taskbarAppsLayout.getChildAt(i); if (child != v && currentCenter < child.getX() + child.getWidth() / 2f) { newIndex = i; break; } }
                             final int targetIndex = newIndex; taskbarAppsLayout.post(() -> { taskbarAppsLayout.removeView(v); v.setTranslationX(0); taskbarAppsLayout.addView(v, targetIndex); });
-                            return true; // 🔥 吞噬拖拽结束的触控，防止触发 onClick
-                        } return false; 
+                            return true;
+                        } return false;
                 } return false;
             }
         });
 
         taskBtn.setOnClickListener(v -> {
-            if (isBtnDragging[0]) return; // 双重防走火
+            if (isBtnDragging[0]) return;
             if (windowFrame.getVisibility() == View.VISIBLE) {
                 if (windowsLayer.indexOfChild(windowFrame) == windowsLayer.getChildCount() - 1) { windowFrame.setVisibility(View.GONE); } else { windowFrame.bringToFront(); }
             } else { windowFrame.setVisibility(View.VISIBLE); windowFrame.bringToFront(); }
             windowFrame.post(updateTaskbarState);
         });
-        
-        taskBtn.setOnLongClickListener(v -> { 
-            if (isBtnDragging[0]) return false; // 拖动中绝不触发菜单
-            showContextMenu(v, finalShortName, () -> { 
-                if (onCloseInterceptor != null) onCloseInterceptor.run(); 
-                else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); } 
+
+        taskBtn.setOnLongClickListener(v -> {
+            if (isBtnDragging[0]) return false;
+            showContextMenu(v, finalShortName, () -> {
+                if (onCloseInterceptor != null) onCloseInterceptor.run();
+                else { windowsLayer.removeView(windowFrame); taskbarAppsLayout.removeView(taskBtn); }
                 windowFrame.post(updateTaskbarState);
-            }); 
-            return true; 
+            });
+            return true;
         });
         taskbarAppsLayout.addView(taskBtn, tbParams);
 
-        // 动态获取当前设备真实的屏幕分辨率，杜绝 getWidth() 返回 0 的 Bug
         int screenW = getContext().getResources().getDisplayMetrics().widthPixels;
         int screenH = getContext().getResources().getDisplayMetrics().heightPixels;
-        
-        // 永远雷打不动地保持你最喜欢的比例：宽度占屏幕的 70%，高度占 80%
-        int w = (int) (screenW * 0.70f); 
-        int h = (int) (screenH * 0.80f); 
-        
-        FrameLayout.LayoutParams frameParams = new FrameLayout.LayoutParams(w, h); 
+        int w = (int) (screenW * 0.78f);
+        int h = (int) (screenH * 0.84f);
+
+        FrameLayout.LayoutParams frameParams = new FrameLayout.LayoutParams(w, h);
         windowFrame.setLayoutParams(frameParams);
-        windowFrame.post(() -> { 
-            if (!isMaximized[0]) { 
-                windowFrame.setX((rootLayer.getWidth() - windowFrame.getWidth()) / 2f); 
-                windowFrame.setY((rootLayer.getHeight() - windowFrame.getHeight()) / 2f); 
-            } 
-        }); 
+        applyCustomWindowLayout(layoutKey, windowFrame, contentHost, contentView, false);
+        windowFrame.post(() -> {
+            if (!isMaximized[0]) {
+                int tbH2 = (taskbar != null && taskbar.getHeight() > 0) ? taskbar.getHeight() : (int)(44 * density);
+                float cx = Math.max(0, (rootLayer.getWidth() - windowFrame.getWidth()) / 2f);
+                float cy = Math.max(0, (rootLayer.getHeight() - tbH2 - windowFrame.getHeight()) / 2f);
+                windowFrame.setX(cx);
+                windowFrame.setY(cy);
+            }
+        });
         windowsLayer.addView(windowFrame);
     }
 
@@ -1034,12 +1335,16 @@ public class DesktopSystemView extends Dialog {
 
     private TextView createTitle(String text) { TextView tv = new TextView(getContext()); tv.setText(text); applyGlobalFontSettings(tv, 1.3f, true); tv.setPadding(0, (int)(25*density), 0, (int)(10*density)); return tv; }
     private TextView createSubTitle(String text) { TextView tv = new TextView(getContext()); tv.setText(text); applyGlobalFontSettings(tv, 1.1f, false); tv.setPadding(0, (int)(15*density), 0, (int)(5*density)); return tv; }
-    private EditText createInput(String hint, String text) { EditText et = new EditText(getContext()); et.setText(text); applyGlobalFontSettings(et, 1.0f, false); et.setHint(hint); et.setHintTextColor(Color.DKGRAY); GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#252526")); bg.setStroke(1, Color.GRAY); et.setBackground(bg); et.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density)); return et; }
-    private Button createButton(String text, String colorHex) { 
-        Button btn = new Button(getContext()); btn.setText(text); btn.setAllCaps(false); 
-        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor(colorHex)); bg.setCornerRadius(0); bg.setStroke((int)(1*density), Color.parseColor("#44FFFFFF")); btn.setBackground(bg); 
-        applyGlobalFontSettings(btn, 1.0f, false); btn.setTextColor(Color.WHITE); btn.setPadding((int)(15*density), (int)(8*density), (int)(15*density), (int)(8*density));
-        btn.setOnTouchListener((v, e) -> { if (e.getAction() == MotionEvent.ACTION_DOWN) v.setAlpha(0.7f); else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) v.setAlpha(1.0f); return false; }); return btn; 
+    private EditText createInput(String hint, String text) {
+        EditText et = new EditText(getContext()); et.setText(text); applyGlobalFontSettings(et, 1.0f, false); et.setHint(hint); et.setHintTextColor(Color.parseColor("#64748B"));
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#1C212B")); bg.setCornerRadius(6f * density); bg.setStroke((int)(1 * density), Color.parseColor("#475569"));
+        et.setBackground(bg); et.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(8*density)); return et;
+    }
+    private Button createButton(String text, String colorHex) {
+        Button btn = new Button(getContext()); btn.setText(text); btn.setAllCaps(false);
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor(colorHex)); bg.setCornerRadius(7f * density); bg.setStroke((int)(1*density), Color.parseColor("#33FFFFFF")); btn.setBackground(bg);
+        applyGlobalFontSettings(btn, 0.98f, false); btn.setTextColor(Color.WHITE); btn.setPadding((int)(13*density), (int)(7*density), (int)(13*density), (int)(7*density));
+        btn.setOnTouchListener((v, e) -> { if (e.getAction() == MotionEvent.ACTION_DOWN) v.setAlpha(0.72f); else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) v.setAlpha(1.0f); return false; }); return btn;
     }
 
     // ======================================================================================
@@ -1155,7 +1460,7 @@ public class DesktopSystemView extends Dialog {
 
         TextView infoText = new TextView(getContext()); infoText.setPadding((int)(5*density), (int)(4*density), (int)(5*density), (int)(2*density)); applyGlobalFontSettings(infoText, 0.85f, false); infoText.setTextColor(Color.parseColor("#0078D7")); root.addView(infoText);
 
-        FrameLayout canvasFrame = new FrameLayout(getContext()); LinearLayout.LayoutParams canvasParams = new LinearLayout.LayoutParams(-1, 0, 1f); canvasParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density)); canvasFrame.setLayoutParams(canvasParams);
+        FrameLayout canvasFrame = new FrameLayout(getContext()); canvasFrame.setTag("layout_preview"); LinearLayout.LayoutParams canvasParams = new LinearLayout.LayoutParams(-1, 0, 1f); canvasParams.setMargins((int)(5*density), (int)(5*density), (int)(5*density), (int)(5*density)); canvasFrame.setLayoutParams(canvasParams);
         Bitmap bgBmp = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888); Canvas bgCanvas = new Canvas(bgBmp); Paint bgPaint = new Paint(); bgPaint.setColor(Color.parseColor("#181818")); bgCanvas.drawRect(0,0,10,10,bgPaint); bgCanvas.drawRect(10,10,20,20,bgPaint); bgPaint.setColor(Color.parseColor("#252526")); bgCanvas.drawRect(10,0,20,10,bgPaint); bgCanvas.drawRect(0,10,10,20,bgPaint);
         BitmapDrawable tileBg = new BitmapDrawable(getContext().getResources(), bgBmp); tileBg.setTileModeXY(android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT);
         GradientDrawable canvasBorder = new GradientDrawable(); canvasBorder.setStroke((int)(1*density), Color.parseColor("#3F3F46")); canvasFrame.setBackground(new LayerDrawable(new android.graphics.drawable.Drawable[]{tileBg, canvasBorder}));
@@ -1206,7 +1511,7 @@ public class DesktopSystemView extends Dialog {
             return true;
         });
 
-        LinearLayout bottomToolArea = new LinearLayout(getContext()); bottomToolArea.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout bottomToolArea = new LinearLayout(getContext()); bottomToolArea.setTag("layout_toolbar"); bottomToolArea.setOrientation(LinearLayout.VERTICAL);
         HorizontalScrollView controlsScroll = new HorizontalScrollView(getContext()); controlsScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout controls = new LinearLayout(getContext()); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER_VERTICAL);
         controls.setPadding((int)(5*density), (int)(5*density), (int)(5*density), (int)(10*density));
@@ -1245,6 +1550,27 @@ public class DesktopSystemView extends Dialog {
         final Handler uiHandler = new Handler(Looper.getMainLooper());
         final Handler playHandler = new Handler(Looper.getMainLooper());
         final long[] renderSeq = {0};
+        final long[] playGeneration = {0};
+
+        final class FrameUiHelper {
+            void apply(GoEngineBridge.SffFrame targetFrame, Bitmap bmp) {
+            activeFrameRef[0] = targetFrame;
+            activeBmpRef[0] = bmp;
+            if (bmp != null && bmp.getWidth() > 0 && bmp.getHeight() > 0) {
+                previewImg.setImageBitmap(bmp);
+                if (!isMatrixInitialized[0] && canvasFrame.getWidth() > 0 && canvasFrame.getHeight() > 0) {
+                    float scale = Math.min((float)canvasFrame.getWidth() / bmp.getWidth(), (float)canvasFrame.getHeight() / bmp.getHeight());
+                    if (scale > 1.5f) scale = 1.5f;
+                    float dx = (canvasFrame.getWidth() - bmp.getWidth() * scale) / 2f;
+                    float dy = (canvasFrame.getHeight() - bmp.getHeight() * scale) / 2f;
+                    imageMatrix.setScale(scale, scale); imageMatrix.postTranslate(dx, dy); previewImg.setImageMatrix(imageMatrix); isMatrixInitialized[0] = true;
+                }
+            } else { previewImg.setImageBitmap(null); }
+            axisOverlay.invalidate();
+            infoText.setText(String.format(L("帧: ") + "%d / %d | " + L("动作: ") + "%d | " + L("索引: ") + "%d | " + L("尺寸: ") + "%dx%d | " + L("轴心: ") + "%d, %d", currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.width, targetFrame.height, targetFrame.x, targetFrame.y));
+            }
+        }
+        final FrameUiHelper applyFrameToUi = new FrameUiHelper();
 
         Runnable updateFrameAction = new Runnable() {
             @Override public void run() {
@@ -1265,20 +1591,7 @@ public class DesktopSystemView extends Dialog {
                         final Bitmap bmp = (bmpData != null && bmpData.length > 0) ? BitmapFactory.decodeByteArray(bmpData, 0, bmpData.length) : null;
                         uiHandler.post(() -> {
                             if (seq != renderSeq[0]) return;
-                            activeFrameRef[0] = targetFrame;
-                            activeBmpRef[0] = bmp;
-                            if (bmp != null && bmp.getWidth() > 0 && bmp.getHeight() > 0) {
-                                previewImg.setImageBitmap(bmp);
-                                if (!isMatrixInitialized[0] && canvasFrame.getWidth() > 0 && canvasFrame.getHeight() > 0) {
-                                    float scale = Math.min((float)canvasFrame.getWidth() / bmp.getWidth(), (float)canvasFrame.getHeight() / bmp.getHeight());
-                                    if (scale > 1.5f) scale = 1.5f;
-                                    float dx = (canvasFrame.getWidth() - bmp.getWidth() * scale) / 2f;
-                                    float dy = (canvasFrame.getHeight() - bmp.getHeight() * scale) / 2f;
-                                    imageMatrix.setScale(scale, scale); imageMatrix.postTranslate(dx, dy); previewImg.setImageMatrix(imageMatrix); isMatrixInitialized[0] = true;
-                                }
-                            } else { previewImg.setImageBitmap(null); }
-                            axisOverlay.invalidate();
-                            infoText.setText(String.format(L("帧: ") + "%d / %d | " + L("动作: ") + "%d | " + L("索引: ") + "%d | " + L("尺寸: ") + "%dx%d | " + L("轴心: ") + "%d, %d", currentFrameIndex[0] + 1, currentGroupFrames.size(), targetFrame.group, targetFrame.item, targetFrame.width, targetFrame.height, targetFrame.x, targetFrame.y));
+                            applyFrameToUi.apply(targetFrame, bmp);
                         });
                     } catch (Throwable ignored) {}
                 }).start();
@@ -1543,14 +1856,73 @@ public class DesktopSystemView extends Dialog {
         currentGroupFrames.addAll(masterFrames);
         canvasFrame.post(updateFrameAction);
 
-        Runnable playRunnable = new Runnable() { @Override public void run() { if (isPlaying[0] && !currentGroupFrames.isEmpty()) { currentFrameIndex[0]++; updateFrameAction.run(); playHandler.postDelayed(this, currentDelay[0]); } } };
+        // 核心修复：使用单线程串行解码播放循环（解码完当前帧并渲染后再进入下一帧），彻底根治大体积 SFF 播放卡住与暂停跳帧问题
+        final Runnable startSequentialPlayback = () -> {
+            final long myGen = ++playGeneration[0];
+            new Thread(() -> {
+                while (isPlaying[0] && myGen == playGeneration[0]) {
+                    long t0 = System.currentTimeMillis();
+                    int total = currentGroupFrames.size();
+                    if (total <= 0) break;
+                    int idx = currentFrameIndex[0] + 1;
+                    if (idx < 0 || idx >= total) idx = 0;
+                    final int framePos = idx;
+                    final GoEngineBridge.SffFrame tf;
+                    try {
+                        tf = currentGroupFrames.get(framePos);
+                    } catch (Exception e) { break; }
 
-        btnPrev.setOnClickListener(v -> { currentFrameIndex[0]--; updateFrameAction.run(); }); btnNext.setOnClickListener(v -> { currentFrameIndex[0]++; updateFrameAction.run(); });
+                    Bitmap decoded = null;
+                    try {
+                        byte[] bmpData = Api.decodeSffFrame(sffPath, tf.group, tf.item, currentActPath[0]);
+                        if (bmpData != null && bmpData.length > 0) {
+                            decoded = BitmapFactory.decodeByteArray(bmpData, 0, bmpData.length);
+                        }
+                    } catch (Throwable ignored) {}
+
+                    if (!isPlaying[0] || myGen != playGeneration[0]) break;
+                    final Bitmap finalBmp = decoded;
+                    final java.util.concurrent.CountDownLatch uiLatch = new java.util.concurrent.CountDownLatch(1);
+                    uiHandler.post(() -> {
+                        try {
+                            if (isPlaying[0] && myGen == playGeneration[0]) {
+                                currentFrameIndex[0] = framePos;
+                                applyFrameToUi.apply(tf, finalBmp);
+                            }
+                        } finally {
+                            uiLatch.countDown();
+                        }
+                    });
+                    try { uiLatch.await(250, java.util.concurrent.TimeUnit.MILLISECONDS); } catch (InterruptedException ignored) {}
+
+                    long elapsed = System.currentTimeMillis() - t0;
+                    long waitMs = Math.max(0L, currentDelay[0] - elapsed);
+                    if (waitMs > 0 && isPlaying[0] && myGen == playGeneration[0]) {
+                        try { Thread.sleep(waitMs); } catch (InterruptedException ignored) {}
+                    }
+                }
+            }).start();
+        };
+
+        btnPrev.setOnClickListener(v -> {
+            if (isPlaying[0]) { isPlaying[0] = false; playGeneration[0]++; btnPlay.setText(L("▶️ 播放")); btnPlay.setBackgroundColor(Color.parseColor("#0078D7")); }
+            currentFrameIndex[0]--; updateFrameAction.run();
+        });
+        btnNext.setOnClickListener(v -> {
+            if (isPlaying[0]) { isPlaying[0] = false; playGeneration[0]++; btnPlay.setText(L("▶️ 播放")); btnPlay.setBackgroundColor(Color.parseColor("#0078D7")); }
+            currentFrameIndex[0]++; updateFrameAction.run();
+        });
         btnPlay.setOnClickListener(v -> {
-            if (currentGroupFrames.isEmpty()) return; isPlaying[0] = !isPlaying[0];
+            if (currentGroupFrames.isEmpty()) return;
+            isPlaying[0] = !isPlaying[0];
             btnPlay.setText(isPlaying[0] ? L("⏸️ 暂停") : L("▶️ 播放"));
             btnPlay.setBackgroundColor(isPlaying[0] ? Color.parseColor("#E81123") : Color.parseColor("#0078D7"));
-            if (isPlaying[0]) playHandler.post(playRunnable); else playHandler.removeCallbacksAndMessages(null);
+            if (isPlaying[0]) {
+                startSequentialPlayback.run();
+            } else {
+                playGeneration[0]++;
+                playHandler.removeCallbacksAndMessages(null);
+            }
         });
 
         btnExportNative.setOnClickListener(v -> {
@@ -1624,7 +1996,7 @@ public class DesktopSystemView extends Dialog {
         root.addView(bottomToolArea);
 
         openAppWindow(winTitle, root, () -> {
-            isPlaying[0] = false; playHandler.removeCallbacksAndMessages(null);
+            isPlaying[0] = false; playGeneration[0]++; playHandler.removeCallbacksAndMessages(null);
             View win = windowsLayer.findViewWithTag(winTitle); if (win != null) windowsLayer.removeView(win);
             View tbBtn = taskbarAppsLayout.findViewWithTag("tb_" + winTitle); if (tbBtn != null) taskbarAppsLayout.removeView(tbBtn);
         });
@@ -2201,16 +2573,19 @@ public class DesktopSystemView extends Dialog {
             }
             gridContainer.addView(row);
         }
-        gridScroll.addView(gridContainer); 
+        gridScroll.addView(gridContainer);
+        gridScroll.setTag("layout_left");
         mainArea.addView(gridScroll, new LinearLayout.LayoutParams(-2, -1));
 
-        LinearLayout rightArea = new LinearLayout(getContext()); 
+        LinearLayout rightArea = new LinearLayout(getContext());
+        rightArea.setTag("layout_center");
         rightArea.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, -1, 1f); 
+        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, -1, 1f);
         rightParams.setMargins((int)(15*density), 0, 0, 0);
         rightArea.setLayoutParams(rightParams);
 
         FrameLayout previewFrame = new FrameLayout(getContext());
+        previewFrame.setTag("layout_preview");
         Bitmap bgBmp = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888); Canvas bgCanvas = new Canvas(bgBmp); Paint bgPaint = new Paint(); bgPaint.setColor(Color.parseColor("#181818")); bgCanvas.drawRect(0,0,10,10,bgPaint); bgCanvas.drawRect(10,10,20,20,bgPaint); bgPaint.setColor(Color.parseColor("#252526")); bgCanvas.drawRect(10,0,20,10,bgPaint); bgCanvas.drawRect(0,10,10,20,bgPaint);
         BitmapDrawable tileBg = new BitmapDrawable(getContext().getResources(), bgBmp); tileBg.setTileModeXY(android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT); 
         GradientDrawable canvasBorder = new GradientDrawable(); canvasBorder.setStroke((int)(1*density), Color.parseColor("#3F3F46")); 
@@ -3155,6 +3530,7 @@ public class DesktopSystemView extends Dialog {
         });
         panel2D.addView(btnApply2D); rightPanel.addView(panel2D); rightScroll.addView(rightPanel);
 
+        leftPanel.setTag("layout_left"); centerContainer.setTag("layout_center"); rightScroll.setTag("layout_right"); viewportFrame.setTag("layout_preview"); dpadAreaContainer.setTag("layout_toolbar");
         mainArea.addView(leftPanel, new LinearLayout.LayoutParams(0, -1, 1.2f)); mainArea.addView(centerContainer, new LinearLayout.LayoutParams(0, -1, 2.5f)); mainArea.addView(rightScroll, new LinearLayout.LayoutParams(0, -1, 1f));
         root.addView(mainArea, new LinearLayout.LayoutParams(-1, -1));
 
@@ -4164,19 +4540,141 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
     private static class ClsnBox {
         int type; // 1 = Clsn1 打击框 (红), 2 = Clsn2 防御框 (蓝)
         int x1, y1, x2, y2;
+        int strokeId;
         ClsnBox(int type, int x1, int y1, int x2, int y2) {
+            this(type, x1, y1, x2, y2, 0);
+        }
+        ClsnBox(int type, int x1, int y1, int x2, int y2, int strokeId) {
             this.type = type;
             this.x1 = Math.min(x1, x2);
             this.y1 = Math.min(y1, y2);
             this.x2 = Math.max(x1, x2);
             this.y2 = Math.max(y1, y2);
+            this.strokeId = strokeId;
         }
+    }
+
+    // 将任意闭合多边形/手绘轮廓通过水平扫描线分解为合法的 MUGEN Clsn 矩形集合
+    private List<ClsnBox> decomposePolygonToClsnBoxes(List<Point> poly, int boxType, int slices, int strokeId) {
+        List<ClsnBox> out = new ArrayList<>();
+        if (poly == null || poly.size() < 3) return out;
+        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
+        for (Point p : poly) {
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        }
+        int totalH = maxY - minY;
+        if (totalH < 2) return out;
+        int bandCount = Math.max(2, Math.min(slices, totalH));
+        double bandH = (double) totalH / bandCount;
+
+        for (int b = 0; b < bandCount; b++) {
+            int yTop = (int) Math.round(minY + b * bandH);
+            int yBot = (int) Math.round(minY + (b + 1) * bandH);
+            if (yBot <= yTop) continue;
+            double sampleY = (yTop + yBot) * 0.5;
+
+            List<Double> xs = new ArrayList<>();
+            int n = poly.size();
+            for (int i = 0; i < n; i++) {
+                Point p1 = poly.get(i);
+                Point p2 = poly.get((i + 1) % n);
+                if ((p1.y <= sampleY && p2.y > sampleY) || (p2.y <= sampleY && p1.y > sampleY)) {
+                    double t = (sampleY - p1.y) / (double)(p2.y - p1.y);
+                    xs.add(p1.x + t * (p2.x - p1.x));
+                }
+            }
+            java.util.Collections.sort(xs);
+            for (int i = 0; i + 1 < xs.size(); i += 2) {
+                int lx = (int) Math.round(xs.get(i));
+                int rx = (int) Math.round(xs.get(i + 1));
+                if (rx - lx >= 2) {
+                    if (!out.isEmpty()) {
+                        ClsnBox prev = out.get(out.size() - 1);
+                        if (prev.y2 == yTop && Math.abs(prev.x1 - lx) <= 2 && Math.abs(prev.x2 - rx) <= 2) {
+                            prev.x1 = Math.min(prev.x1, lx);
+                            prev.x2 = Math.max(prev.x2, rx);
+                            prev.y2 = yBot;
+                            continue;
+                        }
+                    }
+                    out.add(new ClsnBox(boxType, lx, yTop, rx, yBot, strokeId));
+                }
+            }
+        }
+        return out;
+    }
+
+    // 扫描透明 SFF 图像非透明像素，生成整图外接框或异形轮廓多段框
+    private List<ClsnBox> detectSpriteBoundsToClsn(Bitmap bmp, GoEngineBridge.SffFrame frame, int boxType, boolean contourMode, int slices, int strokeId) {
+        List<ClsnBox> out = new ArrayList<>();
+        if (bmp == null || bmp.isRecycled() || frame == null) return out;
+        int w = bmp.getWidth(), h = bmp.getHeight();
+        if (w <= 0 || h <= 0) return out;
+        int[] pixels = new int[w * h];
+        bmp.getPixels(pixels, 0, w, 0, 0, w, h);
+
+        int minX = w, minY = h, maxX = -1, maxY = -1;
+        for (int y = 0; y < h; y++) {
+            int rowOff = y * w;
+            for (int x = 0; x < w; x++) {
+                if (Color.alpha(pixels[rowOff + x]) > 10) {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+        if (maxX < minX || maxY < minY) return out;
+
+        if (!contourMode) {
+            out.add(new ClsnBox(boxType, minX - frame.x, minY - frame.y, maxX + 1 - frame.x, maxY + 1 - frame.y, strokeId));
+            return out;
+        }
+
+        int spanH = maxY - minY + 1;
+        int bandCount = Math.max(2, Math.min(slices, spanH));
+        double bandH = (double) spanH / bandCount;
+        for (int b = 0; b < bandCount; b++) {
+            int y0 = minY + (int) Math.floor(b * bandH);
+            int y1 = minY + (int) Math.ceil((b + 1) * bandH) - 1;
+            if (y1 > maxY) y1 = maxY;
+            if (y1 < y0) continue;
+            int bMinX = w, bMaxX = -1;
+            for (int y = y0; y <= y1; y++) {
+                int rowOff = y * w;
+                for (int x = minX; x <= maxX; x++) {
+                    if (Color.alpha(pixels[rowOff + x]) > 10) {
+                        if (x < bMinX) bMinX = x;
+                        if (x > bMaxX) bMaxX = x;
+                    }
+                }
+            }
+            if (bMaxX >= bMinX) {
+                int mx1 = bMinX - frame.x;
+                int my1 = y0 - frame.y;
+                int mx2 = bMaxX + 1 - frame.x;
+                int my2 = y1 + 1 - frame.y;
+                if (!out.isEmpty()) {
+                    ClsnBox prev = out.get(out.size() - 1);
+                    if (prev.y2 >= my1 - 1 && Math.abs(prev.x1 - mx1) <= 3 && Math.abs(prev.x2 - mx2) <= 3) {
+                        prev.x1 = Math.min(prev.x1, mx1);
+                        prev.x2 = Math.max(prev.x2, mx2);
+                        prev.y2 = my2;
+                        continue;
+                    }
+                }
+                out.add(new ClsnBox(boxType, mx1, my1, mx2, my2, strokeId));
+            }
+        }
+        return out;
     }
 
     private View buildClsnEditorContent(String initSffPath, String initActPath) {
         LinearLayout root = new LinearLayout(getContext());
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.parseColor("#181818"));
+        root.setBackgroundColor(Color.parseColor("#141820"));
         final Handler uiHandler = new Handler(Looper.getMainLooper());
 
         final String[] sffPathRef = { initSffPath != null ? initSffPath : "" };
@@ -4187,10 +4685,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         final Bitmap[] curBmp = {null};
         final GoEngineBridge.SffFrame[] curFrame = {null};
 
-        // 每个帧 (key = "group,item") 对应一组判定框
         final java.util.Map<String, List<ClsnBox>> frameBoxesMap = new java.util.LinkedHashMap<>();
-        // 工具模式: 0=拖拽缩放画布, 1=绘制打击框(Clsn1), 2=绘制防御框(Clsn2)
+        // 工具模式: 0=移动缩放画布, 1=绘制打击框(Clsn1), 2=绘制防御框(Clsn2)
         final int[] editMode = {1};
+        // 绘制形状: 0=矩形, 1=椭圆, 2=多边形点连, 3=手绘自动闭合, 4=点删单框
+        final int[] shapeMode = {0};
+        final int[] shapeSlices = {8};
+        final int[] strokeSeq = {1};
         final boolean[] showClsn1 = {true};
         final boolean[] showClsn2 = {true};
         final float[] canvasScale = {2.0f};
@@ -4198,14 +4699,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         final float[] originY = {0f};
         final boolean[] originInited = {false};
 
+        final List<Point> activePolyPts = new ArrayList<>();
+        final List<Point> freehandPts = new ArrayList<>();
+
         final TextView statusBar = new TextView(getContext());
-        statusBar.setText(L("⚔️ 请先加载 SFF 人物文件，再选择红框(打击)或蓝框(防御)在画布上拖拽绘制"));
+        statusBar.setText(L("⚔️ 支持矩形/椭圆/多边形/手绘自动闭合，以及 SFF 透明像素自动识别防御框"));
         applyGlobalFontSettings(statusBar, 0.85f, false);
-        statusBar.setTextColor(Color.parseColor("#80CBC4"));
+        statusBar.setTextColor(Color.parseColor("#7DD3FC"));
         statusBar.setPadding((int)(8*density), (int)(5*density), (int)(8*density), (int)(5*density));
         root.addView(statusBar);
 
-        // 自定义可视化绘制画布
         final View clsnCanvas = new View(getContext()) {
             private final Paint gridPaint = new Paint();
             private final Paint axisPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -4213,6 +4716,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             private final Paint stroke1 = new Paint(Paint.ANTI_ALIAS_FLAG);
             private final Paint fill2 = new Paint();
             private final Paint stroke2 = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint dashPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             private final Paint bmpPaint = new Paint();
             private boolean isDrawing = false;
@@ -4222,14 +4726,18 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             private int pointerMode = 0;
 
             {
-                gridPaint.setColor(Color.argb(35, 255, 255, 255));
+                gridPaint.setColor(Color.argb(32, 255, 255, 255));
                 gridPaint.setStrokeWidth(1f);
                 axisPaint.setColor(Color.argb(200, 255, 235, 59));
                 axisPaint.setStrokeWidth(Math.max(1.5f, density));
-                fill1.setColor(Color.argb(80, 244, 67, 54)); fill1.setStyle(Paint.Style.FILL);
+                fill1.setColor(Color.argb(78, 244, 67, 54)); fill1.setStyle(Paint.Style.FILL);
                 stroke1.setColor(Color.parseColor("#FF5252")); stroke1.setStyle(Paint.Style.STROKE); stroke1.setStrokeWidth(Math.max(2f, 1.5f * density));
-                fill2.setColor(Color.argb(80, 33, 150, 243)); fill2.setStyle(Paint.Style.FILL);
-                stroke2.setColor(Color.parseColor("#40C4FF")); stroke2.setStyle(Paint.Style.STROKE); stroke2.setStrokeWidth(Math.max(2f, 1.5f * density));
+                fill2.setColor(Color.argb(78, 33, 150, 243)); fill2.setStyle(Paint.Style.FILL);
+                stroke2.setColor(Color.parseColor("#38BDF8")); stroke2.setStyle(Paint.Style.STROKE); stroke2.setStrokeWidth(Math.max(2f, 1.5f * density));
+                dashPaint.setColor(Color.parseColor("#FDE047"));
+                dashPaint.setStyle(Paint.Style.STROKE);
+                dashPaint.setStrokeWidth(Math.max(2f, 1.5f * density));
+                dashPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{8f * density, 6f * density}, 0));
                 labelPaint.setColor(Color.WHITE); labelPaint.setTextSize(10f * density); labelPaint.setFakeBoldText(true);
                 bmpPaint.setFilterBitmap(false);
             }
@@ -4249,10 +4757,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 return Math.round((sy - originY[0]) / sc);
             }
 
+            private float mugenToScreenX(int mx) { return originX[0] + mx * Math.max(0.1f, canvasScale[0]); }
+            private float mugenToScreenY(int my) { return originY[0] + my * Math.max(0.1f, canvasScale[0]); }
+
             @Override
             protected void onDraw(Canvas canvas) {
                 super.onDraw(canvas);
-                canvas.drawColor(Color.parseColor("#1A1A1D"));
+                canvas.drawColor(Color.parseColor("#161A23"));
                 if (!originInited[0] && getWidth() > 0 && getHeight() > 0) {
                     originX[0] = getWidth() * 0.5f;
                     originY[0] = getHeight() * 0.72f;
@@ -4265,11 +4776,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     for (float y = originY[0] % step; y < getHeight(); y += step) canvas.drawLine(0, y, getWidth(), y, gridPaint);
                 }
 
-                // 原点十字轴 (0,0)
                 canvas.drawLine(0, originY[0], getWidth(), originY[0], axisPaint);
                 canvas.drawLine(originX[0], 0, originX[0], getHeight(), axisPaint);
 
-                // 绘制当前 SFF 帧（按 MUGEN 真实轴心 x, y 定位）
                 if (curBmp[0] != null && !curBmp[0].isRecycled() && curFrame[0] != null) {
                     float left = originX[0] - curFrame[0].x * sc;
                     float top = originY[0] - curFrame[0].y * sc;
@@ -4277,7 +4786,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     canvas.drawBitmap(curBmp[0], null, dst, bmpPaint);
                 }
 
-                // 绘制已保存的判定框
                 String key = currentKey();
                 List<ClsnBox> boxes = frameBoxesMap.get(key);
                 if (boxes != null) {
@@ -4285,26 +4793,64 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     for (ClsnBox b : boxes) {
                         if (b.type == 1 && !showClsn1[0]) continue;
                         if (b.type == 2 && !showClsn2[0]) continue;
-                        float l = originX[0] + b.x1 * sc;
-                        float t = originY[0] + b.y1 * sc;
-                        float r = originX[0] + b.x2 * sc;
-                        float bt = originY[0] + b.y2 * sc;
+                        float l = mugenToScreenX(b.x1), t = mugenToScreenY(b.y1);
+                        float r = mugenToScreenX(b.x2), bt = mugenToScreenY(b.y2);
                         canvas.drawRect(l, t, r, bt, b.type == 1 ? fill1 : fill2);
                         canvas.drawRect(l, t, r, bt, b.type == 1 ? stroke1 : stroke2);
-                        String tag = (b.type == 1) ? ("Clsn1[" + (c1Idx++) + "]") : ("Clsn2[" + (c2Idx++) + "]");
-                        canvas.drawText(tag, l + 3f * density, t + 12f * density, labelPaint);
+                        String tag = (b.type == 1) ? ("C1[" + (c1Idx++) + "]") : ("C2[" + (c2Idx++) + "]");
+                        canvas.drawText(tag, l + 2f * density, t + 11f * density, labelPaint);
                     }
                 }
 
-                // 绘制正在拖拽中的预览框
-                if (isDrawing) {
+                Paint activeFill = (editMode[0] == 1) ? fill1 : fill2;
+                Paint activeStroke = (editMode[0] == 1) ? stroke1 : stroke2;
+
+                // 矩形 / 椭圆 实时预览
+                if (isDrawing && (shapeMode[0] == 0 || shapeMode[0] == 1)) {
                     int rx1 = Math.min(dragStartX, dragCurX), ry1 = Math.min(dragStartY, dragCurY);
                     int rx2 = Math.max(dragStartX, dragCurX), ry2 = Math.max(dragStartY, dragCurY);
-                    float l = originX[0] + rx1 * sc, t = originY[0] + ry1 * sc;
-                    float r = originX[0] + rx2 * sc, bt = originY[0] + ry2 * sc;
-                    canvas.drawRect(l, t, r, bt, editMode[0] == 1 ? fill1 : fill2);
-                    canvas.drawRect(l, t, r, bt, editMode[0] == 1 ? stroke1 : stroke2);
+                    float l = mugenToScreenX(rx1), t = mugenToScreenY(ry1);
+                    float r = mugenToScreenX(rx2), bt = mugenToScreenY(ry2);
+                    if (shapeMode[0] == 0) {
+                        canvas.drawRect(l, t, r, bt, activeFill);
+                        canvas.drawRect(l, t, r, bt, activeStroke);
+                    } else {
+                        android.graphics.RectF oval = new android.graphics.RectF(l, t, r, bt);
+                        canvas.drawOval(oval, activeFill);
+                        canvas.drawOval(oval, activeStroke);
+                    }
                     canvas.drawText(rx1 + "," + ry1 + " ~ " + rx2 + "," + ry2, l + 4f * density, Math.max(14f * density, t - 4f * density), labelPaint);
+                }
+
+                // 多边形顶点预览 + 自动闭合虚线
+                if (shapeMode[0] == 2 && !activePolyPts.isEmpty()) {
+                    Path pPath = new Path();
+                    for (int i = 0; i < activePolyPts.size(); i++) {
+                        float sx = mugenToScreenX(activePolyPts.get(i).x);
+                        float sy = mugenToScreenY(activePolyPts.get(i).y);
+                        if (i == 0) pPath.moveTo(sx, sy); else pPath.lineTo(sx, sy);
+                        canvas.drawCircle(sx, sy, 4.5f * density, i == 0 ? dashPaint : activeStroke);
+                    }
+                    canvas.drawPath(pPath, activeStroke);
+                    if (activePolyPts.size() >= 2) {
+                        Point first = activePolyPts.get(0);
+                        Point last = activePolyPts.get(activePolyPts.size() - 1);
+                        canvas.drawLine(mugenToScreenX(last.x), mugenToScreenY(last.y), mugenToScreenX(first.x), mugenToScreenY(first.y), dashPaint);
+                    }
+                }
+
+                // 手绘路径预览 + 剩余区域自动闭合虚线
+                if (isDrawing && shapeMode[0] == 3 && freehandPts.size() >= 2) {
+                    Path fPath = new Path();
+                    for (int i = 0; i < freehandPts.size(); i++) {
+                        float sx = mugenToScreenX(freehandPts.get(i).x);
+                        float sy = mugenToScreenY(freehandPts.get(i).y);
+                        if (i == 0) fPath.moveTo(sx, sy); else fPath.lineTo(sx, sy);
+                    }
+                    canvas.drawPath(fPath, activeStroke);
+                    Point first = freehandPts.get(0);
+                    Point last = freehandPts.get(freehandPts.size() - 1);
+                    canvas.drawLine(mugenToScreenX(last.x), mugenToScreenY(last.y), mugenToScreenX(first.x), mugenToScreenY(first.y), dashPaint);
                 }
             }
 
@@ -4343,48 +4889,159 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             break;
                     }
                     return true;
-                } else {
-                    if (curFrame[0] == null) return true;
+                }
+
+                if (curFrame[0] == null) return true;
+                int mx = screenToMugenX(event.getX());
+                int my = screenToMugenY(event.getY());
+
+                // 点删单框模式
+                if (shapeMode[0] == 4) {
+                    if (action == MotionEvent.ACTION_DOWN) {
+                        String key = currentKey();
+                        List<ClsnBox> list = frameBoxesMap.get(key);
+                        if (list != null) {
+                            for (int i = list.size() - 1; i >= 0; i--) {
+                                ClsnBox b = list.get(i);
+                                if (mx >= b.x1 && mx <= b.x2 && my >= b.y1 && my <= b.y2) {
+                                    list.remove(i);
+                                    statusBar.setText(L("🎯 已删除点击的判定框"));
+                                    invalidate();
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    return true;
+                }
+
+                // 多边形点连模式
+                if (shapeMode[0] == 2) {
+                    if (action == MotionEvent.ACTION_DOWN) {
+                        if (activePolyPts.size() >= 3) {
+                            Point p0 = activePolyPts.get(0);
+                            float distPx = (float) Math.hypot(mugenToScreenX(p0.x) - event.getX(), mugenToScreenY(p0.y) - event.getY());
+                            if (distPx <= 18f * density) {
+                                int sid = strokeSeq[0]++;
+                                List<ClsnBox> generated = decomposePolygonToClsnBoxes(activePolyPts, editMode[0], shapeSlices[0], sid);
+                                activePolyPts.clear();
+                                if (!generated.isEmpty()) {
+                                    String key = currentKey();
+                                    List<ClsnBox> list = frameBoxesMap.get(key);
+                                    if (list == null) { list = new ArrayList<>(); frameBoxesMap.put(key, list); }
+                                    list.addAll(generated);
+                                    statusBar.setText((editMode[0] == 1 ? L("🟥 多边形打击框已闭合，生成 ") : L("🟦 多边形防御框已闭合，生成 ")) + generated.size() + L(" 个分段框"));
+                                }
+                                invalidate();
+                                return true;
+                            }
+                        }
+                        activePolyPts.add(new Point(mx, my));
+                        statusBar.setText(L("🔷 多边形已点选 ") + activePolyPts.size() + L(" 个顶点 (点回起点或按【✅ 闭合】生成)"));
+                        invalidate();
+                    }
+                    return true;
+                }
+
+                // 手绘自动闭合模式
+                if (shapeMode[0] == 3) {
                     switch (action) {
                         case MotionEvent.ACTION_DOWN:
-                            dragStartX = screenToMugenX(event.getX());
-                            dragStartY = screenToMugenY(event.getY());
-                            dragCurX = dragStartX; dragCurY = dragStartY;
+                            freehandPts.clear();
+                            freehandPts.add(new Point(mx, my));
                             isDrawing = true;
                             invalidate();
                             break;
                         case MotionEvent.ACTION_MOVE:
-                            if (isDrawing) {
-                                dragCurX = screenToMugenX(event.getX());
-                                dragCurY = screenToMugenY(event.getY());
-                                invalidate();
+                            if (isDrawing && !freehandPts.isEmpty()) {
+                                Point last = freehandPts.get(freehandPts.size() - 1);
+                                if (Math.abs(mx - last.x) + Math.abs(my - last.y) >= 2) {
+                                    freehandPts.add(new Point(mx, my));
+                                    invalidate();
+                                }
                             }
                             break;
                         case MotionEvent.ACTION_UP:
                         case MotionEvent.ACTION_CANCEL:
                             if (isDrawing) {
                                 isDrawing = false;
-                                if (Math.abs(dragCurX - dragStartX) >= 2 && Math.abs(dragCurY - dragStartY) >= 2) {
-                                    String key = currentKey();
-                                    List<ClsnBox> list = frameBoxesMap.get(key);
-                                    if (list == null) { list = new ArrayList<>(); frameBoxesMap.put(key, list); }
-                                    ClsnBox nb = new ClsnBox(editMode[0], dragStartX, dragStartY, dragCurX, dragCurY);
-                                    list.add(nb);
-                                    statusBar.setText((nb.type == 1 ? L("🟥 已添加打击框 Clsn1: ") : L("🟦 已添加防御框 Clsn2: ")) + nb.x1 + ", " + nb.y1 + ", " + nb.x2 + ", " + nb.y2);
+                                if (freehandPts.size() >= 3) {
+                                    int sid = strokeSeq[0]++;
+                                    List<ClsnBox> generated = decomposePolygonToClsnBoxes(freehandPts, editMode[0], shapeSlices[0], sid);
+                                    if (!generated.isEmpty()) {
+                                        String key = currentKey();
+                                        List<ClsnBox> list = frameBoxesMap.get(key);
+                                        if (list == null) { list = new ArrayList<>(); frameBoxesMap.put(key, list); }
+                                        list.addAll(generated);
+                                        statusBar.setText((editMode[0] == 1 ? L("✏️ 手绘打击区已自动闭合，生成 ") : L("✏️ 手绘防御区已自动闭合，生成 ")) + generated.size() + L(" 个分段框"));
+                                    }
                                 }
+                                freehandPts.clear();
                                 invalidate();
                             }
                             break;
                     }
                     return true;
                 }
+
+                // 矩形 (0) 与 椭圆 (1) 拖拽模式
+                switch (action) {
+                    case MotionEvent.ACTION_DOWN:
+                        dragStartX = mx; dragStartY = my;
+                        dragCurX = mx; dragCurY = my;
+                        isDrawing = true;
+                        invalidate();
+                        break;
+                    case MotionEvent.ACTION_MOVE:
+                        if (isDrawing) {
+                            dragCurX = mx; dragCurY = my;
+                            invalidate();
+                        }
+                        break;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        if (isDrawing) {
+                            isDrawing = false;
+                            if (Math.abs(dragCurX - dragStartX) >= 2 && Math.abs(dragCurY - dragStartY) >= 2) {
+                                String key = currentKey();
+                                List<ClsnBox> list = frameBoxesMap.get(key);
+                                if (list == null) { list = new ArrayList<>(); frameBoxesMap.put(key, list); }
+                                int sid = strokeSeq[0]++;
+                                if (shapeMode[0] == 0) {
+                                    ClsnBox nb = new ClsnBox(editMode[0], dragStartX, dragStartY, dragCurX, dragCurY, sid);
+                                    list.add(nb);
+                                    statusBar.setText((nb.type == 1 ? L("🟥 已添加打击框 Clsn1: ") : L("🟦 已添加防御框 Clsn2: ")) + nb.x1 + ", " + nb.y1 + ", " + nb.x2 + ", " + nb.y2);
+                                } else {
+                                    int rx1 = Math.min(dragStartX, dragCurX), ry1 = Math.min(dragStartY, dragCurY);
+                                    int rx2 = Math.max(dragStartX, dragCurX), ry2 = Math.max(dragStartY, dragCurY);
+                                    double cx = (rx1 + rx2) * 0.5, cy = (ry1 + ry2) * 0.5;
+                                    double a = Math.max(1.0, (rx2 - rx1) * 0.5), b = Math.max(1.0, (ry2 - ry1) * 0.5);
+                                    List<Point> ovalPoly = new ArrayList<>();
+                                    int segs = 28;
+                                    for (int i = 0; i < segs; i++) {
+                                        double ang = 2.0 * Math.PI * i / segs;
+                                        ovalPoly.add(new Point((int) Math.round(cx + a * Math.cos(ang)), (int) Math.round(cy + b * Math.sin(ang))));
+                                    }
+                                    List<ClsnBox> generated = decomposePolygonToClsnBoxes(ovalPoly, editMode[0], shapeSlices[0], sid);
+                                    list.addAll(generated);
+                                    statusBar.setText((editMode[0] == 1 ? L("⭕ 椭圆打击区已生成 ") : L("⭕ 椭圆防御区已生成 ")) + generated.size() + L(" 个分段框"));
+                                }
+                            }
+                            invalidate();
+                        }
+                        break;
+                }
+                return true;
             }
         };
+        clsnCanvas.setTag("layout_preview");
         LinearLayout.LayoutParams canvasLp = new LinearLayout.LayoutParams(-1, 0, 1f);
         canvasLp.setMargins((int)(6*density), 0, (int)(6*density), (int)(6*density));
         root.addView(clsnCanvas, canvasLp);
 
         Runnable renderCurrentFrame = () -> {
+            activePolyPts.clear();
+            freehandPts.clear();
             if (groupFrames.isEmpty()) {
                 curFrame[0] = null; curBmp[0] = null;
                 clsnCanvas.invalidate();
@@ -4427,6 +5084,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         };
 
         HorizontalScrollView barScroll = new HorizontalScrollView(getContext()); barScroll.setHorizontalScrollBarEnabled(false);
+        barScroll.setTag("layout_toolbar");
         LinearLayout bar = new LinearLayout(getContext()); bar.setOrientation(LinearLayout.HORIZONTAL); bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding((int)(6*density), (int)(4*density), (int)(6*density), (int)(8*density));
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2); bp.setMargins((int)(4*density), 0, (int)(4*density), 0);
@@ -4434,28 +5092,160 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         Button btnLoadSff = createButton(L("📂 加载 SFF"), "#0078D7");
         Button btnLoadAct = createButton(L("🎨 色表"), "#9C27B0");
         Button btnLoadAir = createButton(L("📄 导入 AIR"), "#5C6BC0");
-        Button btnModePan = createButton(L("🖐️ 移动画布"), "#3F3F46");
+        Button btnModePan = createButton(L("🖐️ 移动画布"), "#334155");
         Button btnModeAtk = createButton(L("🟥 打击框(Clsn1)"), "#D32F2F");
         Button btnModeDef = createButton(L("🟦 防御框(Clsn2)"), "#1976D2");
+        Button btnShapeMode = createButton(L("⬜ 形状: 矩形"), "#0F766E");
+        Button btnClosePoly = createButton(L("✅ 闭合多边形"), "#059669");
+        Button btnAutoDetect = createButton(L("🪄 识别图片边界"), "#0284C7");
+        Button btnPrecision = createButton(L("⚙️ 异形精度: 8"), "#475569");
         Button btnUndo = createButton(L("↩️ 撤销"), "#455A64");
         Button btnClear = createButton(L("🗑️ 清空帧"), "#616161");
-        Button btnPrev = createButton(L("⏪ 上一帧"), "#3F3F46");
-        Button btnNext = createButton(L("⏭️ 下一帧"), "#3F3F46");
-        Button btnGroup = createButton(L("📁 选组"), "#3F3F46");
+        Button btnPrev = createButton(L("⏪ 上一帧"), "#334155");
+        Button btnNext = createButton(L("⏭️ 下一帧"), "#334155");
+        Button btnGroup = createButton(L("📁 选组"), "#334155");
         Button btnToggleC1 = createButton(L("👁️ 打击:开"), "#B71C1C");
         Button btnToggleC2 = createButton(L("👁️ 防御:开"), "#0D47A1");
         Button btnExportAir = createButton(L("📋 生成/导出 AIR"), "#2E7D32");
 
+        btnClosePoly.setVisibility(View.GONE);
+
         Runnable updateModeHighlight = () -> {
-            btnModePan.setBackgroundColor(editMode[0] == 0 ? Color.parseColor("#0078D7") : Color.parseColor("#3F3F46"));
-            btnModeAtk.setBackgroundColor(editMode[0] == 1 ? Color.parseColor("#FF1744") : Color.parseColor("#5D2020"));
-            btnModeDef.setBackgroundColor(editMode[0] == 2 ? Color.parseColor("#00B0FF") : Color.parseColor("#1A3A5C"));
+            btnModePan.setBackgroundColor(editMode[0] == 0 ? Color.parseColor("#0284C7") : Color.parseColor("#334155"));
+            btnModeAtk.setBackgroundColor(editMode[0] == 1 ? Color.parseColor("#EF4444") : Color.parseColor("#5D2020"));
+            btnModeDef.setBackgroundColor(editMode[0] == 2 ? Color.parseColor("#0EA5E9") : Color.parseColor("#1A3A5C"));
+            btnClosePoly.setVisibility((editMode[0] != 0 && shapeMode[0] == 2) ? View.VISIBLE : View.GONE);
         };
         updateModeHighlight.run();
 
         btnModePan.setOnClickListener(v -> { editMode[0] = 0; updateModeHighlight.run(); });
         btnModeAtk.setOnClickListener(v -> { editMode[0] = 1; updateModeHighlight.run(); });
         btnModeDef.setOnClickListener(v -> { editMode[0] = 2; updateModeHighlight.run(); });
+
+        // 5 种绘制方式选择：矩形 / 椭圆 / 多边形 / 手绘自动闭合 / 点删单框
+        btnShapeMode.setOnClickListener(v -> {
+            final Dialog sd = new Dialog(getContext());
+            if (sd.getWindow() != null) sd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout sl = new LinearLayout(getContext()); sl.setOrientation(LinearLayout.VERTICAL); sl.setPadding((int)(16*density), (int)(16*density), (int)(16*density), (int)(16*density));
+            GradientDrawable sbg = new GradientDrawable(); sbg.setColor(Color.parseColor("#F51E2430")); sbg.setCornerRadius(12f * density); sbg.setStroke((int)(1.5f * density), Color.parseColor("#38BDF8")); sl.setBackground(sbg);
+            sl.addView(createSubTitle(L("✏️ 选择判定框绘制方式 (攻防通用)")));
+            final String[] names = new String[] {
+                L("⬜ 矩形拖拽 (标准)"),
+                L("⭕ 椭圆/圆形 (异形拟合)"),
+                L("🔷 多边形点连 (点选顶点后闭合)"),
+                L("✏️ 手绘自由圈选 (松手自动连接剩余区域)"),
+                L("🎯 点击删除单个框")
+            };
+            final String[] shortLabels = new String[] {
+                L("⬜ 形状: 矩形"), L("⭕ 形状: 椭圆"), L("🔷 形状: 多边形"), L("✏️ 形状: 手绘闭合"), L("🎯 模式: 点删框")
+            };
+            for (int i = 0; i < names.length; i++) {
+                final int m = i;
+                Button mb = createButton(names[m], shapeMode[0] == m ? "#0284C7" : "#2D3548");
+                LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams((int)(280*density), -2);
+                mlp.setMargins(0, (int)(6*density), 0, 0);
+                mb.setOnClickListener(mv -> {
+                    shapeMode[0] = m;
+                    activePolyPts.clear();
+                    freehandPts.clear();
+                    btnShapeMode.setText(shortLabels[m]);
+                    if (editMode[0] == 0) editMode[0] = 2;
+                    updateModeHighlight.run();
+                    clsnCanvas.invalidate();
+                    sd.dismiss();
+                });
+                sl.addView(mb, mlp);
+            }
+            sd.setContentView(sl); sd.show();
+        });
+
+        btnClosePoly.setOnClickListener(v -> {
+            if (curFrame[0] == null || activePolyPts.size() < 3) {
+                Toast.makeText(getContext(), L("⚠️ 请至少在画布上点选 3 个顶点"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            int sid = strokeSeq[0]++;
+            int bType = (editMode[0] == 1) ? 1 : 2;
+            List<ClsnBox> generated = decomposePolygonToClsnBoxes(activePolyPts, bType, shapeSlices[0], sid);
+            activePolyPts.clear();
+            if (!generated.isEmpty()) {
+                String key = curFrame[0].group + "," + curFrame[0].item;
+                List<ClsnBox> list = frameBoxesMap.get(key);
+                if (list == null) { list = new ArrayList<>(); frameBoxesMap.put(key, list); }
+                list.addAll(generated);
+                statusBar.setText((bType == 1 ? L("🟥 多边形打击框已闭合，生成 ") : L("🟦 多边形防御框已闭合，生成 ")) + generated.size() + L(" 个分段框"));
+            }
+            clsnCanvas.invalidate();
+        });
+
+        // 🪄 自动识别透明 SFF 图片像素边界（支持整图外接框 + 异形轮廓贴合）
+        btnAutoDetect.setOnClickListener(v -> {
+            if (curFrame[0] == null || curBmp[0] == null || curBmp[0].isRecycled()) {
+                Toast.makeText(getContext(), L("⚠️ 请先加载 SFF 角色帧"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            final Dialog ad = new Dialog(getContext());
+            if (ad.getWindow() != null) ad.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout al = new LinearLayout(getContext()); al.setOrientation(LinearLayout.VERTICAL); al.setPadding((int)(16*density), (int)(16*density), (int)(16*density), (int)(16*density));
+            GradientDrawable abg = new GradientDrawable(); abg.setColor(Color.parseColor("#F51E2430")); abg.setCornerRadius(12f * density); abg.setStroke((int)(1.5f * density), Color.parseColor("#38BDF8")); al.setBackground(abg);
+            al.addView(createSubTitle(L("🪄 自动识别 SFF 非透明像素边界")));
+            TextView tip = new TextView(getContext());
+            tip.setText(L("自动跳过透明背景区域，精准贴合人物实际像素轮廓"));
+            applyGlobalFontSettings(tip, 0.85f, false); tip.setTextColor(Color.parseColor("#94A3B8"));
+            al.addView(tip);
+
+            LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams((int)(290*density), -2);
+            alp.setMargins(0, (int)(8*density), 0, 0);
+
+            Button bFullDef = createButton(L("🟦 整图外接防御框 (1个精准框)"), "#0284C7");
+            Button bContourDef = createButton(L("🧬 异形轮廓贴合防御框 (多段贴边)"), "#0F766E");
+            Button bFullAtk = createButton(L("🟥 整图外接打击框 (特效/飞行道具)"), "#DC2626");
+            Button bContourAtk = createButton(L("🔥 异形轮廓贴合打击框 (多段贴边)"), "#EA580C");
+
+            View.OnClickListener runDetect = dv -> {
+                int targetType = (dv == bFullAtk || dv == bContourAtk) ? 1 : 2;
+                boolean contour = (dv == bContourDef || dv == bContourAtk);
+                int sid = strokeSeq[0]++;
+                List<ClsnBox> detected = detectSpriteBoundsToClsn(curBmp[0], curFrame[0], targetType, contour, shapeSlices[0], sid);
+                if (detected.isEmpty()) {
+                    Toast.makeText(getContext(), L("❌ 当前帧未检测到非透明像素"), Toast.LENGTH_SHORT).show();
+                } else {
+                    String key = curFrame[0].group + "," + curFrame[0].item;
+                    List<ClsnBox> list = frameBoxesMap.get(key);
+                    if (list == null) { list = new ArrayList<>(); frameBoxesMap.put(key, list); }
+                    list.addAll(detected);
+                    statusBar.setText(L("🪄 自动识别成功，已生成 ") + detected.size() + (targetType == 1 ? L(" 个打击框") : L(" 个防御框")));
+                    clsnCanvas.invalidate();
+                }
+                ad.dismiss();
+            };
+
+            bFullDef.setOnClickListener(runDetect); bContourDef.setOnClickListener(runDetect);
+            bFullAtk.setOnClickListener(runDetect); bContourAtk.setOnClickListener(runDetect);
+            al.addView(bFullDef, alp); al.addView(bContourDef, alp); al.addView(bFullAtk, alp); al.addView(bContourAtk, alp);
+            ad.setContentView(al); ad.show();
+        });
+
+        // 异形分段精度调节 (3 ~ 16 段)
+        btnPrecision.setOnClickListener(v -> {
+            final Dialog pd = new Dialog(getContext());
+            if (pd.getWindow() != null) pd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout pl = new LinearLayout(getContext()); pl.setOrientation(LinearLayout.VERTICAL); pl.setPadding((int)(18*density), (int)(18*density), (int)(18*density), (int)(18*density));
+            GradientDrawable pbg = new GradientDrawable(); pbg.setColor(Color.parseColor("#F51E2430")); pbg.setCornerRadius(12f * density); pbg.setStroke((int)(1.5f * density), Color.parseColor("#38BDF8")); pl.setBackground(pbg);
+            TextView pt = new TextView(getContext()); pt.setText(L("异形拟合精度 (分段数): ") + shapeSlices[0]); applyGlobalFontSettings(pt, 1.0f, true); pl.addView(pt);
+            SeekBar sb = new SeekBar(getContext()); sb.setMax(13); sb.setProgress(Math.max(0, Math.min(13, shapeSlices[0] - 3)));
+            sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                    shapeSlices[0] = 3 + progress;
+                    pt.setText(L("异形拟合精度 (分段数): ") + shapeSlices[0]);
+                    btnPrecision.setText(L("⚙️ 异形精度: ") + shapeSlices[0]);
+                }
+                @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+                @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+            });
+            pl.addView(sb, new LinearLayout.LayoutParams((int)(260*density), -2));
+            pd.setContentView(pl); pd.show();
+        });
 
         btnLoadSff.setOnClickListener(v -> showWin10FilePicker(L("选择 SFF 人物文件"), 4, null, null, f -> {
             if (f.isDirectory()) showSffGridPicker(f, picked -> { sffPathRef[0] = picked.getAbsolutePath(); loadSffAction.run(); });
@@ -4519,18 +5309,33 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             }).start();
         }));
 
+        // 按笔画整组撤销（异形/手绘/自动识别一笔撤完）
         btnUndo.setOnClickListener(v -> {
+            if (!activePolyPts.isEmpty()) {
+                activePolyPts.remove(activePolyPts.size() - 1);
+                clsnCanvas.invalidate();
+                return;
+            }
             if (curFrame[0] == null) return;
             String key = curFrame[0].group + "," + curFrame[0].item;
             List<ClsnBox> list = frameBoxesMap.get(key);
             if (list != null && !list.isEmpty()) {
-                list.remove(list.size() - 1);
+                int lastStroke = list.get(list.size() - 1).strokeId;
+                if (lastStroke > 0) {
+                    while (!list.isEmpty() && list.get(list.size() - 1).strokeId == lastStroke) {
+                        list.remove(list.size() - 1);
+                    }
+                } else {
+                    list.remove(list.size() - 1);
+                }
                 clsnCanvas.invalidate();
                 renderCurrentFrame.run();
             }
         });
 
         btnClear.setOnClickListener(v -> {
+            activePolyPts.clear();
+            freehandPts.clear();
             if (curFrame[0] == null) return;
             frameBoxesMap.remove(curFrame[0].group + "," + curFrame[0].item);
             clsnCanvas.invalidate();
@@ -4639,6 +5444,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
         bar.addView(btnLoadSff, bp); bar.addView(btnLoadAct, bp); bar.addView(btnLoadAir, bp);
         bar.addView(btnModePan, bp); bar.addView(btnModeAtk, bp); bar.addView(btnModeDef, bp);
+        bar.addView(btnShapeMode, bp); bar.addView(btnClosePoly, bp); bar.addView(btnAutoDetect, bp); bar.addView(btnPrecision, bp);
         bar.addView(btnUndo, bp); bar.addView(btnClear, bp);
         bar.addView(btnPrev, bp); bar.addView(btnNext, bp); bar.addView(btnGroup, bp);
         bar.addView(btnToggleC1, bp); bar.addView(btnToggleC2, bp);
