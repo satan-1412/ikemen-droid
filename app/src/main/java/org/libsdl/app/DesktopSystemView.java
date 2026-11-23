@@ -547,6 +547,7 @@ public class DesktopSystemView extends Dialog {
         createDesktopIcon("text_decipher", "🔣", L("乱码解字板")); 
         createDesktopIcon("def_scanner", "🗂️", L("DEF生成器"));
         createDesktopIcon("clsn_editor", "⚔️", L("判定框工坊"));
+        createDesktopIcon("char_editor", "🥷", L("角色编辑器"));
         createDesktopIcon("ikemen_dict", "📚", L("引擎词典"));
     }
 
@@ -594,6 +595,7 @@ public class DesktopSystemView extends Dialog {
                             else if (id.equals("text_decipher")) openAppWindow(L("🔣 乱码解字板"), buildDecipherBoardContent(), null);
                             else if (id.equals("def_scanner")) openAppWindow(L("🗂️ DEF生成器"), buildDefScannerContent(), null);
                             else if (id.equals("clsn_editor")) openAppWindow(L("⚔️ 判定框工坊 (打击/防御框)"), buildClsnEditorContent("", ""), null);
+                            else if (id.equals("char_editor")) openCharacterEditorWindow();
                             else if (id.equals("ikemen_dict")) openAppWindow(L("📚 MUGEN/IK 全能词典"), buildDictionaryContent(), null);
                             lastClickTime = 0; 
                         } else lastClickTime = clickTime;
@@ -626,6 +628,7 @@ public class DesktopSystemView extends Dialog {
         if (windowTitle.contains(L("地图")) || windowTitle.contains("Stage")) return "stage_editor";
         if (windowTitle.contains(L("色表")) || windowTitle.contains("ACT")) return "palette_editor";
         if (windowTitle.contains(L("词典")) || windowTitle.contains("MUGEN/IK")) return "ikemen_dict";
+        if (windowTitle.contains(L("角色编辑器")) || windowTitle.contains("CharEditor")) return "char_editor";
         if (windowTitle.contains("GIF")) return "gif_viewer";
         return "win_" + Math.abs(windowTitle.hashCode());
     }
@@ -1383,6 +1386,26 @@ public class DesktopSystemView extends Dialog {
                                         pDialog.dismiss();
                                     } else {
                                         Toast.makeText(getContext(), L("❌ 请选择 .air 或 .txt 动作文件"), Toast.LENGTH_SHORT).show();
+                                    }
+                                }
+                                else if (targetType == 15) {
+                                    if (absPath.toLowerCase().endsWith(".def")) {
+                                        boolean isStage = false;
+                                        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(f))) {
+                                            String line;
+                                            while ((line = br.readLine()) != null) {
+                                                String lower = line.toLowerCase().trim();
+                                                if (lower.startsWith("[stageinfo]") || lower.startsWith("[bgdef]")) { isStage = true; break; }
+                                            }
+                                        } catch (Exception ignored) {}
+                                        if (!isStage) {
+                                            if (listener != null) listener.onFileSelected(f);
+                                            pDialog.dismiss();
+                                        } else {
+                                            Toast.makeText(getContext(), L("❌ 这是地图配置文件，请选择角色 .def 文件！"), Toast.LENGTH_LONG).show();
+                                        }
+                                    } else {
+                                        Toast.makeText(getContext(), L("❌ 请选择角色 .def 配置文件"), Toast.LENGTH_SHORT).show();
                                     }
                                 }
                                 else if (targetType == 12 || targetType == 13) {
@@ -5633,494 +5656,790 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         return out;
     }
 
+    // 🌐 在线/离线混合中文翻译引擎（专用于将下载的英文官方 Wiki 翻译为简体中文并本地缓存）
+    private String translateWikiToChinese(String englishText) {
+        if (englishText == null || englishText.trim().isEmpty()) return "";
+        StringBuilder out = new StringBuilder();
+        String[] lines = englishText.split("\n");
+        StringBuilder chunk = new StringBuilder();
+        List<String> chunks = new ArrayList<>();
+        for (String line : lines) {
+            if (chunk.length() + line.length() > 1100 && chunk.length() > 0) {
+                chunks.add(chunk.toString());
+                chunk.setLength(0);
+            }
+            chunk.append(line).append("\n");
+        }
+        if (chunk.length() > 0) chunks.add(chunk.toString());
+
+        boolean anyOnlineOk = false;
+        for (String part : chunks) {
+            String tr = translateChunkGoogle(part);
+            if (tr == null || tr.trim().isEmpty()) tr = translateChunkMyMemory(part);
+            if (tr != null && !tr.trim().isEmpty()) {
+                anyOnlineOk = true;
+                out.append(tr.trim()).append("\n");
+            } else {
+                out.append(offlineGlossaryTranslate(part)).append("\n");
+            }
+        }
+        String result = out.toString().trim();
+        if (!anyOnlineOk) {
+            result = L("【离线术语对照译文（联网后点击可获取完整机器翻译）】\n") + result;
+        }
+        return result;
+    }
+
+    private String translateChunkGoogle(String text) {
+        java.net.HttpURLConnection conn = null;
+        try {
+            String q = java.net.URLEncoder.encode(text, "UTF-8");
+            String urlStr = "https://" + "translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=" + q;
+            conn = (java.net.HttpURLConnection) new java.net.URL(urlStr).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(6000);
+            conn.setReadTimeout(8000);
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+            if (conn.getResponseCode() == 200) {
+                StringBuilder sb = new StringBuilder();
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+                    String l; while ((l = br.readLine()) != null) sb.append(l);
+                }
+                org.json.JSONArray rootArr = new org.json.JSONArray(sb.toString());
+                org.json.JSONArray segs = rootArr.getJSONArray(0);
+                StringBuilder tr = new StringBuilder();
+                for (int i = 0; i < segs.length(); i++) {
+                    org.json.JSONArray item = segs.getJSONArray(i);
+                    if (!item.isNull(0)) tr.append(item.getString(0));
+                }
+                return tr.toString();
+            }
+        } catch (Throwable ignored) {
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+        return null;
+    }
+
+    private String translateChunkMyMemory(String text) {
+        java.net.HttpURLConnection conn = null;
+        try {
+            String sub = text.length() > 480 ? text.substring(0, 480) : text;
+            String q = java.net.URLEncoder.encode(sub, "UTF-8");
+            String urlStr = "https://" + "api.mymemory.translated.net/get?q=" + q + "&langpair=en|zh-CN";
+            conn = (java.net.HttpURLConnection) new java.net.URL(urlStr).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(6000);
+            conn.setReadTimeout(8000);
+            conn.setRequestProperty("User-Agent", "IkemenDroid-Dict/1.0");
+            if (conn.getResponseCode() == 200) {
+                StringBuilder sb = new StringBuilder();
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+                    String l; while ((l = br.readLine()) != null) sb.append(l);
+                }
+                JSONObject obj = new JSONObject(sb.toString());
+                JSONObject rd = obj.optJSONObject("responseData");
+                if (rd != null) {
+                    String t = rd.optString("translatedText", "");
+                    if (!t.isEmpty() && !t.contains("MYMEMORY WARNING")) return t;
+                }
+            }
+        } catch (Throwable ignored) {
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+        return null;
+    }
+
+    private String offlineGlossaryTranslate(String text) {
+        String s = text;
+        String[][] pairs = new String[][] {
+            {"Required parameters:", "【必填参数】："}, {"Optional parameters:", "【可选参数】："},
+            {"Return type:", "【返回类型】："}, {"Arguments:", "【参数列表】："},
+            {"Example:", "【代码示例】："}, {"Examples:", "【代码示例】："},
+            {"Details:", "【详细说明】："}, {"Notes:", "【注意事项】："}, {"Note:", "【注意】："},
+            {"Defaults to ", "默认值为 "}, {"(nightly build only)", "（仅 Nightly 开发版）"},
+            {"Valid values are", "有效取值包括"}, {"boolean int (1 or 0)", "布尔整数(1或0)"},
+            {"Specifies ", "指定"}, {"Returns ", "返回"}, {"Sets ", "设置"}, {"Changes ", "修改"}
+        };
+        for (String[] p : pairs) s = s.replace(p[0], p[1]);
+        return s;
+    }
+
     private List<DictEntry> buildBuiltinDictionaryEntries() {
         List<DictEntry> list = new ArrayList<>();
-        addDictMugenSctrls(list);
-        addDictIkemenSctrls(list);
-        addDictMugenTriggers(list);
-        addDictIkemenTriggers(list);
-        addDictZssAndLua(list);
-        addDictFormatsAndFiles(list);
-        addDictCommonStates(list);
-        addDictCompatAndGuides(list);
+        addDictSctrlCombat(list);
+        addDictSctrlMovement(list);
+        addDictSctrlEntities(list);
+        addDictSctrlVisualAudio(list);
+        addDictSctrlSystem(list);
+        addDictIkemenSctrlsDetailed(list);
+        addDictMugenTriggersDetailed(list);
+        addDictIkemenTriggersDetailed(list);
+        addDictZssAndLuaDetailed(list);
+        addDictFormatsAndFilesDetailed(list);
+        addDictCommonStatesDetailed(list);
+        addDictCompatAndGuidesDetailed(list);
         return list;
     }
 
-    private void addDictMugenSctrls(List<DictEntry> list) {
-        list.add(new DictEntry("HitDef", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "定义攻击判定核心参数（属性、伤害、硬直、击飞、火花、音效、防御与倒地）",
-                "最核心的攻击状态控制器。常用参数：\n• attr = S/C/A, NA/SA/HA/NP/SP/HP/NT/ST/HT（站蹲空 + 普/必/超 + 打击/飞道/投）\n• hitflag = MAFDP+-（可命中站/空/倒/倒地/飞道，+仅连段，-不可连段）\n• guardflag = MA/L/H（M中段/H上段/L下段/A空防）\n• damage = 命中伤害, 磨血伤害；pausetime = 攻方顿帧, 守方顿帧\n• sparkno / guard.sparkno / sparkxy / hitsound / guardsound\n• ground.type(High/Low/Trip/None)、ground.slidetime、ground.hittime、ground.velocity、air.velocity、fall、fall.recover、envshake、palfx。\n• Ikemen GO 扩展：dizzypoints、guardpoints、redlife、score、sparkscale、sparkangle、forcecrouch、keepstate、ignorereversaldef、p2clsncheck、unhittabletime、down.recovertime。",
-                "[State 200, HitDef]\ntype = HitDef\ntrigger1 = AnimElem = 3\nattr = S, NA\ndamage = 25, 0\nanimtype = Light\nguardflag = MA\nhitflag = MAF\npausetime = 8, 8\nsparkno = 0\nsparkxy = -10, -76\nhitsound = 5, 0\nguardsound = 6, 0\nground.type = High\nground.slidetime = 10\nground.hittime = 12\nground.velocity = -4\nair.velocity = -2.5, -3.5", false));
+    private void addDictSctrlCombat(List<DictEntry> list) {
+        list.add(new DictEntry("HitDef (攻击判定定义)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "定义招式攻击判定全部属性：伤害、防损、顿帧、硬直、击飞、倒地、火花与音效",
+                "【功能定位】\n当角色当前帧存在红框(Clsn1)且与对手蓝框(Clsn2)重叠时，引擎按本控制器参数结算命中或防御。\n\n"
+                + "【必填参数】\n"
+                + "• attr = 姿态, 类别：姿态填 S(站)/C(蹲)/A(空)；类别填 NA/SA/HA(普/必/超打击)、NT/ST/HT(投)、NP/SP/HP(飞道)。\n\n"
+                + "【核心可选参数详解】\n"
+                + "• hitflag = MAFDP+-：可命中的目标状态（M站蹲、A空、F浮空、D倒地、P飞道；+仅连段中可中、-不可连段中命中）。默认 MAF。\n"
+                + "• guardflag = H/L/M/A：可防御方式（H仅站防/中段、L仅蹲防/下段、M站蹲皆可、A空防；留空=不可防御）。\n"
+                + "• damage = hit_dmg, guard_dmg：命中伤害与防御磨血伤害（默认 0, 0）。\n"
+                + "• animtype = Light/Medium/Hard/Back/Up/DiagUp：对手受击动作强度（决定播放 5000/5001/5002 等受击动画）。\n"
+                + "• pausetime = p1_pause, p2_shake：攻方顿帧与守方受击震动帧（默认 0, 0）。\n"
+                + "• sparkno = [F]动作号 / guard.sparkno = [F]动作号：命中/防御火花动画（不加S默认调用 fightfx.air，加 S 调用自身 AIR，-1 不显示）。\n"
+                + "• sparkxy = x, y：火花偏移坐标（相对对手受击点）。\n"
+                + "• hitsound = [S/F]组, 号 / guardsound = [S/F]组, 号：命中/防御音效。\n"
+                + "• ground.type = High/Low/Trip/None：地面受击部位（Trip 为扫腿绊倒）。\n"
+                + "• ground.slidetime / ground.hittime：地面滑退帧数 / 受击硬直总帧数。\n"
+                + "• ground.velocity = vx, vy / air.velocity = vx, vy：命中地面/空中对手赋予的初速度。\n"
+                + "• guard.slidetime / guard.hittime / guard.ctrltime / guard.velocity：被防御时的滑退、硬直、恢复控制时间与击退速度。\n"
+                + "• fall = 0/1：是否击倒对手；fall.recover = 0/1(能否受身)；fall.recovertime(多久后可受身)；fall.damage(砸地追加伤害)。\n"
+                + "• getpower = hit, guard / givepower = hit, guard：攻方增气 / 守方受击增气。\n"
+                + "• priority = 等级(1~7), Hit/Miss/Dodge：相杀优先级（数字越大越优先）。\n"
+                + "• p1stateno / p2stateno：命中后强切我方/对手状态（投技核心）。\n"
+                + "• id / chainid / nochainid：目标标记 ID 与连段互斥控制。\n\n"
+                + "【Ikemen GO 专属扩展参数】\n"
+                + "• dizzypoints / guardpoints / redlife / score：直接指定眩晕值、破防值、红血量与积分。\n"
+                + "• sparkscale / sparkangle / guard.sparkscale / guard.sparkangle：直接缩放与旋转打击火花。\n"
+                + "• forcecrouch = 1(强制蹲姿)、keepstate = 1(扣血不切对手状态)、ignorereversaldef = 1(无视当身)、down.recovertime(硬倒地时长)、p2clsncheck(指定撞击 Size/Clsn2 盒)。",
+                "[State 200, LightPunch]\ntype = HitDef\ntrigger1 = AnimElem = 3\nattr = S, NA\nhitflag = MAF\nguardflag = MA\ndamage = 28, 0\nanimtype = Light\npausetime = 8, 8\nsparkno = 0\nsparkxy = -10, -76\nhitsound = 5, 0\nguardsound = 6, 0\nground.type = High\nground.slidetime = 10\nground.hittime = 12\nground.velocity = -4.2\nair.velocity = -2.5, -3.5\ngetpower = 40, 15\ngivepower = 20, 10", false));
 
-        list.add(new DictEntry("StateTypeSet", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "动态修改状态类型(S/C/A/L)、攻防状态(I/A/H)与物理类型(S/C/A/N)",
-                "用于招式收招后取消攻击态(movetype = I)防止对手一直原地防御，或在空中/地面间动态切换物理重力(physics = A/S/C/N)。",
-                "[State 200, EndAttack]\ntype = StateTypeSet\ntrigger1 = AnimElemTime(4) >= 0\nmovetype = I", false));
+        list.add(new DictEntry("Projectile (内置飞行道具)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "发射引擎托管的飞行道具（自带飞行、命中、消弹与相杀逻辑）",
+                "【功能定位】\n适合波动拳、直线气功等常规飞行道具；复杂轨迹/多段独立状态请改用 Helper。\n\n"
+                + "【核心专属参数详解】\n"
+                + "• ProjID = id：飞行道具编号（供 NumProjID / ProjHit 等触发器检测）。\n"
+                + "• projanim = 动作号：飞行动画（必填）。\n"
+                + "• projhitanim / projremanim / projcancelanim：命中时 / 消失时 / 相杀时播放的动画（-1 跳过）。\n"
+                + "• projscale = sx, sy：缩放比例（默认 1, 1）。\n"
+                + "• projremove = 0/1：命中后是否立即销毁（默认 1；设 0 可做穿透激光）。\n"
+                + "• projremovetime = 帧数：存活上限帧（-1 直到飞出屏幕）。\n"
+                + "• projhits = 段数 / projmisstime = 间隔帧：多段飞行道具总命中段数与每段间隔。\n"
+                + "• projpriority = 等级：对波相杀优先级（默认 1，高优先级吞掉低优先级并减 1）。\n"
+                + "• offset = x, y / postype：发射点相对偏移（默认 p1）。\n"
+                + "• velocity = vx, vy / remvelocity = vx, vy / accel = ax, ay / velmul = mx, my：飞行初速、消散速度、加速度与每帧倍率。\n"
+                + "• projedgebound / projstagebound：飞出屏幕/地图边界多少像素后销毁。\n"
+                + "• 其余命中参数完全兼容 HitDef（attr、damage、guardflag、pausetime 等）。\n\n"
+                + "【Ikemen GO 扩展】\n支持 ModifyProjectile 动态修改、projangle/xangle/yangle、shader.* 着色器，以及有 ikemenVersion 时正式生效 chainID/nochainID。",
+                "[State 1000, Hadouken]\ntype = Projectile\ntrigger1 = AnimElem = 4\nProjID = 1000\nprojanim = 1005\nprojhitanim = 1006\nprojremanim = 1006\nprojpriority = 1\noffset = 48, -62\nvelocity = 6.5, 0\nattr = S, SP\ndamage = 60, 10\nguardflag = MA\npausetime = 0, 10\nground.hittime = 16\nground.velocity = -6", false));
 
-        list.add(new DictEntry("ChangeState / SelfState", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "跳转到指定状态号；SelfState 用于从对手自定义受击状态返回自身状态机",
-                "ChangeState：跳转到当前状态拥有者的 Statedef；参数 value、ctrl、anim。\nSelfState：强制回归自身状态列表（投技/自定义受击结束时必须用 SelfState 交还控制权）。\nIkemen GO 扩展：ChangeState 支持 continue = 1（在负状态中不中断后续代码）；SelfState 支持 ReadPlayerID。",
-                "[State 200, End]\ntype = ChangeState\ntrigger1 = AnimTime = 0\nvalue = 0\nctrl = 1", false));
+        list.add(new DictEntry("NotHitBy (无敌属性设置)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "使角色在指定帧数内免疫特定类别的攻击（全无敌/防空/免投/穿波核心）",
+                "【功能定位】\n赋予角色无敌时间，常用于升龙拳起手、起身无敌(State 5120)、闪避翻滚与超杀暗屏。\n\n"
+                + "【参数详解】\n"
+                + "• value = 姿态, 攻击类型：免疫的攻击组合。\n  - 姿态：S(站)、C(蹲)、A(空) 或组合 SCA。\n  - 类别：AA(所有打击)、AT(所有投技)、AP(所有飞道) 或精细组合 NA/SA/HA/NT/ST/HT/NP/SP/HP。\n  - 只写 SCA 表示全无敌；写 ,AT 表示全姿态免疫投技。\n"
+                + "• value2 = 姿态, 类型：叠加第二套无敌规则（与 value 取并集，不会互相覆盖）。\n"
+                + "• time = 帧数：持续时间（默认 1 帧）。\n\n"
+                + "【Ikemen GO 扩展】\n支持 8 个独立槽位（slot = 0~7 + attr 语法）、stack = 1 叠加、clsn.group/clsn.index（仅对指定蓝框无敌）、playerno/playerid（仅对指定对手无敌）。",
+                "[State 1100, AntiAirInvul]\ntype = NotHitBy\ntrigger1 = Time = 0\nvalue = , AA\nvalue2 = , AT\ntime = 10", false));
 
-        list.add(new DictEntry("ChangeAnim / ChangeAnim2", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "切换自身动画(ChangeAnim)或令被投技抓中的对手播放我方动画(ChangeAnim2)",
-                "value 指定 AIR 动作号，elem 指定起始帧(从1开始)。ChangeAnim2 专用于自定义受击状态(P2StateNo)里调用攻击方的 AIR 帧序列，但绘制对手自身的 SFF 图片。\nIkemen GO 扩展：支持 elemtime、animplayerno、spriteplayerno、readplayerid 以及 F 前缀调用通用特效动画。",
-                "[State 810, GrabAnim]\ntype = ChangeAnim2\ntrigger1 = Time = 0\nvalue = 820\nelem = 1", false));
+        list.add(new DictEntry("HitBy (受击白名单设置)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "限定角色“仅可被”指定属性攻击命中（与 NotHitBy 相反）",
+                "【功能定位】\n当需要“只吃投技、免疫其他一切攻击”或“只吃下段攻击”时，用 HitBy 比写多条 NotHitBy 更简洁。\n\n"
+                + "【参数详解】\n"
+                + "• value = 姿态, 类型：唯一允许命中的攻击属性（例如 value = SCA, NT, ST, HT 代表仅可被投技抓，免疫一切打击与飞道）。\n"
+                + "• value2 = 姿态, 类型：第二套白名单槽位。\n"
+                + "• time = 帧数：持续帧数（默认 1）。",
+                "[State 1050, RollOnlyThrow]\ntype = HitBy\ntrigger1 = Time = 0\nvalue = SCA, NT, ST, HT\ntime = 18", false));
 
-        list.add(new DictEntry("VelSet / VelAdd / VelMul / Gravity", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "设置/累加/倍率缩放 X/Y 速度，或施加角色默认重力加速度(Gravity)",
-                "VelSet 直接覆写速度；VelAdd 每帧叠加（常用于自定义重力或加速冲刺）；VelMul 按倍率减速（如地面摩擦 x = 0.85）；Gravity 等价于 VelAdd y = Const(movement.yaccel)。X 正方向恒为角色面向前方，Y 负方向向上。",
-                "[State 1000, JumpKick]\ntype = VelSet\ntrigger1 = Time = 0\nx = 6.5\ny = -5.0\n\n[State 1000, Gravity]\ntype = Gravity\ntrigger1 = Time > 0", false));
+        list.add(new DictEntry("HitOverride (霸体/超级护甲/当身拦截)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "被指定属性攻击命中时不进普通受击，而是强行跳转到自定义状态",
+                "【功能定位】\n制作霸体(Armor)、抗打击护盾、受击反击技的核心控制器。\n\n"
+                + "【参数详解】\n"
+                + "• attr = 姿态, 类型：要拦截的攻击属性（如 SCA, AA, AP）。\n"
+                + "• stateno = 状态号：被命中后跳转到的自定义状态（通常在目标状态里扣血、给顿帧，然后继续出招）。\n"
+                + "• slot = 0~7：使用的拦截槽位编号（默认 0，最多同时挂 8 个不同规则）。\n"
+                + "• time = 帧数：生效时长（-1 直到被触发或切换状态）。\n"
+                + "• forceair = 0/1：触发拦截时是否强制视为受空中击飞。\n\n"
+                + "【Ikemen GO 扩展】\n• keepstate = 1：拦截受击但不打断当前状态（实现一行代码真霸体！）。\n• guardflag / guardflag.not：按上/中/下段过滤拦截。\n• forceguard = 1：拦截成功时视为防御。",
+                "[State 1200, TrueArmor]\ntype = HitOverride\ntrigger1 = 1\nattr = SCA, AA, AP\nstateno = 1210\nslot = 0\ntime = 1", false));
 
-        list.add(new DictEntry("PosSet / PosAdd / PosFreeze / Offset", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "设置绝对坐标、相对位移、冻结当前帧位置或仅偏移贴图绘制位置",
-                "PosSet：直接设坐标(y=0为地面)；PosAdd：按面向增减坐标；PosFreeze：value=1 时冻结该帧速度位移（常用于滞空/顿帧）；Offset：仅改变图像显示偏移(x, y)，不影响实际判定框与物理坐标。",
-                "[State 1000, Step]\ntype = PosAdd\ntrigger1 = AnimElem = 2\nx = 14", false));
+        list.add(new DictEntry("ReversalDef (架招/当身反击判定)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "用自身攻击红框(Clsn1)主动碰撞对手攻击红框，触发架招当身反制",
+                "【功能定位】\n与 HitDef 相反，不打蓝框只打对手的红框(Clsn1)，用于格挡反击/当身技。\n\n"
+                + "【参数详解】\n"
+                + "• reversal.attr = 姿态, 类型：可反制的攻击属性（必填，如 SCA, NA, SA）。\n"
+                + "• pausetime = p1, p2：当身成功后的双方定格顿帧。\n"
+                + "• sparkno / hitsound：当身成功火花与音效。\n"
+                + "• p1stateno / p2stateno：当身成功后我方与对手跳转的状态号。\n"
+                + "• numhits = 0/1：是否计入连击数（默认 1）。\n\n"
+                + "【Ikemen GO 扩展】\n支持 reversal.guardflag / reversal.guardflag.not（如只当身下段或上段攻击）与 ModifyReversalDef。",
+                "[State 1300, Parry]\ntype = ReversalDef\ntrigger1 = AnimElem = 2\nreversal.attr = SC, NA, SA\npausetime = 14, 14\nsparkno = 40\nhitsound = 6, 0\np1stateno = 1310", false));
 
-        list.add(new DictEntry("Helper / DestroySelf", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "生成独立实体(飞行道具/分身/援护/系统逻辑)与销毁自身(DestroySelf)",
-                "Helper 拥有独立状态机、变量与判定框。核心参数：helpertype(normal/player)、name、ID、stateno、pos、postype、facing、keyctrl、ownpal、supermovetime、pausemovetime、size.xscale/yscale。\nDestroySelf：仅对 Helper 生效，立即销毁该 Helper。\nIkemen GO 扩展：clsnproxy、extendsmap、immortal、inheritchannels、inheritjuggle、preserve、ownclsnscale、ownprojectile、map.<name>、keyctrl 可填 1,2,3 继承负状态。",
-                "[State 1000, Fireball]\ntype = Helper\ntrigger1 = AnimElem = 4\nhelpertype = normal\nname = \"Fireball\"\nID = 1005\nstateno = 1005\npos = 40, -60\npostype = p1\nownpal = 1", false));
+        list.add(new DictEntry("TargetBind / TargetState / TargetLifeAdd / TargetVelSet / TargetDrop", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "投技与派生捕获目标控制体系（坐标锁定、强制状态、扣血、击飞、释放）",
+                "【前提条件】必须先通过 HitDef 命中并捕获 Target（NumTarget > 0）。\n\n"
+                + "【各控制器参数详解】\n"
+                + "• TargetBind：time(持续帧，默认1)、id(指定Target ID，默认-1全部)、pos = x, y（固定对手轴心到我方相对坐标，常在投技每帧更新）。\n"
+                + "• TargetState：value = 状态号、id（强制对手进入我方 CNS 中的自定义受击状态；结束时对手状态里必须调用 SelfState 归还）。\n"
+                + "• TargetLifeAdd：value = 增减血量(负数扣血)、kill = 0/1(能否致死，默认1)、absolute = 0/1(1无视防御倍率)。\n"
+                + "• TargetVelSet / TargetVelAdd：x, y, id（投技扔出对手时赋予抛出速度）。\n"
+                + "• TargetFacing：value = 1(同向)/-1(面对面)。\n"
+                + "• TargetDrop：excludeID、keepone = 0/1（释放已捕获目标，防后续误控）。\n\n"
+                + "【Ikemen GO 扩展】全部支持 index 参数控制多目标之一；新增 TargetAdd / TargetDizzyPointsAdd / TargetGuardPointsAdd / TargetRedLifeAdd / TargetScoreAdd。",
+                "[State 810, HoldEnemy]\ntype = TargetBind\ntrigger1 = AnimElem = 1\npos = 42, -55\ntime = 12\n\n[State 810, ThrowDmg]\ntype = TargetLifeAdd\ntrigger1 = AnimElem = 4\nvalue = -110\nkill = 1", false));
+    }
 
-        list.add(new DictEntry("Explod / ModifyExplod / RemoveExplod / ExplodBindTime", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "创建、实时修改、移除纯视觉特效贴图与绑定时间控制",
-                "核心参数：anim(可用 F 前缀调 fightfx)、ID、pos、postype(p1/p2/front/back/left/right)、bindtime(-1永久绑定)、removetime(-2播完销毁/-1永久)、vel、accel、scale、sprpriority、ontop、ownpal、shadow、trans(add/add1/sub/addalpha)、alpha、removeongethit。\nMUGEN 1.1/1.1b1+ 新增：space(stage/screen)、angle、xangle、yangle、remappal。\nIkemen GO 新增：interpolation.* 补间动画、palfx.*、afterimage.*、shader.*、syncid、window、xshear、under、hidewithbars、removeonchangestate。",
-                "[State 1000, FX]\ntype = Explod\ntrigger1 = AnimElem = 2\nanim = 7000\nID = 7000\npos = 30, -50\npostype = p1\nsprpriority = 3\nscale = 0.5, 0.5\nownpal = 1\nremovetime = -2", false));
+    private void addDictSctrlMovement(List<DictEntry> list) {
+        list.add(new DictEntry("ChangeState (状态跳转)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "将角色从当前 Statedef 切换到目标状态号，并可选重置动画与操控权",
+                "【参数详解】\n"
+                + "• value = 状态号（必填）：要跳转的目标 Statedef 编号（如 0 站立、11 蹲、50 空中）。\n"
+                + "• ctrl = 0/1（可选）：切换同时修改控制权（收招回站立必须写 ctrl = 1，否则卡死不能动）。\n"
+                + "• anim = 动作号（可选）：切换同时强制播放指定 AIR 动画（覆盖目标 Statedef 的默认 anim）。\n\n"
+                + "【避坑指南】\n切勿在 trigger1 = 1 下跳转到自身状态号，会造成死循环卡死！\n【Ikemen GO 扩展】支持 continue = 1（在负状态执行跳转后不中断该负状态后续代码）。",
+                "[State 200, BackToIdle]\ntype = ChangeState\ntrigger1 = AnimTime = 0\nvalue = 0\nctrl = 1", false));
 
-        list.add(new DictEntry("Projectile", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "发射内置简易飞行道具（自带命中、消弹与相杀逻辑）",
-                "核心参数：ProjID、projanim、projhitanim、projremanim、projcancelanim、projscale、projremove、projremovetime、projhits、projmisstime、projpriority、projedgebound、projstagebound、offset、velocity、remvelocity、accel，并支持几乎所有 HitDef 参数。\n复杂飞行道具（如追踪、可反弹、多段独立判定）建议改用 Helper。\nIkemen GO 新增：ModifyProjectile、projangle/xangle/yangle、projclsnangle、shader.*、支持 chainID/nochainID。",
-                "[State 1000, Hadouken]\ntype = Projectile\ntrigger1 = AnimElem = 4\nProjID = 1000\nprojanim = 1005\nprojhitanim = 1006\noffset = 45, -60\nvelocity = 6, 0\nattr = S, SP\ndamage = 55, 8\nguardflag = MA\npausetime = 0, 10", false));
+        list.add(new DictEntry("SelfState (回归自身状态机)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "在被对手抓入自定义受击状态后，强制返回角色自己的状态表",
+                "【功能定位】\n当 A 用 HitDef(p2stateno=820) 或 TargetState 把 B 拖进 A 的状态 820 后，B 在 820 结尾**绝对不能**用 ChangeState 跳 5050（否则会跑到 A 的 5050），必须用 SelfState！\n\n"
+                + "【参数详解】\n"
+                + "• value = 状态号（必填）：返回自身后的目标状态（如 5050 空中受击下落、5100 砸地、0 站立）。\n"
+                + "• ctrl = 0/1（可选）；anim = 动作号（可选）。\n【Ikemen GO 扩展】新增 ReadPlayerID 参数，可跳转到指定玩家 ID 的状态。",
+                "[State 820, ReturnToSelf]\ntype = SelfState\ntrigger1 = Pos Y >= 0 && Vel Y > 0\nvalue = 5100", false));
 
-        list.add(new DictEntry("NotHitBy / HitBy", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "设置无敌属性（免疫指定攻击）或受击白名单（仅可被指定攻击命中）",
-                "value 格式：状态(S/C/A), 攻击类别(AA全打击/AT全投/AP全飞道 或 NA/SA/HA/NT/ST/HT/NP/SP/HP)。\ntime 持续帧数；value2 可叠加第二槽位。\nIkemen GO 扩展：支持 8 个独立槽位 slot = 0~7、attr 语法、stack = 1 叠加、clsn.group/clsn.index 针对特定防御框无敌、playerno/playerid 针对特定对手无敌。",
-                "[State 1100, DPInvincible]\ntype = NotHitBy\ntrigger1 = Time = 0\nvalue = SCA\ntime = 10", false));
+        list.add(new DictEntry("StateTypeSet (动态状态/物理切换)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "在状态执行中途动态更改站蹲空姿态、攻击态或物理摩擦/重力类型",
+                "【参数详解（均可选，不填保持不变）】\n"
+                + "• statetype = S/C/A/L：站立(S)、下蹲(C)、空中(A)、倒地(L)。\n"
+                + "• movetype = I/A/H：待机(I)、攻击(A)、受击(H)。**收招后务必把 movetype 设为 I**，否则对手离远了也会一直被触发防御姿势！\n"
+                + "• physics = S/C/A/N：地面站姿摩擦(S)、蹲姿摩擦(C)、空中重力(A)、无物理(N)。",
+                "[State 1100, EnterAir]\ntype = StateTypeSet\ntrigger1 = AnimElem = 3\nstatetype = A\nphysics = A\n\n[State 1100, EndAtk]\ntype = StateTypeSet\ntrigger1 = AnimElem = 6\nmovetype = I", false));
 
-        list.add(new DictEntry("HitOverride", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "霸体 / 当身 / 超级护甲核心：拦截指定攻击并强制转入自定义状态",
-                "参数：attr(拦截的攻击属性)、stateno(受击后跳转状态号)、slot(槽位0~7)、time(持续帧数)、forceair(是否强制空中态)。\nIkemen GO 扩展：支持 guardflag / guardflag.not（如只当身上段/下段）、keepstate = 1（受击不切状态实现真霸体）、forceguard = 1。",
-                "[State 1200, SuperArmor]\ntype = HitOverride\ntrigger1 = 1\nattr = SCA, AA, AP\nstateno = 1210\nslot = 0\ntime = 1", false));
+        list.add(new DictEntry("VelSet / VelAdd / VelMul / Gravity (速度与重力)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "精确控制角色 X/Y 速度矢量（设值、累加、摩擦缩放与标准重力）",
+                "【坐标约定】X 正值恒为角色面向前方（引擎自动按 Facing 翻转），X 负值为后退；Y 负值为向上起跳，Y 正值为向下坠落。\n\n"
+                + "【各控制器参数详解】\n"
+                + "• VelSet：x = 浮点值, y = 浮点值（直接覆写当前速度；省略某轴则该轴保持原速）。\n"
+                + "• VelAdd：x = 增量, y = 增量（每帧叠加；如自定义重力 y = 0.45）。\n"
+                + "• VelMul：x = 倍率, y = 倍率（每帧乘以系数；如地面急停摩擦 x = 0.82）。\n"
+                + "• Gravity：无参数，等价于 VelAdd y = Const(movement.yaccel)。",
+                "[State 1050, DragonPunchJump]\ntype = VelSet\ntrigger1 = AnimElem = 2\nx = 3.5\ny = -9.2\n\n[State 1050, CustomGrav]\ntype = VelAdd\ntrigger1 = AnimElemTime(2) > 0\ny = 0.48", false));
 
-        list.add(new DictEntry("ReversalDef", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "反击/当身判定：当自身红框(Clsn1)撞到对手攻击红框时反制对手",
-                "与 HitDef 相反，ReversalDef 是拿自己的 Clsn1 去碰对手的 Clsn1 来触发反击。核心参数：reversal.attr、pausetime、sparkno、hitsound、p1stateno、p2stateno、numhits。\nIkemen GO 扩展：支持 reversal.guardflag / reversal.guardflag.not 与 ModifyReversalDef。",
-                "[State 1300, Counter]\ntype = ReversalDef\ntrigger1 = AnimElem = 2\nreversal.attr = SCA, AA\npausetime = 12, 12\nsparkno = 40\np1stateno = 1310", false));
+        list.add(new DictEntry("PosSet / PosAdd / PosFreeze / Offset (坐标与冻结)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "直接设定绝对坐标、增量瞬移、冻结位移或仅偏移精灵显示位置",
+                "【各控制器参数详解】\n"
+                + "• PosSet：x = 坐标, y = 坐标（y = 0 恒为地面；常用于落地防穿地 PosSet y = 0 或瞬移到对手身后）。\n"
+                + "• PosAdd：x = 偏移, y = 偏移（x 自动按朝向翻转，适合招式踏步前进）。\n"
+                + "• PosFreeze：value = 1（当帧冻结速度带来的位置变化，保留 Vel 值不清空，适合空中停顿/蓄力）。\n"
+                + "• Offset：x = 像素, y = 像素（仅偏移画面贴图渲染，**不改变实际坐标与判定框**，适合做角色受击抖动）。",
+                "[State 1000, StepFwd]\ntype = PosAdd\ntrigger1 = AnimElem = 2\nx = 18\n\n[State 1000, GroundClamp]\ntype = PosSet\ntrigger1 = Pos Y > 0\ny = 0", false));
 
-        list.add(new DictEntry("SuperPause / Pause", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "超必杀暗屏定格(SuperPause)与全局时间暂停(Pause)",
-                "SuperPause 参数：time、anim(默认30, -1关闭)、sound、pos、movetime(自己可动帧数)、darken(1暗屏)、p2defmul(防连段补正)、poweradd(扣气如-1000)、unhittable(1期间无敌)、endcmdbuftime、pausebg。\nIkemen GO 扩展：SuperPause 新增 brightness(0~255精细暗度)。",
-                "[State 3000, SuperPause]\ntype = SuperPause\ntrigger1 = Time = 0\ntime = 40\nmovetime = 40\nanim = -1\ndarken = 1\npoweradd = -1000\nunhittable = 1", false));
+        list.add(new DictEntry("Width / PlayerPush / ScreenBound / Turn / CtrlSet", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "单帧挤身宽/版边宽、穿身开关、镜头绑定、立即转身与操控权开关",
+                "【各控制器参数详解】\n"
+                + "• Width（单帧生效）：edge = 前版边宽, 后版边宽；player = 前挤身宽, 后挤身宽；value = 前, 后(同时设两者)。用于防长招式穿墙或把对手挤出角落。\n"
+                + "• PlayerPush（单帧生效）：value = 0 关闭角色间挤身碰撞（穿身冲刺/瞬移必备）；IK 新增 priority(推挤优先级)与 affectteam(F/B/E)。\n"
+                + "• ScreenBound（单帧生效）：value = 0 允许移出屏幕边缘；movecamera = x_flag, y_flag（设 0, 0 让镜头不跟随自己）；IK 新增 stagebound。\n"
+                + "• Turn：无参数，立刻翻转角色朝向。\n"
+                + "• CtrlSet：value = 0/1 直接开关玩家操控权。",
+                "[State 1050, DashThrough]\ntype = PlayerPush\ntrigger1 = Time < 15\nvalue = 0\n\n[State 1050, KeepInStage]\ntype = Width\ntrigger1 = 1\nedge = 20, 20", false));
+    }
+
+    private void addDictSctrlEntities(List<DictEntry> list) {
+        list.add(new DictEntry("Helper (生成独立实体)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "召唤拥有完整独立状态机、判定框与变量的实体（高级飞道/分身/援护/系统控制器）",
+                "【核心参数详解】\n"
+                + "• helpertype = normal/player（默认 normal；player 类似完整角色可被镜头跟随与推挤）。\n"
+                + "• name = \"名称\"：供调试与 HelperName 识别。\n"
+                + "• ID = 整数编号：供 NumHelper(ID) / Helper(ID) 检索。\n"
+                + "• stateno = 状态号：生成后立即进入的 Statedef（默认 0）。\n"
+                + "• pos = x, y / postype = p1/p2/front/back/left/right：生成位置与参考系。\n"
+                + "• facing = 1/-1：相对参考系的朝向。\n"
+                + "• keyctrl = 0/1：是否允许读取玩家按键并执行 State -1（IK 支持 keyctrl = 1, 2, 3 继承负状态）。\n"
+                + "• ownpal = 0/1：设 1 拥有独立调色板（不随本体 PalFX 变色，特效/飞道必开 1！）。\n"
+                + "• supermovetime / pausemovetime：在 SuperPause / Pause 期间可继续活动的帧数。\n"
+                + "• size.xscale / size.yscale / size.ground.back / size.ground.front / size.height：覆写实体缩放与体积。\n\n"
+                + "【Ikemen GO 专属扩展】\n• clsnproxy = 1(判定框代理给父级)、extendsmap = 1(继承父级 Map)、immortal = 1(不死)、inheritjuggle = 1/2(共享浮空与目标)、preserve = 1(跨回合不销毁)、ownprojectile = 1、map.<名称> = 初值。\n【销毁】Helper 状态结束必须调用 type = DestroySelf，否则会残留占用实体槽位！",
+                "[State 1000, EnergyBall]\ntype = Helper\ntrigger1 = AnimElem = 4\nhelpertype = normal\nname = \"EnergyBall\"\nID = 1005\nstateno = 1005\npos = 45, -65\npostype = p1\nfacing = 1\nownpal = 1\nsupermovetime = 0\npausemovetime = 0", false));
+
+        list.add(new DictEntry("Explod (生成视觉特效)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "在屏幕或场景中生成纯视觉动画特效（火花、斩击、立绘切入、自定义 UI）",
+                "【核心参数详解】\n"
+                + "• anim = [F]动作号（必填）：加 F 调用 fightfx.air，否则调用自身 AIR。\n"
+                + "• ID = 编号：供 NumExplod / ModifyExplod / RemoveExplod 控制。\n"
+                + "• pos = x, y / postype = p1/p2/front/back/left/right（1.1+ 推荐搭配 space = stage/screen）。\n"
+                + "• bindtime = 帧数：绑定坐标的持续帧（-1 永久跟随，1 仅生成帧）。\n"
+                + "• removetime = 帧数：存活帧数（-2 动画播完自动销毁，-1 永久存在需手动 RemoveExplod）。\n"
+                + "• vel = vx, vy / accel = ax, ay / random = rx, ry：初速度、加速度与随机散布范围。\n"
+                + "• scale = sx, sy / facing = 1/-1 / vfacing = 1/-1：缩放与水平/垂直翻转。\n"
+                + "• sprpriority = -5~5 / ontop = 0/1：图层先后（ontop=1 盖在血条之上）。\n"
+                + "• ownpal = 0/1：设 1 防止随本体 PalFX 一起变色。\n"
+                + "• trans = none/add/add1/sub/addalpha；alpha = src(0~256), dst(0~256)。\n"
+                + "• supermovetime / pausemovetime / ignorehitpause / removeongethit。\n\n"
+                + "【MUGEN 1.1/1.1b1 & IK-GO 扩展】\n• angle / xangle / yangle(3D旋转)、remappal(色表映射)。\n• IK 独有：interpolation.* 补间动画、palfx.*、afterimage.*、shader.*、syncid(同步角色渲染序)、window(裁剪)、xshear(斜切)、under(置于血条与阴影下)、removeonchangestate。",
+                "[State 3000, SuperPortrait]\ntype = Explod\ntrigger1 = Time = 0\nanim = 8500\nID = 8500\npos = 0, 0\npostype = left\nscale = 0.5, 0.5\nbindtime = -1\nremovetime = 40\nsupermovetime = 40\nsprpriority = -2\nownpal = 1", false));
+
+        list.add(new DictEntry("ModifyExplod / RemoveExplod / ExplodBindTime", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "实时修改已存在特效的属性、绑定时长，或按 ID 销毁特效",
+                "【参数详解】\n"
+                + "• ModifyExplod：必填 ID = 特效编号，其余参数与 Explod 相同，可实时改 pos、scale、vel、sprpriority、trans、alpha、angle 等。\n  ※ Ikemen GO 扩展：支持 index 参数仅改同 ID 第 N 个特效，支持实时改 anim / animelem / space / under。\n"
+                + "• RemoveExplod：ID = 编号（省略则清除自身全部 Explod；IK 支持 index）。\n"
+                + "• ExplodBindTime：ID = 编号, time = 新绑定帧数。",
+                "[State 3000, FadeOutFX]\ntype = ModifyExplod\ntrigger1 = Time >= 20\nID = 8500\ntrans = addalpha\nalpha = 256 - (Time - 20) * 12, 256", false));
+    }
+
+    private void addDictSctrlVisualAudio(List<DictEntry> list) {
+        list.add(new DictEntry("ChangeAnim / ChangeAnim2 (动画切换)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "切换当前播放的 AIR 动作序列与起始帧（ChangeAnim2 用于自定义受击状态）",
+                "【参数详解】\n"
+                + "• value = 动作号（必填）：AIR 中的 [Begin Action N]。\n"
+                + "• elem = 帧索引（可选，默认 1）：指定从第几帧开始播放。\n"
+                + "• ChangeAnim2 专用场景：在投技对手状态(P2StateNo)中，调用攻击方的 AIR 动作编排来驱动对手的 SFF 图像。\n\n"
+                + "【Ikemen GO 扩展】\n支持 elemtime(精确到帧内第几 tick)、animplayerno、spriteplayerno、readplayerid 以及 F 前缀调用 fightfx 动画。",
+                "[State 1000, LoopAnim]\ntype = ChangeAnim\ntrigger1 = Time = 0\nvalue = 1000\nelem = 1", false));
+
+        list.add(new DictEntry("PalFX / BGPalFX / AllPalFX (调色板与滤镜)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "对角色自身(PalFX)、地图背景(BGPalFX)或全屏(AllPalFX)施加染色、闪烁、灰度与反色",
+                "【参数详解】\n"
+                + "• time = 持续帧数（-1 永久直到下次覆盖，0 立即取消）。\n"
+                + "• add = r, g, b（-256~256，默认 0,0,0）：颜色通道加减（如 180,40,0 火焰泛红）。\n"
+                + "• mul = r, g, b（0~512，默认 256,256,256）：颜色通道乘法（256=100%原色，128=半暗）。\n"
+                + "• sinadd = r, g, b, period：正弦周期闪烁（period 为周期帧数）。\n"
+                + "• invertall = 0/1：是否底片反色。\n"
+                + "• color = 0~256：饱和度（0 完全黑白灰度，256 正常彩色）。\n\n"
+                + "【Ikemen GO 扩展】\n新增 hue(-256~256 色相偏移)、sinmul、sincolor、sinhue、invertblend。",
+                "[State 3000, BurnTint]\ntype = PalFX\ntrigger1 = Time = 0\ntime = 25\nadd = 160, 40, -20\nmul = 256, 200, 160\nsinadd = 60, 30, 0, 8\ncolor = 256", false));
+
+        list.add(new DictEntry("RemapPal (动态实时换色表)", "sctrl", "1.0/1.1/1.1b1/IK-GO",
+                "【1.0+新增】在战斗中动态将 SFFv2 某色表映射为另一套色表（变身/爆气换色核心）",
+                "【功能定位】\nWinMUGEN 不支持！MUGEN 1.0+ 与 Ikemen GO 可在不切换精灵图的情况下瞬间更换整套服装配色。\n\n"
+                + "【参数详解】\n"
+                + "• source = 组, 号：原始色表索引（通常 1, 1）。\n"
+                + "• dest = 组, 号：目标色表索引（如 1, 7；恢复原色时设 dest = 1, 1）。",
+                "[State 3000, GoldenForm]\ntype = RemapPal\ntrigger1 = Time = 0\nsource = 1, 1\ndest = 1, 7", false));
+
+        list.add(new DictEntry("AfterImage / AfterImageTime (残影拖尾)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "为超必杀、瞬步、EX 技开启可精细调色的残影拖尾效果",
+                "【AfterImage 核心参数详解】\n"
+                + "• time = 持续帧数（-1 永久，默认 1）。\n"
+                + "• length = 缓存帧数（2~60，默认 20；越大残影尾巴越长）。\n"
+                + "• timegap = 采样间隔帧（默认 1）；framegap = 显示间隔帧（默认 4）。\n"
+                + "• palcolor = 0~256(饱和度)；palinvertall = 0/1(反色)。\n"
+                + "• palbright = r, g, b / palcontrast = r, g, b(128=原对比度) / palpostbright = r, g, b。\n"
+                + "• paladd = r, g, b / palmul = r, g, b（每个残影逐级叠加衰减，如 palmul = 0.65, 0.65, 0.75）。\n"
+                + "• trans = none / add / add1 / sub。\n\n"
+                + "【AfterImageTime】time = 0 可在受击或收招时立即终止残影。\n【Ikemen GO 扩展】支持 shader.* 残影着色器与精确 framegap 计数。",
+                "[State 1050, EXTrail]\ntype = AfterImage\ntrigger1 = Time = 0\ntime = 25\nlength = 12\npalbright = 40, 20, 0\npalcontrast = 200, 160, 80\npalmul = 0.7, 0.7, 0.7\ntimegap = 1\nframegap = 3\ntrans = add1", false));
+
+        list.add(new DictEntry("AngleDraw / AngleSet / AngleAdd / AngleMul (旋转缩放)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "实时旋转并缩放角色精灵绘制（需每帧触发）",
+                "【参数详解】\n"
+                + "• AngleDraw：value = 角度(逆时针为正，单位度)；scale = sx, sy（MUGEN 1.0+ 支持直接写在 AngleDraw 里）。\n"
+                + "• AngleSet / AngleAdd / AngleMul：修改内部角度寄存器（WinMUGEN 需配合使用）。\n\n"
+                + "【Ikemen GO 扩展】\n支持 3D 透视倾角 xangle、yangle 以及旋转轴心偏移 pivot = x, y。",
+                "[State 1000, SpinKick]\ntype = AngleDraw\ntrigger1 = 1\nvalue = Time * 24\nscale = 1.05, 1.05", false));
+
+        list.add(new DictEntry("PlaySnd / StopSnd / SndPan (音效播放与控制)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "播放角色或系统音效、打断指定声道以及动态调节左右立体声声像",
+                "【PlaySnd 核心参数详解】\n"
+                + "• value = [S/F]组, 号（必填）：不加前缀或加 S 播角色 .snd，加 F 播 fight.snd 公共音效。\n"
+                + "• volumescale = 百分比（1.0+ 推荐，100=原音量，200=双倍；旧版用 volume = -255~255）。\n"
+                + "• channel = 声道号（-1 自动分配；同声道播放新音会打断旧音，角色语音建议固定 channel = 0 防重叠！）。\n"
+                + "• lowpriority = 0/1：设 1 时若该声道正在发声则放弃本次播放。\n"
+                + "• freqmul = 倍率（默认 1.0，改音调与播放速度）。\n"
+                + "• loop = 0/1：是否循环播放；pan / abspan：相对/绝对左右声道偏移。\n\n"
+                + "【StopSnd】channel = 声道号（-1 停全场；Ikemen GO 新增 -2 仅停自身全部声道）。\n【Ikemen GO 扩展】PlaySnd 新增 priority、loopstart/end、startposition、loopcount、stopongethit、stoponchangestate。",
+                "[State 200, AttackVoice]\ntype = PlaySnd\ntrigger1 = AnimElem = 1\nvalue = 0, 2\nvolumescale = 100\nchannel = 0", false));
+
+        list.add(new DictEntry("EnvShake / EnvColor (屏幕震动与闪屏)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "触发全局画面震动反馈或纯色全屏闪光覆盖",
+                "【EnvShake 参数详解】\n"
+                + "• time = 持续帧数（必填）。\n"
+                + "• freq = 震动频率（0~180，默认 60，越大越急促）。\n"
+                + "• ampl = 振幅像素（默认 -4，绝对值越大晃动越剧烈）。\n"
+                + "• phase = 初始相位角（默认 90）。\n"
+                + "• Ikemen GO 新增：decay（指数衰减，如 1.5 自然淡出）、dir（震动方向角度，90=左右横震）、diradd。\n\n"
+                + "【EnvColor 参数详解】\n"
+                + "• value = r, g, b（0~255，如 255,255,255 白闪）；time = 持续帧数；under = 0/1（1 绘制在角色背后，遮住地图不遮角色）。",
+                "[State 3000, ImpactShake]\ntype = EnvShake\ntrigger1 = AnimElem = 4\ntime = 18\nfreq = 90\nampl = -8\n\n[State 3000, WhiteFlash]\ntype = EnvColor\ntrigger1 = AnimElem = 4\nvalue = 255, 255, 255\ntime = 3\nunder = 1", false));
+
+        list.add(new DictEntry("Zoom (动态镜头缩放)", "sctrl", "1.1/1.1b1/IK-GO",
+                "【1.1/1.1b1+新增】在超必杀或特写招式中动态拉近/拉远镜头",
+                "【参数详解】\n"
+                + "• scale = 缩放倍率（float，>1.0 放大拉近，<1.0 缩小拉远，如 1.35）。\n"
+                + "• pos = x, y：缩放焦点（相对屏幕中心，填 Pos X, Pos Y - 60 可紧跟角色胸口）。\n"
+                + "• lag = 0.0~1.0：平滑插值阻力（0 瞬切，0.8~0.92 丝滑推进）。\n"
+                + "• time = 持续帧数（默认 1，可配合 trigger1 = Time < 40 每帧维持）。\n"
+                + "• stagebound = 0/1：是否限制在地图边界内防露黑边（默认 1）。\n"
+                + "• camerabound = 0/1：是否限制在当前镜头范围内（默认 1）。\n"
+                + "• endlag = 0.0~1.0（Ikemen GO 新增）：缩放结束后的平滑回弹阻力。",
+                "[State 3000, SuperZoom]\ntype = Zoom\ntrigger1 = Time < 40\nscale = 1.3\npos = Pos X, Pos Y - 60\nlag = 0.88\nstagebound = 1", false));
+    }
+
+    private void addDictSctrlSystem(List<DictEntry> list) {
+        list.add(new DictEntry("SuperPause / Pause (超杀暗屏与时间暂停)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "触发超必杀专属暗屏定格特效(SuperPause)或纯时间暂停(Pause)",
+                "【SuperPause 核心参数详解】\n"
+                + "• time = 定格总帧数（默认 30）。\n"
+                + "• movetime = 自身可行动帧数（默认 0；设等于 time 可在定格期间演完起手动作）。\n"
+                + "• anim = [S/F]动作号（默认 30，-1 关闭内置圆环光效以便自画 Explod）。\n"
+                + "• sound = [S/F]组, 号 / pos = x, y：定格音效与内置特效坐标。\n"
+                + "• darken = 0/1：是否压暗背景（默认 1；Ikemen GO 新增 brightness = 0~255 精细控制暗度）。\n"
+                + "• p2defmul = 浮点倍率：超杀连段防补正系数（设 1.0 取消默认减伤）。\n"
+                + "• poweradd = 数值：扣除能量（如 -1000 扣 1 格气）。\n"
+                + "• unhittable = 0/1：定格期间自身是否无敌（默认 1）。\n"
+                + "• endcmdbuftime = 帧数：定格结束前几帧允许预输入指令。\n"
+                + "• pausebg = 0/1：是否同时冻结地图背景动画。",
+                "[State 3000, SuperFreeze]\ntype = SuperPause\ntrigger1 = Time = 0\ntime = 42\nmovetime = 42\nanim = -1\ndarken = 1\npoweradd = -1000\np2defmul = 1.0\nunhittable = 1", false));
+
+        list.add(new DictEntry("AssertSpecial (特殊引擎标志开关)", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "单帧激活引擎级特殊规则（不可防御、隐藏血条、免死、禁转身等）",
+                "【语法规则】每帧自动复位，需持续触发。MUGEN 单次最多 flag / flag2 / flag3；Ikemen GO 扩展到 flag~flag8 且支持 enabled = 0 反向关闭。\n\n"
+                + "【高频常用 Flag 分类速查】\n"
+                + "• 演出/界面：intro(延长开场)、roundnotover(延长胜利)、nobardisplay(隐藏血条)、noBG(隐藏背景)、noFG(隐藏前景)、invisible(隐身)、noshadow / globalnoshadow(隐影)、nomusic(静音BGM)、timerfreeze(冻结计时器)。\n"
+                + "• 攻防机制：unguardable(本帧不可防)、nostandguard / nocrouchguard / noairguard(禁站/蹲/空防)、noautoturn(禁止自动转身)、nojugglecheck(无视浮空限制)、noko(免死留1血)、nokosnd / nokoslow(禁KO惨叫/慢放)、nowalk / noairjump。\n"
+                + "• Ikemen GO 专属新增：AutoGuard(自动防)、AnimFreeze(定帧)、AnimateHitpause(顿帧继续播动画)、CameraFreeze(锁镜头)、NoCornerPush(免墙角推)、NoGuardKO(免磨血致死)、NoHardcodedKeys(屏蔽底层方向状态)、SizePushOnly(纯体型盒推挤)、RoundFreeze、RoundNotSkip、RunFirst / RunLast。",
+                "[State 3000, BossDomain]\ntype = AssertSpecial\ntrigger1 = 1\nflag = nobardisplay\nflag2 = noBG\nflag3 = timerfreeze", false));
 
         list.add(new DictEntry("VarSet / VarAdd / VarRandom / VarRangeSet / ParentVarSet", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "读写整数 var(0~59)、浮点 fvar(0~39)、系统变量 sysvar(0~4) 及随机赋值",
-                "VarSet / VarAdd：v=编号 或 fv=编号，value=值（也可简写 var(10) = 1）。\nVarRandom：v=编号，range = 最小值, 最大值。\nVarRangeSet：批量清零/赋值（first, last, value 或 fvalue）。\nParentVarSet / ParentVarAdd：Helper 修改父级变量。\nIkemen GO 扩展：解除 60/40 上限（支持任意正 int32 编号），新增 RootVarSet/RootVarAdd 与无限命名变量 MapSet。",
-                "[State 200, SetVar]\ntype = VarSet\ntrigger1 = Time = 0\nvar(10) = 1\n\n[State 200, Rand]\ntype = VarRandom\ntrigger1 = Time = 0\nv = 11\nrange = 1, 3", false));
+                "读写角色整数变量 var、浮点变量 fvar、系统变量 sysvar 及范围清零",
+                "【变量容量】MUGEN Win/1.0/1.1 为 var(0~59)、fvar(0~39)、sysvar(0~4)、sysfvar(0~4)；Ikemen GO 解除上限（支持任意正 int32 编号）并推荐改用命名 Map。\n\n"
+                + "【各控制器参数详解】\n"
+                + "• VarSet / VarAdd：v = 编号 或 fv = 编号，value = 新值/增量；也可直接简写 var(10) = 1 或 fvar(2) = 1.5。\n"
+                + "• VarRandom：v = 编号，range = 最小值, 最大值（含两端，默认 0, 1000）。\n"
+                + "• VarRangeSet：value = 整数值 或 fvalue = 浮点值，first = 起始号，last = 结束号（常用于 State 5900 开局重置变量）。\n"
+                + "• ParentVarSet / ParentVarAdd（IK 新增 RootVarSet/Add）：Helper 修改父级/本体变量。",
+                "[State 5900, ResetVars]\ntype = VarRangeSet\ntrigger1 = RoundNo = 1\nvalue = 0\nfirst = 0\nlast = 50", false));
 
-        list.add(new DictEntry("AssertSpecial", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "激活单帧特殊引擎标志（每帧自动重置，需持续触发）",
-                "MUGEN 经典标志（每次最多 flag/flag2/flag3）：\n• 演出类：intro、roundnotover、nobardisplay、noBG、noFG、noshadow、invisible、globalnoshadow、nomusic、timerfreeze\n• 攻防类：unguardable、nostandguard、nocrouchguard、noairguard、noautoturn、nojugglecheck、nokosnd、nokoslow、noko、nowalk、noairjump\nIkemen GO 扩展：单次最多 8 个 flag（flag~flag8），支持 enabled = 0 反向关闭，新增 AutoGuard、AnimFreeze、AnimateHitpause、CameraFreeze、NoCornerPush、NoHardcodedKeys、NoGuardKO、NoHitDamage、SizePushOnly、ProjTypeCollision、RoundFreeze、RoundNotSkip、RunFirst、RunLast 等数十个标志。",
-                "[State 3000, Cinematic]\ntype = AssertSpecial\ntrigger1 = 1\nflag = nobardisplay\nflag2 = noBG\nflag3 = noFG", false));
+        list.add(new DictEntry("LifeAdd / LifeSet / PowerAdd / PowerSet / HitAdd / AttackMulSet / DefenceMulSet", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "直接操控血量、能量气槽、连击计数与动态攻防倍率",
+                "【参数详解】\n"
+                + "• LifeAdd：value = 增减值、kill = 0/1(0 至少留 1 血)、absolute = 0/1(1 无视防御倍率)。\n"
+                + "• LifeSet：value = 目标血量（常用于回满血 LifeSet value = LifeMax）。\n"
+                + "• PowerAdd / PowerSet：value = 能量值（常规 1000 = 1 格气）。\n"
+                + "• HitAdd：value = 连击数增量（无 HitDef 扣血时同步增加屏幕 Combo 计数）。\n"
+                + "• AttackMulSet / DefenceMulSet：value = 倍率（如 1.25 增伤 25%；注意 MUGEN 中 DefenceMulSet 仅在受击态生效且覆盖倒地减伤，Ikemen GO 改为连乘并新增 multype / onhit）。",
+                "[State -2, RageMode]\ntype = AttackMulSet\ntrigger1 = Life <= LifeMax * 0.3\nvalue = 1.25", false));
 
-        list.add(new DictEntry("TargetBind / TargetState / TargetLifeAdd / TargetVelSet / TargetFacing / TargetDrop", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "投技与派生控制全家桶（绑定坐标、强切状态、扣血、调速、转向、释放目标）",
-                "需在 HitDef 命中并捕获 Target（NumTarget > 0）后生效：\n• TargetBind：time、id、pos = x, y（固定对手相对位置）\n• TargetState：value = 状态号（强制对手进入我方自定义受击状态）\n• TargetLifeAdd：value = 血量增减、kill(0不致死/1致死)、absolute(1无视攻防倍率)\n• TargetPowerAdd / TargetVelSet / TargetVelAdd / TargetFacing / TargetDrop。\nIkemen GO 扩展：支持 index 参数精确控制多个目标之一，TargetBind/Vel 支持 Z 轴，新增 TargetAdd / TargetDizzyPointsAdd / TargetGuardPointsAdd / TargetRedLifeAdd / TargetScoreAdd。",
-                "[State 810, Bind]\ntype = TargetBind\ntrigger1 = AnimElem = 1\npos = 45, -60\ntime = 12\n\n[State 810, Damage]\ntype = TargetLifeAdd\ntrigger1 = AnimElem = 4\nvalue = -90\nkill = 1", false));
-
-        list.add(new DictEntry("BindToParent / BindToRoot / BindToTarget", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "将 Helper 绑定到父级/本体坐标，或将自身吸附到目标身上",
-                "参数：time、facing(-1反向/0不改/1同向)、pos = x, y。BindToTarget 额外支持 pos = x, y, Head/Mid/Foot 绑定到对手头/腰/脚锚点。",
-                "[State 1005, FollowRoot]\ntype = BindToRoot\ntrigger1 = 1\ntime = 1\npos = 0, -50\nfacing = 1", false));
-
-        list.add(new DictEntry("PalFX / BGPalFX / AllPalFX / EnvColor / RemapPal", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "角色/背景/全屏滤镜调色闪烁、纯色闪屏与动态换色表(RemapPal 1.0+)",
-                "PalFX / BGPalFX / AllPalFX 参数：time、add(r,g,b)、mul(r,g,b, 256=原色)、sinadd(r,g,b,周期)、invertall(1反色)、color(0灰度~256原色)。\nEnvColor：全屏单色覆盖(value=r,g,b, time, under=1在角色后)。\nRemapPal（MUGEN 1.0+ 专属，Win无）：source = 组,号；dest = 组,号，动态切换 SFFv2 内置色表。\nIkemen GO 扩展：PalFX 新增 hue(色相)、sinmul、sincolor、sinhue、invertblend。",
-                "[State 3000, BurnFlash]\ntype = PalFX\ntrigger1 = Time = 0\ntime = 20\nadd = 180, 50, 0\nsinadd = 60, 30, 0, 8\ncolor = 256", false));
-
-        list.add(new DictEntry("AfterImage / AfterImageTime", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "开启角色残影拖尾特效与动态延长/终止残影时间",
-                "核心参数：time、length(缓存帧数最大60)、palcolor、palinvertall、palbright、palcontrast、palpostbright、paladd、palmul、timegap(采样间隔)、framegap(显示间隔)、trans(none/add/add1/sub)。\nAfterImageTime：time = 0 可立即关闭当前残影。\nIkemen GO 扩展：支持自定义 shader.* 残影着色器与修复 framegap 计数。",
-                "[State 3000, ShadowTrail]\ntype = AfterImage\ntrigger1 = Time = 0\ntime = 30\nlength = 12\npalbright = 30, 30, 60\npalcontrast = 120, 120, 220\ntimegap = 1\nframegap = 3\ntrans = add1", false));
-
-        list.add(new DictEntry("AngleDraw / AngleSet / AngleAdd / AngleMul", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "角色图像实时旋转与缩放绘制（单帧生效）",
-                "AngleDraw 每帧绘制时生效，支持 value(角度)、scale(x, y)（1.0+ 支持直接带参数）。AngleSet/AngleAdd/AngleMul 用于维护角度寄存器。\nIkemen GO 扩展：支持 3D 倾斜 xangle、yangle 以及旋转中心点 pivot = x, y。",
-                "[State 1000, Spin]\ntype = AngleDraw\ntrigger1 = 1\nvalue = Time * 15\nscale = 1.1, 1.1", false));
-
-        list.add(new DictEntry("PlaySnd / StopSnd / SndPan", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "播放音效、停止指定声道音效与实时调整左右声道声像",
-                "PlaySnd 参数：value = [F]组, 号（加 F 播 fight.snd 公共音效）、volume(旧版-255~255) / volumescale(1.0+推荐, 100=原音量)、channel(同声道会打断前音)、lowpriority、freqmul(音调倍率)、loop、pan / abspan。\nStopSnd：channel = 声道号（-1停全部；Ikemen GO 新增 -2 仅停自身全部声道）。\nIkemen GO 扩展：PlaySnd 新增 priority、loopstart、loopend、startposition、loopcount、stopongethit、stoponchangestate。",
-                "[State 200, Voice]\ntype = PlaySnd\ntrigger1 = AnimElem = 1\nvalue = 0, 1\nvolumescale = 100\nchannel = 0", false));
-
-        list.add(new DictEntry("LifeAdd / LifeSet / PowerAdd / PowerSet / HitAdd", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "直接增减/设定自身血量、能量气槽以及手动增加连击数(HitAdd)",
-                "LifeAdd：value、kill(0至少留1血/1可自杀)、absolute(1无视防御倍率)。\nPowerAdd / PowerSet：增减能量（通常 1000 = 1 格气）。\nHitAdd：value = N，常用于投技或无 HitDef 扣血时同步增加屏幕连击计数。",
-                "[State 3000, Heal]\ntype = LifeAdd\ntrigger1 = Time = 0\nvalue = 100\nabsolute = 1", false));
-
-        list.add(new DictEntry("AttackMulSet / DefenceMulSet / AttackDist / Width / PlayerPush / ScreenBound / Turn / CtrlSet", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "攻防倍率、近身防御距离、挤身宽、防推挤、镜头绑定、转身与控制权开关",
-                "• AttackMulSet / DefenceMulSet：动态调整攻防倍率（IK 中 DefenceMulSet 改为连乘不覆盖倒地补正）。\n• AttackDist：动态改变当前 HitDef 触发对手防御的距离。\n• Width：edge = 前, 后；player = 前, 后（单帧扩缩版边宽与挤身宽）。\n• PlayerPush：value = 0 关闭角色间挤身碰撞（穿身技必备）。\n• ScreenBound：value = 0 允许移出屏幕，movecamera = x, y 控制镜头是否跟随。\n• Turn：立即翻转朝向；CtrlSet：value = 0/1 开关操控权。",
-                "[State 1050, PassThrough]\ntype = PlayerPush\ntrigger1 = 1\nvalue = 0\n\n[State 1050, NoCam]\ntype = ScreenBound\ntrigger1 = 1\nvalue = 0\nmovecamera = 0, 0", false));
-
-        list.add(new DictEntry("EnvShake / FallEnvShake / HitFallSet / HitFallVel / HitFallDamage / HitVelSet / MoveHitReset", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "屏幕震动、倒地状态控制、受击速度应用与重置命中标记",
-                "• EnvShake：time、freq(默认60)、ampl(默认-4)、phase；IK 新增 decay(指数衰减)与 dir(震动角度)。\n• HitVelSet：x = 1, y = 1 将受击参数中的速度应用到角色。\n• HitFallSet / HitFallVel / HitFallDamage：用于自定义受击/倒地弹地逻辑。\n• MoveHitReset：清零 MoveHit/MoveGuarded/MoveContact 标记，方便同一状态多段判定独立检测。",
-                "[State 1000, Quake]\ntype = EnvShake\ntrigger1 = AnimElem = 4\ntime = 16\nfreq = 80\nampl = -6", false));
-
-        list.add(new DictEntry("DisplayToClipboard / AppendToClipboard / ClearClipboard / Null / SprPriority / Trans / MakeDust / GameMakeAnim / ForceFeedback", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
-                "调试剪贴板打印、图层优先级、透明混合、扬尘、通用特效与手柄震动",
-                "• DisplayToClipboard / AppendToClipboard：在 Ctrl+D 调试栏输出 printf 格式化变量值。\n• SprPriority：value = -5~5 控制图层前后顺序（IK 新增 layerno = -1/0/1）。\n• Trans：trans = none/add/add1/sub/addalpha，alpha = 源, 目标（IK 新增 subadd）。\n• Null：空控制器，常用来在 trigger 中写赋值表达式如 var(1):=10。\n• MakeDust / GameMakeAnim：旧版扬尘与 fightfx 简易调用（新版推荐 Explod）。\n• ForceFeedback：手柄震动（IK 新增 lo / hi 双马达频率）。",
-                "[State -2, Debug]\ntype = DisplayToClipboard\ntrigger1 = 1\ntext = \"Pos=(%.1f, %.1f) Var10=%d\"\nparams = Pos X, Pos Y, var(10)", false));
-
-        list.add(new DictEntry("VictoryQuote", "sctrl", "1.0/1.1/1.1b1/IK-GO",
-                "【1.0+新增】指定本局胜利画面显示的台词编号（对应 CNS [Quotes]）",
-                "WinMUGEN 不支持！在 MUGEN 1.0/1.1/1.1b1 与 Ikemen GO 中，可在 CNS [Quotes] 定义 victory0~victory99，并用 VictoryQuote 的 value = N 在获胜前根据对手名字动态切换专属胜利台词。",
-                "[State 180, QuoteVsIori]\ntype = VictoryQuote\ntrigger1 = Enemy, Name = \"Iori\"\nvalue = 3", false));
-
-        list.add(new DictEntry("Zoom", "sctrl", "1.1/1.1b1/IK-GO",
-                "【1.1/1.1b1+新增】招式内动态镜头缩放（超杀特写核心）",
-                "MUGEN 1.1b1 为实验特性，Ikemen GO 已全面完善！参数：\n• scale：缩放倍率（>1 拉近放大，<1 拉远缩小）\n• pos = x, y：缩放焦点（相对屏幕中心，填 Pos X, Pos Y 锁定自身）\n• lag = 0~1：镜头平滑插值（0瞬切，越接近1越平缓）\n• time：持续帧数；stagebound / camerabound(1限制在地图/镜头边界内)；endlag(IK新增，结束回弹平滑度)。",
-                "[State 3000, SuperZoom]\ntype = Zoom\ntrigger1 = Time < 35\nscale = 1.3\npos = Pos X, Pos Y - 60\nlag = 0.85\nstagebound = 1", false));
+        list.add(new DictEntry("VictoryQuote / DisplayToClipboard / SprPriority / Trans", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "胜利台词指定(1.0+)、调试剪贴板输出、图层优先级与精灵透明混合",
+                "【各控制器参数详解】\n"
+                + "• VictoryQuote (1.0+ 专属)：value = 台词编号（对应 CNS [Quotes] 中的 victoryN）。\n"
+                + "• DisplayToClipboard / AppendToClipboard：text = \"格式串\"(%d/%f/%v), params = 表达式1, 表达式2...（按 Ctrl+D 在屏幕底部查看实时变量）。\n"
+                + "• SprPriority：value = -5~5（数字越大越靠前；IK 新增 layerno = -1/0/1）。\n"
+                + "• Trans：trans = none / add / add1 / sub / addalpha；alpha = src(0~256), dst(0~256)（IK 新增 subadd 混合模式）。",
+                "[State 180, SpecialQuote]\ntype = VictoryQuote\ntrigger1 = Enemy, Name = \"Ryu\"\nvalue = 2", false));
     }
 
-    private void addDictIkemenSctrls(List<DictEntry> list) {
-        list.add(new DictEntry("全局通用参数: RedirectID & fightfx F前缀", "sctrl", "IK-GO",
-                "【IK官方Wiki】跨实体直接执行控制器(RedirectID)与全控制器支持 F 前缀动画",
-                "1. RedirectID = <PlayerID>：Ikemen GO 中几乎所有新老控制器都支持该通用参数！无需把对手送入自定义状态(Custom State)，就能直接对指定 ID 实体执行 LifeAdd、MapAdd、VelSet、ChangeState 等操作。\n2. fightfx F 前缀：[Statedef]、ChangeState、SelfState、ChangeAnim、ChangeAnim2、Projectile 均支持 anim = F 300 调用通用特效动画。",
-                "[State -2, PoisonDot]\ntype = LifeAdd\ntrigger1 = Enemy, Map(poison) > 0 && GameTime % 30 = 0\nvalue = -5\nkill = 0\nRedirectID = Enemy, ID", false));
+    private void addDictIkemenSctrlsDetailed(List<DictEntry> list) {
+        list.add(new DictEntry("RedirectID (IK 通用跨实体重定向参数)", "sctrl", "IK-GO",
+                "【IK官方Wiki】所有新老控制器通用参数：无需自定义状态即可直接操控指定实体",
+                "【核心原理】\n在几乎任何状态控制器中加入 RedirectID = <PlayerID>，该控制器就会直接对目标 ID 实体执行！\n\n"
+                + "【典型用途】\n• 持续中毒/灼烧扣血而不打断对手当前动作\n• Helper 直接给队友/队长加 Map 或回血\n• 地图 AttachedChar 直接给双方玩家施加环境特效\n• 注意：对非自身执行 ChangeState/SelfState 时，不会中断当前状态后续代码运行。",
+                "[State -2, BurnDot]\ntype = LifeAdd\ntrigger1 = P2, Map(burn) > 0 && GameTime % 20 = 0\nvalue = -8\nkill = 0\nRedirectID = P2, ID", false));
 
-        list.add(new DictEntry("MapSet / MapAdd / MapReset / ParentMap* / RootMap* / TeamMap*", "sctrl", "IK-GO",
-                "【IK官方Wiki】无限具名键值变量 Map（彻底取代 var 编号，支持数组索引与字符串）",
-                "Ikemen GO 最核心的现代变量系统：\n• MapSet / MapAdd：读写自身 map(\"名称\")；Nightly 版支持 index 参数当数组用，且支持存字符串！\n• MapReset：清空自身所有 Map（可用 exclude~exclude8 保留带指定前缀的 Map，.def [Map] 默认值会重置回初始值）。\n• ParentMapSet/Add、RootMapSet/Add、TeamMapSet/Add：跨父级、本体或全队读写。",
-                "[State 200, AddMeter]\ntype = MapAdd\ntrigger1 = MoveHit = 1\nmap = \"burst_gauge\"\nvalue = 15\n\n[State 5900, CleanMap]\ntype = MapReset\ntrigger1 = RoundNo = 1\nexclude = \"persist_\"", false));
+        list.add(new DictEntry("MapSet / MapAdd / MapReset (IK 具名变量系统)", "sctrl", "IK-GO",
+                "【IK官方Wiki】无数量上限的字符串键名变量（支持数组索引、字符串值与跨队读写）",
+                "【参数详解】\n"
+                + "• MapSet / MapAdd：必填 map = \"变量名\"（不可含空格），value = 数值（Nightly 支持字符串），可选 index = 整数（把同名 Map 当数组用，index 0 等价于省略）。\n"
+                + "• MapReset：清空自身所有 Map（.def [Map] 中预设的键会恢复默认值），可选 exclude ~ exclude8 = \"前缀\" 保留特定前缀的 Map。\n"
+                + "• 跨实体版本：ParentMapSet / ParentMapAdd、RootMapSet / RootMapAdd、TeamMapSet / TeamMapAdd。",
+                "[State 200, GainHeat]\ntype = MapAdd\ntrigger1 = MoveHit = 1\nmap = \"heat_meter\"\nvalue = 12\n\n[State 5900, Clean]\ntype = MapReset\ntrigger1 = RoundNo = 1\nexclude = \"save_\"", false));
 
-        list.add(new DictEntry("ModifyHitDef / ModifyProjectile / ModifyReversalDef / ModifyPlayer / ModifySnd", "sctrl", "IK-GO",
-                "【IK官方Wiki】运行时动态修改已激活的 HitDef、飞行道具、当身、角色属性与正在播放的音效",
-                "• ModifyHitDef / ModifyReversalDef：实时修改当前激活判定的伤害、hitflag、速度等。\n• ModifyProjectile：按 ID 与 index 实时改场上飞行道具的加速度、teamside、动画、ID。\n• ModifyPlayer：直接修改 ailevel、alive、attack、defence、displayname、lifebarname、lifemax、powermax、dizzypointsmax、guardpointsmax、teamside、movehit、hitpausetime 等底层字段。\n• ModifySnd：实时修改指定声道的音量、频移(freqmul)、声像、循环点与播放位置。",
-                "[State 1000, BoostHit]\ntype = ModifyHitDef\ntrigger1 = AnimElem = 5\ndamage = 120, 20\nhitflag = MAF\n\n[State -2, BossPhase2]\ntype = ModifyPlayer\ntrigger1 = Life < LifeMax / 2\ndisplayname = \"Awakened Boss\"\nattack = 130", false));
+        list.add(new DictEntry("ModifyHitDef / ModifyProjectile / ModifyReversalDef / ModifyPlayer", "sctrl", "IK-GO",
+                "【IK官方Wiki】运行时动态修改已激活判定、飞行道具或角色底层属性",
+                "【各控制器详解】\n"
+                + "• ModifyHitDef / ModifyReversalDef：实时覆写当前激活 HitDef/ReversalDef 的任意参数（如第 5 帧提升 damage 或改 hitflag）。\n"
+                + "• ModifyProjectile：ID = 飞道ID(-1全部), index = 序号(-1全部)，可实时改 accel、velocity、teamside、projID、anim。\n"
+                + "• ModifyPlayer：直接修改底层角色字段：ailevel、alive、attack、defence、displayname、lifebarname、lifemax、powermax、dizzypointsmax、guardpointsmax、teamside、helpervar.ID、movehit、moveguarded、hitpausetime、supermovetime、unhittabletime。",
+                "[State -2, BossPhase2]\ntype = ModifyPlayer\ntrigger1 = Life < LifeMax / 2 && Map(p2) = 0\ndisplayname = \"真·觉醒形态\"\nattack = 135\ndefence = 120", false));
 
         list.add(new DictEntry("Text / ModifyText / RemoveText / LifebarAction", "sctrl", "IK-GO",
-                "【IK官方Wiki】屏幕任意位置渲染格式化文字、打字机效果与血条提示演出",
-                "• Text：在屏幕任意坐标绘制文字，支持 printf 占位符(%d/%f/%v)、params、font([F]编号)、bank、align(1左/0中/-1右)、angle、pos、scale、color、textspacing、textdelay(打字机延迟)、velocity/accel/friction、palfx.*、hidewithbars 及 <color:RRGGBB> 行内变色。\n• ModifyText / RemoveText：按 ID/index 实时更新或移除文字。\n• LifebarAction：调用血条内置消息队列显示 FIRST ATTACK / COUNTER / DANGER 等同步图文音效提示。",
-                "[State 3000, ShowText]\ntype = Text\ntrigger1 = Time = 0\nid = 10\ntext = \"<color:FACC15>OVERDRIVE %d%%</color>\"\nparams = Map(od_pct)\nfont = F 0\nalign = 0\npos = 160, 50\nremovetime = 90", false));
+                "【IK官方Wiki】屏幕任意位置绘制格式化文字、打字机字幕与血条侧边提示队列",
+                "【Text 核心参数详解】\n"
+                + "• text = \"格式串\"（支持 %d/%f/%v/%s 与 <color:RRGGBB>变色</color>）；params = 表达式列表。\n"
+                + "• font = [F]字体编号（加 F 用血条字体，否则用角色 .def font0~9，缺失回退调试字体）。\n"
+                + "• bank = 色库号；align = 1(左)/0(中)/-1(右)；pos = x, y；scale = sx, sy；angle = 角度；color = r,g,b,a(默认256)。\n"
+                + "• layerno = 0/1/2；removetime = 帧数；id = 编号；textdelay = 逐字打字机延迟；velocity/accel/friction；palfx.*；hidewithbars = 1。\n\n"
+                + "【LifebarAction 参数】top、time、timemul、anim、spr、snd、text、font.no/bank/align/color、refreshtype(0堆叠/1刷计时/2重新滑入)。",
+                "[State 3000, ShowGauge]\ntype = Text\ntrigger1 = Time = 0\nid = 100\ntext = \"<color:FACC15>狂暴值: %d%%</color>\"\nparams = Map(rage)\nfont = F 0\nalign = 0\npos = 160, 48\nremovetime = 90", false));
 
-        list.add(new DictEntry("Dialogue", "sctrl", "IK-GO",
-                "【IK官方Wiki】开局或决胜局内置剧情对话系统（支持表情切换、语音与分支动作）",
-                "在第一局开场前(RoundState=1末帧)或决胜局结束前(RoundState=4)触发（可用 force=1 强制立即触发，hidebars=1 隐藏血条）。\ntext1, text2... 支持富文本控制标签：<p1>/<p2>切换说话方、<pXname=...>、<pXface=self/enemy,组,号>、<sound=...>、<anim=...>、<state=...>、<map=...>、<displayname=...>、<wait=帧数>。\n需界面 system.def 配置 [Dialogue Info] 启用。",
-                "[State 191, IntroTalk]\ntype = Dialogue\ntrigger1 = Enemy, Name = \"Kyo\"\nhidebars = 1\ntext1 = \"<p1><p1face=self,9000,0>终于等到你了，<displayname=enemy>！<wait=60>\"\ntext2 = \"<p2><p2face=enemy,9000,0>废话少说，放马过来！<wait=60>\"", false));
+        list.add(new DictEntry("Dialogue (IK 战斗剧情对话)", "sctrl", "IK-GO",
+                "【IK官方Wiki】开局前或决胜局自动弹出带立绘、语音与动作联动的剧情对话框",
+                "【参数详解】\n"
+                + "• text1, text2, ... = \"对话内容\"（按序播放，需界面 system.def 配置 [Dialogue Info]）。\n"
+                + "• hidebars = 1（调用时立即隐藏血条）；force = 1（无视 RoundState 立即弹出）。\n\n"
+                + "【内嵌控制标签】\n"
+                + "• <p1> / <p2>：切换左/右侧对话框\n"
+                + "• <p1face=self,9000,0> / <p2face=enemy,9000,2>：切换头像（填 -1 隐藏）\n"
+                + "• <sound=self,10,0,100>：播语音；<anim=self,190> / <state=enemy,5500>：联动角色动作与状态\n"
+                + "• <displayname=enemy>：自动替换对方显示名；<wait=60>：停顿帧数。",
+                "[State 191, BossTalk]\ntype = Dialogue\ntrigger1 = Enemy, Name = \"Kyo\"\nhidebars = 1\ntext1 = \"<p1><p1face=self,9000,0>好久不见，<displayname=enemy>。<wait=50>\"\ntext2 = \"<p2><p2face=enemy,9000,0>今天就在这里做个了断！<wait=60>\"", false));
 
-        list.add(new DictEntry("PlayBgm / ModifyBgm", "sctrl", "IK-GO",
-                "【IK官方Wiki】战斗中动态切歌、恢复地图原BGM、实时变速变调与无缝循环点控制",
-                "PlayBgm 支持 mp3/ogg/wav/flac/mid/xm/mod/it/s3m：\n• source = \"match\" / \"stagedef\" / \"charparams\" / \"motif\"（快速恢复当前对战或地图原曲，支持 match.round1 等前缀）\n• bgm = \"路径\"（留空 \"\" 停止音乐）、volume、loop、loopstart、loopend、startposition、freqmul、loopcount。\nModifyBgm：实时调整当前播放 BGM 的音量、采样跳转位置与播放速度（freqmul = 0 暂停）。",
-                "[State 3000, BossTheme]\ntype = PlayBgm\ntrigger1 = Time = 0\nbgm = \"sound/boss_phase2.ogg\"\nvolume = 100\nloop = 1\nloopstart = 44100", false));
+        list.add(new DictEntry("PlayBgm / ModifyBgm / LoadFile / SaveFile / PrintToConsole", "sctrl", "IK-GO",
+                "【IK官方Wiki】战斗动态切歌、BGM实时变速跳转、二进制本地存档与终端打印",
+                "【PlayBgm 参数详解】\n"
+                + "• bgm = \"路径\"（支持 mp3/ogg/wav/flac/mid/xm/mod/it/s3m；留空 \"\" 停止音乐）。\n"
+                + "• source = \"match\" / \"stagedef\" / \"charparams\" / \"motif\"（恢复对战/地图原曲）。\n"
+                + "• volume(默认100)、loop(默认1)、loopstart/loopend(采样点)、startposition、freqmul(速度音调)、loopcount。\n"
+                + "• ModifyBgm：实时改正在播放音乐的 volume/freqmul/position/loopstart/loopend（freqmul=0 暂停）。\n\n"
+                + "【SaveFile / LoadFile 参数详解】\n"
+                + "• savedata = \"var\" / \"fvar\" / \"map\"；path = \"save.gob\"（相对角色目录的 Go gob 二进制存档）；可选 maps / maps.include 过滤键名。\n\n"
+                + "【PrintToConsole】text = \"格式串\", params = 表达式...（直接输出到控制台与终端）。",
+                "[State 3000, BossBGM]\ntype = PlayBgm\ntrigger1 = Time = 0\nbgm = \"sound/phase2.ogg\"\nvolume = 100\nloop = 1", false));
 
-        list.add(new DictEntry("LoadFile / SaveFile / PrintToConsole", "sctrl", "IK-GO",
-                "【IK官方Wiki】二进制存档持久化(var/fvar/map 读写)与调试控制台打印",
-                "• SaveFile / LoadFile：使用 Go gob 二进制格式在角色目录读写持久化数据（savedata = var / fvar / map，path = \"save.gob\"，可用 maps / maps.include 过滤特定 Map），轻松实现跨局养成/解锁/战绩记录。\n• PrintToConsole：向调试控制台与终端打印带 %v/%d/%f 格式化的调试日志。",
-                "[State -2, SaveProgress]\ntype = SaveFile\ntrigger1 = MatchOver && Win\nsavedata = map\npath = \"progress.gob\"\nmaps.include = \"rpg_\"", false));
+        list.add(new DictEntry("OverrideClsn / TransformClsn / TransformSprite / RemapSprite / ShaderSet / Storyboard", "sctrl", "IK-GO",
+                "【IK官方Wiki】动态改写判定框、透视变形、批量换装预设、自定义着色器与战斗播MP4过场",
+                "【参数速查】\n"
+                + "• OverrideClsn：group = All/None/Clsn1/Clsn2/Size，index(-1全部)，rect = x1,y1,x2,y2（0,0,0,0移除）。\n"
+                + "• TransformClsn：group, index, scale = sx,sy, angle = 度, pivot = px,py。\n"
+                + "• TransformSprite：window(裁剪矩形)、xshear(水平斜切)、projection(orthographic/perspective/perspective2)、focallength。\n"
+                + "• RemapSprite：reset = 1、preset = \"预设名\"（对应 CNS [RemapPreset 名称]）、或单图 source = g,i / dest = g,i。\n"
+                + "• ShaderSet：shader(Nightly为 name) = \"着色器名\"、time(-1永久)、shaderparam.p0~p15(Nightly为 param0~15)、shadertex1/2.spr 或 anim。\n"
+                + "• Storyboard：path = \"过场.def\"、id、space = none/screen/stage、pos、scale、bindID、bindtime（支持 MP4 视频超杀演出！）。",
+                "[State 3000, CineSuper]\ntype = Storyboard\ntrigger1 = Time = 0\npath = \"super_cutin.def\"\nid = 10\nspace = screen\npos = 0, 0", false));
 
-        list.add(new DictEntry("DizzySet / DizzyPoints* / GuardBreakSet / GuardPoints* / RedLife* / ScoreAdd", "sctrl", "IK-GO",
-                "【IK官方Wiki】官方原生眩晕(Dizzy)、破防(GuardBreak)、红血恢复(RedLife)与积分系统",
-                "Ikemen GO 原生内置四大商业格斗系统（默认由 data/dizzy.zss、guardbreak.zss、tag.zss、score.zss 驱动）：\n• DizzySet / DizzyPointsAdd / DizzyPointsSet / TargetDizzyPointsAdd\n• GuardBreakSet / GuardPointsAdd / GuardPointsSet / TargetGuardPointsAdd\n• RedLifeAdd / RedLifeSet / TargetRedLifeAdd（红血可恢复上限）\n• ScoreAdd / TargetScoreAdd（支持浮点积分如 CVS2 GP 系统）。",
-                "[State 3000, BreakGuard]\ntype = TargetGuardPointsAdd\ntrigger1 = MoveGuarded = 1\nvalue = -300", false));
-
-        list.add(new DictEntry("Camera / Depth / DepthBound / Height / GroundLevelOffset", "sctrl", "IK-GO",
-                "【IK官方Wiki】自由/追踪镜头、Z轴景深边界、垂直推挤高度与动态平台地面高度",
-                "• Camera [实验]：view = \"Fighting\" / \"Follow\" / \"Free\"，支持 pos.x/y 与 followid。\n• Height：单帧调整垂直推挤盒(top_extra, bottom_extra)，类似 Width 的纵向版。\n• Depth / DepthBound：控制 Z 轴(纵深)推挤宽度与是否突破 topbound/botbound。\n• GroundLevelOffset：临时修改当前角色的地面基准高度(pos y=0)，用于制作多层次平台地形！",
-                "[State -2, Platform]\ntype = GroundLevelOffset\ntrigger1 = Pos X = [-120, 120] && Pos Y + GroundLevel <= -80\nvalue = -80", false));
-
-        list.add(new DictEntry("OverrideClsn / TransformClsn / TransformSprite / RemapSprite / ModifyShadow / ModifyReflection", "sctrl", "IK-GO",
-                "【IK官方Wiki】实时覆写/旋转缩放判定框、透视切变精灵变形、批量换图预设与阴影倒影控制",
-                "• OverrideClsn：无需改 AIR 直接实时修改/清空 Clsn1/Clsn2/Size 判定框矩形。\n• TransformClsn：按 scale、angle、pivot 对判定框进行旋转与缩放。\n• TransformSprite：对角色精灵应用裁剪窗口 window、水平斜切 xshear、透视投影 projection(orthographic/perspective/perspective2) 与 focallength。\n• RemapSprite：单图替换(source/dest)或按 CNS [RemapPreset 名称] 一键批量换装/变身！\n• ModifyShadow / ModifyReflection：单独修改角色阴影与倒影的动画、颜色、偏移、裁剪与着色器。",
-                "[State 1000, Transform]\ntype = RemapSprite\ntrigger1 = Time = 0\npreset = \"SuperForm\"\nreset = 1", false));
-
-        list.add(new DictEntry("ShaderSet / Storyboard / ModifyStoryboard / RemoveStoryboard", "sctrl", "IK-GO",
-                "【IK官方Wiki】自定义 GLSL/Vulkan 着色器与战斗中随时播放过场/MP4 Storyboard",
-                "• ShaderSet：给角色应用在 .def [Shaders] 注册的自定义着色器，支持传 16 个浮点参数 param0~15(旧版 shaderparam.p0~p15) 与 2 张自定义纹理 tex1/tex2。\n• Storyboard：战斗中直接播放指定 .def 过场（含 MP4 视频），支持 space = none/stage/screen、pos、scale、bindid/bindtime 绑定角色做电影级超杀演出！",
-                "[State 3000, SuperShader]\ntype = ShaderSet\ntrigger1 = Time = 0\nshader = \"aura_glow\"\ntime = 60\nshaderparam.p0 = 1.5", false));
-
-        list.add(new DictEntry("ModifyStageBG / ModifyStageVar / ModifyBGCtrl / ModifyBGCtrl3D", "sctrl", "IK-GO",
-                "【IK官方Wiki】战斗中实时修改地图图层、地图镜头/物理参数与 2D/3D 背景控制器",
-                "• ModifyStageBG：按 ID/index 实时修改地图图层的速度、坐标、缩放、角度、透明、滤镜与着色器。\n• ModifyStageVar：动态改地图镜头缩放/边界、光照阴影、倒影、重力/推边、玩家起始点等。\n• ModifyBGCtrl / ModifyBGCtrl3D：动态修改带 sctrlid 标记的 2D/3D 地图背景控制器（非常适合搭配地图 AttachedChar 制作动态破坏场景）。",
-                "[State -2, StormStage]\ntype = ModifyStageBG\ntrigger1 = Time = 0\nID = 5\nvelocity.x = -8.0", false));
-
-        list.add(new DictEntry("TagIn / TagOut / MatchRestart / RunState / GetHitVarSet / RoundTimeAdd", "sctrl", "IK-GO",
-                "【IK官方Wiki】换人(Tag)待机切换、无刷新重载对局、不切状态执行子状态与修改回合时间",
-                "• TagIn / TagOut：控制队友进出 Standby 待机状态（待机时无敌、不推挤、镜头不跟随），可切换 leader。\n• MatchRestart：类似 F4/Shift+F4 重开回合或无缝重载角色/地图（可指定 p1def/stagedef/reload/preservevars/resetmatch）。\n• RunState [Nightly]：不改变当前 StateNo 的情况下执行某状态号的代码（含负状态）。\n• GetHitVarSet：无需受击直接修改 GetHitVar 字段；RoundTimeAdd/Set：增减回合倒计时。",
-                "[State 5600, SwitchOut]\ntype = TagOut\ntrigger1 = Time = 0\nstateno = 6565611", false));
-
-        list.add(new DictEntry("AssertInput / AssertCommand / AssertAnalogVector / ShiftInput / ChangeMovelist", "sctrl", "IK-GO",
-                "【IK官方Wiki】虚拟按键输入、强制触发指令、按键重映射(如混乱反转)与动态切换出招表",
-                "• AssertInput：单帧模拟按下最多 8 个按键(U/D/L/R/B/F/a~z/s/d/w/m)。\n• AssertCommand：直接激活指定名称的 .cmd 指令（name=\"\" 随机激活）。\n• ShiftInput：单帧把按键 input 映射为 output（如左右/上下反转中混乱状态，设为 none 可禁用按键）。\n• AssertAnalogVector：模拟摇杆浮点向量。\n• ChangeMovelist：切换暂停菜单里显示的招式表索引(对应 .def movelist0/1/2)。",
-                "[State -2, Confused]\ntype = ShiftInput\ntrigger1 = Map(confused) > 0\ninput = L\noutput = R", false));
+        list.add(new DictEntry("Camera / GroundLevelOffset / TagIn / TagOut / MatchRestart / ShiftInput / AssertInput / Dizzy & GuardBreak", "sctrl", "IK-GO",
+                "【IK官方Wiki】自由镜头、动态平台高度、Tag换人、无刷重载对局、键位反转与眩晕破防",
+                "【参数速查】\n"
+                + "• Camera [实验]：view = \"Fighting\" / \"Follow\" / \"Free\"，pos.x/y，followid。\n"
+                + "• GroundLevelOffset：value = Y偏移（动态抬高地面做平台关卡）。\n"
+                + "• TagIn / TagOut：控制队友进出 Standby 待机态，支持 leader、stateno、partner、memberno。\n"
+                + "• MatchRestart：p1def~p8def、stagedef、reload = 1,1、resetmatch = 1、preservevars = 1,1。\n"
+                + "• AssertInput(flag~flag8 模拟按键) / AssertCommand(name, buffer.time) / ShiftInput(input, output 键位映射/混乱反转)。\n"
+                + "• 商业格斗条槽：DizzySet / DizzyPointsAdd / GuardBreakSet / GuardPointsAdd / RedLifeAdd / ScoreAdd / ChangeMovelist。",
+                "[State -2, Platform]\ntype = GroundLevelOffset\ntrigger1 = Pos X = [-100, 100] && Pos Y + GroundLevel <= -70\nvalue = -70", false));
     }
 
-    private void addDictMugenTriggers(List<DictEntry> list) {
-        list.add(new DictEntry("Time / StateTime / AnimTime / AnimElem / AnimElemTime / AnimElemNo / Anim / AnimExist / SelfAnimExist", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "状态计时、动画剩余帧、关键帧判定与动画存在性检测核心触发器",
-                "• Time (同 StateTime)：进入当前状态经过的帧数（从 0 开始）。\n• AnimTime：距离当前动画播完的剩余帧数（负数，最后一帧结束瞬间为 0）。\n• AnimElem = N：当前正好处于第 N 帧首帧时为真；AnimElemTime(N)：距第 N 帧开始过了几帧。\n• AnimElemNo(offset)：返回偏移 offset 帧后的动画帧号。\n• AnimExist(N) / SelfAnimExist(N)：检测当前状态表/自身 AIR 是否存在 N 号动画（兼容通用受击动画必查）。",
-                "trigger1 = AnimElem = 3\ntrigger2 = AnimTime = 0\ntrigger3 = SelfAnimExist(5300)", false));
+    private void addDictMugenTriggersDetailed(List<DictEntry> list) {
+        list.add(new DictEntry("Time / AnimTime / AnimElem / AnimElemTime / AnimElemNo / SelfAnimExist", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "状态帧计时、动画剩余时间、关键帧命中与动画存在性检查",
+                "• Time (同 StateTime)：进入当前 Statedef 后经过的帧数（首帧为 0）。\n"
+                + "• AnimTime：距离当前动画播完剩余帧数（负数；最后一帧结束瞬间严格等于 0，用于收招判断）。\n"
+                + "• AnimElem = N：当前动画正好切换到第 N 帧首帧时为 1。\n"
+                + "• AnimElemTime(N)：距离第 N 帧开始经过的帧数（未到第 N 帧时为负，到达为 0，之后递增）。\n"
+                + "• AnimElemNo(offset)：返回当前向前/后偏移 offset 帧对应的帧编号。\n"
+                + "• AnimExist(N) / SelfAnimExist(N)：检查动作 N 是否存在（SelfAnimExist 即使在自定义状态也只查自身 AIR）。",
+                "trigger1 = AnimElemTime(3) >= 0 && AnimElemTime(5) < 0\ntrigger2 = AnimTime = 0", false));
 
         list.add(new DictEntry("StateNo / PrevStateNo / StateType / MoveType / Physics / Ctrl / Alive / Facing", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "读取当前/上一状态号、站蹲空倒(S/C/A/L)、攻防待(A/H/I)、操控权、存活与朝向",
-                "• StateType：S(站) C(蹲) A(空) L(倒地)；MoveType：I(待机) A(攻击) H(受击)。\n• Ctrl：1 可受玩家控制，0 不可控；Alive：1 存活，0 阵亡。\n• Facing：1 面向右，-1 面向左。",
+                "角色核心状态机字段读取（状态号、站蹲空倒、攻防待、操控权与朝向）",
+                "• StateNo / PrevStateNo：当前与上一个状态号。\n"
+                + "• StateType：S(站) / C(蹲) / A(空) / L(倒地)。\n"
+                + "• MoveType：I(待机) / A(攻击) / H(受击)。\n"
+                + "• Physics：S / C / A / N（IK 新增支持直接返回）。\n"
+                + "• Ctrl(0/1 玩家操控权)、Alive(0/1 存活)、Facing(1朝右 / -1朝左)。",
                 "trigger1 = StateType != A && MoveType = I && Ctrl && Alive", false));
 
-        list.add(new DictEntry("MoveContact / MoveHit / MoveGuarded / MoveReversed / HitCount / UniqHitCount / HitPauseTime / InGuardDist", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "攻击命中/防御/当身检测、连击段数、顿帧剩余与对手是否处于防御距离",
-                "• MoveContact / MoveHit / MoveGuarded / MoveReversed：接触当帧返回 1，之后每非顿帧递增；连招取消常用 MoveContact = [1, 10]。\n• HitCount / UniqHitCount：当前状态命中总段数 / 独立招式命中数。\n• HitPauseTime：当前剩余顿帧数；InGuardDist：是否处于对手攻击可防御范围内（AI 防御判断常用）。",
+        list.add(new DictEntry("MoveContact / MoveHit / MoveGuarded / MoveReversed / HitCount / HitPauseTime / InGuardDist", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "招式命中/被防/当身计时、连段计数、顿帧剩余与近身防御区检测",
+                "• MoveContact / MoveHit / MoveGuarded / MoveReversed：接触当帧=1，之后每非顿帧+1，未接触=0。取消技推荐写 MoveContact = [1, 12]。\n"
+                + "• HitCount / UniqHitCount：当前状态命中总段数 / 独立招数。\n"
+                + "• HitPauseTime：当前剩余顿帧数（=0 表示顿帧结束）。\n"
+                + "• InGuardDist：对手攻击是否已覆盖自身防御距离（AI 自动防御判断核心）。",
                 "trigger1 = Command = \"QCF_x\" && MoveContact && HitPauseTime = 0", false));
 
-        list.add(new DictEntry("Pos / Vel / ScreenPos / BackEdgeDist / FrontEdgeDist / BackEdgeBodyDist / FrontEdgeBodyDist", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "坐标、速度、屏幕位置与前后版边距离（墙角检测核心）",
-                "• Pos X / Pos Y：相对屏幕中心与地面(y=0)的坐标；Vel X / Vel Y：当前速度。\n• ScreenPos X / Y：相对屏幕左上角的像素坐标。\n• BackEdgeBodyDist / FrontEdgeBodyDist：角色身体边缘到后/前屏幕边缘的距离（<= 10 通常代表在版边墙角）。",
-                "trigger1 = Pos Y >= 0 && Vel Y > 0\ntrigger2 = BackEdgeBodyDist <= 10", false));
+        list.add(new DictEntry("Pos / Vel / ScreenPos / P2Dist / P2BodyDist / BackEdgeBodyDist / FrontEdgeBodyDist", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "位置、速度、对手距离与版边墙角距离触发器详解",
+                "• Pos X / Y：相对屏幕水平中心与地面(y=0)坐标；Vel X / Y：当前速度。\n"
+                + "• ScreenPos X / Y：相对屏幕左上角的像素坐标。\n"
+                + "• P2BodyDist X：我方身体边缘到对手身体边缘的距离（贴身=0，重叠<0，AI 判定出招距离首选！）。\n"
+                + "• P2Dist X / Y：双方轴心原点距离；ParentDist / RootDist：Helper 到父级/本体距离。\n"
+                + "• BackEdgeBodyDist / FrontEdgeBodyDist：角色身体到后/前屏幕边缘距离（<=10 通常代表被压墙角）。",
+                "trigger1 = P2BodyDist X = [0, 68] && P2StateType != L", false));
 
-        list.add(new DictEntry("P2Dist / P2BodyDist / ParentDist / RootDist / P2Life / P2StateNo / P2StateType / P2MoveType", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "对手相对距离（轴心 Dist vs 身体边缘 BodyDist）及对手状态速查",
-                "• P2BodyDist X：角色前宽到对手前宽的距离（贴身为0，重叠为负），AI 判断出招距离首选！\n• P2Dist X / Y：两角色轴心原点的距离。\n• ParentDist / RootDist：Helper 到父级/本体的距离。\n• Ikemen GO 扩展：P2Dist Z / P2BodyDist Z / ParentDist Z / RootDist Z。",
-                "trigger1 = P2BodyDist X = [-5, 70] && P2StateType != L && P2MoveType != H", false));
+        list.add(new DictEntry("AILevel / Command / Random / PalNo / Life / Power / Const / Const240p~720p", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "AI 难度(1.0+)、搓招检测、随机数、色表号、血气值与分辨率自适应换算",
+                "• AILevel（1.0/1.1/1.1b1/IK）：0=人类玩家，1~8=电脑 AI 难度（WinMUGEN 无此触发器）。\n"
+                + "• Command = \"指令名\"：检测 .cmd 中定义的搓招是否触发。\n"
+                + "• Random：每帧返回 0~999 随机整数。\n"
+                + "• PalNo：当前选用色表编号（1~12）。\n"
+                + "• Life / LifeMax / Power / PowerMax：当前与最大血量/气槽。\n"
+                + "• Const(字段名)：读取 CNS 常量（如 Const(data.life)）。\n"
+                + "• Const240p(v) / Const480p(v) / Const720p(v)（1.0+）：将像素值自动换算到角色 localcoord 坐标系。",
+                "trigger1 = AILevel > 0 && Random < AILevel * 75 && Power >= 1000", false));
 
-        list.add(new DictEntry("AILevel", "trigger", "1.0/1.1/1.1b1/IK-GO",
-                "【1.0+新增】官方原生 AI 难度等级（0=玩家手操，1~8=电脑难度）",
-                "WinMUGEN 不存在此触发器（老角色用 var(59) 开关检测按键异常）；MUGEN 1.0/1.1/1.1b1 与 Ikemen GO 原生支持 AILevel，写 AI 时可用 AILevel > 0 并按 Random < AILevel * 80 梯度控制反应。\nIkemen GO 额外提供浮点精度 AILevelF。",
-                "trigger1 = AILevel > 0 && Random < (AILevel * 75)", false));
+        list.add(new DictEntry("GetHitVar(...) / NumHelper / NumExplod / NumProjID / NumTarget / ProjHit", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "受击参数反查、实体存活数量统计与内置飞行道具命中检测",
+                "• GetHitVar(参数)：读取上次受击的 damage、hitcount、fallcount、hittime、slidetime、hitshaketime、xvel、yvel、fall、guarded、isbound、chainid 等（IK 新增 attr/guardflag/hitflag/dizzypoints/guardpoints/redlife/playerid/frame）。\n"
+                + "• NumHelper(id) / NumExplod(id) / NumProjID(id) / NumTarget(id)：统计指定 ID 存活数（省略 ID 查全部）。\n"
+                + "• IsHelper / IsHelper(id) / ID / PlayerIDExist(id)。\n"
+                + "• ProjHit<ID> = 1, < 10 / ProjGuarded<ID> / ProjContact<ID> / ProjHitTime(id)。",
+                "trigger1 = !IsHelper && NumHelper(1005) = 0 && GetHitVar(hitcount) < 5", false));
 
-        list.add(new DictEntry("Command / Random / PalNo / Life / LifeMax / Power / PowerMax", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "搓招指令、随机数(0~999)、当前色表号(1~12)与血量/能量槽数值",
-                "• Command = \"指令名\"：检测 .cmd 中定义的指令是否触发。\n• Random：每帧随机返回 0~999 的整数（如 Random < 300 代表 30% 概率）。\n• PalNo：当前选用色表编号（1~12，常用于 12P 狂级开关）。\n• Life / LifeMax / Power / PowerMax：读取当前与最大血/气值。",
-                "trigger1 = Command = \"Super\" && Power >= 1000 && Life <= LifeMax * 0.3", false));
-
-        list.add(new DictEntry("Var / FVar / SysVar / SysFVar / Const / Const240p / Const480p / Const720p", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "读取变量、角色 CNS 常量与跨分辨率自动换算(Const240p/480p/720p 1.0+)",
-                "• Var(0~59) / FVar(0~39) / SysVar(0~4) / SysFVar(0~4)（IK 解除上限）。\n• Const(data.life) / Const(velocity.walk.fwd.x) / Const(size.head.pos.y) 等读取 CNS 常量。\n• Const240p(x) / Const480p(x) / Const720p(x)（1.0+ 新增）：把数值按目标分辨率自动换算到角色 localcoord 坐标系。\n• Ikemen GO 新增 Const1080p(x) 与自定义 [Constants] 读取。",
-                "trigger1 = Pos Y <= Const240p(-60) && Var(10) = 1", false));
-
-        list.add(new DictEntry("GetHitVar(...)", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "读取最近一次受击的详细参数（伤害、硬直、击飞速度、连段数、是否倒地等）",
-                "经典参数：xveladd、yveladd、type、animtype、airtype、groundtype、damage、hitcount、fallcount、hitshaketime、hittime、slidetime、ctrltime、recovertime、xoff、yoff、xvel、yvel、yaccel、hitid、chainid、guarded、isbound、fall、fall.damage、fall.xvel、fall.yvel、fall.recover、fall.time、fall.kill、fall.envshake.*。\nIkemen GO 新增：attr、hitflag、guardflag、guardcount、guarddamage、guardko、hitdamage、dizzypoints、guardpoints、redlife、score、playerid、playerno、projid、teamside、frame、sparkx/y、ground/air/down/guard.velocity.x/y/z。",
-                "trigger1 = GetHitVar(hitcount) >= 3 && GetHitVar(fall)", false));
-
-        list.add(new DictEntry("NumHelper / NumExplod / NumProj / NumProjID / NumTarget / NumEnemy / NumPartner / IsHelper / ID / PlayerIDExist", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "实体数量统计、Helper 身份识别与全局唯一 PlayerID 存活检测",
-                "• NumHelper(id) / NumExplod(id) / NumProjID(id) / NumTarget(id)：统计指定 ID 的存活数量（省略参数统计全部）。\n• IsHelper / IsHelper(id)：判断当前执行者是否为 Helper。\n• ID：返回当前实体的唯一整数 ID；PlayerIDExist(id)：检查该实体是否仍存活。",
-                "trigger1 = !IsHelper && NumHelper(1005) = 0 && NumTarget(200) > 0", false));
-
-        list.add(new DictEntry("ProjHit / ProjGuarded / ProjContact / ProjHitTime / ProjGuardedTime / ProjContactTime / ProjCancelTime", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "内置 Projectile 飞行道具的命中、被防、接触与相杀状态检测",
-                "语法：ProjHit1000 = 1, < 10（检测 ID=1000 的飞行道具是否在 10 帧内命中；省略 ID 检测任意飞行道具）。ProjHitTime(1000) 返回距离上次命中的帧数（未命中返回 -1）。",
-                "trigger1 = ProjHit1000 = 1 || ProjGuarded1000 = 1", false));
-
-        list.add(new DictEntry("RoundState / RoundNo / RoundsExisted / MatchNo / MatchOver / GameTime / TicksPerSecond / Win / Lose / DrawGame", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "回合阶段(0~4)、局数、全局帧计时与胜负/完美胜/超杀胜判断",
-                "• RoundState：0开场淡入、1开场演出、2正式战斗、3决出胜负(KO慢放)、4胜利姿势。\n• Win / WinKO / WinTime / WinPerfect；Lose / LoseKO / LoseTime；DrawGame。\n• GameTime：进入对战后的总帧数（暂停时仍递增）；TicksPerSecond 通常为 60。\n• Ikemen GO 新增：WinHyper、WinSpecial、WinClutch、FightTime、RoundTime、StageTime、IntroState、OutroState。",
-                "trigger1 = RoundState = 2 && !MatchOver", false));
-
-        list.add(new DictEntry("Name / AuthorName / P1Name~P4Name / TeamMode / TeamSide / IsHomeTeam / HitDefAttr / HitOver / HitShakeOver / HitFall / HitVel / CanRecover", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "角色名/作者名、组队模式、受击结束判定、受身条件与攻击属性检测",
-                "• TeamMode：single / simul / turns（IK 新增 tag）；TeamSide：1 为 P1 侧，2 为 P2 侧。\n• HitDefAttr = SCA, NA, SA：检测对手当前激活 HitDef 的属性（写 AI 自动防上/下段或投技必备）。\n• HitOver / HitShakeOver：受击硬直/受击顿帧是否结束；CanRecover：是否满足空中受身条件。",
-                "trigger1 = EnemyNear, HitDefAttr = SCA, NT, ST, HT", false));
-
-        list.add(new DictEntry("CameraPos / CameraZoom / ScreenWidth / ScreenHeight / GameWidth / GameHeight / BackEdge / FrontEdge / LeftEdge / RightEdge / TopEdge / BottomEdge", "trigger", "1.0/1.1/1.1b1/IK-GO",
-                "【1.0/1.1/1.1b1+新增】镜头坐标、实时缩放倍率与屏幕/版边坐标触发器",
-                "• GameWidth / GameHeight（1.0+）：当前分辨率逻辑宽高。\n• CameraPos X / Y、CameraZoom、ScreenWidth / ScreenHeight、LeftEdge / RightEdge / TopEdge / BottomEdge、BackEdge / FrontEdge（1.1 / 1.1b1+ 新增）：用于自适应全屏特效、精准定位画面边缘与跟随镜头缩放！",
-                "trigger1 = CameraZoom < 1.0 && ScreenPos X < ScreenWidth / 2", false));
-
-        list.add(new DictEntry("数学函数与条件表达式: IfElse / Cond / Abs / Floor / Ceil / Sin / Cos / Tan / Asin / Acos / Atan / Exp / Ln / Log / Pi / E", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "数学三角函数、对数指数、条件三目运算与短路求值 Cond(1.1+)",
-                "• IfElse(条件, 真值, 假值)：注意 IfElse 会**同时计算**真假两个分支！如果分支含除零或非法重定向会报错。\n• Cond(条件, 真值, 假值)（1.1 / 1.1b1 / IK 新增）：**短路求值**！只计算命中的分支，写安全重定向（如 Cond(NumTarget, Target, Pos X, 0)）绝对首选！\n• Ikemen GO 新增：Atan2、Clamp、Deg、Rad、Lerp、Min、Max、Round、Sign、Float、RandomRange。",
+        list.add(new DictEntry("IfElse vs Cond (1.1+) & CameraPos / CameraZoom & 跨实体重定向", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "短路三目 Cond(防除零/空目标报错)、1.1镜头触发器与跨实体链式重定向",
+                "• IfElse(条件, A, B)：会**同时计算** A 和 B！若 B 含除零或无目标重定向会报错。\n"
+                + "• Cond(条件, A, B)（1.1/1.1b1/IK 专属）：**短路求值**！仅计算命中分支，强烈推荐替代 IfElse。\n"
+                + "• CameraPos X / Y、CameraZoom、ScreenWidth / ScreenHeight、LeftEdge / RightEdge / TopEdge / BottomEdge（1.1/1.1b1+）。\n"
+                + "• 重定向：Root, / Parent, / Target(id), / Helper(id), / EnemyNear(n), / Partner, / PlayerID(id),。",
                 "value = Cond(NumTarget > 0, Target, Pos X, Pos X)", false));
-
-        list.add(new DictEntry("跨实体重定向: Root / Parent / Target / Partner / Enemy / EnemyNear / Helper / PlayerID", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
-                "读取其他实体的任意触发器数据（支持多级链式重定向）",
-                "语法：<重定向目标>, <触发器>（如 EnemyNear(0), StateNo）。\n• Root：本体；Parent：直接父级；Helper(id)：指定 ID 的 Helper；Target(id)：捕获的目标；EnemyNear(n)：按距离从近到远第 n 个对手；PlayerID(id)：按唯一 ID 查实体。\n• Ikemen GO 增强：新增 P2、Player(n)、PlayerIndex(n)、HelperIndex(n)、StateOwner，且 Helper(id, index) 与 Target(id, index) 支持按索引精确区分同 ID 多实体！",
-                "trigger1 = Root, Alive && EnemyNear(0), StateType != L", false));
     }
 
-    private void addDictIkemenTriggers(List<DictEntry> list) {
-        list.add(new DictEntry("IK 新重定向: P2 / Player(n) / PlayerIndex(n) / HelperIndex(n) / StateOwner", "trigger", "IK-GO",
-                "【IK官方Wiki】更稳定的对手重定向 P2、按索引遍历全部实体/Helper 与状态拥有者重定向",
-                "• P2, <触发器>：自动指向当前锁定的主要对手（忽略已 KO 的 5150 状态，比 EnemyNear 更防抖）。\n• Player(n)：指向 1~8 号玩家（配合 PlayerNoExist(n) 使用）。\n• PlayerIndex(n) / HelperIndex(n)：按底层索引遍历场上所有实体或 Helper（搭配 ZSS for 循环与 NumPlayer / PlayerIndexExist / HelperIndexExist 极其强大）。\n• StateOwner：在自定义受击状态中直接指向施法者本体。",
-                "trigger1 = P2, DizzyPoints <= 100\ntrigger2 = StateOwner, AILevel > 0", false));
+    private void addDictIkemenTriggersDetailed(List<DictEntry> list) {
+        list.add(new DictEntry("IK 增强重定向: P2 / Player(n) / PlayerIndex(n) / HelperIndex(n) / StateOwner / Helper(id, idx)", "trigger", "IK-GO",
+                "【IK官方Wiki】精准对手锁定、遍历全场实体与多同 ID Helper 精确索引",
+                "• P2, <触发器>：自动锁定主对手（忽略已 KO 的 5150 状态，比 EnemyNear 更稳定）。\n"
+                + "• Helper(id, index) / Target(id, index)：新增第 2 参数 index(从0起)，彻底解决同 ID 多个 Helper 无法区分的问题！\n"
+                + "• Player(n)：指向 1~8 号玩家（配合 PlayerNoExist(n)）。\n"
+                + "• PlayerIndex(n) / HelperIndex(n)：按内部列表遍历全部实体（配合 NumPlayer / PlayerIndexExist / HelperIndexExist 与 ZSS for 循环）。\n"
+                + "• StateOwner：在自定义受击状态里指向施法者本体。",
+                "trigger1 = NumHelper(1005) >= 2 && Helper(1005, 1), MoveType = A", false));
 
-        list.add(new DictEntry("Map(name) / IsAsserted(flag) / GameMode / GameOption / GameVar / MotifState / FightScreenState", "trigger", "IK-GO",
-                "【IK官方Wiki】读取 Map 变量、检测引擎标志、游戏模式、配置项与血条/过场状态",
-                "• Map(name) / Map(name, index)：读取具名变量（未设返回 0；Nightly 支持数组与字符串）。\n• IsAsserted(flag)：检测某 AssertSpecial 标志是否激活（如 IsAsserted(nobardisplay)）。\n• GameMode：检测当前模式（arcade/versus/training/survival/watch/netplayversus 等）。\n• GameVar(param)：读取 superpausetime/pausetime/slowtime/introtime/hidebars。\n• FightScreenState / MotifState：检测是否正在显示 Round/Fight/KO/Win/VictoryScreen/Continue。",
-                "trigger1 = Map(awakened) = 1 && GameMode = \"training\"\ntrigger2 = !IsAsserted(noBG) && GameVar(superpausetime) = 0", false));
-
-        list.add(new DictEntry("HitDefVar / MoveHitVar / HitByAttr / ReversalDefAttr / HitOverridden / GuardCount", "trigger", "IK-GO",
-                "【IK官方Wiki】反查当前激活 HitDef/ReversalDef 参数、上次命中详情与霸体触发检测",
-                "• HitDefVar(param)：查询当前激活 HitDef 的 hitdamage、guarddamage、guardflag、hitflag、pausetime、sparkx/y、ground/air.velocity 等。\n• MoveHitVar(param)：查询刚打出的攻击详情（frame 命中当帧、playerid、playerno、sparkx/y、power、overridden、cornerpush.veloff），即使未捕获 Target 也有效！\n• HitByAttr(S, NT)：检测自身当前是否可被指定属性命中。\n• ReversalDefAttr：检测当前当身属性；HitOverridden：本帧是否触发了 HitOverride；GuardCount：连防段数。",
-                "trigger1 = MoveHit = 1 && MoveHitVar(frame) = 1\ntrigger2 = P2, HitDefVar(guardflag) = L", false));
-
-        list.add(new DictEntry("ClsnOverlap / ProjClsnOverlap / ClsnVar / ExplodVar / ProjVar / SpriteVar / AnimElemVar", "trigger", "IK-GO",
-                "【IK官方Wiki】原生判定框重叠检测与实时查询判定框/特效/飞道/精灵/动画帧底层属性",
-                "• ClsnOverlap(box1, targetID, box2)：直接调用引擎底层旋转/缩放判定盒检测（支持 Clsn1/Clsn2/Size/Dummy）。\n• ClsnVar(Clsn2, 0, Top/Bottom/Front/Back)：读取判定框精确坐标。\n• ExplodVar(id, idx, param) / ProjVar(id, idx, param)：读取特效或飞道坐标、速度、动画帧、缩放、角度、着色器等。\n• SpriteVar(Group/Image/Width/Height/XOffset/YOffset) 与 AnimElemVar(NumClsn1/NumClsn2/HFlip/AlphaSource...)。",
-                "trigger1 = ClsnOverlap(clsn1, P2, ID, clsn2)\ntrigger2 = AnimElemVar(NumClsn1) > 0", false));
-
-        list.add(new DictEntry("StageConst / StageVar / StageBGVar / NumStageBG / StageFrontEdgeDist / StageBackEdgeDist / GroundLevel", "trigger", "IK-GO",
-                "【IK官方Wiki】读取地图自定义常量、地图图层属性、舞台边界距离与动态地面高度",
-                "• StageConst(name)：读取地图 .def [Constants] 中的自定义常量（如水面地形 WaterGround = 1）。\n• StageVar(param)：支持读取 ModifyStageVar 可改的全部地图参数及 localcoord/version。\n• StageBGVar(id, idx, param) / NumStageBG(id)：查询地图图层位置/速度/动画帧。\n• StageFrontEdgeDist / StageBackEdgeDist：距地图绝对尽头(墙角)的距离。\n• GroundLevel：当前地面基准高度（由 GroundLevelOffset 改变）。",
-                "trigger1 = StageConst(WaterGround) = 1 && StageFrontEdgeDist < 80", false));
-
-        list.add(new DictEntry("Dizzy / GuardBreak / RedLife / Standby / TeamLeader / TeamSize / MemberNo / ComboCount / ReceivedDamage / Score", "trigger", "IK-GO",
-                "【IK官方Wiki】眩晕/破防/红血/换人待机/队伍领导者、连段总伤与积分触发器",
-                "• Dizzy / DizzyPoints / DizzyPointsMax；GuardBreak / GuardPoints / GuardPointsMax；RedLife。\n• Standby：是否在 Tag 后台待机；TeamLeader / TeamSize / MemberNo / PlayerNo / ConsecutiveWins / DecisiveRound。\n• ComboCount / ReceivedHits / ReceivedDamage：当前连段实时总连击数与总伤害。\n• Score / ScoreTotal / FirstAttack / WinHyper / WinSpecial / WinClutch（残血反杀胜）。",
-                "trigger1 = !Standby && TeamLeader = PlayerNo && ComboCount >= 5", false));
-
-        list.add(new DictEntry("InputTime / Analog / SelfCommand / AILevelF / InCustomState / InCustomAnim / JugglePoints / PauseTime / DebugMode", "trigger", "IK-GO",
-                "【IK官方Wiki】按键蓄力时长、摇杆模拟量、自定义状态检测、剩余浮空点数与调试检测",
-                "• InputTime(key)：返回按键按住(>0)或松开(<0)的精确帧数（蓄力技神技，支持 B/F/D/U/L/R/a~z/s/d/w/m）。\n• Analog(LeftX/RightTrigger...)：读取摇杆/扳机浮点模拟量。\n• SelfCommand：即使处于被对手控制的自定义状态也能读自身按键。\n• InCustomState / InCustomAnim / InDialogue / InRunState / SelfStatenoExist(N)。\n• JugglePoints(targetID)：读取对目标剩余可用浮空点数。\n• PauseTime（仅 Statedef -4 有效）/ DebugMode(clsndisplay/accel...) / IkemenVersion / MugenVersion / LocalCoord。",
-                "trigger1 = InputTime(B) >= 30 && InputTime(F) = 1\ntrigger2 = !InCustomState && JugglePoints(P2, ID) >= 2", false));
-
-        list.add(new DictEntry("IK 数学与视觉状态触发器: Atan2 / Clamp / Lerp / Min / Max / Round / Sign / RandomRange / PalFXVar / ZoomVar / BGMVar / SoundVar / Shader", "trigger", "IK-GO",
-                "【IK官方Wiki】现代数学函数库与实时查询滤镜、镜头缩放、音乐、声道与着色器状态",
-                "• 数学：Atan2(dy, dx)、Clamp(v, min, max)、Lerp(a, b, t)、Min/Max、Round(v, prec)、Sign(v)、Deg/Rad、Float(x)、RandomRange(lo, hi)。\n• 状态反查：PalFXVar(add.r/time/hue...)、EnvShakeVar(time/freq/ampl)、ZoomVar(scale/pos.x/y/lag/time)、BGMVar(volume/position/filename)、SoundVar(ch, isplaying/freqmul)、Shader、Alpha(source/dest)、Angle/XAngle/YAngle/Scale/Xshear/DrawPal(group/index)/SprPriority/LayerNo。",
-                "fvar(0) = Clamp(Lerp(0, 100, Time / 30.0), 0, 100)\nvar(1) = RandomRange(-200, 200)", false));
+        list.add(new DictEntry("IK 状态/变量查询: Map / IsAsserted / HitDefVar / MoveHitVar / ClsnOverlap / ExplodVar / ProjVar / StageConst", "trigger", "IK-GO",
+                "【IK官方Wiki】全面反查引擎底层状态、判定框碰撞、特效/飞道/地图与战斗模式",
+                "• Map(name[, idx])：读取具名 Map；IsAsserted(flag)：查 AssertSpecial 标志。\n"
+                + "• HitDefVar(param)：查当前 HitDef 的 hitdamage/guardflag/hitflag/pausetime/sparkx/y。\n"
+                + "• MoveHitVar(param)：查刚打出攻击的 frame(命中当帧)/playerid/sparkx/y/power/overridden。\n"
+                + "• ClsnOverlap(box1, targetID, box2)：原生旋转/缩放判定盒重叠检测；ClsnVar(Clsn2, 0, Top/Bottom/Front/Back)。\n"
+                + "• ExplodVar / ProjVar / SpriteVar / AnimElemVar / PalFXVar / ZoomVar / StageBGVar / StageConst / StageVar。\n"
+                + "• InputTime(key)(精确蓄力帧数)、Analog(摇杆浮点)、AILevelF(浮点AI)、GameMode、GameVar、FightScreenState、MotifState、Dizzy/GuardBreak/RedLife/Standby/ComboCount/ReceivedDamage/JugglePoints。\n"
+                + "• 数学新增：Atan2、Clamp、Lerp、Min、Max、Round、Sign、Deg、Rad、Float、RandomRange。",
+                "trigger1 = ClsnOverlap(clsn1, P2, ID, clsn2) && InputTime(B) >= 30", false));
     }
 
-    private void addDictZssAndLua(List<DictEntry> list) {
-        list.add(new DictEntry("ZSS 语法基础 (Zero State Script)", "zss_lua", "IK-GO",
-                "Ikemen GO 现代化角色脚本语言：大括号代码块、if/else、switch 与无冗余 trigger",
-                "ZSS 文件以 .zss 结尾（可在 .def 的 st 项直接加载，与 .cns 完美混用）。\n核心优势：\n• 用 if / else if / else {} 替代冗长的 triggerall + trigger1~N\n• 控制器用大括号传参：hitDef{attr: S, NA; damage: 25, 0;}\n• 用 ignoreHitPause {} 与 persistent(0) {} 统一包裹多条语句，代码量减少 60%！",
-                "[Statedef 200; type: S; movetype: A; physics: S; anim: 200; ctrl: 0;]\nif time = 0 {\n    playSnd{value: 0, 0}\n}\nif animElem = 3 {\n    hitDef{attr: S, NA; damage: 25, 0; guardflag: MA;}\n}\nif animTime = 0 {\n    changeState{value: 0; ctrl: 1;}\n}", false));
+    private void addDictZssAndLuaDetailed(List<DictEntry> list) {
+        list.add(new DictEntry("ZSS 完整语法手册 (Zero State Script)", "zss_lua", "IK-GO",
+                "Ikemen GO 现代化角色脚本语言：if/else/switch/for、let 局部变量与 [Function] 函数",
+                "【核心语法】\n"
+                + "1. 状态头：[Statedef 200; type: S; movetype: A; physics: S; anim: 200; ctrl: 0;]\n"
+                + "2. 条件块：if cond { ... } else if cond2 { ... } else { ... }，彻底告别重复 trigger1/triggerall。\n"
+                + "3. 控制器调用：hitDef{attr: S, NA; damage: 30, 0; guardflag: MA;}（分号分隔参数，支持 ignoreHitPause{} 与 persistent(0){} 块）。\n"
+                + "4. 局部变量：let tmp = pos x + 20; 引用时加 $ 前缀($tmp)，不占用 var(0~59)。\n"
+                + "5. 循环与分支：for i = 0; 9; 1 { ... }；switch stateNo { case 200, 210: ... default: ... }。\n"
+                + "6. 自定义函数：[Function CalcDist(x, y) ret] ... 调用：call CalcDist(10, 20)。",
+                "[Statedef 200; type: S; movetype: A; physics: S; anim: 200; ctrl: 0;]\nif time = 0 { playSnd{value: 0, 0} }\nif animElem = 3 {\n    hitDef{attr: S, NA; damage: 28, 0; guardflag: MA; pausetime: 8, 8;}\n}\nif animTime = 0 { changeState{value: 0; ctrl: 1;} }", false));
 
-        list.add(new DictEntry("ZSS 高级特性: [Function] / let 局部变量 / for 循环 / switch / call", "zss_lua", "IK-GO",
-                "在 ZSS 中编写可复用函数、局部变量($x)、for 循环与分支 switch",
-                "• 局部变量：let x = pos x + 20; 使用时加 $ 前缀（如 $x），完全不占用角色 var(0~59)！\n• 自定义函数：[Function MyFunc(a, b) ret] ... 调用用 call MyFunc(10, 20) 或直接作为表达式取值。\n• 循环与分支：for i = 0; 9; 1 { ... }、switch stateNo { case 200, 210: ... default: ... }。",
-                "[Function SpawnRing(cnt, radius)]\nfor i = 0; $cnt - 1; 1 {\n    let ang = $i * (2 * pi / $cnt);\n    explod{\n        anim: 7000;\n        pos: cos($ang) * $radius, sin($ang) * $radius - 50;\n    }\n}", false));
-
-        list.add(new DictEntry("Ikemen GO Lua 模块系统与钩子 (hook.add)", "zss_lua", "IK-GO",
-                "使用 Lua 编写自定义菜单、剧情模式、商店、3D/2D 特效 HUD 与独立游戏模式",
-                "• 模块加载：把脚本放在 external/mods/<模块名>.lua 即可自动挂载。\n• 核心钩子：hook.add(\"loop\", \"id\", fn)（每帧渲染循环）、hook.add(\"main.t_itemname\", ...)（注册自定义主菜单模式）、hook.add(\"motif.f_...\", ...)。\n• 常用内置全局 API：textImgNew/textImgSetText/textImgDraw、animNew/animUpdate/animDraw、sndPlay、playBGM、commandGetState、start.f_selectSimple、launchFight、config、motif、main。",
-                "local myTxt = textImgNew()\ntextImgSetFont(myTxt, motif.font_data[1])\ntextImgSetPos(myTxt, 160, 20)\nhook.add(\"loop\", \"my_mod_hud\", function()\n    textImgSetText(myTxt, \"MOD ACTIVE\")\n    textImgDraw(myTxt)\nend)", false));
-
-        list.add(new DictEntry("富文本行内变色与手柄按键图标标签 (<color:RRGGBB>)", "zss_lua", "IK-GO",
-                "Ikemen GO v1.0+ 支持在界面、血条、剧情、Lua 与 Text 控制器中行内变色与插图标",
-                "支持在 Screenpack、Storyboard、Lua、Lifebar、Text 与 LifebarAction 文本中使用 <color:RRGGBB>变色文字</color> 以及动态手柄/键盘按键图标（需字体 DEF 与 [Glyphs] 配合）。",
-                "text = \"按下 <color:38BDF8>A+B</color> 发动 <color:EF4444>觉醒技</color>\"", false));
+        list.add(new DictEntry("Ikemen GO Lua 模块与钩子 API 详解", "zss_lua", "IK-GO",
+                "通过 external/mods/*.lua 扩展菜单、自定义模式、剧情 HUD 与全局渲染",
+                "【挂载方式】将 .lua 脚本放入 external/mods/ 目录即可自动加载。\n\n"
+                + "【核心 API 分类】\n"
+                + "• 钩子注入：hook.add(\"loop\", \"my_id\", fn)（每帧渲染）、hook.add(\"main.t_itemname\", ...)（注册主菜单入口）。\n"
+                + "• 文本渲染：textImgNew()、textImgSetFont / SetText / SetPos / SetScale / SetColor / textImgDraw()（v1.0+ 支持 <color:RRGGBB> 行内变色）。\n"
+                + "• 动画与音效：animNew / animUpdate / animDraw、sndPlay(snd, g, i)、playBGM(path)。\n"
+                + "• 输入与对战：commandGetState(cmd, 'u'/'d'/'a'...)、launchFight{p1=..., p2=..., stage=...}、config / motif / main 全局表。",
+                "local txt = textImgNew()\ntextImgSetFont(txt, motif.font_data[1])\ntextImgSetPos(txt, 160, 24)\nhook.add(\"loop\", \"hud_demo\", function()\n    textImgSetText(txt, \"<color:38BDF8>IKEMEN MOD</color>\")\n    textImgDraw(txt)\nend)", false));
     }
 
-    private void addDictFormatsAndFiles(List<DictEntry> list) {
-        list.add(new DictEntry("角色定义文件 (.def) 全版本字段详解", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "角色入口文件：版本声明、坐标缩放、素材路径、色表、出招表、Map 与着色器",
-                "• [Info]：name、displayname、versiondate、mugenversion（Win填 04,14,2001；1.0填 1.0；1.1/1.1b1填 1.1）、ikemenVersion（IK专属填 1.0）、author、pal.defaults、localcoord（1.0+默认320,240；高清可设640,480或1280,720）、lifebarname(IK)、portraitscale(IK)、fightfx.prefix(IK)。\n• [Files]：cmd、cns、st、st1~st9、stcommon、sprite、anim、sound、ai(1.0+)、pal1~pal12(Win/SFFv1)、movelist / movelist1(IK)、font0~font9(IK)、fx(IK)。\n• [Arcade]：intro.storyboard、ending.storyboard。\n• [Map](IK) / [Shaders](IK) / [Palette Keymap](1.0+)。",
-                "[Info]\nname = \"Kyo\"\ndisplayname = \"Kyo Kusanagi\"\nmugenversion = 1.1\nikemenVersion = 1.0\nlocalcoord = 320, 240\n\n[Files]\ncmd = kyo.cmd\ncns = kyo.cns\nst = kyo.cns\nstcommon = common1.cns\nsprite = kyo.sff\nanim = kyo.air\nsound = kyo.snd\nmovelist = movelist.dat", false));
+    private void addDictFormatsAndFilesDetailed(List<DictEntry> list) {
+        list.add(new DictEntry("角色配置文件 (.def) 逐项参数详解", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "角色总入口文件：[Info]、[Files]、[Arcade]、[Palette Keymap]、[Map]、[Shaders]",
+                "【[Info] 区块】\n"
+                + "• name / displayname / author：内部名 / 显示名 / 作者名。\n"
+                + "• mugenversion：Win填 04,14,2001；1.0填 1.0；1.1/1.1b1填 1.1。\n"
+                + "• ikemenVersion（IK专属）：填 1.0 开启全部现代 IK 机制（不填则按旧 MUGEN 兼容模式运行）。\n"
+                + "• localcoord = 宽, 高（1.0+，默认 320, 240；高清角色常用 640, 480 或 1280, 720）。\n"
+                + "• pal.defaults = 1,2,3,4：默认色表顺序；IK 新增 lifebarname、portraitscale、fightfx.prefix。\n\n"
+                + "【[Files] 区块】\n"
+                + "• cmd / cns / st / st0~st9 / stcommon：指令、常量、状态机与公共状态（IK 全部支持 .zss）。\n"
+                + "• sprite(.sff) / anim(.air) / sound(.snd) / ai(.ai) / pal1~pal12(.act)。\n"
+                + "• IK 专属：movelist / movelist1(暂停出招表)、font0~font9(Text控制器字体)、fx(角色专属CommonFX)。\n"
+                + "【IK 新增区块】[Map](默认具名变量)、[Shaders](自定义GLSL/Vulkan着色器)。",
+                "[Info]\nname = \"Kyo\"\ndisplayname = \"草薙京\"\nmugenversion = 1.1\nikemenVersion = 1.0\nlocalcoord = 320, 240\n\n[Files]\ncmd = kyo.cmd\ncns = kyo.cns\nst = kyo.cns\nstcommon = common1.cns\nsprite = kyo.sff\nanim = kyo.air\nsound = kyo.snd\nmovelist = movelist.dat", false));
 
-        list.add(new DictEntry("角色常量与状态文件 (.cns)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "定义角色血气/尺寸/速度/摩擦常量、胜利台词 [Quotes] 与 [Statedef] 状态机",
-                "核心区块：\n• [Data]：life、power(1.0+)、attack、defence、fall.defence_up、liedown.time、airjuggle、sparkno、guard.sparkno、KO.echo、IntPersistIndex、FloatPersistIndex；IK 新增 dizzypoints、guardpoints、hitsound.channel。\n• [Size]：xscale/yscale、ground.back/front、air.back/front、height、attack.dist、head.pos、mid.pos；IK 新增 stand/crouch/air/down.sizebox、weight、pushfactor、depth、attack.depth。\n• [Velocity] / [Movement]：走跑跳受击速度、重力 yaccel、摩擦系数与空中跳次数。\n• [Quotes](1.0+)：victory0~victory99。\n• [Constants](IK)：无限自定义常量；[RemapPreset 名称](IK)：批量换图预设。",
-                "[Data]\nlife = 1000\npower = 3000\nattack = 100\ndefence = 100\nairjuggle = 15\n\n[Constants]\nFireballState = 1000", false));
+        list.add(new DictEntry("角色常量文件 (.cns) 逐项参数详解", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "[Data] 血攻防气、[Size] 缩放体积、[Velocity] 速度、[Movement] 重力摩擦与 [Quotes]",
+                "【[Data] 核心数值】\n"
+                + "• life(血量默认1000)、power(气槽默认3000，1.0+)、attack(攻击倍率默认100)、defence(防御倍率默认100)、fall.defence_up(倒地增防%默认50)、liedown.time(倒地帧默认60)、airjuggle(浮空上限默认15)、sparkno / guard.sparkno、KO.echo、IntPersistIndex / FloatPersistIndex(跨局保留变量起始号)。\n"
+                + "• IK 新增：dizzypoints(眩晕上限)、guardpoints(防槽上限)、hitsound.channel / guardsound.channel。\n\n"
+                + "【[Size] 体型缩放】\n"
+                + "• xscale / yscale(绘制缩放)、ground.back / ground.front(站立挤身宽)、air.back / air.front、height(跳跃越过高度)、attack.dist(触发防御距离)、head.pos / mid.pos(投技锚点)。\n"
+                + "• IK 新增：stand/crouch/air/down.sizebox、weight(推挤重量默认100)、pushfactor、depth(Z轴宽)。\n\n"
+                + "【[Velocity] & [Movement]】\n"
+                + "• walk.fwd / walk.back、run.fwd / run.back、jump.neu / jump.back / jump.fwd、airjump.neu。\n"
+                + "• yaccel(重力加速度默认0.44)、stand.friction / crouch.friction(摩擦系数默认0.85)、airjump.num(空中跳次数)。\n"
+                + "【[Quotes](1.0+)】victory0~99；【[Constants](IK)】自定义常量；【[RemapPreset 名称](IK)】换图预设。",
+                "[Data]\nlife = 1000\npower = 3000\nattack = 100\ndefence = 100\nairjuggle = 15\n\n[Velocity]\nwalk.fwd = 2.6\nwalk.back = -2.2\nrun.fwd = 5.2, 0\njump.neu = 0, -8.8", false));
 
-        list.add(new DictEntry("动画与判定框文件 (.air)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "定义动作帧序列、持续帧数、翻转、混合、插值补间与 Clsn1/Clsn2 判定框",
-                "• 帧语法：Group, Item, OffX, OffY, Ticks [, Flip(H/V/VH) [, Trans(A/A1/S/ASxDx) [, ScaleX, ScaleY, Angle(1.1+)]]]。\n• Ticks = -1 表示永久停留在最后一帧；Loopstart 标记循环起点。\n• Clsn1(红框=攻击判定)、Clsn2(蓝框=受击判定)；Clsn1Default/Clsn2Default 应用于后续所有未单独写框的帧。\n• 1.1/1.1b1+ 支持 Interpolate Offset / Scale / Angle / Blend 线性补间。\n• Ikemen GO 新增：Copy Action N 复用动作、SSxDx 减法透明与 SA/SASxDx (SubAdd) 透明模式。",
-                "[Begin Action 200]\nClsn2Default: 1\n  Clsn2[0] = -15, -90, 15, 0\n200,0, 0,0, 3\nClsn1: 1\n  Clsn1[0] = 10, -75, 58, -52\n200,1, 0,0, 4\n200,2, 0,0, 5", false));
+        list.add(new DictEntry("动画与判定框 (.air) & 指令文件 (.cmd) 语法详解", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "AIR 帧序列、Clsn1/Clsn2、补间插值，以及 CMD 搓招符号与缓冲区配置",
+                "【.air 动画文件】\n"
+                + "• 帧行：Group, Item, OffX, OffY, Ticks [, Flip(H/V/VH) [, Trans(A/A1/S/ASxDx) [, ScaleX, ScaleY, Angle(1.1+)]]]。\n"
+                + "• Ticks = -1 永久定格最后一帧；Loopstart 标记循环起点。\n"
+                + "• Clsn1(红=攻击框)、Clsn2(蓝=防御框)；Clsn1Default/Clsn2Default 为后续帧默认框。\n"
+                + "• 1.1+ 支持 Interpolate Offset/Scale/Angle/Blend；IK 新增 Copy Action N 与 SA/SASxDx(SubAdd)。\n\n"
+                + "【.cmd 指令文件】\n"
+                + "• [Defaults]：command.time(默认15帧)、command.buffer.time(默认1帧)；IK 新增 steptime、autogreater、buffer.hitpause/pauseend/shared。\n"
+                + "• 符号：~松开(~30B蓄力30帧松开)、/按住(/30B持续蓄力)、$模糊方向($D含下/左下/右下)、+同时按、>严格无杂键；IK 新增 | 或逻辑(x|y|z)、*方向缓冲(*D)、绝对左右 L/R 与回中 N。\n"
+                + "• [Statedef -1]：从上往下判定，超杀/必杀必须排在轻重拳脚前面！",
+                "[Command]\nname = \"QCF_P\"\ncommand = ~D, DF, F, x | y | z\ntime = 18\nbuffer.time = 3", false));
 
-        list.add(new DictEntry("指令文件 (.cmd) 符号与缓冲区详解", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "搓招符号全解(~ / $ + > | *)、按键缓冲与 [Statedef -1] 出招优先级",
-                "• 方向：U/D/B/F 及斜向 UF/UB/DF/DB（IK 新增绝对左右 L/R 与回中 N）。\n• 按键：a/b/c/x/y/z/s（IK 新增 d/w/m）。\n• 修饰符：~松开(~30B蓄力30帧松开)、/按住(/30B持续蓄力)、$模糊方向($D含下/左下/右下)、+同时按、>严格禁止夹杂其他键。\n• Ikemen GO 新增：| 或逻辑(x|y|z)、* 方向缓冲模糊(*D)、[Defaults] 支持 steptime、autogreater、buffer.hitpause/pauseend/shared。\n• [Statedef -1] 从上到下匹配，大招/超杀必须写在普通拳脚前面！",
-                "[Defaults]\ncommand.time = 15\ncommand.buffer.time = 2\n\n[Command]\nname = \"QCF_P\"\ncommand = ~D, DF, F, x | y | z\ntime = 18\nsteptime = 8", false));
+        list.add(new DictEntry("图像包 (.sff v1/v2.00/v2.01) & 音频包 (.snd) 规范", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "SFF 三个版本差异（PCX vs 32位PNG）与 SND/BGM 全格式兼容表",
+                "【SFF 图像包三代规范】\n"
+                + "• SFFv1 (v1.01, WinMUGEN)：仅支持 8-bit 256 色 PCX，必须依赖外部 .act 文件换色。\n"
+                + "• SFFv2.00 (MUGEN 1.0)：支持内置色表块 + RLE8/RLE5/LZ5 压缩，但仍限 8-bit 索引色。\n"
+                + "• SFFv2.01 (MUGEN 1.1 / 1.1b1 / Ikemen GO)：原生支持 PNG8 / PNG24 / PNG32 真彩带半透明 Alpha 通道（1.1b1 必须开 OpenGL 渲染模式！）。\n"
+                + "• 通用头像图号：9000,0 小头像(25x25)、9000,1 大头像(120x140)。\n\n"
+                + "【SND 音频与 BGM 规范】\n"
+                + "• MUGEN Win/1.0/1.1：.snd 仅支持未压缩 PCM WAV；BGM 支持 MP3/OGG/MIDI/MOD/XM。\n"
+                + "• Ikemen GO：.snd 额外支持 OGG/MP3/FLAC；BGM 支持 FLAC、采样循环点(bgmloopstart/end)、多曲逗号随机、MIDI 音色库(sound/soundfont.sf2)。",
+                "; SFFv1 只能替换 PCX | SFFv2 必须使用 PNG\n; SND 11,0 为角色 KO 惨叫保留音效", false));
 
-        list.add(new DictEntry("图像包 (.sff v1 / v2.00 / v2.01 1.1b1) 完整对比", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "SFFv1(Win 256色PCX)、SFFv2.00(1.0 索引色) 与 SFFv2.01(1.1/1.1b1 32位真彩PNG)",
-                "• SFFv1 (v1.01, WinMUGEN)：仅支持 8-bit 256色 PCX，依赖外部 .act 文件换色，体积大。\n• SFFv2.00 (MUGEN 1.0)：引入内置色表块与 RLE8/RLE5/LZ5 压缩，但仍仅支持 8-bit 索引色。\n• SFFv2.01 (MUGEN 1.1 / 1.1b1 / Ikemen GO)：全面支持 PNG8 / PNG24 / PNG32 真彩带半透明 Alpha 通道（仅 1.1 OpenGL 与 IK-GO 支持 32位 PNG），彻底消除毛边与色表限制！\n• 常用保留图号：9000,0 小头像(25x25)、9000,1 大头像(120x140)。",
-                "; 转换建议：\n; 仅需 Win 兼容用 SFFv1\n; 1.1b1 / Ikemen GO 高清半透明特效请保存为 SFFv2.01 (PNG32)", false));
+        list.add(new DictEntry("引擎配置: mugen.cfg (Win/1.0/1.1b1) vs config.ini (IK-GO)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "渲染器(OpenGL/Vulkan)、分辨率、1.1b1 4GB补丁、SOCD 与通用扩展配置详解",
+                "• WinMUGEN mugen.cfg：[Video Win] Width/Height、Depth(16/32)、DXMode、BlitMode、Stretch。\n"
+                + "• MUGEN 1.0 mugen.cfg：[Config] GameWidth/GameHeight(支持720p)、[Video] RenderMode = System/DirectX。\n"
+                + "• MUGEN 1.1 / 1.1b1 mugen.cfg：[Video] RenderMode = OpenGL（1.1b1 启用 32位 PNG 与 Zoom 必须设为 OpenGL）、SafeMode = 0、SpriteDecompressionBufferSize；大型整合包需用 4GB Patch 工具突破 32位 2GB 内存限制。\n"
+                + "• Ikemen GO save/config.ini：管理 OpenGL 2.1/3.2 / Vulkan 1.3、Rollback 帧延迟、SOCDResolution(0~4)、ButtonAssist(1帧双键宽容)、CommonStates/CommonFx/CommonShaders。",
+                "[Video]\nRenderMode = OpenGL\nSafeMode = 0\n\n[Input]\nSOCDResolution = 4\nButtonAssist = 1", false));
 
-        list.add(new DictEntry("音频包 (.snd) 与 BGM / MIDI 音色库支持", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "SND 音效包格式与各版本 BGM 音频格式兼容性对照",
-                "• MUGEN Win/1.0/1.1：.snd 仅支持未压缩 PCM WAV（8/16-bit）；BGM 支持 MP3/OGG/MIDI/MOD/XM/IT/S3M。\n• Ikemen GO：.snd 除 WAV 外还支持 OGG/MP3/FLAC；BGM 额外支持 FLAC、无缝采样循环点(bgmloopstart/end)、多曲随机播放(逗号分隔)及 MIDI SoundFont（将 soundfont.sf2 放入 sound/ 目录即可）。\n• 通用保留音效：11,0 阵亡惨叫(KO回声)。",
-                "; 角色受击/格挡常用 fight.snd 公共音效：\n; hitsound = 5, 0 (轻击) / 5, 2 (重击)\n; guardsound = 6, 0 (防御)", false));
-
-        list.add(new DictEntry("主配置文件: mugen.cfg (Win/1.0/1.1/1.1b1) vs config.ini (IK-GO)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "画面渲染模式、分辨率、内存补丁、音频声道与核心引擎参数速查",
-                "• WinMUGEN mugen.cfg：[Video Win] Width/Height、Depth(16/32)、DXMode、BlitMode(Normal/PageFlip)、Stretch。\n• MUGEN 1.0 mugen.cfg：[Config] GameWidth/GameHeight(支持720p)、[Video] RenderMode = System/DirectX。\n• MUGEN 1.1 / 1.1b1 mugen.cfg：[Video] RenderMode = OpenGL（1.1b1 必须开 OpenGL 才能启用 32位 PNG 与 Zoom 缩放！）、SafeMode、SpriteDecompressionBufferSize、Precache；高配整合包需给 mugen.exe 打 4GB Patch。\n• Ikemen GO save/config.ini（旧版 config.json）：集中管理 OpenGL 2.1/3.2、Vulkan 1.3、Rollback 帧延迟、SOCDResolution(0~4)、ButtonAssist、CommonStates/CommonFx/CommonShaders 与调试开关。",
-                "; MUGEN 1.1b1 开启高清与缩放必改：\n[Video]\nRenderMode = OpenGL\nSafeMode = 0\n\n; Ikemen GO config.ini 输入防冲突：\n[Input]\nSOCDResolution = 4\nButtonAssist = 1", false));
-
-        list.add(new DictEntry("界面包配置 (system.def / Motif) 与 IK 菜单子目录语法", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "定义标题界面、选人框、VS 画面、胜利画面(1.0+)、排序与 IK 自定义子菜单",
-                "核心区块：[Info]、[Files](spr/snd/logo/intro/select/fight/font)、[Title Info]、[TitleBGdef]、[Select Info](rows/columns/cell.size/portrait)、[VS Screen]、[Demo Mode]、[Continue Screen]、[Victory Screen](1.0+)、[Option Info]。\nIkemen GO 扩展：\n• 菜单编排：menu.itemname.<子菜单>.<模式id> = \"名称\"，留空值（如 menu.itemname.watch = ）才能彻底隐藏默认项！\n• 新增区块：[Dialogue Info](对话框)、[Hiscore Info](排行榜)、[Glyphs](出招表图标)、Order Select(KOF式排兵布阵)、3D Motif 模型背景。\n• 完整参数参考引擎自带 data/system.base.def。",
-                "[Title Info]\nmenu.itemname.arcade = \"街机模式\"\nmenu.itemname.extras = \"扩展模式\"\nmenu.itemname.extras.freebattle = \"快速对战\"\nmenu.itemname.extras.bossrush = \"BOSS挑战\"\nmenu.itemname.extras.back = \"返回\"", false));
-
-        list.add(new DictEntry("选人表与模式配置 (select.def)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "挂载角色、地图、街机顺序、专属BGM、ZIP压缩包直读与剧情模式",
-                "• [Characters] 行格式：角色路径, 专属地图路径, 参数1=值, 参数2=值。\n  常用参数：includestage=0/1、order=1~10、music=路径、randomselect、empty。\n  Ikemen GO 新增：可直接写 .zip 路径（如 chars/kfm.zip）、ai=等级、maxmatches、vsscreen=0、victoryscreen=0、rounds=N、time=N、single=1、bonus=1、hidden=1~3、unlock=Lua条件、1~12 专属色表与专属 BGM。\n• [ExtraStages]：列出可选地图（IK 同样支持 stages/xxx.zip）。\n• [Options]：arcade.maxmatches / team.maxmatches 控制各 order 难度出场人数。\n• [StoryMode](IK)：注册剧情章节弧。",
-                "[Characters]\nkfm, stages/stage0.def, order=1, music=sound/kfm.ogg\nchars/boss.zip, stages/boss.def, order=5, ai=8, hidden=2\n\n[ExtraStages]\nstages/stage0.def\nstages/3d_arena.zip", false));
-
-        list.add(new DictEntry("血条与战斗界面 (fight.def)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "配置血条、气槽、计时器、连击提示、Round/Fight/KO 演出与 IK 新条槽",
-                "核心区块：[Files](sff/snd/font/fightfx.sff/fightfx.air/common.snd)、[Lifebar]、[Simul Lifebar]、[Turns Lifebar]、[Powerbar]、[Face]、[Name]、[Time]、[Combo]、[Round]、[WinIcon]。\nIkemen GO 扩展：\n• [Tag Lifebar] 与 pX.red（红血可恢复条）\n• [StunBar]（眩晕条）、[GuardBar]（防槽）、[Score]（积分）、[Action]（LifebarAction 提示队列）、clutch.threshold（残血反杀阈值默认10%）。",
-                "[Lifebar]\np1.pos = 140, 12\np1.bg0.anim = 10\np1.front.spr = 12, 0\np1.range.x = 0, -125", false));
-
-        list.add(new DictEntry("过场动画与视频 (storyboard.def)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "制作片头 Logo、角色开场/结局过场与 Ikemen GO MP4 视频播放",
-                "结构：[SceneDef]（spr/startscene/stopmusic/key.skip）+ [Scene 0]、[Scene 1]... 每个场景可设 fadein/fadeout、clearcolor、layerall.pos、layer0~9.anim/text/starttime/vel、bgm、end.time。\nIkemen GO 扩展：支持 layerX.video 播放 MP4 视频、行内变色、以及通过 Storyboard 控制器在战斗中随时叠加播放！",
-                "[SceneDef]\nspr = intro.sff\nstartscene = 0\n\n[Scene 0]\nfadein.time = 30\nfadeout.time = 30\nbgm = sound/intro.ogg\nlayer0.anim = 0\nend.time = 300", false));
-
-        list.add(new DictEntry("字体格式 (.fnt v1 位图 vs .def Font v2 TrueType/SFFv2)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "WinMUGEN 二进制 .fnt 字体与 1.0+/1.1/IK 矢量 TrueType / SFFv2 字体配置",
-                "• Font v1 (.fnt, Win/全版本)：PCX + 索引表打包的旧式固定大小位图字体。\n• Font v2 (.def, MUGEN 1.0/1.1/1.1b1/IK-GO)：纯文本配置！支持：\n  1) Type = truetype：直接调用 .ttf/.otf 矢量字体（完美支持中文字库！），可配 Size、Spacing、Offset、Blend、Outline(IK)。\n  2) Type = bitmap：直接引用 SFFv2 图像包制作高清真彩艺术字。\n• Ikemen GO 扩展：支持 RGBA 真彩、多色库 Bank、行内 <color:RRGGBB> 变色与防锯齿。",
-                "[FNT v2]\nfntversion = 2,00\nname = \"ChineseFont\"\n\n[Def]\nType = truetype\nSize = 14, 16\nFile = simhei.ttf\nBlend = 1", false));
-
-        list.add(new DictEntry("地图场景 (.def) 全特性：2D 视差 / 1.1 Zoom / Z轴景深 / 3D .gltf", "format", "Win/1.0/1.1/1.1b1/IK-GO",
-                "2D 多层视差、1.1 镜头缩放、IK 动态多曲/交互角色/Z轴纵深与 3D 场景",
-                "核心区块：[Info]、[Camera]、[PlayerInfo]、[Bound]、[StageInfo]、[Shadow]、[Reflection]、[Music]、[BGdef]、[BG 名称]、[BGCtrlDef]。\n• 1.1 / 1.1b1 新增：[Camera] startzoom、zoomin、zoomout、tensionhigh/low；[BG] zoomdelta、mask、trans。\n• Ikemen GO 专属：\n  - [Model]：直接加载 .gltf/.glb 3D 场景与 HDR 环境光(Environment/Offset/Scale)，[Camera] 支持 fov/near/far/yshift。\n  - [Info]：AttachedChar1~4(地图交互脚本角色)、RoundXDef(按回合切换地图)、RoundLoop。\n  - [Music]：roundX.bgmusic、final.bgmusic、life.bgmusic(残血切歌)、victory.bgmusic、逗号分隔多曲随机。\n  - [Scaling]：topz/botz/topscale/botscale/depthtoscreen 启用 2.5D Z轴移动。\n  - 地图选人缩略图：SFF 9000,1 (240x100)，支持 .zip 打包加载。",
-                "[Camera]\nboundleft = -150\nboundright = 150\nstartzoom = 1.0\nzoomout = 0.75\nzoomin = 1.0\n\n[Music]\nbgmusic = sound/stage_r1.ogg\nfinal.bgmusic = sound/stage_final.ogg\nlife.bgmusic = sound/pinch.ogg\nbgmratio = 30", false));
-
-        list.add(new DictEntry("出招表 (movelist.dat) 与 [Glyphs] 图标语法", "format", "IK-GO",
-                "【IK官方Wiki】暂停菜单内置可视化招式表（自动渲染方向箭头与拳脚图标）",
-                "在角色 .def [Files] 中声明 movelist = movelist.dat（可配 movelist1/2 并用 ChangeMovelist 切换）。\n文本中用 <#RRGGBBAA>文字</> 变色，用 TAB 键控制对齐（0个左对齐、1个居中、2个右对齐），并直接插入内置图标代码：\n• 方向：_D _DF _F _B _U _QCF _QCB _HCF _HCB _DSF(升龙) _XFF(前前) ~B(蓄力后)\n• 按键：^LP ^MP ^HP ^LK ^MK ^HK ^P ^K ^2P ^3P ^A~^Z _+(同时按)\n• 标签：_AIR _EX _MAX _CLOSE _FAR _HOLD _MASH _THROW",
-                "<#FACC15>:必杀技:</>\n波动拳\t_QCF_+^P\n升龙拳\t_DSF_+^P\nEX 波动拳\t_EX _QCF_+^2P", false));
-
-        list.add(new DictEntry("全局通用扩展 (Common Air/Cmd/Const/Fx/States/Shaders)", "format", "IK-GO",
-                "【IK官方Wiki】无需修改角色文件即可为所有角色统一注入通用特效、状态、常量与着色器",
-                "在 save/config.ini 中可配置全局 Common 文件数组，对所有角色自动生效：\n• CommonAir / CommonCmd / CommonConst：追加到所有角色的动画/指令/常量中。\n• CommonStates：如 data/functions.zss、action.zss、dizzy.zss、guardbreak.zss、tag.zss、score.zss。\n• CommonFx：自定义前缀特效包（如 prefix = MK，即可用 MK10 调用动画/音效；F 和 S 为引擎保留前缀）。\n• CommonShaders [Nightly]：全局共享着色器，角色可按同名覆盖。",
-                "; CommonFx .def 示例：\n[Info]\nprefix = MYFX\nfx.scale = 1\nlocalcoord = 320, 240\n[Files]\nsff = myfx.sff\nair = myfx.air\nsnd = myfx.snd", false));
-
-        list.add(new DictEntry("自定义 Sprite Shader (OpenGL GLSL & Vulkan SPIR-V)", "format", "IK-GO",
-                "【IK官方Wiki】为角色/特效/地图编写自定义扭曲、发光、溶解、抓屏后处理着色器",
-                "支持 OpenGL 2.1 (#version 120)、OpenGL 3.2 (#version 150) 与 Vulkan 1.3 (需用 Vulkan SDK glslc 预编译为 .spv)。\n内置给自定义精灵着色器的专属变量：\n• iTime(游戏秒数)、sTime(着色器激活帧数，暂停时冻结)、iResolution、aspectRatio\n• bgl_RenderedTexture（声明该词将触发 GrabPass 抓屏背景纹理，注意即使注释掉也会触发！）\n• tex1 / tex2（控制器传入的附加精灵/动画纹理）与 p0~p15 / param[16]（16个动态浮点参数）。",
-                "; 角色 .def 中注册着色器：\n[Shaders]\nmy_glow = glow.frag\n\n; 编译 Vulkan SPV 命令：\n; glslc -fshader-stage=frag glow.frag -o glow.frag.spv -std=450", false));
-
-        list.add(new DictEntry("Ikemen GO 命令行启动参数 & 联机 Netplay / Rollback", "format", "IK-GO",
-                "【IK官方Wiki】快速启动对战、自动化压力测试、指定配置/血条与 P2P/回滚联机参数",
-                "• 快速对战：./Ikemen_GO p1 p2 -s stage0 -p1.ai 8 -p1.pal 2 -rounds 3 -time 99\n• 资源覆盖：-r <motif路径>、-fight <血条路径>、-storyboard <过场>、-config <配置>、-debug、-windowed、-nomusic、-nosound、-maxpowermode、-speed 150、-stresstest 4\n• 联机参数：-ip <主机IP>(留空做主机)、-tcpport <端口>(默认7500)、-udpport <回滚UDP端口>。\n• 联机须知：双方必须保证角色/地图/游戏规则设置一致（画面/音频/按键可各自不同）；公网直连需主机路由器转发 7500 端口，或使用 Radmin/ZeroTier/Hamachi 组虚拟局域网。",
-                "./Ikemen_GO kfm suave -s stage0 -p1.ai 4 -p2.ai 8 -rounds 2 -debug", false));
+        list.add(new DictEntry("界面/选人/血条/过场/字体/地图/出招表/着色器全配置速查", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "system.def、select.def、fight.def、storyboard.def、Font v2、3D地图、movelist.dat 与 Shader",
+                "• system.def (Motif)：标题/选人/VS/胜利画面；IK 支持 menu.itemname.<子菜单>.<模式> 自定义层级，写空值隐藏默认项；支持 [Dialogue Info]、[Hiscore Info]、[Glyphs] 与 Order Select。\n"
+                + "• select.def：[Characters] 填 角色, 地图, order=1, music=...（IK 支持 .zip 直读、ai/rounds/hidden/bonus/unlock）；[ExtraStages] 同样支持 .zip；[StoryMode] 剧情弧。\n"
+                + "• fight.def：血条/气槽/连击/计时/KO；IK 新增 [Tag Lifebar](pX.red红血)、[StunBar]、[GuardBar]、[Score]、[Action]。\n"
+                + "• storyboard.def：片头/结局过场；IK 支持 layerX.video 播 MP4 与战斗中 Storyboard 控制器调用。\n"
+                + "• Font v2 (.def, 1.0+)：Type = truetype 可直读 .ttf 中文字体，Type = bitmap 引用 SFFv2；IK 支持 <color:RRGGBB> 行内变色。\n"
+                + "• 地图 .def：1.1+ 支持 [Camera] startzoom/zoomout/zoomin；IK 支持 [Model] 加载 .gltf/.glb 3D 场景、AttachedChar1~4、RoundXDef、life.bgmusic、Z轴 [Scaling] 与 9000,1 地图预览图。\n"
+                + "• movelist.dat (IK)：<#RRGGBBAA>文字</> 变色 + TAB 对齐 + _QCF/_DSF/^LP/^HP 等内置图标。\n"
+                + "• 命令行与联机 (IK)：-p1.ai 8、-s stage0、-fight、-r motif、-debug、-ip、-tcpport 7500、-udpport。",
+                "[Characters]\nkfm, stages/stage0.def, order=1, music=sound/kfm.ogg\nchars/boss.zip, stages/boss.def, order=5, ai=8", false));
     }
 
-    private void addDictCommonStates(List<DictEntry> list) {
-        list.add(new DictEntry("全局常驻状态执行顺序: -4 / -3 / -2 / -1 / 正常状态 / +1", "common", "Win/1.0/1.1/1.1b1/IK-GO",
-                "掌握每帧状态机执行顺序、暂停穿透与 Helper 继承规则（排错必看）",
-                "MUGEN 仅支持 -3 / -2 / -1 且同号负状态不可跨文件重复声明。\nIkemen GO 解除多文件重复声明限制（自动追加合并），并新增 -4 与 +1，每帧严格按以下顺序执行：\n1. -4 [IK]：无视 Pause/SuperPause、自定义状态与 Helper 限制，每帧必跑！\n2. -3：仅本体在非自定义状态且非暂停时执行（Helper 不跑）。\n3. -2：本体每帧执行（即使被对手抓入自定义状态也跑，暂停时不跑）。\n4. -1：指令出招区（仅本体非自定义状态时执行，Helper 需 keyctrl=1）。\n5. 正常状态 (0~N)：当前 StateNo 对应的状态。\n6. +1 [IK]：在正常状态执行完毕后运行，同样穿透暂停/自定义状态/Helper，适合帧尾统一校准！",
-                "[Statedef -4]\n; 即使处于 SuperPause 也会每帧执行\n[State -4, KeepTimer]\ntype = MapAdd\ntrigger1 = 1\nmap = \"real_ticks\"\nvalue = 1", false));
+    private void addDictCommonStatesDetailed(List<DictEntry> list) {
+        list.add(new DictEntry("全局常驻状态执行序: -4 / -3 / -2 / -1 / 正常状态 / +1", "common", "Win/1.0/1.1/1.1b1/IK-GO",
+                "每帧状态机执行优先级、Pause 穿透规则与 Helper 继承机制全解",
+                "每帧严格按以下顺序执行：\n"
+                + "1. Statedef -4 [IK专属]：无视 Pause/SuperPause、无视自定义状态、Helper 无论 keyctrl 都必执行！\n"
+                + "2. Statedef -3：仅本体在非自定义状态、非暂停时执行（Helper 不执行）。\n"
+                + "3. Statedef -2：本体每帧执行（即使被对手抓入自定义状态也跑，暂停时不跑）。\n"
+                + "4. Statedef -1：指令出招区（仅本体非自定义状态执行；Helper 需 keyctrl = 1）。\n"
+                + "5. 正常状态 (0 ~ N)：当前 StateNo。\n"
+                + "6. Statedef +1 [IK专属]：正常状态跑完后在帧尾执行，同样穿透暂停/自定义状态/Helper！\n"
+                + "※ Ikemen GO 允许同一负状态在多个文件重复声明（自动追加合并）。",
+                "[Statedef -4]\n[State -4, AlwaysRun]\ntype = MapAdd\ntrigger1 = 1\nmap = \"frame_cnt\"\nvalue = 1", false));
 
-        list.add(new DictEntry("common1.cns 公共状态号速查表: 移动与防御 (0 ~ 199)", "common", "Win/1.0/1.1/1.1b1/IK-GO",
-                "站立、下蹲、行走、跳跃、奔跑、防反与开场/胜利/挑衅标准状态号",
-                "• 0：站立待机 | 10~12：下蹲/蹲姿/起身\n• 20：前进/后退行走 | 40：起跳准备 | 45：空中二段跳 | 50：空中滞空 | 51：自由下落 | 52：落地\n• 100：前冲奔跑 | 105~106：后撤步/后撤落地\n• 120：防御准备 | 130/131/132：站/蹲/空防御姿态 | 140：防御结束 | 150~155：站/蹲/空受防硬直与滑退\n• 170：败北 | 175：平局 | 180~189：胜利姿势 | 190~194：开场演出 | 195：挑衅",
-                "; 在 State 180 中随机分支胜利姿势：\n[State 180, RandomWin]\ntype = ChangeState\ntrigger1 = Time = 0\nvalue = 181 + (Random % 2)", false));
-
-        list.add(new DictEntry("common1.cns 公共状态号速查表: 受击/倒地/受身/开局 (5000 ~ 5999)", "common", "Win/1.0/1.1/1.1b1/IK-GO",
-                "受击硬直、击飞倒地、受身、KO 阵亡、眩晕与回合初始化标准状态号",
-                "• 5000~5001：站立受击震动/滑退 | 5010~5011：蹲姿受击 | 5020：空中受击震动\n• 5030~5050：空中击飞/过渡/下落 | 5070~5071：绊倒(Trip)击飞与落地\n• 5080~5081：倒地追击受击 | 5100~5101：倒地砸地弹起 | 5110：倒地躺平 | 5120：起身无敌\n• 5150：KO 阵亡躺地（不可再受击）\n• 5200~5201：地面受身 | 5210：空中受身\n• 5300：传统 Dizzy 眩晕状态 | 5500：续关画面\n• 5900：回合开始初始化（默认在第一局重置 var/fvar）",
-                "; Ikemen GO 系统保留扩展状态号 (data/common.const)：\n; 6565300~6565310 = dizzy.zss 眩晕状态\n; 6565400~6565401 = guardbreak.zss 破防状态\n; 6565600~6565621 = tag.zss 换人进出场状态", false));
+        list.add(new DictEntry("common1.cns 标准公共状态号大全 (0 ~ 5999 + IK 保留号)", "common", "Win/1.0/1.1/1.1b1/IK-GO",
+                "移动、防御、受击、倒地、受身、KO、开局及 IK 眩晕/破防/换人保留状态号",
+                "【基础移动与防御 (0~199)】\n"
+                + "• 0 站立 | 10~12 下蹲/蹲/起 | 20 走 | 40 起跳 | 45 二段跳 | 50~52 滞空/下落/落地\n"
+                + "• 100 前跑 | 105~106 后撤 | 120 防御准备 | 130~132 站蹲空防 | 140 防结束 | 150~155 受防硬直\n"
+                + "• 170 败北 | 175 平局 | 180~189 胜利 | 190~194 开场 | 195 挑衅\n\n"
+                + "【受击/倒地/受身/系统 (5000~5999)】\n"
+                + "• 5000~5001 站受击 | 5010~5011 蹲受击 | 5020 空受击 | 5030~5050 击飞下落\n"
+                + "• 5070~5071 绊倒 | 5080~5081 倒地追击 | 5100~5101 砸地弹起 | 5110 躺地 | 5120 起身无敌\n"
+                + "• 5150 KO 阵亡 | 5200~5201 地面受身 | 5210 空中受身 | 5300 眩晕 | 5500 续关 | 5900 开局初始化\n\n"
+                + "【Ikemen GO 系统保留状态号 (data/common.const)】\n"
+                + "• 6565300~6565310：dizzy.zss 眩晕 | 6565400~6565401：guardbreak.zss 破防 | 6565600~6565621：tag.zss 换人",
+                "; 在 State 180 随机分支胜利姿势：\n[State 180, WinBranch]\ntype = ChangeState\ntrigger1 = Time = 0\nvalue = 181 + (Random % 2)", false));
     }
 
-    private void addDictCompatAndGuides(List<DictEntry> list) {
-        list.add(new DictEntry("全版本进化史与兼容对照: WinMUGEN → 1.0 → 1.1a4 → 1.1b1 → Ikemen GO", "compat", "Win/1.0/1.1/1.1b1/IK-GO",
-                "一图看懂五个历史版本的核心能力边界与角色/地图移植必改项",
-                "1. WinMUGEN (2004)：固定 320x240，仅 SFFv1(PCX)，无 AILevel/VictoryQuote/localcoord，语法容错极高（允许悬空逗号、变量越界等“黑科技”）。\n2. MUGEN 1.0 (2011)：引入 localcoord 高清支持、SFFv2.00(8位压缩)、Font v2 TrueType、AILevel、VictoryQuote、RemapPal、Const240p/480p/720p。\n3. MUGEN 1.1a4 / 1.1b1 (2013-2014)：引入 OpenGL 渲染、SFFv2.01(32位真彩PNG)、地图与招式 Zoom 缩放、CameraPos/CameraZoom、Cond 短路三目、Explod 旋转与补间。\n   ※ 1.1b1 特别注意：需开 RenderMode=OpenGL，高内存包需打 4GB Patch，[Shadow] color 在 1.1 中表现与旧版不同。\n4. Ikemen GO (0.98 → 0.99 → 1.0+)：开源现代引擎！完全兼容 Win/1.0/1.1，原生支持 64位无限内存、OpenGL/Vulkan、3D `.gltf` 地图、MP4 过场、ZSS/Lua、无限 var & 具名 Map、网络回滚联机、Tag/Dizzy/GuardBreak/RedLife/Movelist 与 Android 移植！",
-                "; Ikemen GO 兼容指示器：\n; 按 Ctrl+D 可在剪贴板首行看到该角色当前运行在哪个兼容模式\n; (WinMugen / 1.0 / 1.1 / Ikemen GO)", false));
-
-        list.add(new DictEntry("Ikemen GO 与 MUGEN 底层机制细微差异 (帧优势/墙角/浮空/角色处理序)", "compat", "1.0/1.1/1.1b1/IK-GO",
-                "【IK官方Wiki】为什么同一角色在 IK 中手感略有不同？四大底层机制差异详解",
-                "1. 防御与帧优势(+1 hittime)：MUGEN 在执行状态前判防御（导致回待机当帧不能防）；IK 先执行状态再判防御，为兼容老角色，无 ikemenVersion 的 MUGEN 角色所有 HitDef 自动 +1 hittime。\n2. 角色处理顺序：按 MoveType A 玩家 → MoveType A Helper → MoveType I 玩家 → H 玩家 → I/H Helper 排序（同级按 ID 升序），消除 1P/2P 站位不公。\n3. 墙角推挤(Corner Push)：IK 会缓存推挤速度直到对手真正碰到墙角才触发，且有 ikemenVersion 时按受击方姿态计算摩擦。\n4. 浮空(Juggle)：非攻击态 Statedef 的 juggle 默认归 0 不继承上一状态；有 ikemenVersion 时 HitDef 可直接使用 air.juggle。",
-                "; 若希望角色启用全部现代 IK 机制（而非旧 MUGEN 兼容模式）：\n[Info]\nmugenversion = 1.1\nikemenVersion = 1.0", false));
-
-        list.add(new DictEntry("常见闪退、乱码、贴图异常与脚本报错速查手册", "compat", "Win/1.0/1.1/1.1b1/IK-GO",
-                "快速定位 SFF 报错、日韩文乱码、状态死循环、Win地图平铺错位与音频失效",
-                "1. 日文/韩文路径或名字乱码：使用本桌面【🔣 乱码解字板】将 Shift_JIS / EUC-KR 转为 UTF-8。\n2. WinMUGEN 老地图背景错位：检查 tilespacing 是否只写了 1 个数字（IK/1.1 需写 X, Y 两个值）。\n3. 角色进入某招后游戏卡死：检查 ChangeState 是否缺 AnimTime = 0 或条件永真导致单帧无限跳转死循环。\n4. 替换贴图失败：SFFv1 仅接受 256色 PCX，SFFv2 仅接受 PNG；本桌面【🖼️ SFF查看器】已自动识别版本。\n5. 找不到角色或地图：检查 select.def 路径大小写（安卓 Linux 文件系统严格区分大小写！）或直接用【🗂️ DEF生成器】自动生成。",
-                "; 调试快捷键（电脑/外接键盘）：\n; Ctrl+D 显示状态号与变量 | Ctrl+C 显示红蓝判定框\n; F1 秒杀对手 | F4 重开本局 | Shift+F4 重载角色与地图", false));
+    private void addDictCompatAndGuidesDetailed(List<DictEntry> list) {
+        list.add(new DictEntry("全版本差异与移植指南: WinMUGEN → 1.0 → 1.1a4 → 1.1b1 → Ikemen GO", "compat", "Win/1.0/1.1/1.1b1/IK-GO",
+                "五大历史版本能力边界、IK底层帧优势差异(+1 hittime)与常见闪退排查",
+                "【版本演进】\n"
+                + "• WinMUGEN：固定 320x240，仅 SFFv1(PCX)，无 AILevel/VictoryQuote/localcoord，语法极宽松。\n"
+                + "• MUGEN 1.0：新增 localcoord、SFFv2.00、Font v2 TTF、AILevel、VictoryQuote、RemapPal、Const240p~720p。\n"
+                + "• MUGEN 1.1 / 1.1b1：新增 OpenGL、SFFv2.01(32位PNG)、Zoom 缩放、CameraPos、Cond 短路三目、Explod 旋转补间（1.1b1 需开 RenderMode=OpenGL，大整合包需 4GB Patch）。\n"
+                + "• Ikemen GO：64位无限内存、OpenGL/Vulkan、3D `.gltf` 场景、MP4 过场、ZSS/Lua、无限 var & 具名 Map、回滚联机、Tag/Dizzy/GuardBreak/RedLife/Movelist。\n\n"
+                + "【IK 与 MUGEN 底层细微差异】\n"
+                + "1. 防御与帧优势：无 ikemenVersion 的老角色所有 HitDef 自动 +1 hittime 保持手感一致。\n"
+                + "2. 角色处理顺序：MoveType A 玩家 → A Helper → I 玩家 → H 玩家 → I/H Helper，消除 1P/2P 不公。\n"
+                + "3. 常见问题：安卓 Linux 严格区分文件名大小写；Win 地图背景错位需把 tilespacing 补全 X,Y 两值；日韩乱码用【🔣 乱码解字板】转 UTF-8。",
+                "; 调试快捷键：Ctrl+D 调试栏 | Ctrl+C 判定框 | F1 秒杀 | F4 重开 | Shift+F4 重载", false));
     }
+
 
     private View buildDictionaryContent() {
         LinearLayout root = new LinearLayout(getContext());
@@ -6354,6 +6673,58 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
                     LinearLayout actRow = new LinearLayout(getContext()); actRow.setOrientation(LinearLayout.HORIZONTAL);
                     LinearLayout.LayoutParams arp = new LinearLayout.LayoutParams(0, -2, 1f); arp.setMargins((int)(3*density), (int)(12*density), (int)(3*density), 0);
+
+                    if (item.isOfficialSync) {
+                        final String origText = item.detail.isEmpty() ? item.summary : item.detail;
+                        final File zhCacheFile = new File(cacheDir, "zh_" + Math.abs(item.title.hashCode()) + ".txt");
+                        final boolean[] showingZh = {false};
+                        final String[] cachedZh = {null};
+                        if (zhCacheFile.exists()) {
+                            try {
+                                StringBuilder zsb = new StringBuilder();
+                                try (BufferedReader zbr = new BufferedReader(new InputStreamReader(new FileInputStream(zhCacheFile), "UTF-8"))) {
+                                    String zl; while ((zl = zbr.readLine()) != null) zsb.append(zl).append("\n");
+                                }
+                                if (zsb.length() > 0) {
+                                    cachedZh[0] = zsb.toString().trim();
+                                    dbody.setText(cachedZh[0]);
+                                    showingZh[0] = true;
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                        Button bTrans = createButton(showingZh[0] ? L("📄 看英文原文") : L("🌐 译成中文"), "#7C3AED");
+                        bTrans.setOnClickListener(tv -> {
+                            if (showingZh[0]) {
+                                dbody.setText(origText);
+                                showingZh[0] = false;
+                                bTrans.setText(L("🌐 译成中文"));
+                            } else if (cachedZh[0] != null) {
+                                dbody.setText(cachedZh[0]);
+                                showingZh[0] = true;
+                                bTrans.setText(L("📄 看英文原文"));
+                            } else {
+                                bTrans.setEnabled(false);
+                                bTrans.setText(L("⏳ 翻译中..."));
+                                new Thread(() -> {
+                                    final String zh = translateWikiToChinese(origText);
+                                    if (zh != null && !zh.isEmpty() && !zh.startsWith(L("【离线术语对照"))) {
+                                        try (FileOutputStream fos = new FileOutputStream(zhCacheFile)) {
+                                            fos.write(zh.getBytes("UTF-8"));
+                                        } catch (Exception ignored) {}
+                                        cachedZh[0] = zh;
+                                    }
+                                    uiHandler.post(() -> {
+                                        bTrans.setEnabled(true);
+                                        dbody.setText(zh);
+                                        showingZh[0] = true;
+                                        bTrans.setText(L("📄 看英文原文"));
+                                    });
+                                }).start();
+                            }
+                        });
+                        actRow.addView(bTrans, arp);
+                    }
+
                     Button bFav = createButton(favSet.contains(item.title) ? L("★ 取消收藏") : L("⭐ 收藏"), "#B45309");
                     bFav.setOnClickListener(fv -> {
                         if (favSet.contains(item.title)) favSet.remove(item.title); else favSet.add(item.title);
@@ -6500,6 +6871,1239 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
         updateFilterColors.run();
         refreshDictUI[0].run();
+        return root;
+    }
+
+    // ======================================================================================
+    // 🥷 模块 10：角色全能编辑器（基础属性/出招表/CMD解析/全状态技能预览/单技能伤害调整）
+    // ======================================================================================
+    private interface OnCharStateClick { void onClick(CharStateItem st); }
+
+    private static class CharCmdItem {
+        String name;
+        String rawCommand;
+        String prettyCommand;
+        int targetState = -1;
+        CharCmdItem(String name, String rawCommand, String prettyCommand) {
+            this.name = name; this.rawCommand = rawCommand; this.prettyCommand = prettyCommand;
+        }
+    }
+
+    private static class CharHitItem {
+        File sourceFile;
+        int lineIndex; // damage 所在行号（0-indexed）
+        String controllerType; // HitDef / Projectile
+        int hitDamage;
+        int guardDamage;
+        int origHitDamage;
+        int origGuardDamage;
+        String attr = "";
+        String guardFlag = "";
+        String pauseTime = "";
+        boolean dirty = false;
+    }
+
+    private static class CharStateItem {
+        int stateNo;
+        String title = "";
+        String type = "";
+        String moveType = "";
+        String physics = "";
+        int anim = -1;
+        int powerAdd = 0;
+        File sourceFile;
+        String linkedCmd = "";
+        String codePreview = "";
+        List<CharHitItem> hits = new ArrayList<>();
+    }
+
+    private String readTextAutoCharset(File f) {
+        if (f == null || !f.exists() || !f.isFile()) return "";
+        try {
+            byte[] raw = readFully(f);
+            if (raw.length >= 3 && (raw[0] & 0xFF) == 0xEF && (raw[1] & 0xFF) == 0xBB && (raw[2] & 0xFF) == 0xBF) {
+                return new String(raw, 3, raw.length - 3, "UTF-8");
+            }
+            String utf8 = new String(raw, "UTF-8");
+            if (!utf8.contains("\uFFFD")) return utf8;
+            try {
+                String sjis = new String(raw, "Shift_JIS");
+                if (!sjis.contains("\uFFFD")) return sjis;
+            } catch (Exception ignored) {}
+            try { return new String(raw, "GBK"); } catch (Exception ignored) {}
+            return utf8;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private File resolveCharSubFile(File baseDir, String relPath) {
+        if (baseDir == null || relPath == null) return null;
+        String clean = relPath.trim().replace("\"", "").replace("\\", "/");
+        if (clean.isEmpty()) return null;
+        File direct = new File(baseDir, clean);
+        if (direct.exists() && direct.isFile()) return direct;
+        // Linux 大小写不敏感容错匹配
+        File[] list = baseDir.listFiles();
+        if (list != null) {
+            String targetName = new File(clean).getName();
+            for (File f : list) {
+                if (f.isFile() && f.getName().equalsIgnoreCase(targetName)) return f;
+            }
+        }
+        return null;
+    }
+
+    private String prettifyCmdSequence(String raw) {
+        if (raw == null) return "";
+        String[] parts = raw.split(",");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            String tok = parts[i].trim();
+            if (tok.isEmpty()) continue;
+            tok = tok.replace("DF", "↘").replace("DB", "↙").replace("UF", "↗").replace("UB", "↖")
+                     .replace("F", "→").replace("B", "←").replace("D", "↓").replace("U", "↑")
+                     .replace("~", "松").replace("/", "蓄").replace("$", "").replace(">", "");
+            if (sb.length() > 0) sb.append(" ");
+            sb.append(tok);
+        }
+        return sb.toString();
+    }
+
+    private void openCharacterEditorWindow() {
+        final String winTitle = L("🥷 角色编辑器");
+        final boolean[] isDirty = {false};
+        final Runnable[] saveAllRef = {null};
+
+        final Runnable closeNow = () -> {
+            View win = windowsLayer.findViewWithTag(winTitle); if (win != null) windowsLayer.removeView(win);
+            View tbBtn = taskbarAppsLayout.findViewWithTag("tb_" + winTitle); if (tbBtn != null) taskbarAppsLayout.removeView(tbBtn);
+        };
+
+        final Runnable closeInterceptor = () -> {
+            if (isDirty[0]) {
+                showWin10SavePrompt(
+                    () -> { if (saveAllRef[0] != null) saveAllRef[0].run(); closeNow.run(); },
+                    closeNow
+                );
+            } else {
+                closeNow.run();
+            }
+        };
+
+        View content = buildCharacterEditorContent(isDirty, saveAllRef);
+        openAppWindow(winTitle, content, closeInterceptor);
+    }
+
+    private View buildCharacterEditorContent(final boolean[] isDirty, final Runnable[] saveAllRef) {
+        LinearLayout root = new LinearLayout(getContext());
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.parseColor("#131720"));
+        final Handler uiHandler = new Handler(Looper.getMainLooper());
+
+        final File[] defFileRef = {null};
+        final File[] cnsFileRef = {null};
+        final File[] sffFileRef = {null};
+        final File[] sndFileRef = {null};
+        final File[] airFileRef = {null};
+        final File[] cmdFileRef = {null};
+        final File[] movelistFileRef = {null};
+        final String[] movelistContentRef = {""};
+        final List<File> allStateFiles = new ArrayList<>();
+        final java.util.Map<String, String> defInfoMap = new java.util.LinkedHashMap<>();
+        final java.util.Map<String, String> defFilesMap = new java.util.LinkedHashMap<>();
+        final java.util.Map<String, String[]> cnsStatsMap = new java.util.LinkedHashMap<>();
+        final List<CharCmdItem> cmdItems = new ArrayList<>();
+        final List<CharStateItem> stateItems = new ArrayList<>();
+        final java.util.Map<Integer, List<int[]>> airActionFrames = new java.util.HashMap<>();
+        final int[] activeTab = {0};
+
+        // 顶部角色英雄卡片（头像 + 信息 + 核心保存操作）
+        LinearLayout heroCard = new LinearLayout(getContext());
+        heroCard.setOrientation(LinearLayout.VERTICAL);
+        heroCard.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(8*density));
+        GradientDrawable heroBg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Color.parseColor("#1B2333"), Color.parseColor("#171E2C")});
+        heroBg.setStroke((int)(1*density), Color.parseColor("#2D3B55"));
+        heroCard.setBackground(heroBg);
+
+        LinearLayout heroTop = new LinearLayout(getContext());
+        heroTop.setOrientation(LinearLayout.HORIZONTAL);
+        heroTop.setGravity(Gravity.CENTER_VERTICAL);
+
+        final ImageView portraitView = new ImageView(getContext());
+        portraitView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        GradientDrawable pBg = new GradientDrawable(); pBg.setColor(Color.parseColor("#0D111A")); pBg.setCornerRadius(8f*density); pBg.setStroke((int)(1.5f*density), Color.parseColor("#38BDF8"));
+        portraitView.setBackground(pBg);
+        portraitView.setImageResource(android.R.drawable.ic_menu_myplaces);
+        heroTop.addView(portraitView, new LinearLayout.LayoutParams((int)(64*density), (int)(64*density)));
+
+        LinearLayout infoCol = new LinearLayout(getContext());
+        infoCol.setOrientation(LinearLayout.VERTICAL);
+        infoCol.setPadding((int)(10*density), 0, (int)(6*density), 0);
+        final TextView tvCharName = new TextView(getContext());
+        tvCharName.setText(L("未载入角色 (.def)"));
+        applyGlobalFontSettings(tvCharName, 1.12f, true);
+        tvCharName.setTextColor(Color.WHITE);
+        final TextView tvCharMeta = new TextView(getContext());
+        tvCharMeta.setText(L("点击下方【📂 选择角色 .def】自动解析血量/攻防/速度/出招表与全部技能"));
+        applyGlobalFontSettings(tvCharMeta, 0.82f, false);
+        tvCharMeta.setTextColor(Color.parseColor("#94A3B8"));
+        final TextView tvDirtyBadge = new TextView(getContext());
+        tvDirtyBadge.setText(L("⚪ 等待载入"));
+        applyGlobalFontSettings(tvDirtyBadge, 0.78f, true);
+        tvDirtyBadge.setTextColor(Color.parseColor("#38BDF8"));
+        infoCol.addView(tvCharName); infoCol.addView(tvCharMeta); infoCol.addView(tvDirtyBadge);
+        heroTop.addView(infoCol, new LinearLayout.LayoutParams(0, -2, 1f));
+        heroCard.addView(heroTop);
+
+        HorizontalScrollView actScroll = new HorizontalScrollView(getContext()); actScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout actBar = new LinearLayout(getContext()); actBar.setOrientation(LinearLayout.HORIZONTAL);
+        actBar.setPadding(0, (int)(7*density), 0, 0);
+        Button btnPickDef = createButton(L("📂 选择角色 .def"), "#0284C7");
+        Button btnSaveAll = createButton(L("💾 保存生效"), "#16A34A");
+        Button btnRevert = createButton(L("↩️ 放弃修改"), "#475569");
+        Button btnJumpSff = createButton(L("🖼️ SFF"), "#6366F1");
+        Button btnJumpSnd = createButton(L("🎵 SND"), "#D97706");
+        Button btnJumpClsn = createButton(L("⚔️ 判定框"), "#DB2777");
+        LinearLayout.LayoutParams abp = new LinearLayout.LayoutParams(-2, -2); abp.setMargins(0, 0, (int)(5*density), 0);
+        actBar.addView(btnPickDef, abp); actBar.addView(btnSaveAll, abp); actBar.addView(btnRevert, abp);
+        actBar.addView(btnJumpSff, abp); actBar.addView(btnJumpSnd, abp); actBar.addView(btnJumpClsn, abp);
+        actScroll.addView(actBar);
+        heroCard.addView(actScroll);
+        root.addView(heroCard);
+
+        HorizontalScrollView tabScroll = new HorizontalScrollView(getContext()); tabScroll.setHorizontalScrollBarEnabled(false);
+        tabScroll.setTag("layout_toolbar");
+        LinearLayout tabBar = new LinearLayout(getContext()); tabBar.setOrientation(LinearLayout.HORIZONTAL);
+        tabBar.setPadding((int)(8*density), (int)(6*density), (int)(8*density), (int)(4*density));
+        final String[] tabTitles = { L("📊 基础属性"), L("🥋 出招/指令"), L("⚔️ 状态与技能"), L("📁 关联文件") };
+        final Button[] tabBtns = new Button[tabTitles.length];
+
+        final FrameLayout tabContentHost = new FrameLayout(getContext());
+        tabContentHost.setTag("layout_preview");
+
+        final Runnable updateDirtyUI = () -> {
+            if (defFileRef[0] == null) {
+                tvDirtyBadge.setText(L("⚪ 等待载入"));
+                tvDirtyBadge.setTextColor(Color.parseColor("#94A3B8"));
+            } else if (isDirty[0]) {
+                tvDirtyBadge.setText(L("🟠 有未保存修改（点击【💾 保存生效】才写入文件，不保存不生效）"));
+                tvDirtyBadge.setTextColor(Color.parseColor("#FBBF24"));
+            } else {
+                tvDirtyBadge.setText(L("🟢 已与本地文件同步"));
+                tvDirtyBadge.setTextColor(Color.parseColor("#4ADE80"));
+            }
+        };
+
+        final ScrollView tab0Scroll = new ScrollView(getContext());
+        final LinearLayout tab0Box = new LinearLayout(getContext()); tab0Box.setOrientation(LinearLayout.VERTICAL); tab0Box.setPadding((int)(10*density), (int)(6*density), (int)(10*density), (int)(16*density));
+        tab0Scroll.addView(tab0Box);
+
+        final LinearLayout tab1Root = new LinearLayout(getContext()); tab1Root.setOrientation(LinearLayout.VERTICAL); tab1Root.setPadding((int)(8*density), (int)(4*density), (int)(8*density), (int)(8*density));
+        final LinearLayout tab2Root = new LinearLayout(getContext()); tab2Root.setOrientation(LinearLayout.VERTICAL); tab2Root.setPadding((int)(8*density), (int)(4*density), (int)(8*density), (int)(8*density));
+
+        final ScrollView tab3Scroll = new ScrollView(getContext());
+        final LinearLayout tab3Box = new LinearLayout(getContext()); tab3Box.setOrientation(LinearLayout.VERTICAL); tab3Box.setPadding((int)(10*density), (int)(6*density), (int)(10*density), (int)(16*density));
+        tab3Scroll.addView(tab3Box);
+
+        tabContentHost.addView(tab0Scroll, new FrameLayout.LayoutParams(-1, -1));
+        tabContentHost.addView(tab1Root, new FrameLayout.LayoutParams(-1, -1));
+        tabContentHost.addView(tab2Root, new FrameLayout.LayoutParams(-1, -1));
+        tabContentHost.addView(tab3Scroll, new FrameLayout.LayoutParams(-1, -1));
+
+        final Runnable switchTab = () -> {
+            tab0Scroll.setVisibility(activeTab[0] == 0 ? View.VISIBLE : View.GONE);
+            tab1Root.setVisibility(activeTab[0] == 1 ? View.VISIBLE : View.GONE);
+            tab2Root.setVisibility(activeTab[0] == 2 ? View.VISIBLE : View.GONE);
+            tab3Scroll.setVisibility(activeTab[0] == 3 ? View.VISIBLE : View.GONE);
+            for (int i = 0; i < tabBtns.length; i++) {
+                tabBtns[i].setBackgroundColor(activeTab[0] == i ? Color.parseColor("#0284C7") : Color.parseColor("#232B3B"));
+            }
+        };
+
+        LinearLayout.LayoutParams tbp = new LinearLayout.LayoutParams(-2, -2); tbp.setMargins(0, 0, (int)(6*density), 0);
+        for (int i = 0; i < tabTitles.length; i++) {
+            final int idx = i;
+            tabBtns[i] = createButton(tabTitles[i], "#232B3B");
+            tabBtns[i].setPadding((int)(12*density), (int)(6*density), (int)(12*density), (int)(6*density));
+            tabBtns[i].setOnClickListener(v -> { activeTab[0] = idx; switchTab.run(); });
+            tabBar.addView(tabBtns[i], tbp);
+        }
+        tabScroll.addView(tabBar);
+        root.addView(tabScroll);
+        root.addView(tabContentHost, new LinearLayout.LayoutParams(-1, 0, 1f));
+        switchTab.run();
+
+        final OnCharStateClick[] openStateDetailRef = {null};
+        final Runnable[] renderTab0Ref = {null};
+        final Runnable[] renderTab1Ref = {null};
+        final Runnable[] renderTab2Ref = {null};
+        final Runnable[] renderTab3Ref = {null};
+
+        // --- Tab 0：基础属性面板（血量/攻击/防御/气槽/速度/缩放/重力）---
+        renderTab0Ref[0] = () -> {
+            tab0Box.removeAllViews();
+            if (defFileRef[0] == null) {
+                TextView empty = new TextView(getContext()); empty.setText(L("请先选择角色 .def 文件")); applyGlobalFontSettings(empty, 0.95f, false); empty.setTextColor(Color.parseColor("#94A3B8")); tab0Box.addView(empty);
+                return;
+            }
+            String[][] groups = new String[][] {
+                { "SECTION", L("❤️ 核心战斗数值 ([Data])") },
+                { "data|life", L("最大血量 (life)"), "1000" },
+                { "data|power", L("最大气槽 (power)"), "3000" },
+                { "data|attack", L("攻击倍率 % (attack)"), "100" },
+                { "data|defence", L("防御倍率 % (defence)"), "100" },
+                { "data|airjuggle", L("浮空连段点数 (airjuggle)"), "15" },
+                { "data|liedown.time", L("倒地躺平帧数 (liedown.time)"), "60" },
+                { "data|fall.defence_up", L("倒地防补正 % (fall.defence_up)"), "50" },
+                { "SECTION", L("🏃 移动与跳跃速度 ([Velocity] & [Movement])") },
+                { "velocity|walk.fwd", L("前进走速 (walk.fwd)"), "2.4" },
+                { "velocity|walk.back", L("后退走速 (walk.back)"), "-2.2" },
+                { "velocity|run.fwd", L("前冲跑速 (run.fwd)"), "4.6, 0" },
+                { "velocity|run.back", L("后撤步速 (run.back)"), "-4.5, -3.8" },
+                { "velocity|jump.neu", L("垂直起跳速 (jump.neu)"), "0, -8.4" },
+                { "velocity|jump.fwd", L("前跳初速 (jump.fwd)"), "2.5" },
+                { "velocity|jump.back", L("后跳初速 (jump.back)"), "-2.55" },
+                { "movement|yaccel", L("重力加速度 (yaccel)"), "0.44" },
+                { "movement|airjump.num", L("空中二段跳次数 (airjump.num)"), "1" },
+                { "SECTION", L("📐 体型与缩放 ([Size])") },
+                { "size|xscale", L("水平缩放 (xscale)"), "1" },
+                { "size|yscale", L("垂直缩放 (yscale)"), "1" },
+                { "size|attack.dist", L("默认防御触发距离 (attack.dist)"), "160" }
+            };
+
+            for (final String[] rowDef : groups) {
+                if ("SECTION".equals(rowDef[0])) {
+                    TextView sec = createSubTitle(rowDef[1]);
+                    sec.setTextColor(Color.parseColor("#38BDF8"));
+                    tab0Box.addView(sec);
+                    continue;
+                }
+                final String mapKey = rowDef[0];
+                String[] pair = cnsStatsMap.get(mapKey);
+                if (pair == null) {
+                    pair = new String[] { rowDef[2], rowDef[2] };
+                    cnsStatsMap.put(mapKey, pair);
+                }
+                final String[] finalPair = pair;
+
+                LinearLayout card = new LinearLayout(getContext());
+                card.setOrientation(LinearLayout.HORIZONTAL);
+                card.setGravity(Gravity.CENTER_VERTICAL);
+                card.setPadding((int)(10*density), (int)(7*density), (int)(10*density), (int)(7*density));
+                GradientDrawable cbg = new GradientDrawable();
+                cbg.setColor(Color.parseColor("#1C2230")); cbg.setCornerRadius(7f*density); cbg.setStroke(1, Color.parseColor("#2E3A50"));
+                card.setBackground(cbg);
+                LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, -2); clp.setMargins(0, 0, 0, (int)(5*density));
+
+                TextView lbl = new TextView(getContext());
+                lbl.setText(rowDef[1]);
+                applyGlobalFontSettings(lbl, 0.88f, false);
+                lbl.setTextColor(Color.parseColor("#E2E8F0"));
+                card.addView(lbl, new LinearLayout.LayoutParams(0, -2, 1.3f));
+
+                final EditText valEdit = createInput("", finalPair[1]);
+                valEdit.setSingleLine(true);
+                valEdit.setGravity(Gravity.CENTER);
+                valEdit.addTextChangedListener(new TextWatcher() {
+                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                    @Override public void afterTextChanged(Editable s) {
+                        String nv = s.toString().trim();
+                        if (!nv.equals(finalPair[1])) {
+                            finalPair[1] = nv;
+                            isDirty[0] = true;
+                            updateDirtyUI.run();
+                        }
+                    }
+                });
+                card.addView(valEdit, new LinearLayout.LayoutParams(0, -2, 0.9f));
+
+                if (!finalPair[1].contains(",")) {
+                    Button bMinus = createButton("-10%", "#334155");
+                    Button bPlus = createButton("+10%", "#0369A1");
+                    bMinus.setPadding((int)(6*density), (int)(4*density), (int)(6*density), (int)(4*density));
+                    bPlus.setPadding((int)(6*density), (int)(4*density), (int)(6*density), (int)(4*density));
+                    View.OnClickListener stepAct = sv -> {
+                        try {
+                            double cur = Double.parseDouble(valEdit.getText().toString().trim());
+                            boolean isInt = !valEdit.getText().toString().contains(".");
+                            double mul = (sv == bPlus) ? 1.1 : 0.9;
+                            double next = cur * mul;
+                            String outStr = isInt ? String.valueOf((int) Math.round(next)) : String.format(java.util.Locale.US, "%.2f", next);
+                            valEdit.setText(outStr);
+                        } catch (Exception ignored) {}
+                    };
+                    bMinus.setOnClickListener(stepAct); bPlus.setOnClickListener(stepAct);
+                    LinearLayout.LayoutParams mbp = new LinearLayout.LayoutParams(-2, -2); mbp.setMargins((int)(4*density), 0, 0, 0);
+                    card.addView(bMinus, mbp); card.addView(bPlus, mbp);
+                }
+
+                tab0Box.addView(card, clp);
+            }
+        };
+
+        // --- Tab 1：出招表（优先 movelist / 同目录出招表，否则自动解析 CMD）---
+        final boolean[] showRawMovelist = {true};
+        renderTab1Ref[0] = () -> {
+            tab1Root.removeAllViews();
+            if (defFileRef[0] == null) return;
+            boolean hasMovelist = movelistFileRef[0] != null && !movelistContentRef[0].trim().isEmpty();
+
+            LinearLayout modeRow = new LinearLayout(getContext()); modeRow.setOrientation(LinearLayout.HORIZONTAL);
+            Button bMv = createButton(hasMovelist ? L("📜 出招表: ") + movelistFileRef[0].getName() : L("📜 未检测到出招表"), hasMovelist && showRawMovelist[0] ? "#0284C7" : "#252D3D");
+            Button bCmd = createButton(L("🎮 CMD 指令解析 (") + cmdItems.size() + ")", (!hasMovelist || !showRawMovelist[0]) ? "#0284C7" : "#252D3D");
+            LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(0, -2, 1f); mp.setMargins((int)(3*density), 0, (int)(3*density), (int)(6*density));
+            bMv.setOnClickListener(v -> { if (hasMovelist) { showRawMovelist[0] = true; renderTab1Ref[0].run(); } else Toast.makeText(getContext(), L("该角色未提供独立出招表，已自动展示 CMD 解析"), Toast.LENGTH_SHORT).show(); });
+            bCmd.setOnClickListener(v -> { showRawMovelist[0] = false; renderTab1Ref[0].run(); });
+            modeRow.addView(bMv, mp); modeRow.addView(bCmd, mp);
+            tab1Root.addView(modeRow);
+
+            ScrollView sv = new ScrollView(getContext());
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL);
+            sv.addView(box, new FrameLayout.LayoutParams(-1, -2));
+            tab1Root.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+            if (hasMovelist && showRawMovelist[0]) {
+                TextView tv = new TextView(getContext());
+                tv.setText(movelistContentRef[0]);
+                tv.setTypeface(Typeface.MONOSPACE);
+                applyGlobalFontSettings(tv, 0.9f, false);
+                tv.setTextColor(Color.parseColor("#E2E8F0"));
+                tv.setTextIsSelectable(true);
+                tv.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
+                GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#181E2A")); bg.setCornerRadius(8f*density); bg.setStroke(1, Color.parseColor("#334155"));
+                tv.setBackground(bg);
+                box.addView(tv, new LinearLayout.LayoutParams(-1, -2));
+            } else {
+                if (cmdItems.isEmpty()) {
+                    TextView emp = new TextView(getContext()); emp.setText(L("未在 CMD 中解析到 [Command] 指令")); applyGlobalFontSettings(emp, 0.9f, false); emp.setTextColor(Color.parseColor("#94A3B8")); box.addView(emp);
+                } else {
+                    for (final CharCmdItem ci : cmdItems) {
+                        LinearLayout card = new LinearLayout(getContext()); card.setOrientation(LinearLayout.HORIZONTAL); card.setGravity(Gravity.CENTER_VERTICAL);
+                        card.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(8*density));
+                        GradientDrawable cbg = new GradientDrawable(); cbg.setColor(Color.parseColor("#1C2230")); cbg.setCornerRadius(7f*density); cbg.setStroke(1, Color.parseColor("#334155"));
+                        card.setBackground(cbg);
+                        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, -2); clp.setMargins(0, 0, 0, (int)(5*density));
+
+                        LinearLayout left = new LinearLayout(getContext()); left.setOrientation(LinearLayout.VERTICAL);
+                        TextView tName = new TextView(getContext()); tName.setText("🎯 " + ci.name + (ci.targetState >= 0 ? "  →  State " + ci.targetState : ""));
+                        applyGlobalFontSettings(tName, 0.92f, true); tName.setTextColor(Color.parseColor("#F8FAFC"));
+                        TextView tSeq = new TextView(getContext()); tSeq.setText(L("搓招: ") + ci.prettyCommand + "   (" + ci.rawCommand + ")");
+                        applyGlobalFontSettings(tSeq, 0.82f, false); tSeq.setTextColor(Color.parseColor("#38BDF8"));
+                        left.addView(tName); left.addView(tSeq);
+                        card.addView(left, new LinearLayout.LayoutParams(0, -2, 1f));
+
+                        if (ci.targetState >= 0) {
+                            Button bGo = createButton(L("🎬 看招式"), "#0F766E");
+                            bGo.setPadding((int)(8*density), (int)(5*density), (int)(8*density), (int)(5*density));
+                            bGo.setOnClickListener(gv -> {
+                                for (CharStateItem st : stateItems) {
+                                    if (st.stateNo == ci.targetState) {
+                                        if (openStateDetailRef[0] != null) openStateDetailRef[0].onClick(st);
+                                        return;
+                                    }
+                                }
+                                Toast.makeText(getContext(), L("未找到 State ") + ci.targetState + L(" 的定义"), Toast.LENGTH_SHORT).show();
+                            });
+                            card.addView(bGo);
+                        }
+                        box.addView(card, clp);
+                    }
+                }
+            }
+        };
+
+        // --- Tab 2：全部状态与技能预览 + 伤害调整 ---
+        final String[] stateFilterCat = {"all"};
+        final String[] stateQuery = {""};
+        renderTab2Ref[0] = () -> {
+            tab2Root.removeAllViews();
+            if (defFileRef[0] == null) return;
+
+            LinearLayout topRow = new LinearLayout(getContext()); topRow.setOrientation(LinearLayout.HORIZONTAL); topRow.setGravity(Gravity.CENTER_VERTICAL);
+            final EditText qIn = createInput(L("🔍 搜状态号 / 技能名 / 指令..."), stateQuery[0]);
+            qIn.setSingleLine(true);
+            Button bGlobalMul = createButton(L("⚡ 全局调伤"), "#D97706");
+            bGlobalMul.setPadding((int)(10*density), (int)(6*density), (int)(10*density), (int)(6*density));
+            LinearLayout.LayoutParams gbp = new LinearLayout.LayoutParams(-2, -2); gbp.setMargins((int)(5*density), 0, 0, 0);
+            topRow.addView(qIn, new LinearLayout.LayoutParams(0, -2, 1f));
+            topRow.addView(bGlobalMul, gbp);
+            tab2Root.addView(topRow);
+
+            HorizontalScrollView fScroll = new HorizontalScrollView(getContext()); fScroll.setHorizontalScrollBarEnabled(false);
+            LinearLayout fRow = new LinearLayout(getContext()); fRow.setOrientation(LinearLayout.HORIZONTAL);
+            fRow.setPadding(0, (int)(5*density), 0, (int)(5*density));
+            final String[] fKeys = {"all", "atk", "special", "basic"};
+            final String[] fNames = {L("全部状态"), L("⚔️ 攻击技(有伤害)"), L("🔥 必杀/超杀(>=1000)"), L("🧱 基础/其他")};
+            final Button[] fBtns = new Button[fKeys.length];
+
+            ScrollView sv = new ScrollView(getContext());
+            final LinearLayout listBox = new LinearLayout(getContext()); listBox.setOrientation(LinearLayout.VERTICAL);
+            sv.addView(listBox, new FrameLayout.LayoutParams(-1, -2));
+
+            final Runnable renderListOnly = () -> {
+                listBox.removeAllViews();
+                String q = stateQuery[0].trim().toLowerCase();
+                int shown = 0;
+                for (final CharStateItem st : stateItems) {
+                    if ("atk".equals(stateFilterCat[0]) && st.hits.isEmpty()) continue;
+                    if ("special".equals(stateFilterCat[0]) && st.stateNo < 1000) continue;
+                    if ("basic".equals(stateFilterCat[0]) && (!st.hits.isEmpty() || st.stateNo >= 1000)) continue;
+                    if (!q.isEmpty()) {
+                        String hay = (st.stateNo + " " + st.title + " " + st.linkedCmd + " " + st.moveType).toLowerCase();
+                        if (!hay.contains(q)) continue;
+                    }
+                    shown++;
+                    if (shown > 300) break;
+
+                    LinearLayout card = new LinearLayout(getContext()); card.setOrientation(LinearLayout.VERTICAL);
+                    card.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(8*density));
+                    boolean hasDirtyHit = false;
+                    for (CharHitItem h : st.hits) if (h.dirty) { hasDirtyHit = true; break; }
+                    GradientDrawable cbg = new GradientDrawable();
+                    cbg.setColor(Color.parseColor("#1B2230")); cbg.setCornerRadius(8f*density);
+                    cbg.setStroke((int)(1*density), Color.parseColor(hasDirtyHit ? "#F59E0B" : (!st.hits.isEmpty() ? "#EF4444" : "#334155")));
+                    card.setBackground(cbg);
+                    LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, -2); clp.setMargins(0, 0, 0, (int)(6*density));
+
+                    LinearLayout head = new LinearLayout(getContext()); head.setOrientation(LinearLayout.HORIZONTAL); head.setGravity(Gravity.CENTER_VERTICAL);
+                    TextView tvNo = new TextView(getContext());
+                    tvNo.setText(" State " + st.stateNo + " ");
+                    applyGlobalFontSettings(tvNo, 0.8f, true); tvNo.setTextColor(Color.WHITE);
+                    GradientDrawable nbg = new GradientDrawable(); nbg.setColor(Color.parseColor(!st.hits.isEmpty() ? "#B91C1C" : "#1E3A5F")); nbg.setCornerRadius(5f*density);
+                    tvNo.setBackground(nbg); tvNo.setPadding((int)(5*density), (int)(2*density), (int)(5*density), (int)(2*density));
+                    head.addView(tvNo);
+
+                    TextView tvTitle = new TextView(getContext());
+                    String displayLabel = !st.title.isEmpty() ? st.title : (!st.linkedCmd.isEmpty() ? st.linkedCmd : L("未命名状态"));
+                    tvTitle.setText("  " + displayLabel);
+                    applyGlobalFontSettings(tvTitle, 0.94f, true); tvTitle.setTextColor(Color.parseColor("#F8FAFC"));
+                    tvTitle.setSingleLine(true); tvTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    head.addView(tvTitle, new LinearLayout.LayoutParams(0, -2, 1f));
+
+                    if (!st.hits.isEmpty()) {
+                        CharHitItem h0 = st.hits.get(0);
+                        TextView tvDmg = new TextView(getContext());
+                        tvDmg.setText(" 💥" + h0.hitDamage + "/" + h0.guardDamage + (st.hits.size() > 1 ? " (+" + (st.hits.size()-1) + ")" : "") + " ");
+                        applyGlobalFontSettings(tvDmg, 0.8f, true); tvDmg.setTextColor(Color.parseColor("#FDE047"));
+                        head.addView(tvDmg);
+                    }
+                    card.addView(head);
+
+                    TextView tvSub = new TextView(getContext());
+                    StringBuilder sub = new StringBuilder();
+                    sub.append("Type:").append(st.type.isEmpty() ? "-" : st.type)
+                       .append(" | Move:").append(st.moveType.isEmpty() ? "-" : st.moveType)
+                       .append(" | Anim:").append(st.anim >= 0 ? st.anim : "-");
+                    if (!st.linkedCmd.isEmpty()) sub.append(" | 🎯").append(st.linkedCmd);
+                    tvSub.setText(sub.toString());
+                    applyGlobalFontSettings(tvSub, 0.78f, false); tvSub.setTextColor(Color.parseColor("#94A3B8"));
+                    tvSub.setPadding(0, (int)(3*density), 0, 0);
+                    card.addView(tvSub);
+
+                    card.setOnClickListener(cv -> {
+                        if (openStateDetailRef[0] != null) openStateDetailRef[0].onClick(st);
+                    });
+                    listBox.addView(card, clp);
+                }
+                if (shown == 0) {
+                    TextView emp = new TextView(getContext()); emp.setText(L("未找到匹配的状态或技能")); applyGlobalFontSettings(emp, 0.9f, false); emp.setTextColor(Color.parseColor("#94A3B8")); listBox.addView(emp);
+                }
+            };
+
+            LinearLayout.LayoutParams fbp = new LinearLayout.LayoutParams(-2, -2); fbp.setMargins(0, 0, (int)(5*density), 0);
+            for (int i = 0; i < fKeys.length; i++) {
+                final int idx = i;
+                fBtns[i] = createButton(fNames[i], stateFilterCat[0].equals(fKeys[i]) ? "#6366F1" : "#232B3B");
+                fBtns[i].setPadding((int)(10*density), (int)(4*density), (int)(10*density), (int)(4*density));
+                fBtns[i].setOnClickListener(fv -> {
+                    stateFilterCat[0] = fKeys[idx];
+                    for (int j = 0; j < fBtns.length; j++) fBtns[j].setBackgroundColor(j == idx ? Color.parseColor("#6366F1") : Color.parseColor("#232B3B"));
+                    renderListOnly.run();
+                });
+                fRow.addView(fBtns[i], fbp);
+            }
+            fScroll.addView(fRow);
+            tab2Root.addView(fScroll);
+            tab2Root.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+            qIn.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                @Override public void afterTextChanged(Editable s) { stateQuery[0] = s.toString(); renderListOnly.run(); }
+            });
+
+            bGlobalMul.setOnClickListener(v -> {
+                final Dialog gd = new Dialog(getContext());
+                if (gd.getWindow() != null) gd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                LinearLayout gb = new LinearLayout(getContext()); gb.setOrientation(LinearLayout.VERTICAL); gb.setPadding((int)(16*density), (int)(16*density), (int)(16*density), (int)(16*density));
+                GradientDrawable gbg = new GradientDrawable(); gbg.setColor(Color.parseColor("#F51B2230")); gbg.setCornerRadius(12f*density); gbg.setStroke((int)(1.5f*density), Color.parseColor("#F59E0B")); gb.setBackground(gbg);
+                gb.addView(createSubTitle(L("⚡ 一键缩放该角色全部技能伤害")));
+                final EditText mulIn = createInput(L("输入倍率，如 1.2 或 0.8"), "1.2");
+                gb.addView(mulIn);
+                LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL);
+                final float[] presets = {0.5f, 0.8f, 1.2f, 1.5f, 2.0f};
+                LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(0, -2, 1f); pp.setMargins((int)(2*density), (int)(8*density), (int)(2*density), 0);
+                for (final float p : presets) {
+                    Button pb = createButton(p + "x", "#334155");
+                    pb.setPadding((int)(4*density), (int)(5*density), (int)(4*density), (int)(5*density));
+                    pb.setOnClickListener(pv -> mulIn.setText(String.valueOf(p)));
+                    row.addView(pb, pp);
+                }
+                gb.addView(row);
+                Button bApply = createButton(L("✔️ 应用到全部技能 (需保存生效)"), "#D97706");
+                bApply.setOnClickListener(av -> {
+                    try {
+                        float m = Float.parseFloat(mulIn.getText().toString().trim());
+                        if (m <= 0f || m > 100f) return;
+                        int cnt = 0;
+                        for (CharStateItem st : stateItems) {
+                            for (CharHitItem h : st.hits) {
+                                h.hitDamage = Math.max(0, Math.round(h.hitDamage * m));
+                                h.guardDamage = Math.max(0, Math.round(h.guardDamage * m));
+                                h.dirty = true;
+                                cnt++;
+                            }
+                        }
+                        if (cnt > 0) {
+                            isDirty[0] = true; updateDirtyUI.run(); renderListOnly.run();
+                            Toast.makeText(getContext(), L("✅ 已调整 ") + cnt + L(" 处技能伤害（点顶部【💾 保存生效】写入）"), Toast.LENGTH_LONG).show();
+                        }
+                        gd.dismiss();
+                    } catch (Exception e) { Toast.makeText(getContext(), L("❌ 请输入有效数字倍率"), Toast.LENGTH_SHORT).show(); }
+                });
+                LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(-1, -2); ap.setMargins(0, (int)(12*density), 0, 0);
+                gb.addView(bApply, ap);
+                gd.setContentView(gb, new ViewGroup.LayoutParams((int)(300*density), -2)); gd.show();
+            });
+
+            renderListOnly.run();
+        };
+
+        // --- 技能详情 + SFF 动画实时预览 + 单技能伤害调整弹窗 ---
+        openStateDetailRef[0] = (final CharStateItem st) -> {
+            final Dialog sd = new Dialog(getContext());
+            if (sd.getWindow() != null) sd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            ScrollView dsv = new ScrollView(getContext());
+            LinearLayout dbox = new LinearLayout(getContext()); dbox.setOrientation(LinearLayout.VERTICAL);
+            dbox.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
+            GradientDrawable dbg = new GradientDrawable(); dbg.setColor(Color.parseColor("#F8151B26")); dbg.setCornerRadius(12f*density); dbg.setStroke((int)(1.5f*density), Color.parseColor("#38BDF8")); dbox.setBackground(dbg);
+
+            TextView dTitle = new TextView(getContext());
+            dTitle.setText("⚔️ State " + st.stateNo + (st.title.isEmpty() ? "" : " · " + st.title));
+            applyGlobalFontSettings(dTitle, 1.12f, true); dTitle.setTextColor(Color.WHITE); dbox.addView(dTitle);
+
+            TextView dMeta = new TextView(getContext());
+            dMeta.setText("Type=" + st.type + " | MoveType=" + st.moveType + " | Anim=" + st.anim + (st.linkedCmd.isEmpty() ? "" : " | 🎯 " + st.linkedCmd) + (st.sourceFile != null ? "\n📄 " + st.sourceFile.getName() : ""));
+            applyGlobalFontSettings(dMeta, 0.8f, false); dMeta.setTextColor(Color.parseColor("#38BDF8")); dMeta.setPadding(0, (int)(3*density), 0, (int)(8*density));
+            dbox.addView(dMeta);
+
+            final boolean[] animPlaying = {false};
+            final long[] animGen = {0};
+            final int[] curAnimIdx = {0};
+            final List<int[]> framesToPlay = new ArrayList<>();
+            int targetAnim = (st.anim >= 0) ? st.anim : st.stateNo;
+            if (airActionFrames.containsKey(targetAnim)) {
+                framesToPlay.addAll(airActionFrames.get(targetAnim));
+            }
+            if (sffFileRef[0] != null && sffFileRef[0].exists() && !framesToPlay.isEmpty()) {
+                final ImageView animPreview = new ImageView(getContext());
+                animPreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                GradientDrawable abg = new GradientDrawable(); abg.setColor(Color.parseColor("#0B0F17")); abg.setCornerRadius(8f*density); abg.setStroke(1, Color.parseColor("#334155"));
+                animPreview.setBackground(abg);
+                dbox.addView(animPreview, new LinearLayout.LayoutParams(-1, (int)(150*density)));
+
+                final TextView tvFrameStat = new TextView(getContext());
+                applyGlobalFontSettings(tvFrameStat, 0.78f, false); tvFrameStat.setTextColor(Color.parseColor("#94A3B8")); tvFrameStat.setGravity(Gravity.CENTER);
+                dbox.addView(tvFrameStat);
+
+                Runnable showOneFrame = () -> {
+                    if (framesToPlay.isEmpty()) return;
+                    if (curAnimIdx[0] < 0) curAnimIdx[0] = framesToPlay.size() - 1;
+                    if (curAnimIdx[0] >= framesToPlay.size()) curAnimIdx[0] = 0;
+                    final int[] fSpec = framesToPlay.get(curAnimIdx[0]);
+                    new Thread(() -> {
+                        try {
+                            byte[] raw = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), fSpec[0], fSpec[1], "");
+                            final Bitmap bmp = (raw != null && raw.length > 0) ? BitmapFactory.decodeByteArray(raw, 0, raw.length) : null;
+                            uiHandler.post(() -> {
+                                animPreview.setImageBitmap(bmp);
+                                tvFrameStat.setText(L("动作 ") + targetAnim + " | " + (curAnimIdx[0]+1) + "/" + framesToPlay.size() + " | SFF[" + fSpec[0] + "," + fSpec[1] + "]");
+                            });
+                        } catch (Throwable ignored) {}
+                    }).start();
+                };
+                showOneFrame.run();
+
+                LinearLayout pBar = new LinearLayout(getContext()); pBar.setOrientation(LinearLayout.HORIZONTAL); pBar.setGravity(Gravity.CENTER);
+                Button bPrev = createButton("⏪", "#334155");
+                Button bPlay = createButton(L("▶️ 播放招式"), "#0284C7");
+                Button bNext = createButton("⏭️", "#334155");
+                LinearLayout.LayoutParams pbp = new LinearLayout.LayoutParams(0, -2, 1f); pbp.setMargins((int)(3*density), (int)(5*density), (int)(3*density), (int)(8*density));
+                bPrev.setOnClickListener(v -> { animPlaying[0] = false; animGen[0]++; bPlay.setText(L("▶️ 播放招式")); curAnimIdx[0]--; showOneFrame.run(); });
+                bNext.setOnClickListener(v -> { animPlaying[0] = false; animGen[0]++; bPlay.setText(L("▶️ 播放招式")); curAnimIdx[0]++; showOneFrame.run(); });
+                bPlay.setOnClickListener(v -> {
+                    animPlaying[0] = !animPlaying[0];
+                    bPlay.setText(animPlaying[0] ? L("⏸️ 暂停") : L("▶️ 播放招式"));
+                    if (animPlaying[0]) {
+                        final long g = ++animGen[0];
+                        new Thread(() -> {
+                            while (animPlaying[0] && g == animGen[0]) {
+                                int[] sp = framesToPlay.get(curAnimIdx[0]);
+                                long waitMs = Math.max(40, Math.min(400, (sp[2] <= 0 ? 5 : sp[2]) * 16L));
+                                byte[] raw = null;
+                                try { raw = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), sp[0], sp[1], ""); } catch (Throwable ignored) {}
+                                final Bitmap bmp = (raw != null && raw.length > 0) ? BitmapFactory.decodeByteArray(raw, 0, raw.length) : null;
+                                final int idxNow = curAnimIdx[0];
+                                uiHandler.post(() -> {
+                                    if (animPlaying[0] && g == animGen[0]) {
+                                        animPreview.setImageBitmap(bmp);
+                                        tvFrameStat.setText(L("动作 ") + targetAnim + " | " + (idxNow+1) + "/" + framesToPlay.size() + " | SFF[" + sp[0] + "," + sp[1] + "]");
+                                    }
+                                });
+                                try { Thread.sleep(waitMs); } catch (InterruptedException ignored) {}
+                                curAnimIdx[0] = (curAnimIdx[0] + 1) % framesToPlay.size();
+                            }
+                        }).start();
+                    } else {
+                        animGen[0]++;
+                    }
+                });
+                pBar.addView(bPrev, pbp); pBar.addView(bPlay, pbp); pBar.addView(bNext, pbp);
+                dbox.addView(pBar);
+            }
+
+            if (!st.hits.isEmpty()) {
+                dbox.addView(createSubTitle(L("💥 技能伤害调整 (修改后需点顶部保存生效):")));
+                for (int hi = 0; hi < st.hits.size(); hi++) {
+                    final CharHitItem h = st.hits.get(hi);
+                    LinearLayout hCard = new LinearLayout(getContext()); hCard.setOrientation(LinearLayout.VERTICAL);
+                    hCard.setPadding((int)(8*density), (int)(6*density), (int)(8*density), (int)(6*density));
+                    GradientDrawable hbg = new GradientDrawable(); hbg.setColor(Color.parseColor("#1E2636")); hbg.setCornerRadius(6f*density); hbg.setStroke(1, Color.parseColor("#475569"));
+                    hCard.setBackground(hbg);
+                    LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(-1, -2); hlp.setMargins(0, 0, 0, (int)(6*density));
+
+                    TextView hInfo = new TextView(getContext());
+                    hInfo.setText("#" + (hi+1) + " " + h.controllerType + (h.attr.isEmpty() ? "" : " | attr=" + h.attr) + (h.guardFlag.isEmpty() ? "" : " | guard=" + h.guardFlag));
+                    applyGlobalFontSettings(hInfo, 0.82f, true); hInfo.setTextColor(Color.parseColor("#FDE047"));
+                    hCard.addView(hInfo);
+
+                    LinearLayout hRow = new LinearLayout(getContext()); hRow.setOrientation(LinearLayout.HORIZONTAL); hRow.setGravity(Gravity.CENTER_VERTICAL);
+                    TextView l1 = new TextView(getContext()); l1.setText(L("命中伤:")); applyGlobalFontSettings(l1, 0.82f, false); l1.setTextColor(Color.WHITE);
+                    final EditText eHit = createInput("", String.valueOf(h.hitDamage)); eHit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED); eHit.setSingleLine(true);
+                    TextView l2 = new TextView(getContext()); l2.setText(L("  磨血:")); applyGlobalFontSettings(l2, 0.82f, false); l2.setTextColor(Color.WHITE);
+                    final EditText eGrd = createInput("", String.valueOf(h.guardDamage)); eGrd.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED); eGrd.setSingleLine(true);
+
+                    TextWatcher dmgWatcher = new TextWatcher() {
+                        @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                        @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                        @Override public void afterTextChanged(Editable s) {
+                            try {
+                                int nh = Integer.parseInt(eHit.getText().toString().trim());
+                                int ng = Integer.parseInt(eGrd.getText().toString().trim());
+                                if (nh != h.hitDamage || ng != h.guardDamage) {
+                                    h.hitDamage = nh; h.guardDamage = ng; h.dirty = true;
+                                    isDirty[0] = true; updateDirtyUI.run();
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                    };
+                    eHit.addTextChangedListener(dmgWatcher); eGrd.addTextChangedListener(dmgWatcher);
+                    hRow.addView(l1); hRow.addView(eHit, new LinearLayout.LayoutParams(0, -2, 1f));
+                    hRow.addView(l2); hRow.addView(eGrd, new LinearLayout.LayoutParams(0, -2, 1f));
+                    hCard.addView(hRow);
+                    dbox.addView(hCard, hlp);
+                }
+            }
+
+            if (!st.codePreview.isEmpty()) {
+                dbox.addView(createSubTitle(L("📝 状态源码预览:")));
+                TextView codeTv = new TextView(getContext());
+                codeTv.setText(st.codePreview);
+                codeTv.setTypeface(Typeface.MONOSPACE);
+                codeTv.setTextSize(10.5f);
+                codeTv.setTextColor(Color.parseColor("#86EFAC"));
+                codeTv.setTextIsSelectable(true);
+                codeTv.setPadding((int)(8*density), (int)(8*density), (int)(8*density), (int)(8*density));
+                GradientDrawable cbg = new GradientDrawable(); cbg.setColor(Color.parseColor("#0B0F17")); cbg.setCornerRadius(6f*density); cbg.setStroke(1, Color.parseColor("#334155"));
+                codeTv.setBackground(cbg);
+                dbox.addView(codeTv, new LinearLayout.LayoutParams(-1, -2));
+            }
+
+            Button bClose = createButton(L("完成关闭"), "#475569");
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, -2); clp.setMargins(0, (int)(10*density), 0, 0);
+            bClose.setOnClickListener(v -> { animPlaying[0] = false; animGen[0]++; sd.dismiss(); if (renderTab2Ref[0] != null) renderTab2Ref[0].run(); });
+            dbox.addView(bClose, clp);
+
+            sd.setOnDismissListener(di -> { animPlaying[0] = false; animGen[0]++; });
+            dsv.addView(dbox);
+            int sw = getContext().getResources().getDisplayMetrics().widthPixels;
+            sd.setContentView(dsv, new ViewGroup.LayoutParams((int)(sw * 0.86f), -2));
+            sd.show();
+        };
+
+        // --- Tab 3：关联文件总览 ---
+        renderTab3Ref[0] = () -> {
+            tab3Box.removeAllViews();
+            if (defFileRef[0] == null) return;
+            File baseDir = defFileRef[0].getParentFile();
+            tab3Box.addView(createSubTitle(L("📄 DEF 引用文件清单:")));
+            for (java.util.Map.Entry<String, String> en : defFilesMap.entrySet()) {
+                final File rf = resolveCharSubFile(baseDir, en.getValue());
+                LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding((int)(9*density), (int)(7*density), (int)(9*density), (int)(7*density));
+                GradientDrawable rbg = new GradientDrawable(); rbg.setColor(Color.parseColor("#1C2230")); rbg.setCornerRadius(6f*density); rbg.setStroke(1, Color.parseColor("#334155"));
+                row.setBackground(rbg);
+                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2); rlp.setMargins(0, 0, 0, (int)(5*density));
+
+                TextView tv = new TextView(getContext());
+                String sz = (rf != null && rf.exists()) ? (" (" + (rf.length() / 1024) + " KB)") : L(" [缺失]");
+                tv.setText(en.getKey() + " = " + en.getValue() + sz);
+                applyGlobalFontSettings(tv, 0.85f, false);
+                tv.setTextColor(rf != null && rf.exists() ? Color.parseColor("#E2E8F0") : Color.parseColor("#F87171"));
+                row.addView(tv, new LinearLayout.LayoutParams(0, -2, 1f));
+
+                if (rf != null && rf.exists()) {
+                    String low = rf.getName().toLowerCase();
+                    if (low.endsWith(".def") || low.endsWith(".cns") || low.endsWith(".cmd") || low.endsWith(".st") || low.endsWith(".zss") || low.endsWith(".air") || low.endsWith(".txt") || low.endsWith(".dat")) {
+                        Button bView = createButton(L("👁️ 查看"), "#334155");
+                        bView.setPadding((int)(8*density), (int)(4*density), (int)(8*density), (int)(4*density));
+                        bView.setOnClickListener(vv -> {
+                            final Dialog vd = new Dialog(getContext());
+                            if (vd.getWindow() != null) vd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                            ScrollView vsv = new ScrollView(getContext());
+                            LinearLayout vb = new LinearLayout(getContext()); vb.setOrientation(LinearLayout.VERTICAL); vb.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
+                            GradientDrawable vbg = new GradientDrawable(); vbg.setColor(Color.parseColor("#F8141A24")); vbg.setCornerRadius(10f*density); vbg.setStroke(2, Color.parseColor("#38BDF8")); vb.setBackground(vbg);
+                            vb.addView(createSubTitle("📄 " + rf.getName()));
+                            String txt = readTextAutoCharset(rf);
+                            if (txt.length() > 35000) txt = txt.substring(0, 35000) + "\n... (内容过长已截断预览)";
+                            TextView ct = new TextView(getContext()); ct.setText(txt); ct.setTypeface(Typeface.MONOSPACE); ct.setTextSize(10.5f); ct.setTextColor(Color.parseColor("#CBD5E1")); ct.setTextIsSelectable(true);
+                            vb.addView(ct);
+                            Button bOk = createButton(L("关闭"), "#475569"); bOk.setOnClickListener(okv -> vd.dismiss()); vb.addView(bOk);
+                            vsv.addView(vb);
+                            int sw = getContext().getResources().getDisplayMetrics().widthPixels;
+                            vd.setContentView(vsv, new ViewGroup.LayoutParams((int)(sw * 0.86f), -2)); vd.show();
+                        });
+                        row.addView(bView);
+                    }
+                }
+                tab3Box.addView(row, rlp);
+            }
+        };
+
+        // --- 核心解析器：载入角色 .def 及全部关联文件 ---
+        final Runnable[] loadCharacterRef = {null};
+        loadCharacterRef[0] = () -> {
+            final File defFile = defFileRef[0];
+            if (defFile == null || !defFile.exists()) return;
+            tvCharMeta.setText(L("⏳ 正在深度解析角色 DEF / CNS / CMD / AIR / 出招表..."));
+            new Thread(() -> {
+                defInfoMap.clear(); defFilesMap.clear(); cnsStatsMap.clear();
+                cmdItems.clear(); stateItems.clear(); allStateFiles.clear(); airActionFrames.clear();
+                cnsFileRef[0] = null; sffFileRef[0] = null; sndFileRef[0] = null; airFileRef[0] = null; cmdFileRef[0] = null;
+                movelistFileRef[0] = null; movelistContentRef[0] = "";
+
+                File baseDir = defFile.getParentFile();
+                String defText = readTextAutoCharset(defFile);
+                String sec = "";
+                for (String rawLine : defText.split("\n")) {
+                    int ci = rawLine.indexOf(';');
+                    String t = (ci >= 0 ? rawLine.substring(0, ci) : rawLine).trim();
+                    if (t.isEmpty()) continue;
+                    if (t.startsWith("[") && t.endsWith("]")) { sec = t.substring(1, t.length()-1).trim().toLowerCase(); continue; }
+                    int eq = t.indexOf('=');
+                    if (eq > 0) {
+                        String k = t.substring(0, eq).trim().toLowerCase();
+                        String v = t.substring(eq + 1).trim().replace("\"", "");
+                        if ("info".equals(sec)) defInfoMap.put(k, v);
+                        else if ("files".equals(sec)) defFilesMap.put(k, v);
+                    }
+                }
+
+                cnsFileRef[0] = resolveCharSubFile(baseDir, defFilesMap.get("cns"));
+                sffFileRef[0] = resolveCharSubFile(baseDir, defFilesMap.get("sprite"));
+                sndFileRef[0] = resolveCharSubFile(baseDir, defFilesMap.get("sound"));
+                airFileRef[0] = resolveCharSubFile(baseDir, defFilesMap.get("anim"));
+                cmdFileRef[0] = resolveCharSubFile(baseDir, defFilesMap.get("cmd"));
+
+                java.util.LinkedHashSet<File> stSet = new java.util.LinkedHashSet<>();
+                if (cnsFileRef[0] != null) stSet.add(cnsFileRef[0]);
+                for (java.util.Map.Entry<String, String> en : defFilesMap.entrySet()) {
+                    String k = en.getKey();
+                    if (k.equals("st") || k.matches("^st\\d+$") || k.equals("cns")) {
+                        File sf = resolveCharSubFile(baseDir, en.getValue());
+                        if (sf != null) stSet.add(sf);
+                    }
+                }
+                if (cmdFileRef[0] != null) stSet.add(cmdFileRef[0]);
+                allStateFiles.addAll(stSet);
+
+                // 优先查 .def movelist* -> 再查同目录出招表文件
+                for (String mk : new String[]{"movelist", "movelist0", "movelist1"}) {
+                    if (defFilesMap.containsKey(mk)) {
+                        File mf = resolveCharSubFile(baseDir, defFilesMap.get(mk));
+                        if (mf != null && mf.exists()) { movelistFileRef[0] = mf; break; }
+                    }
+                }
+                if (movelistFileRef[0] == null && baseDir != null) {
+                    File[] sibs = baseDir.listFiles();
+                    if (sibs != null) {
+                        for (File sf : sibs) {
+                            if (!sf.isFile()) continue;
+                            String ln = sf.getName().toLowerCase();
+                            if (ln.contains("movelist") || ln.contains("出招") || ln.contains("技表") || ln.contains("commandlist") || (ln.contains("readme") && ln.endsWith(".txt"))) {
+                                movelistFileRef[0] = sf; break;
+                            }
+                        }
+                    }
+                }
+                if (movelistFileRef[0] != null) {
+                    movelistContentRef[0] = readTextAutoCharset(movelistFileRef[0]);
+                }
+
+                // 解析 CNS 基础属性
+                if (cnsFileRef[0] != null) {
+                    String cnsTxt = readTextAutoCharset(cnsFileRef[0]);
+                    String cSec = "";
+                    for (String rawLine : cnsTxt.split("\n")) {
+                        int ci = rawLine.indexOf(';');
+                        String t = (ci >= 0 ? rawLine.substring(0, ci) : rawLine).trim();
+                        if (t.isEmpty()) continue;
+                        if (t.startsWith("[") && t.endsWith("]")) { cSec = t.substring(1, t.length()-1).trim().toLowerCase(); continue; }
+                        if ("data".equals(cSec) || "size".equals(cSec) || "velocity".equals(cSec) || "movement".equals(cSec)) {
+                            int eq = t.indexOf('=');
+                            if (eq > 0) {
+                                String k = t.substring(0, eq).trim().toLowerCase();
+                                String v = t.substring(eq + 1).trim();
+                                cnsStatsMap.put(cSec + "|" + k, new String[]{v, v});
+                            }
+                        }
+                    }
+                }
+
+                // 解析 CMD 指令与 Statedef -1 状态映射
+                final java.util.Map<Integer, String> stateToCmdName = new java.util.HashMap<>();
+                if (cmdFileRef[0] != null) {
+                    String cmdTxt = readTextAutoCharset(cmdFileRef[0]);
+                    String[] clines = cmdTxt.split("\n");
+                    boolean inCmd = false, inNeg1 = false;
+                    String curName = "", curSeq = "";
+                    int curTarget = -1; String curTrigCmd = "";
+                    for (String raw : clines) {
+                        int ci = raw.indexOf(';');
+                        String t = (ci >= 0 ? raw.substring(0, ci) : raw).trim();
+                        if (t.isEmpty()) continue;
+                        String low = t.toLowerCase();
+                        if (low.startsWith("[command]")) {
+                            if (inCmd && !curName.isEmpty() && !curSeq.isEmpty()) cmdItems.add(new CharCmdItem(curName, curSeq, prettifyCmdSequence(curSeq)));
+                            inCmd = true; inNeg1 = false; curName = ""; curSeq = "";
+                        } else if (low.startsWith("[statedef -1")) {
+                            if (inCmd && !curName.isEmpty() && !curSeq.isEmpty()) cmdItems.add(new CharCmdItem(curName, curSeq, prettifyCmdSequence(curSeq)));
+                            inCmd = false; inNeg1 = true; curTarget = -1; curTrigCmd = "";
+                        } else if (low.startsWith("[state ")) {
+                            if (inNeg1 && curTarget >= 0 && !curTrigCmd.isEmpty()) {
+                                stateToCmdName.put(curTarget, curTrigCmd);
+                                for (CharCmdItem item : cmdItems) { if (item.name.equalsIgnoreCase(curTrigCmd) && item.targetState < 0) item.targetState = curTarget; }
+                            }
+                            curTarget = -1; curTrigCmd = "";
+                        } else if (low.startsWith("[")) {
+                            if (inCmd && !curName.isEmpty() && !curSeq.isEmpty()) cmdItems.add(new CharCmdItem(curName, curSeq, prettifyCmdSequence(curSeq)));
+                            inCmd = false; inNeg1 = false;
+                        } else if (inCmd) {
+                            int eq = t.indexOf('=');
+                            if (eq > 0) {
+                                String k = t.substring(0, eq).trim().toLowerCase();
+                                String v = t.substring(eq + 1).trim().replace("\"", "");
+                                if ("name".equals(k)) curName = v;
+                                else if ("command".equals(k)) curSeq = v;
+                            }
+                        } else if (inNeg1) {
+                            if (low.startsWith("value") && t.contains("=")) {
+                                try { curTarget = Integer.parseInt(t.substring(t.indexOf('=') + 1).trim()); } catch (Exception ignored) {}
+                            } else if (low.contains("command") && t.contains("\"")) {
+                                java.util.regex.Matcher cm = java.util.regex.Pattern.compile("command\\s*=\\s*\"([^\"]+)\"", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(t);
+                                if (cm.find()) {
+                                    String cn = cm.group(1);
+                                    if (!cn.startsWith("hold")) curTrigCmd = cn;
+                                }
+                            }
+                        }
+                    }
+                    if (inNeg1 && curTarget >= 0 && !curTrigCmd.isEmpty()) {
+                        stateToCmdName.put(curTarget, curTrigCmd);
+                        for (CharCmdItem item : cmdItems) { if (item.name.equalsIgnoreCase(curTrigCmd) && item.targetState < 0) item.targetState = curTarget; }
+                    }
+                }
+
+                // 解析 AIR 动作帧序列
+                if (airFileRef[0] != null) {
+                    String airTxt = readTextAutoCharset(airFileRef[0]);
+                    int curAct = -1;
+                    for (String raw : airTxt.split("\n")) {
+                        int ci = raw.indexOf(';');
+                        String t = (ci >= 0 ? raw.substring(0, ci) : raw).trim();
+                        if (t.isEmpty()) continue;
+                        if (t.toLowerCase().startsWith("[begin action")) {
+                            try { curAct = Integer.parseInt(t.replaceAll("[^0-9\\-]", "")); } catch (Exception e) { curAct = -1; }
+                        } else if (curAct >= 0 && t.matches("^-?\\d+\\s*,\\s*-?\\d+\\s*,.*")) {
+                            String[] ps = t.split(",");
+                            if (ps.length >= 5) {
+                                try {
+                                    int g = Integer.parseInt(ps[0].trim());
+                                    int it = Integer.parseInt(ps[1].trim());
+                                    int tk = Integer.parseInt(ps[4].trim());
+                                    List<int[]> fl = airActionFrames.get(curAct);
+                                    if (fl == null) { fl = new ArrayList<>(); airActionFrames.put(curAct, fl); }
+                                    if (fl.size() < 40) fl.add(new int[]{g, it, tk});
+                                } catch (Exception ignored) {}
+                            }
+                        }
+                    }
+                }
+
+                // 解析全部状态文件中的 [Statedef N] 与 HitDef/Projectile 伤害节点
+                java.util.regex.Pattern patSd = java.util.regex.Pattern.compile("^\\[\\s*statedef\\s+(-?\\d+)([^\\]]*)\\]", java.util.regex.Pattern.CASE_INSENSITIVE);
+                for (File sf : allStateFiles) {
+                    String txt = readTextAutoCharset(sf);
+                    String[] lines = txt.split("\n");
+                    CharStateItem curSt = null;
+                    StringBuilder curCode = new StringBuilder();
+                    String curCtrlType = "";
+                    CharHitItem curHit = null;
+                    String lastComment = "";
+                    for (int li = 0; li < lines.length; li++) {
+                        String raw = lines[li];
+                        String trimmed = raw.trim();
+                        if (trimmed.startsWith(";")) {
+                            String cm = trimmed.replaceAll("^;+", "").trim();
+                            if (cm.length() >= 2 && cm.length() <= 40 && !cm.startsWith("=")) lastComment = cm;
+                            continue;
+                        }
+                        int ci = raw.indexOf(';');
+                        String clean = (ci >= 0 ? raw.substring(0, ci) : raw).trim();
+                        if (clean.isEmpty()) continue;
+                        String low = clean.toLowerCase();
+
+                        java.util.regex.Matcher sm = patSd.matcher(clean);
+                        if (sm.find()) {
+                            if (curSt != null) { curSt.codePreview = curCode.toString().trim(); stateItems.add(curSt); }
+                            curSt = new CharStateItem();
+                            curSt.stateNo = Integer.parseInt(sm.group(1));
+                            curSt.sourceFile = sf;
+                            String tailComment = (ci >= 0) ? raw.substring(ci + 1).trim() : "";
+                            curSt.title = !tailComment.isEmpty() ? tailComment : lastComment;
+                            if (stateToCmdName.containsKey(curSt.stateNo)) curSt.linkedCmd = stateToCmdName.get(curSt.stateNo);
+                            curCode.setLength(0);
+                            curCode.append(raw).append("\n");
+                            curCtrlType = ""; curHit = null; lastComment = "";
+                            continue;
+                        }
+                        if (curSt != null) {
+                            if (curCode.length() < 1800) curCode.append(raw).append("\n");
+                            if (low.startsWith("[state ")) {
+                                curCtrlType = ""; curHit = null;
+                            } else {
+                                int eq = clean.indexOf('=');
+                                if (eq > 0) {
+                                    String k = clean.substring(0, eq).trim().toLowerCase();
+                                    String v = clean.substring(eq + 1).trim();
+                                    if (curCtrlType.isEmpty()) {
+                                        if ("type".equals(k)) {
+                                            if (curSt.type.isEmpty() && (v.equalsIgnoreCase("S") || v.equalsIgnoreCase("C") || v.equalsIgnoreCase("A") || v.equalsIgnoreCase("L") || v.equalsIgnoreCase("U"))) {
+                                                curSt.type = v.toUpperCase();
+                                            } else {
+                                                curCtrlType = v.toLowerCase();
+                                                if (curCtrlType.equals("hitdef") || curCtrlType.equals("projectile")) {
+                                                    curHit = new CharHitItem();
+                                                    curHit.sourceFile = sf;
+                                                    curHit.controllerType = curCtrlType.equals("hitdef") ? "HitDef" : "Projectile";
+                                                }
+                                            }
+                                        } else if ("movetype".equals(k)) curSt.moveType = v.toUpperCase();
+                                        else if ("physics".equals(k)) curSt.physics = v.toUpperCase();
+                                        else if ("anim".equals(k)) { try { curSt.anim = Integer.parseInt(v); } catch (Exception ignored) {} }
+                                        else if ("poweradd".equals(k)) { try { curSt.powerAdd = Integer.parseInt(v); } catch (Exception ignored) {} }
+                                    } else if (curHit != null) {
+                                        if ("attr".equals(k)) curHit.attr = v;
+                                        else if ("guardflag".equals(k)) curHit.guardFlag = v;
+                                        else if ("pausetime".equals(k)) curHit.pauseTime = v;
+                                        else if ("damage".equals(k)) {
+                                            String[] ds = v.split(",");
+                                            try {
+                                                curHit.hitDamage = Integer.parseInt(ds[0].trim());
+                                                curHit.guardDamage = ds.length > 1 ? Integer.parseInt(ds[1].trim()) : 0;
+                                                curHit.origHitDamage = curHit.hitDamage;
+                                                curHit.origGuardDamage = curHit.guardDamage;
+                                                curHit.lineIndex = li;
+                                                curSt.hits.add(curHit);
+                                            } catch (Exception ignored) {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (curSt != null) { curSt.codePreview = curCode.toString().trim(); stateItems.add(curSt); }
+                }
+                java.util.Collections.sort(stateItems, (a, b) -> Integer.compare(a.stateNo, b.stateNo));
+
+                Bitmap portrait = null;
+                if (sffFileRef[0] != null && sffFileRef[0].exists()) {
+                    try {
+                        byte[] pb = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), 9000, 1, "");
+                        if (pb == null || pb.length == 0) pb = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), 9000, 0, "");
+                        if (pb == null || pb.length == 0) pb = Api.getSffPreview(sffFileRef[0].getAbsolutePath());
+                        if (pb != null && pb.length > 0) portrait = BitmapFactory.decodeByteArray(pb, 0, pb.length);
+                    } catch (Throwable ignored) {}
+                }
+                final Bitmap finalPortrait = portrait;
+
+                uiHandler.post(() -> {
+                    isDirty[0] = false;
+                    if (finalPortrait != null) portraitView.setImageBitmap(finalPortrait);
+                    else portraitView.setImageResource(android.R.drawable.ic_menu_myplaces);
+                    String disp = defInfoMap.containsKey("displayname") ? defInfoMap.get("displayname") : defInfoMap.get("name");
+                    if (disp == null || disp.isEmpty()) disp = defFile.getName();
+                    tvCharName.setText(disp);
+                    String author = defInfoMap.containsKey("author") ? defInfoMap.get("author") : "-";
+                    String mver = defInfoMap.containsKey("mugenversion") ? defInfoMap.get("mugenversion") : "-";
+                    String ikver = defInfoMap.containsKey("ikemenversion") ? " | IK " + defInfoMap.get("ikemenversion") : "";
+                    tvCharMeta.setText(L("作者: ") + author + " | MUGEN " + mver + ikver + " | " + L("状态: ") + stateItems.size() + " | " + L("指令: ") + cmdItems.size());
+                    updateDirtyUI.run();
+                    renderTab0Ref[0].run();
+                    renderTab1Ref[0].run();
+                    renderTab2Ref[0].run();
+                    renderTab3Ref[0].run();
+                });
+            }).start();
+        };
+
+        // --- 核心保存器：仅在点击【💾 保存生效】时写入磁盘（自动创建 .bak 备份） ---
+        saveAllRef[0] = () -> {
+            if (defFileRef[0] == null) { Toast.makeText(getContext(), L("⚠️ 请先选择角色 .def 文件"), Toast.LENGTH_SHORT).show(); return; }
+            if (!isDirty[0]) { Toast.makeText(getContext(), L("当前没有未保存的修改"), Toast.LENGTH_SHORT).show(); return; }
+            new Thread(() -> {
+                int savedFiles = 0;
+                try {
+                    if (cnsFileRef[0] != null && cnsFileRef[0].exists()) {
+                        boolean anyStatChanged = false;
+                        for (String[] p : cnsStatsMap.values()) { if (!p[0].equals(p[1])) { anyStatChanged = true; break; } }
+                        if (anyStatChanged) {
+                            File bak = new File(cnsFileRef[0].getAbsolutePath() + ".bak");
+                            if (!bak.exists()) copyFileToSandbox(cnsFileRef[0], bak);
+                            String raw = readTextAutoCharset(cnsFileRef[0]);
+                            String[] lines = raw.split("\n", -1);
+                            String curSec = "";
+                            StringBuilder out = new StringBuilder();
+                            for (int i = 0; i < lines.length; i++) {
+                                String line = lines[i];
+                                int ci = line.indexOf(';');
+                                String codePart = ci >= 0 ? line.substring(0, ci) : line;
+                                String commentPart = ci >= 0 ? line.substring(ci) : "";
+                                String t = codePart.trim();
+                                if (t.startsWith("[") && t.endsWith("]")) {
+                                    curSec = t.substring(1, t.length()-1).trim().toLowerCase();
+                                } else if (t.contains("=")) {
+                                    int eq = codePart.indexOf('=');
+                                    String k = codePart.substring(0, eq).trim().toLowerCase();
+                                    String mk = curSec + "|" + k;
+                                    String[] pair = cnsStatsMap.get(mk);
+                                    if (pair != null && !pair[0].equals(pair[1])) {
+                                        line = codePart.substring(0, eq + 1) + " " + pair[1] + (commentPart.isEmpty() ? "" : " " + commentPart);
+                                        pair[0] = pair[1];
+                                    }
+                                }
+                                out.append(line);
+                                if (i + 1 < lines.length) out.append("\n");
+                            }
+                            try (FileOutputStream fos = new FileOutputStream(cnsFileRef[0])) { fos.write(out.toString().getBytes("UTF-8")); }
+                            savedFiles++;
+                        }
+                    }
+
+                    java.util.Map<File, List<CharHitItem>> dirtyByFile = new java.util.LinkedHashMap<>();
+                    for (CharStateItem st : stateItems) {
+                        for (CharHitItem h : st.hits) {
+                            if (h.dirty && h.sourceFile != null && h.sourceFile.exists()) {
+                                List<CharHitItem> fl = dirtyByFile.get(h.sourceFile);
+                                if (fl == null) { fl = new ArrayList<>(); dirtyByFile.put(h.sourceFile, fl); }
+                                fl.add(h);
+                            }
+                        }
+                    }
+                    for (java.util.Map.Entry<File, List<CharHitItem>> en : dirtyByFile.entrySet()) {
+                        File f = en.getKey();
+                        File bak = new File(f.getAbsolutePath() + ".bak");
+                        if (!bak.exists()) copyFileToSandbox(f, bak);
+                        String raw = readTextAutoCharset(f);
+                        String[] lines = raw.split("\n", -1);
+                        for (CharHitItem h : en.getValue()) {
+                            if (h.lineIndex >= 0 && h.lineIndex < lines.length) {
+                                String line = lines[h.lineIndex];
+                                int ci = line.indexOf(';');
+                                String codePart = ci >= 0 ? line.substring(0, ci) : line;
+                                String commentPart = ci >= 0 ? line.substring(ci) : "";
+                                int eq = codePart.indexOf('=');
+                                if (eq > 0 && codePart.substring(0, eq).trim().equalsIgnoreCase("damage")) {
+                                    lines[h.lineIndex] = codePart.substring(0, eq + 1) + " " + h.hitDamage + ", " + h.guardDamage + (commentPart.isEmpty() ? "" : " " + commentPart);
+                                    h.origHitDamage = h.hitDamage;
+                                    h.origGuardDamage = h.guardDamage;
+                                    h.dirty = false;
+                                }
+                            }
+                        }
+                        StringBuilder out = new StringBuilder();
+                        for (int i = 0; i < lines.length; i++) {
+                            out.append(lines[i]);
+                            if (i + 1 < lines.length) out.append("\n");
+                        }
+                        try (FileOutputStream fos = new FileOutputStream(f)) { fos.write(out.toString().getBytes("UTF-8")); }
+                        savedFiles++;
+                    }
+                } catch (Exception e) {
+                    uiHandler.post(() -> Toast.makeText(getContext(), L("❌ 保存异常: ") + e.getMessage(), Toast.LENGTH_LONG).show());
+                    return;
+                }
+                final int cnt = savedFiles;
+                uiHandler.post(() -> {
+                    isDirty[0] = false;
+                    updateDirtyUI.run();
+                    if (renderTab2Ref[0] != null) renderTab2Ref[0].run();
+                    Toast.makeText(getContext(), L("✅ 保存成功！已更新 ") + cnt + L(" 个角色文件（原文件已自动备份 .bak）"), Toast.LENGTH_LONG).show();
+                });
+            }).start();
+        };
+
+        btnPickDef.setOnClickListener(v -> showWin10FilePicker(L("选择角色 .def 配置文件"), 15, null, null, f -> {
+            defFileRef[0] = f;
+            loadCharacterRef[0].run();
+        }));
+        btnSaveAll.setOnClickListener(v -> saveAllRef[0].run());
+        btnRevert.setOnClickListener(v -> {
+            if (defFileRef[0] == null) return;
+            loadCharacterRef[0].run();
+            Toast.makeText(getContext(), L("↩️ 已放弃所有未保存修改并重新载入"), Toast.LENGTH_SHORT).show();
+        });
+        btnJumpSff.setOnClickListener(v -> {
+            if (sffFileRef[0] == null || !sffFileRef[0].exists()) { Toast.makeText(getContext(), L("⚠️ 未找到该角色的 SFF 文件"), Toast.LENGTH_SHORT).show(); return; }
+            new Thread(() -> {
+                List<GoEngineBridge.SffFrame> fs = GoEngineBridge.getAllFrames(sffFileRef[0].getAbsolutePath());
+                uiHandler.post(() -> showAssetViewerWindow(sffFileRef[0].getName(), sffFileRef[0].getAbsolutePath(), fs));
+            }).start();
+        });
+        btnJumpSnd.setOnClickListener(v -> {
+            if (sndFileRef[0] == null || !sndFileRef[0].exists()) { Toast.makeText(getContext(), L("⚠️ 未找到该角色的 SND 文件"), Toast.LENGTH_SHORT).show(); return; }
+            new Thread(() -> {
+                List<GoEngineBridge.SndNode> ns = GoEngineBridge.scanSnd(sndFileRef[0].getAbsolutePath());
+                uiHandler.post(() -> showSndViewerWindow(sndFileRef[0].getAbsolutePath(), sndFileRef[0].getName(), ns));
+            }).start();
+        });
+        btnJumpClsn.setOnClickListener(v -> {
+            String sp = (sffFileRef[0] != null && sffFileRef[0].exists()) ? sffFileRef[0].getAbsolutePath() : "";
+            openAppWindow(L("⚔️ 判定框工坊 (打击/防御框)"), buildClsnEditorContent(sp, ""), null);
+        });
+
         return root;
     }
 
