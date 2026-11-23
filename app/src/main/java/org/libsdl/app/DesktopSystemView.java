@@ -547,6 +547,7 @@ public class DesktopSystemView extends Dialog {
         createDesktopIcon("text_decipher", "🔣", L("乱码解字板")); 
         createDesktopIcon("def_scanner", "🗂️", L("DEF生成器"));
         createDesktopIcon("clsn_editor", "⚔️", L("判定框工坊"));
+        createDesktopIcon("ikemen_dict", "📚", L("引擎词典"));
     }
 
     private void createDesktopIcon(final String id, String iconStr, String name) {
@@ -593,6 +594,7 @@ public class DesktopSystemView extends Dialog {
                             else if (id.equals("text_decipher")) openAppWindow(L("🔣 乱码解字板"), buildDecipherBoardContent(), null);
                             else if (id.equals("def_scanner")) openAppWindow(L("🗂️ DEF生成器"), buildDefScannerContent(), null);
                             else if (id.equals("clsn_editor")) openAppWindow(L("⚔️ 判定框工坊 (打击/防御框)"), buildClsnEditorContent("", ""), null);
+                            else if (id.equals("ikemen_dict")) openAppWindow(L("📚 MUGEN/IK 全能词典"), buildDictionaryContent(), null);
                             lastClickTime = 0; 
                         } else lastClickTime = clickTime;
                     }
@@ -616,12 +618,14 @@ public class DesktopSystemView extends Dialog {
         menuOverlay.addView(menu, params); rootLayer.addView(menuOverlay, new FrameLayout.LayoutParams(-1, -1)); menuOverlay.bringToFront();
     }
 
-    private String resolveWindowLayoutKey(String windowTitle) {
+        private String resolveWindowLayoutKey(String windowTitle) {
         if (windowTitle == null) return "default";
         if (windowTitle.contains(L("🎨 检视: ")) || windowTitle.contains("SFF")) return "sff_viewer";
+        if (windowTitle.contains(L("🎵 检视: ")) || windowTitle.contains("SND")) return "snd_viewer";
         if (windowTitle.contains(L("⚔️ 判定框")) || windowTitle.contains("Clsn")) return "clsn_editor";
         if (windowTitle.contains(L("地图")) || windowTitle.contains("Stage")) return "stage_editor";
         if (windowTitle.contains(L("色表")) || windowTitle.contains("ACT")) return "palette_editor";
+        if (windowTitle.contains(L("词典")) || windowTitle.contains("MUGEN/IK")) return "ikemen_dict";
         if (windowTitle.contains("GIF")) return "gif_viewer";
         return "win_" + Math.abs(windowTitle.hashCode());
     }
@@ -639,41 +643,92 @@ public class DesktopSystemView extends Dialog {
         return null;
     }
 
-    private void applyCustomWindowLayout(String layoutKey, FrameLayout windowFrame, View contentHost, View contentView, boolean isMaximized) {
-        int defW = prefs.getInt("wlay_global_w", 78);
-        int defH = prefs.getInt("wlay_global_h", 84);
-        int defPL = prefs.getInt("wlay_global_pl", 4);
-        int defPR = prefs.getInt("wlay_global_pr", 4);
-        int defPT = prefs.getInt("wlay_global_pt", 4);
-        int defPB = prefs.getInt("wlay_global_pb", 4);
-        int defPrev = prefs.getInt("wlay_global_prev", 65);
-        int defGap = prefs.getInt("wlay_global_gap", 6);
+    private void applyFontScaleRecursive(View v, float scaleRatio) {
+        if (v == null) return;
+        if (v instanceof TextView) {
+            TextView tv = (TextView) v;
+            Object baseObj = tv.getTag(0x7f0b0001);
+            float baseSp;
+            if (baseObj instanceof Float) {
+                baseSp = (Float) baseObj;
+            } else {
+                baseSp = tv.getTextSize() / Math.max(1f, getContext().getResources().getDisplayMetrics().scaledDensity);
+                tv.setTag(0x7f0b0001, baseSp);
+            }
+            tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, Math.max(8f, baseSp * scaleRatio));
+        } else if (v instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) v;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                applyFontScaleRecursive(vg.getChildAt(i), scaleRatio);
+            }
+        }
+    }
 
-        int wPct = prefs.getInt("wlay_" + layoutKey + "_w", defW);
-        int hPct = prefs.getInt("wlay_" + layoutKey + "_h", defH);
-        int padL = prefs.getInt("wlay_" + layoutKey + "_pl", defPL);
-        int padR = prefs.getInt("wlay_" + layoutKey + "_pr", defPR);
-        int padT = prefs.getInt("wlay_" + layoutKey + "_pt", defPT);
-        int padB = prefs.getInt("wlay_" + layoutKey + "_pb", defPB);
-        int prevPct = prefs.getInt("wlay_" + layoutKey + "_prev", defPrev);
-        int gapDp = prefs.getInt("wlay_" + layoutKey + "_gap", defGap);
+    private void applyCustomWindowLayout(String layoutKey, FrameLayout windowFrame, View contentHost, View contentView, boolean isMaximized) {
+        String modeTag = isMaximized ? "_full" : "_win";
+        String mKey = layoutKey + modeTag;
+        String gKey = "global" + modeTag;
+
+        int defW = prefs.getInt("wlay_" + gKey + "_w", isMaximized ? 100 : 78);
+        int defH = prefs.getInt("wlay_" + gKey + "_h", isMaximized ? 100 : 84);
+        int defPL = prefs.getInt("wlay_" + gKey + "_pl", 4);
+        int defPR = prefs.getInt("wlay_" + gKey + "_pr", 4);
+        int defPT = prefs.getInt("wlay_" + gKey + "_pt", 4);
+        int defPB = prefs.getInt("wlay_" + gKey + "_pb", 4);
+        int defPrev = prefs.getInt("wlay_" + gKey + "_prev", 65);
+        int defGap = prefs.getInt("wlay_" + gKey + "_gap", 6);
+        int defCorner = prefs.getInt("wlay_" + gKey + "_cr", isMaximized ? 0 : 10);
+        int defFontPct = prefs.getInt("wlay_" + gKey + "_fs", 100);
+
+        int wPct = prefs.getInt("wlay_" + mKey + "_w", defW);
+        int hPct = prefs.getInt("wlay_" + mKey + "_h", defH);
+        int padL = prefs.getInt("wlay_" + mKey + "_pl", defPL);
+        int padR = prefs.getInt("wlay_" + mKey + "_pr", defPR);
+        int padT = prefs.getInt("wlay_" + mKey + "_pt", defPT);
+        int padB = prefs.getInt("wlay_" + mKey + "_pb", defPB);
+        int prevPct = prefs.getInt("wlay_" + mKey + "_prev", defPrev);
+        int gapDp = prefs.getInt("wlay_" + mKey + "_gap", defGap);
+        int cornerDp = prefs.getInt("wlay_" + mKey + "_cr", defCorner);
+        int fontPct = prefs.getInt("wlay_" + mKey + "_fs", defFontPct);
 
         int screenW = getContext().getResources().getDisplayMetrics().widthPixels;
         int screenH = getContext().getResources().getDisplayMetrics().heightPixels;
         int tbH = (taskbar != null && taskbar.getHeight() > 0) ? taskbar.getHeight() : Math.max((int)(40 * density), screenH / 14);
 
-        if (!isMaximized && windowFrame != null) {
-            int w = Math.max((int)(240 * density), (int)(screenW * (wPct / 100f)));
-            int h = Math.max((int)(200 * density), (int)((screenH - tbH) * (hPct / 100f)));
-            ViewGroup.LayoutParams flp = windowFrame.getLayoutParams();
-            if (flp != null) {
-                flp.width = w;
-                flp.height = h;
-                windowFrame.setLayoutParams(flp);
+        if (windowFrame != null) {
+            if (!isMaximized) {
+                int w = Math.max((int)(240 * density), (int)(screenW * (wPct / 100f)));
+                int h = Math.max((int)(200 * density), (int)((screenH - tbH) * (hPct / 100f)));
+                ViewGroup.LayoutParams flp = windowFrame.getLayoutParams();
+                if (flp != null) {
+                    flp.width = w;
+                    flp.height = h;
+                    windowFrame.setLayoutParams(flp);
+                }
+            }
+            if (windowFrame.getBackground() instanceof GradientDrawable) {
+                ((GradientDrawable) windowFrame.getBackground()).setCornerRadius(cornerDp * density);
             }
         }
+
         if (contentHost != null) {
             contentHost.setPadding((int)(padL * density), (int)(padT * density), (int)(padR * density), (int)(padB * density));
+            // 全屏模式下同样支持自由调整显示区域宽高占比（居中显示）
+            if (contentView != null && contentView.getLayoutParams() instanceof FrameLayout.LayoutParams) {
+                FrameLayout.LayoutParams cvLp = (FrameLayout.LayoutParams) contentView.getLayoutParams();
+                if (isMaximized && (wPct < 100 || hPct < 100)) {
+                    int availW = Math.max((int)(220 * density), screenW - (int)((padL + padR) * density));
+                    int availH = Math.max((int)(180 * density), screenH - tbH - (int)((42 + padT + padB) * density));
+                    cvLp.width = Math.max((int)(220 * density), (int)(availW * (wPct / 100f)));
+                    cvLp.height = Math.max((int)(180 * density), (int)(availH * (hPct / 100f)));
+                    cvLp.gravity = Gravity.CENTER;
+                } else {
+                    cvLp.width = FrameLayout.LayoutParams.MATCH_PARENT;
+                    cvLp.height = FrameLayout.LayoutParams.MATCH_PARENT;
+                    cvLp.gravity = Gravity.TOP | Gravity.LEFT;
+                }
+                contentView.setLayoutParams(cvLp);
+            }
         }
 
         // 动态调整预览区、左右分栏和工具栏间距
@@ -720,9 +775,19 @@ public class DesktopSystemView extends Dialog {
             tlp.setMargins(0, gapPx / 2, 0, 0);
             vToolbar.setLayoutParams(tlp);
         }
+        if (contentView != null && fontPct != 100) {
+            applyFontScaleRecursive(contentView, fontPct / 100f);
+        } else if (contentView != null) {
+            applyFontScaleRecursive(contentView, 1.0f);
+        }
     }
 
     private void showWindowLayoutDialog(final String windowTitle, final String layoutKey, final FrameLayout windowFrame, final View contentHost, final View contentView, final boolean[] isMaximized) {
+        final boolean curMax = isMaximized[0];
+        final String modeTag = curMax ? "_full" : "_win";
+        final String mKey = layoutKey + modeTag;
+        final String gKey = "global" + modeTag;
+
         final Dialog d = new Dialog(getContext());
         if (d.getWindow() != null) d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
         ScrollView sv = new ScrollView(getContext());
@@ -735,34 +800,41 @@ public class DesktopSystemView extends Dialog {
         bg.setStroke((int)(1.5f * density), Color.parseColor("#38BDF8"));
         box.setBackground(bg);
 
-        box.addView(createSubTitle(L("📐 自定义工具布局与边距")));
+        box.addView(createSubTitle(curMax ? L("🖥️ 全屏模式 · 自定义显示区与样式") : L("🪟 窗口模式 · 自定义布局与样式")));
         TextView hint = new TextView(getContext());
-        hint.setText(L("拖动滑块即可实时调整窗口边界、上下左右间距及预览区大小"));
+        hint.setText(curMax
+                ? L("已自动识别为【全屏模式】，可独立调节显示区大小、预览占比、边距、圆角和字号")
+                : L("已自动识别为【窗口模式】，可独立调节窗口大小、预览占比、边距、圆角和字号"));
         applyGlobalFontSettings(hint, 0.85f, false);
         hint.setTextColor(Color.parseColor("#94A3B8"));
         box.addView(hint);
 
         final int[] vals = new int[] {
-            prefs.getInt("wlay_" + layoutKey + "_w", prefs.getInt("wlay_global_w", 78)),
-            prefs.getInt("wlay_" + layoutKey + "_h", prefs.getInt("wlay_global_h", 84)),
-            prefs.getInt("wlay_" + layoutKey + "_prev", prefs.getInt("wlay_global_prev", 65)),
-            prefs.getInt("wlay_" + layoutKey + "_gap", prefs.getInt("wlay_global_gap", 6)),
-            prefs.getInt("wlay_" + layoutKey + "_pl", prefs.getInt("wlay_global_pl", 4)),
-            prefs.getInt("wlay_" + layoutKey + "_pr", prefs.getInt("wlay_global_pr", 4)),
-            prefs.getInt("wlay_" + layoutKey + "_pt", prefs.getInt("wlay_global_pt", 4)),
-            prefs.getInt("wlay_" + layoutKey + "_pb", prefs.getInt("wlay_global_pb", 4))
+            prefs.getInt("wlay_" + mKey + "_w", prefs.getInt("wlay_" + gKey + "_w", curMax ? 100 : 78)),
+            prefs.getInt("wlay_" + mKey + "_h", prefs.getInt("wlay_" + gKey + "_h", curMax ? 100 : 84)),
+            prefs.getInt("wlay_" + mKey + "_prev", prefs.getInt("wlay_" + gKey + "_prev", 65)),
+            prefs.getInt("wlay_" + mKey + "_gap", prefs.getInt("wlay_" + gKey + "_gap", 6)),
+            prefs.getInt("wlay_" + mKey + "_pl", prefs.getInt("wlay_" + gKey + "_pl", 4)),
+            prefs.getInt("wlay_" + mKey + "_pr", prefs.getInt("wlay_" + gKey + "_pr", 4)),
+            prefs.getInt("wlay_" + mKey + "_pt", prefs.getInt("wlay_" + gKey + "_pt", 4)),
+            prefs.getInt("wlay_" + mKey + "_pb", prefs.getInt("wlay_" + gKey + "_pb", 4)),
+            prefs.getInt("wlay_" + mKey + "_cr", prefs.getInt("wlay_" + gKey + "_cr", curMax ? 0 : 10)),
+            prefs.getInt("wlay_" + mKey + "_fs", prefs.getInt("wlay_" + gKey + "_fs", 100))
         };
         final String[] labels = new String[] {
-            L("窗口宽度 (%)"), L("窗口高度 (%)"), L("预览视口比例 (%)"), L("内部区块间距 (dp)"),
-            L("左边距 (dp)"), L("右边距 (dp)"), L("上边距 (dp)"), L("下边距 (dp)")
+            curMax ? L("全屏显示区宽度 (%)") : L("窗口宽度 (%)"),
+            curMax ? L("全屏显示区高度 (%)") : L("窗口高度 (%)"),
+            L("预览视口比例 (%)"), L("内部区块间距 (dp)"),
+            L("左边距 (dp)"), L("右边距 (dp)"), L("上边距 (dp)"), L("下边距 (dp)"),
+            L("窗口圆角半径 (dp)"), L("内容字号缩放 (%)")
         };
-        final int[] mins = new int[] { 40, 40, 30, 0, 0, 0, 0, 0 };
-        final int[] maxs = new int[] { 100, 98, 92, 24, 48, 48, 48, 48 };
-        final String[] prefSuffix = new String[] { "_w", "_h", "_prev", "_gap", "_pl", "_pr", "_pt", "_pb" };
+        final int[] mins = new int[] { 40, 40, 30, 0, 0, 0, 0, 0, 0, 75 };
+        final int[] maxs = new int[] { 100, 100, 92, 24, 48, 48, 48, 48, 20, 140 };
+        final String[] prefSuffix = new String[] { "_w", "_h", "_prev", "_gap", "_pl", "_pr", "_pt", "_pb", "_cr", "_fs" };
 
         Runnable liveApply = () -> {
             SharedPreferences.Editor ed = prefs.edit();
-            for (int i = 0; i < vals.length; i++) ed.putInt("wlay_" + layoutKey + prefSuffix[i], vals[i]);
+            for (int i = 0; i < vals.length; i++) ed.putInt("wlay_" + mKey + prefSuffix[i], vals[i]);
             ed.apply();
             applyCustomWindowLayout(layoutKey, windowFrame, contentHost, contentView, isMaximized[0]);
         };
@@ -800,13 +872,13 @@ public class DesktopSystemView extends Dialog {
 
         btnSaveAll.setOnClickListener(v -> {
             SharedPreferences.Editor ed = prefs.edit();
-            for (int i = 0; i < vals.length; i++) ed.putInt("wlay_global" + prefSuffix[i], vals[i]);
+            for (int i = 0; i < vals.length; i++) ed.putInt("wlay_" + gKey + prefSuffix[i], vals[i]);
             ed.apply();
-            Toast.makeText(getContext(), L("✅ 已设为所有工具的默认布局"), Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), curMax ? L("✅ 已设为所有工具的全屏默认布局") : L("✅ 已设为所有工具的窗口默认布局"), Toast.LENGTH_SHORT).show();
         });
         btnReset.setOnClickListener(v -> {
             SharedPreferences.Editor ed = prefs.edit();
-            for (int i = 0; i < prefSuffix.length; i++) ed.remove("wlay_" + layoutKey + prefSuffix[i]);
+            for (int i = 0; i < prefSuffix.length; i++) ed.remove("wlay_" + mKey + prefSuffix[i]);
             ed.apply();
             applyCustomWindowLayout(layoutKey, windowFrame, contentHost, contentView, isMaximized[0]);
             Toast.makeText(getContext(), L("♻️ 已恢复默认布局"), Toast.LENGTH_SHORT).show();
@@ -823,6 +895,7 @@ public class DesktopSystemView extends Dialog {
         d.setContentView(sv);
         d.show();
     }
+
 
     private void openAppWindow(String windowTitle, View contentView, final Runnable onCloseInterceptor) {
         View existingWin = windowsLayer.findViewWithTag(windowTitle);
@@ -892,6 +965,7 @@ public class DesktopSystemView extends Dialog {
                 windowFrame.setLayoutParams(lp); windowFrame.setX(0); windowFrame.setY(0); windowFrame.bringToFront();
                 btnMax.setText(" ❐ "); isMaximized[0] = true;
             }
+            applyCustomWindowLayout(layoutKey, windowFrame, contentHost, contentView, isMaximized[0]);
             windowFrame.post(updateTaskbarState);
         }); controls.addView(btnMax);
 
@@ -951,7 +1025,7 @@ public class DesktopSystemView extends Dialog {
                         int sH2 = Math.max(1, getContext().getResources().getDisplayMetrics().heightPixels - (taskbar != null ? taskbar.getHeight() : 0));
                         int pctW = Math.max(40, Math.min(100, Math.round(windowFrame.getWidth() * 100f / sW2)));
                         int pctH = Math.max(40, Math.min(98, Math.round(windowFrame.getHeight() * 100f / sH2)));
-                        prefs.edit().putInt("wlay_" + layoutKey + "_w", pctW).putInt("wlay_" + layoutKey + "_h", pctH).apply();
+                        prefs.edit().putInt("wlay_" + layoutKey + "_win_w", pctW).putInt("wlay_" + layoutKey + "_win_h", pctH).apply();
                         return true;
                 }
                 return false;
@@ -1356,10 +1430,10 @@ public class DesktopSystemView extends Dialog {
 
     private View buildSffExtractorContent() {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
-        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL);
-        TextView statusText = new TextView(getContext()); statusText.setText(L(" 状态: 等待选取目录或文件...")); applyGlobalFontSettings(statusText, 1.0f, false);
-        Button scanBtn = createButton(L("📂 浏览并选择 SFF 素材文件"), "#0078D7"); LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, -2); btnParams.setMargins(0, 0, (int)(15*density), 0);
-        topBar.addView(scanBtn, btnParams); topBar.addView(statusText); root.addView(topBar);
+        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.VERTICAL);
+        Button scanBtn = createButton(L("📂 浏览并选择 SFF 素材文件"), "#0078D7");
+        TextView statusText = new TextView(getContext()); statusText.setText(L(" 状态: 等待选取目录或文件...")); applyGlobalFontSettings(statusText, 0.92f, false); statusText.setPadding(0, (int)(6*density), 0, 0);
+        topBar.addView(scanBtn, new LinearLayout.LayoutParams(-1, -2)); topBar.addView(statusText); root.addView(topBar);
 
         ScrollView scroll = new ScrollView(getContext()); LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, -1); scrollParams.setMargins(0, (int)(15*density), 0, 0); scroll.setLayoutParams(scrollParams);
         final LinearLayout galleryLayout = new LinearLayout(getContext()); galleryLayout.setOrientation(LinearLayout.VERTICAL); scroll.addView(galleryLayout); root.addView(scroll);
@@ -2007,10 +2081,10 @@ public class DesktopSystemView extends Dialog {
     // ======================================================================================
     private View buildSndExtractorContent() {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
-        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL);
-        TextView statusText = new TextView(getContext()); statusText.setText(L(" 状态: 等待选取 .snd 文件...")); applyGlobalFontSettings(statusText, 1.0f, false);
-        Button scanBtn = createButton(L("📂 浏览并选择 SND 音频文件"), "#FF9800"); LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, -2); btnParams.setMargins(0, 0, (int)(15*density), 0);
-        topBar.addView(scanBtn, btnParams); topBar.addView(statusText); root.addView(topBar);
+        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.VERTICAL);
+        Button scanBtn = createButton(L("📂 浏览并选择 SND 音频文件"), "#FF9800");
+        TextView statusText = new TextView(getContext()); statusText.setText(L(" 状态: 等待选取 .snd 文件...")); applyGlobalFontSettings(statusText, 0.92f, false); statusText.setPadding(0, (int)(6*density), 0, 0);
+        topBar.addView(scanBtn, new LinearLayout.LayoutParams(-1, -2)); topBar.addView(statusText); root.addView(topBar);
 
         ScrollView scroll = new ScrollView(getContext()); LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, -1); scrollParams.setMargins(0, (int)(15*density), 0, 0); scroll.setLayoutParams(scrollParams);
         final LinearLayout listLayout = new LinearLayout(getContext()); listLayout.setOrientation(LinearLayout.VERTICAL); scroll.addView(listLayout); root.addView(scroll);
@@ -2054,23 +2128,29 @@ public class DesktopSystemView extends Dialog {
         final Handler uiHandler = new Handler(Looper.getMainLooper());
         final List<GoEngineBridge.SndNode> safeNodes = (allNodes != null) ? allNodes : new ArrayList<>();
 
-        // 【新增】：顶部搜索过滤与快捷操作栏
-        LinearLayout topTools = new LinearLayout(getContext()); topTools.setOrientation(LinearLayout.HORIZONTAL); topTools.setGravity(Gravity.CENTER_VERTICAL);
-        topTools.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(4*density));
+        // 顶部搜索过滤与快捷操作栏（上下两行自适应，窄窗口模式绝不挤压）
+        LinearLayout topTools = new LinearLayout(getContext()); topTools.setOrientation(LinearLayout.VERTICAL);
+        topTools.setPadding((int)(8*density), (int)(6*density), (int)(8*density), (int)(4*density));
         final EditText searchSnd = createInput(L("🔍 搜索组号或编号 (如 0 或 0-1)..."), "");
+        searchSnd.setSingleLine(true);
+        topTools.addView(searchSnd, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout topBtnRow = new LinearLayout(getContext()); topBtnRow.setOrientation(LinearLayout.HORIZONTAL); topBtnRow.setGravity(Gravity.CENTER_VERTICAL);
+        topBtnRow.setPadding(0, (int)(5*density), 0, 0);
         Button btnStopPlay = createButton(L("⏹️ 停止"), "#E81123");
         Button btnBatchWav = createButton(L("📦 批量导出组"), "#0288D1");
-        topTools.addView(searchSnd, new LinearLayout.LayoutParams(0, -2, 1f));
-        LinearLayout.LayoutParams topBtnP = new LinearLayout.LayoutParams(-2, -2); topBtnP.setMargins((int)(6*density), 0, 0, 0);
-        topTools.addView(btnStopPlay, topBtnP);
-        topTools.addView(btnBatchWav, topBtnP);
+        LinearLayout.LayoutParams topBtnP1 = new LinearLayout.LayoutParams(0, -2, 1f); topBtnP1.setMargins(0, 0, (int)(6*density), 0);
+        LinearLayout.LayoutParams topBtnP2 = new LinearLayout.LayoutParams(0, -2, 1.4f);
+        topBtnRow.addView(btnStopPlay, topBtnP1);
+        topBtnRow.addView(btnBatchWav, topBtnP2);
+        topTools.addView(topBtnRow);
         root.addView(topTools);
 
-        ScrollView scroll = new ScrollView(getContext()); LinearLayout listLayout = new LinearLayout(getContext()); listLayout.setOrientation(LinearLayout.VERTICAL); scroll.addView(listLayout, new FrameLayout.LayoutParams(-1, -1));
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f); scrollParams.setMargins((int)(10*density), (int)(6*density), (int)(10*density), (int)(6*density)); root.addView(scroll, scrollParams);
+        ScrollView scroll = new ScrollView(getContext()); scroll.setTag("layout_preview"); LinearLayout listLayout = new LinearLayout(getContext()); listLayout.setOrientation(LinearLayout.VERTICAL); scroll.addView(listLayout, new FrameLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f); scrollParams.setMargins((int)(8*density), (int)(4*density), (int)(8*density), (int)(4*density)); root.addView(scroll, scrollParams);
 
-        HorizontalScrollView groupScroll = new HorizontalScrollView(getContext()); groupScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout groupToolBelt = new LinearLayout(getContext()); groupToolBelt.setOrientation(LinearLayout.HORIZONTAL); groupToolBelt.setPadding((int)(12*density), (int)(10*density), (int)(12*density), (int)(10*density)); groupToolBelt.setBackgroundColor(Color.parseColor("#2D2D30"));
+        HorizontalScrollView groupScroll = new HorizontalScrollView(getContext()); groupScroll.setTag("layout_toolbar"); groupScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout groupToolBelt = new LinearLayout(getContext()); groupToolBelt.setOrientation(LinearLayout.HORIZONTAL); groupToolBelt.setPadding((int)(8*density), (int)(8*density), (int)(8*density), (int)(8*density)); groupToolBelt.setBackgroundColor(Color.parseColor("#202632"));
 
         final int[] currentSelectedGroup = {-999};
         final String[] searchFilter = {""};
@@ -2099,13 +2179,14 @@ public class DesktopSystemView extends Dialog {
                     String tag = n.group + "-" + n.item;
                     if (!tag.contains(q) && !String.valueOf(n.group).equals(q) && !String.valueOf(n.item).equals(q)) continue;
                 }
-                LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding((int)(10*density), (int)(10*density), (int)(10*density), (int)(10*density));
-                GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#2D2D30")); bg.setCornerRadius(8f*density); row.setBackground(bg);
-                LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, -2); rowParams.setMargins(0, 0, 0, (int)(8*density));
-                TextView info = new TextView(getContext()); info.setText(String.format(L("🎵 动作组 (Group): %d | 索引 (Item): %d"), n.group, n.item)); applyGlobalFontSettings(info, 0.9f, false); row.addView(info, new LinearLayout.LayoutParams(0, -2, 1f));
+                // 响应式双行卡片：窗口模式与全屏模式均清晰舒展，杜绝文字被挤成竖排
+                LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.VERTICAL); row.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(8*density));
+                GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#232936")); bg.setCornerRadius(8f*density); bg.setStroke((int)(1*density), Color.parseColor("#334155")); row.setBackground(bg);
+                LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, -2); rowParams.setMargins(0, 0, 0, (int)(7*density));
+                TextView info = new TextView(getContext()); info.setText(String.format(L("🎵 动作组 (Group): %d | 索引 (Item): %d"), n.group, n.item)); info.setSingleLine(true); info.setEllipsize(android.text.TextUtils.TruncateAt.END); applyGlobalFontSettings(info, 0.92f, true); info.setPadding(0, 0, 0, (int)(6*density)); row.addView(info, new LinearLayout.LayoutParams(-1, -2));
 
                 // 【防卡顿/防闪退】：试听提取改到后台线程
-                Button btnPlay = createButton(L("▶️ 试听"), "#FF9800"); btnPlay.setPadding((int)(15*density), (int)(8*density), (int)(15*density), (int)(8*density));
+                Button btnPlay = createButton(L("▶️ 试听"), "#FF9800"); btnPlay.setPadding((int)(10*density), (int)(6*density), (int)(10*density), (int)(6*density));
                 btnPlay.setOnClickListener(v -> {
                     stopAudioSafely.run();
                     new Thread(() -> {
@@ -2199,10 +2280,14 @@ public class DesktopSystemView extends Dialog {
                     box.addView(bOk, lp); box.addView(bNo, lp); cd.setContentView(box); cd.show();
                 });
 
-                HorizontalScrollView hsv = new HorizontalScrollView(getContext()); hsv.setHorizontalScrollBarEnabled(false);
+                btnExport.setPadding((int)(10*density), (int)(6*density), (int)(10*density), (int)(6*density));
+                btnReplace.setPadding((int)(10*density), (int)(6*density), (int)(10*density), (int)(6*density));
+                btnDelete.setPadding((int)(10*density), (int)(6*density), (int)(10*density), (int)(6*density));
+                HorizontalScrollView hsv = new HorizontalScrollView(getContext()); hsv.setHorizontalScrollBarEnabled(false); hsv.setFillViewport(true);
                 LinearLayout btnContainer = new LinearLayout(getContext()); btnContainer.setOrientation(LinearLayout.HORIZONTAL);
-                btnContainer.addView(btnPlay); btnContainer.addView(btnExport, btnParams); btnContainer.addView(btnReplace, btnParams); btnContainer.addView(btnDelete, btnParams);
-                hsv.addView(btnContainer); row.addView(hsv); listLayout.addView(row, rowParams);
+                LinearLayout.LayoutParams eqBp = new LinearLayout.LayoutParams(0, -2, 1f); eqBp.setMargins((int)(3*density), 0, (int)(3*density), 0);
+                btnContainer.addView(btnPlay, eqBp); btnContainer.addView(btnExport, eqBp); btnContainer.addView(btnReplace, eqBp); btnContainer.addView(btnDelete, eqBp);
+                hsv.addView(btnContainer, new FrameLayout.LayoutParams(-1, -2)); row.addView(hsv, new LinearLayout.LayoutParams(-1, -2)); listLayout.addView(row, rowParams);
             }
         };
 
@@ -2308,10 +2393,10 @@ public class DesktopSystemView extends Dialog {
     // ======================================================================================
     private View buildGifExtractorContent() {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
-        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL);
-        TextView statusText = new TextView(getContext()); statusText.setText(L(" 状态: 等待选取 .gif 文件...")); applyGlobalFontSettings(statusText, 1.0f, false);
-        Button scanBtn = createButton(L("📂 浏览并选择 GIF 文件"), "#0078D7"); LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, -2); btnParams.setMargins(0, 0, (int)(15*density), 0);
-        topBar.addView(scanBtn, btnParams); topBar.addView(statusText); root.addView(topBar);
+        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.VERTICAL);
+        Button scanBtn = createButton(L("📂 浏览并选择 GIF 文件"), "#0078D7");
+        TextView statusText = new TextView(getContext()); statusText.setText(L(" 状态: 等待选取 .gif 文件...")); applyGlobalFontSettings(statusText, 0.92f, false); statusText.setPadding(0, (int)(6*density), 0, 0);
+        topBar.addView(scanBtn, new LinearLayout.LayoutParams(-1, -2)); topBar.addView(statusText); root.addView(topBar);
         
         ScrollView scroll = new ScrollView(getContext()); 
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, -1); 
@@ -2573,9 +2658,12 @@ public class DesktopSystemView extends Dialog {
             }
             gridContainer.addView(row);
         }
-        gridScroll.addView(gridContainer);
+        HorizontalScrollView gridHScroll = new HorizontalScrollView(getContext());
+        gridHScroll.setHorizontalScrollBarEnabled(false);
+        gridHScroll.addView(gridContainer);
+        gridScroll.addView(gridHScroll);
         gridScroll.setTag("layout_left");
-        mainArea.addView(gridScroll, new LinearLayout.LayoutParams(-2, -1));
+        mainArea.addView(gridScroll, new LinearLayout.LayoutParams(0, -1, 1f));
 
         LinearLayout rightArea = new LinearLayout(getContext());
         rightArea.setTag("layout_center");
@@ -3445,7 +3533,9 @@ public class DesktopSystemView extends Dialog {
         Button btnLeft = createButton("◀", "#333333"); Button btnUp = createButton("▲", "#333333"); Button btnDown = createButton("▼", "#333333"); Button btnRight = createButton("▶", "#333333");
         TextView txtCoord = new TextView(getContext()); txtCoord.setText("  X:0  Y:0  "); txtCoord.setTextColor(Color.WHITE); applyGlobalFontSettings(txtCoord, 1.0f, true);
         dpadRow2.addView(btnLeft); dpadRow2.addView(btnUp); dpadRow2.addView(btnDown); dpadRow2.addView(btnRight); dpadRow2.addView(txtCoord);
-        dpadAreaContainer.addView(dpadRow1); dpadAreaContainer.addView(dpadRow2); sffCenterPanel.addView(dpadAreaContainer, new LinearLayout.LayoutParams(-1, -2));
+        HorizontalScrollView dpadScroll1 = new HorizontalScrollView(getContext()); dpadScroll1.setHorizontalScrollBarEnabled(false); dpadScroll1.addView(dpadRow1);
+        HorizontalScrollView dpadScroll2 = new HorizontalScrollView(getContext()); dpadScroll2.setHorizontalScrollBarEnabled(false); dpadScroll2.addView(dpadRow2);
+        dpadAreaContainer.addView(dpadScroll1); dpadAreaContainer.addView(dpadScroll2); sffCenterPanel.addView(dpadAreaContainer, new LinearLayout.LayoutParams(-1, -2));
 
         btnStep.setOnClickListener(clickStep -> {
             final Dialog stepDialog = new Dialog(getContext()); stepDialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
@@ -4396,10 +4486,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         LinearLayout root = new LinearLayout(getContext()); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.parseColor("#1E1E1E"));
         root.setPadding((int)(15*density), (int)(15*density), (int)(15*density), (int)(15*density));
 
-        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.HORIZONTAL); topBar.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout topBar = new LinearLayout(getContext()); topBar.setOrientation(LinearLayout.VERTICAL);
         Button btnScan = createButton(L("📂 选择根目录进行全盘扫描 (Chars/Stages)"), "#0078D7");
-        TextView txtStatus = new TextView(getContext()); txtStatus.setText(L("  等待扫描...")); applyGlobalFontSettings(txtStatus, 1.0f, false); txtStatus.setTextColor(Color.WHITE);
-        topBar.addView(btnScan); topBar.addView(txtStatus); root.addView(topBar);
+        TextView txtStatus = new TextView(getContext()); txtStatus.setText(L("  等待扫描...")); applyGlobalFontSettings(txtStatus, 0.92f, false); txtStatus.setTextColor(Color.WHITE); txtStatus.setPadding(0, (int)(6*density), 0, 0);
+        topBar.addView(btnScan, new LinearLayout.LayoutParams(-1, -2)); topBar.addView(txtStatus); root.addView(topBar);
 
         ScrollView scroll = new ScrollView(getContext()); LinearLayout contentArea = new LinearLayout(getContext()); contentArea.setOrientation(LinearLayout.VERTICAL); scroll.addView(contentArea);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
@@ -5455,6 +5545,640 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         if (!sffPathRef[0].isEmpty()) {
             root.post(loadSffAction);
         }
+        return root;
+    }
+
+    // ======================================================================================
+    // 📚 模块 9：MUGEN (Win/1.0/1.1) & Ikemen GO 全能词典百科（支持官方 GitHub 实时同步）
+    // ======================================================================================
+    private static class DictEntry {
+        String title;
+        String category; // sctrl, trigger, zss_lua, format, compat, official
+        String versions; // Win / 1.0 / 1.1 / IK-GO
+        String summary;
+        String detail;
+        String example;
+        boolean isOfficialSync;
+        DictEntry(String title, String category, String versions, String summary, String detail, String example, boolean isOfficialSync) {
+            this.title = title; this.category = category; this.versions = versions;
+            this.summary = summary; this.detail = detail; this.example = example;
+            this.isOfficialSync = isOfficialSync;
+        }
+    }
+
+    private String httpGetWithFallback(String rawUrl) {
+        String[] candidates = new String[] { rawUrl, "https://ghfast.top/" + rawUrl };
+        for (String urlStr : candidates) {
+            java.net.HttpURLConnection conn = null;
+            try {
+                java.net.URL url = new java.net.URL(urlStr);
+                conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(7000);
+                conn.setReadTimeout(10000);
+                conn.setRequestProperty("User-Agent", "IkemenDroid-Dict/1.0");
+                int code = conn.getResponseCode();
+                if (code == 200) {
+                    StringBuilder sb = new StringBuilder();
+                    try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+                        String line;
+                        while ((line = br.readLine()) != null) sb.append(line).append("\n");
+                    }
+                    if (sb.length() > 0) return sb.toString();
+                }
+            } catch (Throwable ignored) {
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }
+        return null;
+    }
+
+    private List<DictEntry> parseMarkdownToDictEntries(String pageTitle, String mdContent) {
+        List<DictEntry> out = new ArrayList<>();
+        if (mdContent == null || mdContent.trim().isEmpty()) return out;
+        String[] lines = mdContent.split("\n");
+        String curHeading = pageTitle;
+        StringBuilder curBody = new StringBuilder();
+        StringBuilder curCode = new StringBuilder();
+        boolean inCode = false;
+
+        for (String raw : lines) {
+            String t = raw.trim();
+            if (t.startsWith("```")) {
+                inCode = !inCode;
+                continue;
+            }
+            if (!inCode && (t.startsWith("## ") || t.startsWith("### "))) {
+                if (curBody.length() > 0 || curCode.length() > 0) {
+                    String bodyStr = curBody.toString().trim();
+                    String sum = bodyStr.replace("\n", " ");
+                    if (sum.length() > 90) sum = sum.substring(0, 90) + "...";
+                    out.add(new DictEntry(curHeading, "official", "IK-GO", sum.isEmpty() ? pageTitle : sum, bodyStr, curCode.toString().trim(), true));
+                }
+                curHeading = pageTitle + " · " + t.replaceAll("^#+\\s*", "").trim();
+                curBody.setLength(0);
+                curCode.setLength(0);
+            } else {
+                if (inCode) curCode.append(raw).append("\n");
+                else if (!t.isEmpty()) curBody.append(t).append("\n");
+            }
+        }
+        if (curBody.length() > 0 || curCode.length() > 0) {
+            String bodyStr = curBody.toString().trim();
+            String sum = bodyStr.replace("\n", " ");
+            if (sum.length() > 90) sum = sum.substring(0, 90) + "...";
+            out.add(new DictEntry(curHeading, "official", "IK-GO", sum.isEmpty() ? pageTitle : sum, bodyStr, curCode.toString().trim(), true));
+        }
+        return out;
+    }
+
+    private List<DictEntry> buildBuiltinDictionaryEntries() {
+        List<DictEntry> list = new ArrayList<>();
+        // --- 🎮 核心控制器 (SCTRL: Win / 1.0 / 1.1 / IK-GO) ---
+        list.add(new DictEntry("HitDef", "sctrl", "Win/1.0/1.1/IK-GO",
+                "定义攻击判定参数（伤害、硬直、击飞、特效、防御属性等）",
+                "最核心的攻击控制器。常用参数：attr(S/C/A, NA/SA/HA/NP/SP/HP/NT/ST/HT)、hitflag(MAFD)、guardflag(MA/L/H)、damage(命中,防损)、pausetime、sparkno、hitsound、ground.type、ground.slidetime、ground.hittime、ground.velocity、air.velocity、fall、envshake。\nIkemen GO 扩展：支持 dizzypoints、guardpoints、redlife、score、hitonce、redirectid 等。",
+                "[State 200, HitDef]\ntype = HitDef\ntrigger1 = AnimElem = 3\nattr = S, NA\ndamage = 25, 0\nanimtype = Light\nguardflag = MA\nhitflag = MAF\npausetime = 8, 8\nground.type = High\nground.slidetime = 10\nground.hittime = 12\nground.velocity = -4\nair.velocity = -2.5, -3.5", false));
+        list.add(new DictEntry("StateTypeSet", "sctrl", "Win/1.0/1.1/IK-GO",
+                "动态修改角色当前状态类型(S/C/A/L)、攻击状态(I/A/H)与物理属性(S/C/A/N)",
+                "用于在中途切换站/蹲/空/倒地状态、结束攻击判定状态(movetype=I)避免对手一直防御，或切换重力物理。",
+                "[State 200, EndAttack]\ntype = StateTypeSet\ntrigger1 = AnimElemTime(4) >= 0\nmovetype = I", false));
+        list.add(new DictEntry("ChangeState", "sctrl", "Win/1.0/1.1/IK-GO",
+                "跳转到指定状态号 (Statedef)，并可选修改控制权 ctrl 与动画 anim",
+                "动作收招或连段取消的核心控制器。value 为目标状态号；ctrl = 1 恢复玩家操控；anim 可在切换同时指定动画。",
+                "[State 200, End]\ntype = ChangeState\ntrigger1 = AnimTime = 0\nvalue = 0\nctrl = 1", false));
+        list.add(new DictEntry("ChangeAnim / ChangeAnim2", "sctrl", "Win/1.0/1.1/IK-GO",
+                "切换自身动画 (ChangeAnim) 或给被投技抓中的对手播放自己的自定义动画 (ChangeAnim2)",
+                "value 指定 AIR 动作号，elem 指定从第几帧开始播放。ChangeAnim2 专用于自定义受击状态(Custom State)里调用攻击方的 AIR 动画。",
+                "[State 810, Anim]\ntype = ChangeAnim2\ntrigger1 = Time = 0\nvalue = 820", false));
+        list.add(new DictEntry("VelSet / VelAdd / VelMul", "sctrl", "Win/1.0/1.1/IK-GO",
+                "设置、累加或按比例缩放角色 X/Y 速度（X 正值为面向前方，Y 负值为向上）",
+                "VelSet 直接覆写速度；VelAdd 每帧叠加（常用于自定义重力）；VelMul 按倍率减速（如地面摩擦 x = 0.85）。",
+                "[State 1000, DashVel]\ntype = VelSet\ntrigger1 = Time = 0\nx = 8.5\ny = -4.0", false));
+        list.add(new DictEntry("PosSet / PosAdd / PosFreeze", "sctrl", "Win/1.0/1.1/IK-GO",
+                "设置绝对坐标、相对偏移坐标，或冻结当前帧移动",
+                "PosAdd 的 x 会自动按角色朝向翻转；PosSet 的 y = 0 代表地面。PosFreeze 常用于顿帧或空中滞空。",
+                "[State 1000, Step]\ntype = PosAdd\ntrigger1 = AnimElem = 2\nx = 12", false));
+        list.add(new DictEntry("Helper", "sctrl", "Win/1.0/1.1/IK-GO",
+                "生成独立实体（飞行道具、分身、援护、系统控制器）",
+                "可拥有独立状态机、变量和判定框。常用参数：helpertype(normal/player)、name、ID、stateno、pos、postype、ownpal、supermovetime、pausemovetime。\nIkemen GO 扩展：支持 remapPal、keyctrl 增强与 Helper(id, index) 精确索引。",
+                "[State 1000, Fireball]\ntype = Helper\ntrigger1 = AnimElem = 4\nhelpertype = normal\nname = \"Fireball\"\nID = 1005\nstateno = 1005\npos = 40, -60\npostype = p1\nownpal = 1", false));
+        list.add(new DictEntry("Explod / ModifyExplod / RemoveExplod", "sctrl", "Win/1.0/1.1/IK-GO",
+                "生成、实时修改或移除纯视觉特效（火花、残影、UI 贴图）",
+                "常用参数：anim、ID、pos、postype、bindtime、removetime、scale、sprpriority、ontop、trans(add/add1/sub/addalpha)。\nMUGEN 1.1+ & IK-GO 支持 angle/xangle/yangle 旋转与 space(stage/screen)。",
+                "[State 1000, FX]\ntype = Explod\ntrigger1 = AnimElem = 2\nanim = 7000\nID = 7000\npos = 30, -50\npostype = p1\nsprpriority = 3\nscale = 0.5, 0.5\nremovetime = -2", false));
+        list.add(new DictEntry("Projectile", "sctrl", "Win/1.0/1.1/IK-GO",
+                "发射内置简易飞行道具（自带命中与相杀逻辑）",
+                "适合简单波动拳；复杂轨迹/多段判定推荐用 Helper。常用参数：ProjID、projanim、projhitanim、projremanim、projscale、offset、velocity、remvelocity。",
+                "[State 1000, Proj]\ntype = Projectile\ntrigger1 = AnimElem = 4\nProjID = 1000\nprojanim = 1005\nprojhitanim = 1006\noffset = 45, -60\nvelocity = 6, 0\nattr = S, SP\ndamage = 55, 8", false));
+        list.add(new DictEntry("NotHitBy / HitBy", "sctrl", "Win/1.0/1.1/IK-GO",
+                "设置无敌属性（免疫哪些攻击）或仅可被哪些攻击命中",
+                "value 格式如 SCA（全无敌）、,AA（免打击）、,AT（免投技）、,AP（免飞行道具）。time 为持续帧数；value2 可叠加第二套规则。",
+                "[State 1100, Invincible]\ntype = NotHitBy\ntrigger1 = Time = 0\nvalue = SCA\ntime = 12", false));
+        list.add(new DictEntry("HitOverride", "sctrl", "Win/1.0/1.1/IK-GO",
+                "霸体/当身核心：被指定属性攻击命中时强制转入自定义状态",
+                "attr 指定拦截的攻击属性，stateno 指定受击后跳转的状态号，slot 为槽位(0~7)，time 为持续帧数。",
+                "[State 1200, Armor]\ntype = HitOverride\ntrigger1 = 1\nattr = SCA, AA, AP\nstateno = 1210\nslot = 0\ntime = 1", false));
+        list.add(new DictEntry("SuperPause / Pause", "sctrl", "Win/1.0/1.1/IK-GO",
+                "超杀暗屏定格 (SuperPause) 或全局时间暂停 (Pause)",
+                "SuperPause 支持 time、anim、sound、pos、movetime、darken、p2defmul、poweradd、unhittable。",
+                "[State 3000, SuperPause]\ntype = SuperPause\ntrigger1 = Time = 0\ntime = 40\nmovetime = 40\nanim = -1\ndarken = 1\npoweradd = -1000", false));
+        list.add(new DictEntry("VarSet / VarAdd / ParentVarSet / VarRangeSet", "sctrl", "Win/1.0/1.1/IK-GO",
+                "读写整数变量 var(0~59)、浮点变量 fvar(0~39) 与系统变量 sysvar(0~4)",
+                "Win/1.0/1.1 角色最多 60 个整数 var 与 40 个浮点 fvar；Ikemen GO 推荐使用无限命名变量 MapSet/MapAdd 替代硬编码编号。",
+                "[State 200, SetVar]\ntype = VarSet\ntrigger1 = Time = 0\nv = 10\nvalue = 1", false));
+        list.add(new DictEntry("MapSet / MapAdd / RootMapSet / ParentMapSet", "sctrl", "IK-GO",
+                "【IK专属】读写具名键值对变量 Map（无数量上限，彻底告别 var 编号冲突）",
+                "Ikemen GO 革命性特性！直接用字符串名字存数值，如 map(combo_cnt)，支持自身 MapSet、父级 ParentMapSet、本体 RootMapSet、全队 TeamMapSet。",
+                "[State 200, IKMap]\ntype = MapAdd\ntrigger1 = MoveHit = 1\nmap = \"custom_gauge\"\nvalue = 10", false));
+        list.add(new DictEntry("AssertSpecial", "sctrl", "Win/1.0/1.1/IK-GO",
+                "开启单帧特殊引擎标志（如不可防御、隐藏血条、禁止站防/蹲防、禁止转身等）",
+                "常用 flag：unguardable、nostandguard、nocrouchguard、noairguard、noautoturn、invisible、nobardisplay、noshadow、intro、roundnotover、timerfreeze。\nIK-GO 新增：globalnoshadow、nomusic、noKO、noko_slow 等。",
+                "[State 3000, NoBar]\ntype = AssertSpecial\ntrigger1 = 1\nflag = nobardisplay\nflag2 = noBG", false));
+        list.add(new DictEntry("TargetBind / TargetState / TargetLifeAdd", "sctrl", "Win/1.0/1.1/IK-GO",
+                "投技核心三件套：绑定对手坐标、强制对手进入自定义状态、增减对手血量",
+                "需在 HitDef 命中并捕获 Target 后生效。TargetState 强制对手执行我方 CNS 中的状态；TargetBind 将对手固定在相对坐标 pos。",
+                "[State 810, Bind]\ntype = TargetBind\ntrigger1 = AnimElem = 1\npos = 45, -60\ntime = 10", false));
+        list.add(new DictEntry("PalFX / BGPalFX / AllPalFX / RemapPal", "sctrl", "Win/1.0/1.1/IK-GO",
+                "角色/背景/全屏滤镜染色、闪烁、反色，以及 1.1+/IK 实时换色表",
+                "PalFX 支持 add(r,g,b)、mul(r,g,b)、sinadd、invertall、color(0=灰度~256=原色)。RemapPal (1.0+) 可动态把色表组 source 映射到 dest。",
+                "[State 3000, Flash]\ntype = PalFX\ntrigger1 = Time = 0\ntime = 15\nadd = 120, 40, 0\nsinadd = 60, 60, 60, 6", false));
+        list.add(new DictEntry("Zoom / Camera", "sctrl", "1.1/IK-GO",
+                "动态镜头缩放 (Zoom) 与 Ikemen GO 高级镜头视角控制 (Camera)",
+                "MUGEN 1.1 与 Ikemen GO 支持在招式中动态拉近/拉远镜头（scale、pos、lag、stagebound、camerabound）。IK-GO 额外提供 Camera 控制器。",
+                "[State 3000, SuperZoom]\ntype = Zoom\ntrigger1 = Time < 30\nscale = 1.25\npos = Pos X, Pos Y - 60\nlag = 0.85", false));
+        list.add(new DictEntry("Text / LifebarAction / Dialogue / PlayBgm", "sctrl", "IK-GO",
+                "【IK专属】屏幕任意位置绘制文字、触发血条演出、剧情对话与动态切换 BGM",
+                "Text 控制器支持 font、text、pos、layerno、scale、removetime 及 <color:RRGGBB> 行内变色；PlayBgm 可在战斗中随时切换音乐与音量；Dialogue 用于角色对话系统。",
+                "[State 3000, CutInText]\ntype = Text\ntrigger1 = Time = 0\ntext = \"<color:FF4444>CRITICAL ART!</color>\"\nfont = 1, 0, 0\npos = 160, 60\nremovetime = 60", false));
+        list.add(new DictEntry("LoadFile / SaveFile / PrintToConsole / RedirectID", "sctrl", "IK-GO",
+                "【IK专属】读写本地存档数据、控制台打印调试，以及跨实体 RedirectID 参数",
+                "Ikemen GO 中几乎所有控制器都支持通用参数 redirectid = <PlayerID>，无需切换自定义状态即可直接对指定 ID 实体执行控制器！",
+                "[State -2, Debug]\ntype = PrintToConsole\ntrigger1 = Time = 1\ntext = \"HP=%d, Power=%d\"\nparams = Life, Power", false));
+
+        // --- ⚡ 触发器 (Trigger: Win / 1.0 / 1.1 / IK-GO) ---
+        list.add(new DictEntry("Time / StateTime / AnimTime / AnimElem / AnimElemTime", "trigger", "Win/1.0/1.1/IK-GO",
+                "状态计时与动画帧数判定核心触发器",
+                "Time：进入当前状态后的帧数（从0开始）。\nAnimTime：距离当前动画播完还剩多少帧（负数，最后一帧结束时为 0）。\nAnimElem = N：当前动画正好切换到第 N 帧时为真。\nAnimElemTime(N)：距离第 N 帧开始过了多少帧。",
+                "trigger1 = AnimElem = 3\ntrigger2 = AnimTime = 0", false));
+        list.add(new DictEntry("StateNo / PrevStateNo / StateType / MoveType / Physics", "trigger", "Win/1.0/1.1/IK-GO",
+                "读取当前状态号、上一个状态号、站蹲空状态、攻防状态与物理状态",
+                "StateType: S(站) C(蹲) A(空) L(倒地)。MoveType: I(待机) A(攻击) H(受击)。常用于取消条件判断。",
+                "trigger1 = StateType != A && MoveType = I && Ctrl", false));
+        list.add(new DictEntry("MoveContact / MoveHit / MoveGuarded / MoveReversed", "trigger", "Win/1.0/1.1/IK-GO",
+                "检测当前状态的攻击是否接触、命中、被防御或被当身（并记录已过帧数）",
+                "命中当帧返回 1，之后每帧递增。取消连招通常写 MoveContact = [1, 10] 或 MoveHit。",
+                "trigger1 = Command = \"Special\" && MoveContact", false));
+        list.add(new DictEntry("P2BodyDist X/Y & P2Dist X/Y", "trigger", "Win/1.0/1.1/IK-GO",
+                "获取与对手之间的距离（BodyDist 算宽度边缘，Dist 算轴心原点）",
+                "AI 判断出招距离首选 P2BodyDist X（0 代表贴身，负数代表重叠）。Y 负值表示对手在上方。",
+                "trigger1 = P2BodyDist X = [0, 65] && P2BodyDist Y = [-50, 0]", false));
+        list.add(new DictEntry("AILevel", "trigger", "1.0/1.1/IK-GO",
+                "官方内置 AI 难度等级 (0=玩家手操, 1~8=电脑难度)",
+                "注意兼容差异：WinMUGEN 没有 AILevel 触发器（老角色用 var(59) 开关）；MUGEN 1.0/1.1 与 Ikemen GO 原生支持 AILevel，写 AI 时可用 AILevel > 0 并按 random < AILevel * 100 控制反应概率。",
+                "trigger1 = AILevel > 0 && Random < (AILevel * 80)", false));
+        list.add(new DictEntry("Command / SelfCommand", "trigger", "Win/1.0/1.1/IK-GO",
+                "检测 .cmd 中定义的搓招指令是否触发",
+                "Command = \"QCF_x\" 检测按键指令。Ikemen GO 新增 SelfCommand，即使处于被对手控制的自定义状态中也能读取自身按键。",
+                "trigger1 = Command = \"hadouken\" && Power >= 1000", false));
+        list.add(new DictEntry("NumHelper / NumExplod / NumProjID / NumTarget", "trigger", "Win/1.0/1.1/IK-GO",
+                "查询当前场上存活的指定 ID 的 Helper、特效、飞行道具或捕获目标数量",
+                "常用于限制同屏飞行道具数量（如 NumHelper(1005) = 0）或确认投技目标存在。",
+                "trigger1 = NumHelper(1005) = 0 && NumProjID(1000) = 0", false));
+        list.add(new DictEntry("GetHitVar(...)", "trigger", "Win/1.0/1.1/IK-GO",
+                "读取受击时的各种参数（伤害、硬直、击飞速度、连段数、是否倒地等）",
+                "常用字段：damage、hitcount、fallcount、hittime、slidetime、xvel、yvel、fall、hitshaketime、isbound、chainid。",
+                "trigger1 = GetHitVar(hitcount) >= 3", false));
+        list.add(new DictEntry("Map(name) / IsAsserted(flag) / GameMode / StageConst", "trigger", "IK-GO",
+                "【IK专属】读取 Map 变量、检测 AssertSpecial 标志、当前游戏模式与场景常量",
+                "Ikemen GO 新增大量信息查询触发器：map(key)、isAsserted(unguardable)、gameMode = \"training\"、hitDefVar(...)、explodVar(...)、clsnVar(...)、moveHitVar(...)、palfxVar(...)。",
+                "trigger1 = map(custom_gauge) >= 100 && !isAsserted(nobardisplay)", false));
+        list.add(new DictEntry("重定向: Root / Parent / Target / Helper(id, idx) / PlayerID(id)", "trigger", "Win/1.0/1.1/IK-GO",
+                "跨实体读取触发器数据（如读取本体血量或对手坐标）",
+                "语法：Root, Life、Parent, Var(1)、Target, StateNo、EnemyNear, Pos X。\nIkemen GO 增强：Helper(id, index) 支持第 2 参数指定同 ID 第几个 Helper，彻底解决多同类 Helper 定位难题。",
+                "trigger1 = Root, Alive && Helper(1005, 0), Pos X > 0", false));
+
+        // --- 🧬 ZSS & Lua (Ikemen GO 核心脚本) ---
+        list.add(new DictEntry("ZSS 语法基础 (Zero State Script)", "zss_lua", "IK-GO",
+                "Ikemen GO 现代化角色脚本语言，支持 if/else、switch、for、局部变量与函数",
+                "相比传统 CNS，ZSS 写法更接近 Go/C：无需重复写 trigger1/triggerall，支持代码块嵌套、ignoreHitPause {} 块、let 局部变量、switch/case、自定义 [Function Name(arg)] 与 call Name()。",
+                "[Statedef 200; type: S; movetype: A; physics: S; anim: 200; ctrl: 0;]\nif time = 0 {\n    playSnd{value: 0, 0}\n}\nif animElem = 3 {\n    hitDef{attr: S, NA; damage: 25, 0; guardflag: MA;}\n}\nif animTime = 0 {\n    changeState{value: 0; ctrl: 1;}\n}", false));
+        list.add(new DictEntry("ZSS [Function] 自定义函数与循环", "zss_lua", "IK-GO",
+                "在 ZSS 中定义可复用的函数、for 循环与局部变量 let",
+                "可用 [Function MyHelper(x, y) ret] 定义函数，内部用 let 声明局部临时变量，彻底省去占用角色 var(0~59)！",
+                "[Function SpawnSparks(cnt)]\nfor i = 0; $cnt - 1; 1 {\n    explod{anim: 7000; pos: $i * 10, -40;}\n}", false));
+        list.add(new DictEntry("Ikemen GO Lua 模块与钩子 (hook.add)", "zss_lua", "IK-GO",
+                "使用 Lua 编写自定义菜单、商店、剧情模式、HUD 与全局逻辑",
+                "Ikemen GO 支持 external/mods/*.lua 模块化扩展，通过 hook.add(\"loop\", \"my_id\", fn) 注入每帧逻辑，常用 API 包括 textImgNew/textImgDraw、animNew/animDraw、sndPlay、playBGM、commandGetState、main.f_menu 等。",
+                "hook.add(\"loop\", \"my_hud\", function()\n    -- 每帧自定义绘制逻辑\nend)", false));
+        list.add(new DictEntry("行内文字变色与图标标签 (<color:RRGGBB>)", "zss_lua", "IK-GO",
+                "Ikemen GO v1.0+ 字体 DEF 与界面文本支持行内富文本染色和按键图标",
+                "Screenpack、Storyboard、Lua、Lifebar、Text 与 LifebarAction 控制器全部支持 <color:RRGGBB>文本</color> 变色以及手柄按键提示图标。",
+                "text = \"按下 <color:38BDF8>A+B</color> 发动 <color:FF5252>觉醒技</color>\"", false));
+
+        // --- 📁 文件格式 (DEF / AIR / SFF / SND / 3D) ---
+        list.add(new DictEntry("角色配置文件 (.def)", "format", "Win/1.0/1.1/IK-GO",
+                "定义角色名、作者、引擎版本、CMD/CNS/SFF/AIR/SND/色表路径",
+                "[Info] 中 mugenversion 填 04,14,2001(Win) / 1.0 / 1.1；Ikemen GO 专属特性需加 ikemenVersion = 1.0。\n[Files] 指定 cmd、cns、st、stcommon、sprite、anim、sound 与 pal1~pal12。",
+                "[Info]\nname = \"Kyo\"\ndisplayname = \"Kyo Kusanagi\"\nmugenversion = 1.1\nikemenVersion = 1.0\nlocalcoord = 320, 240", false));
+        list.add(new DictEntry("动画与判定框文件 (.air)", "format", "Win/1.0/1.1/IK-GO",
+                "定义动作帧序列、持续时间、翻转、透明混合以及 Clsn1(打击框)/Clsn2(防御框)",
+                "每帧格式：Group, Item, OffsetX, OffsetY, Ticks [, Flip(H/V/VH) [, Trans(A/A1/S/ASxDx)]]。\nClsn1 为红框(攻击)，Clsn2 为蓝框(受击)；Clsn2Default 会应用到该动作后续所有未单独定义 Clsn2 的帧。",
+                "[Begin Action 200]\nClsn2Default: 1\n  Clsn2[0] = -15, -90, 15, 0\n200,0, 0,0, 3\nClsn1: 1\n  Clsn1[0] = 10, -75, 55, -55\n200,1, 0,0, 4", false));
+        list.add(new DictEntry("指令文件 (.cmd)", "format", "Win/1.0/1.1/IK-GO",
+                "定义搓招指令序列、按键缓冲时间与 [Statedef -1] 出招触发",
+                "符号说明：~松开、/按住、$方向泛指(如 $D 包含下/左下/右下)、+同时按、>严格顺序。time 控制搓招窗口帧数，buffer.time 控制预输入缓冲。",
+                "[Command]\nname = \"QCF_x\"\ncommand = ~D, DF, F, x\ntime = 15", false));
+        list.add(new DictEntry("常驻状态 (-1 / -2 / -3) 与公共状态 (0~5999)", "format", "Win/1.0/1.1/IK-GO",
+                "理解 MUGEN/IK 状态机每帧执行顺序与系统保留状态号",
+                "-1：指令出招（仅本体执行，被抓入自定义状态时不执行）。\n-2：全局常驻（即使被对手控制也每帧执行，适合血条/变量维护）。\n-3：仅本体在非自定义状态时执行（Helper 不执行 -3）。\n常用公共状态：0站立、10~12蹲、20走、40~52跳、100跑、120~155防、5000~5150受击倒地、5900开局。",
+                "[Statedef -2]\n; 每帧必然执行的全局检测", false));
+        list.add(new DictEntry("图像包 (.sff v1 vs v2) 与音频包 (.snd)", "format", "Win/1.0/1.1/IK-GO",
+                "SFFv1(256色PCX) 与 SFFv2(PNG/32位真彩) 区别，以及 SND 音频格式支持",
+                "SFFv1 仅支持 8-bit 索引色 PCX（依赖外部 .act 换色）；SFFv2 (1.0+/1.1/IK) 支持 RLE/LZ5/PNG8/PNG24/PNG32 真彩带透明通道，内置多套色表。\nIkemen GO 的 SND 除 WAV 外，还原生支持 OGG、MP3、FLAC 及 XM/MOD/IT 等音轨格式。",
+                "; SFF 9000,0 = 小头像(25x25)\n; SFF 9000,1 = 大头像(120x140)", false));
+        list.add(new DictEntry("地图与 3D 场景 (.def / .gltf / .glb)", "format", "Win/1.0/1.1/IK-GO",
+                "2D 视差图层地图配置与 Ikemen GO 专属 3D 模型场景",
+                "2D 地图包含 [Camera]、[PlayerInfo]、[Bound]、[StageInfo]、[BGdef] 与多个 [BG] 图层（delta 控制视差速度）。\nIkemen GO 支持 [Model] 直接加载 .gltf/.glb 3D 场景与动画骨骼。",
+                "[BG Sky]\ntype = normal\nspriteno = 0, 0\nstart = 0, 0\ndelta = 0.2, 0.2", false));
+
+        // --- 🔄 版本兼容差异 (WinMUGEN / 1.0 / 1.1 / IK-GO) ---
+        list.add(new DictEntry("WinMUGEN → 1.0 → 1.1 → Ikemen GO 核心差异速查", "compat", "Win/1.0/1.1/IK-GO",
+                "移植老角色/修 Bug 必看的跨版本兼容对照表",
+                "1. AI 检测：Win 无 AILevel（靠 var(59) 伪指令）；1.0+/IK 原生支持 AILevel。\n2. 分辨率与缩放：Win 固定 320x240；1.0+ 引入 localcoord；1.1+ 支持 Camera Zoom 与 32位 PNG SFFv2。\n3. 语法严格度：Win 容忍多余逗号/缺参数；Ikemen GO 解析更严格，报错会明确提示行号。\n4. 联机与脚本：仅 Ikemen GO 原生支持网络联机(含实验性回滚)、ZSS、Lua 模块、Map 变量、3D 地图与 MP4 过场。",
+                "; 跨版本兼容小技巧：\n; 在 .def 中声明 mugenversion = 1.1\n; IK 专属角色加 ikemenVersion = 1.0", false));
+        list.add(new DictEntry("常见报错与崩溃排查指南", "compat", "Win/1.0/1.1/IK-GO",
+                "快速定位 SFF 闪退、乱码、状态死循环、Helper 溢出等高频问题",
+                "1. 日文/韩文路径或角色名乱码：用桌面【🔣 乱码解字板】按 Shift_JIS/EUC-KR 转存为 UTF-8。\n2. 人物无限卡死：检查 ChangeState 是否缺 AnimTime=0 或触发条件永真导致同帧死循环。\n3. 图像替换失败：SFFv1 只能替换 PCX，SFFv2 禁止 PCX 必须用 PNG。\n4. 选人界面不显示：检查 select.def 路径，可用【🗂️ DEF生成器】一键扫描。",
+                "; 建议调试时在游戏内按 Ctrl+D 查看实时状态号与变量", false));
+
+        return list;
+    }
+
+    private View buildDictionaryContent() {
+        LinearLayout root = new LinearLayout(getContext());
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.parseColor("#141820"));
+        final Handler uiHandler = new Handler(Looper.getMainLooper());
+        final File cacheDir = new File(getContext().getFilesDir(), "ikemen_wiki_cache");
+        if (!cacheDir.exists()) cacheDir.mkdirs();
+
+        final List<DictEntry> allEntries = new ArrayList<>();
+        allEntries.addAll(buildBuiltinDictionaryEntries());
+
+        final java.util.Set<String> favSet = new HashSet<>(prefs.getStringSet("dict_favs", new HashSet<>()));
+        final String[] activeCat = {"all"};
+        final String[] activeVer = {"all"};
+        final String[] queryText = {""};
+
+        // 顶部搜索与官方同步栏
+        LinearLayout headerArea = new LinearLayout(getContext());
+        headerArea.setOrientation(LinearLayout.VERTICAL);
+        headerArea.setPadding((int)(8*density), (int)(8*density), (int)(8*density), (int)(4*density));
+
+        LinearLayout searchRow = new LinearLayout(getContext());
+        searchRow.setOrientation(LinearLayout.HORIZONTAL);
+        searchRow.setGravity(Gravity.CENTER_VERTICAL);
+        final EditText searchInput = createInput(L("🔍 搜控制器/触发器/ZSS/Lua/参数/中文说明..."), "");
+        searchInput.setSingleLine(true);
+        Button btnClearQ = createButton("✕", "#334155");
+        btnClearQ.setPadding((int)(10*density), (int)(6*density), (int)(10*density), (int)(6*density));
+        Button btnSync = createButton(L("🔄 同步官方仓库"), "#0284C7");
+        btnSync.setPadding((int)(10*density), (int)(6*density), (int)(10*density), (int)(6*density));
+        LinearLayout.LayoutParams sBtnP = new LinearLayout.LayoutParams(-2, -2); sBtnP.setMargins((int)(5*density), 0, 0, 0);
+        searchRow.addView(searchInput, new LinearLayout.LayoutParams(0, -2, 1f));
+        searchRow.addView(btnClearQ, sBtnP);
+        searchRow.addView(btnSync, sBtnP);
+        headerArea.addView(searchRow);
+
+        final TextView syncStatus = new TextView(getContext());
+        String lastSyncTime = prefs.getString("dict_last_sync", "");
+        syncStatus.setText(lastSyncTime.isEmpty()
+                ? L("📚 已内置 Win/1.0/1.1/IK-GO 离线词库，点右上角可实时同步官方 GitHub 仓库全部最新 Wiki")
+                : L("✅ 上次官方同步: ") + lastSyncTime);
+        applyGlobalFontSettings(syncStatus, 0.82f, false);
+        syncStatus.setTextColor(Color.parseColor("#94A3B8"));
+        syncStatus.setPadding(0, (int)(4*density), 0, (int)(4*density));
+        headerArea.addView(syncStatus);
+
+        // 版本筛选胶囊
+        HorizontalScrollView verScroll = new HorizontalScrollView(getContext()); verScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout verRow = new LinearLayout(getContext()); verRow.setOrientation(LinearLayout.HORIZONTAL);
+        final String[] verKeys = {"all", "Win", "1.0", "1.1", "IK-GO"};
+        final String[] verNames = {L("全部版本"), "WinMUGEN", "MUGEN 1.0", "MUGEN 1.1", "Ikemen GO"};
+        final Button[] verBtns = new Button[verKeys.length];
+
+        // 分类标签栏
+        HorizontalScrollView catScroll = new HorizontalScrollView(getContext()); catScroll.setHorizontalScrollBarEnabled(false);
+        catScroll.setTag("layout_toolbar");
+        LinearLayout catRow = new LinearLayout(getContext()); catRow.setOrientation(LinearLayout.HORIZONTAL);
+        final String[] catKeys = {"all", "fav", "sctrl", "trigger", "zss_lua", "format", "compat", "official"};
+        final String[] catNames = {L("🔥 全部"), L("⭐ 收藏"), L("🎮 控制器"), L("⚡ 触发器"), L("🧬 ZSS/Lua"), L("📁 文件格式"), L("🔄 版本差异"), L("🌐 官方同步")};
+        final Button[] catBtns = new Button[catKeys.length];
+
+        ScrollView listScroll = new ScrollView(getContext());
+        listScroll.setTag("layout_preview");
+        final LinearLayout listContainer = new LinearLayout(getContext());
+        listContainer.setOrientation(LinearLayout.VERTICAL);
+        listScroll.addView(listContainer, new FrameLayout.LayoutParams(-1, -2));
+
+        final Runnable[] refreshDictUI = {null};
+
+        // 详情阅读弹窗
+        final java.util.List<DictEntry> dummyRef = allEntries;
+        final Runnable updateFilterColors = () -> {
+            for (int i = 0; i < verKeys.length; i++) {
+                verBtns[i].setBackgroundColor(activeVer[0].equals(verKeys[i]) ? Color.parseColor("#0EA5E9") : Color.parseColor("#252D3D"));
+            }
+            for (int i = 0; i < catKeys.length; i++) {
+                catBtns[i].setBackgroundColor(activeCat[0].equals(catKeys[i]) ? Color.parseColor("#6366F1") : Color.parseColor("#252D3D"));
+            }
+        };
+
+        LinearLayout.LayoutParams pillLp = new LinearLayout.LayoutParams(-2, -2);
+        pillLp.setMargins(0, (int)(3*density), (int)(5*density), (int)(3*density));
+        for (int i = 0; i < verKeys.length; i++) {
+            final int idx = i;
+            verBtns[i] = createButton(verNames[i], "#252D3D");
+            verBtns[i].setPadding((int)(10*density), (int)(4*density), (int)(10*density), (int)(4*density));
+            verBtns[i].setOnClickListener(v -> { activeVer[0] = verKeys[idx]; updateFilterColors.run(); refreshDictUI[0].run(); });
+            verRow.addView(verBtns[i], pillLp);
+        }
+        verScroll.addView(verRow);
+        headerArea.addView(verScroll);
+
+        for (int i = 0; i < catKeys.length; i++) {
+            final int idx = i;
+            catBtns[i] = createButton(catNames[i], "#252D3D");
+            catBtns[i].setPadding((int)(10*density), (int)(5*density), (int)(10*density), (int)(5*density));
+            catBtns[i].setOnClickListener(v -> { activeCat[0] = catKeys[idx]; updateFilterColors.run(); refreshDictUI[0].run(); });
+            catRow.addView(catBtns[i], pillLp);
+        }
+        catScroll.addView(catRow);
+        headerArea.addView(catScroll);
+
+        root.addView(headerArea);
+        LinearLayout.LayoutParams lsLp = new LinearLayout.LayoutParams(-1, 0, 1f);
+        lsLp.setMargins((int)(8*density), (int)(4*density), (int)(8*density), (int)(8*density));
+        root.addView(listScroll, lsLp);
+
+        // 读取本地已缓存的官方 Wiki Markdown
+        Runnable loadCachedOfficialDocs = () -> {
+            List<DictEntry> toKeep = new ArrayList<>();
+            for (DictEntry e : allEntries) { if (!e.isOfficialSync) toKeep.add(e); }
+            allEntries.clear();
+            allEntries.addAll(toKeep);
+            File[] cached = cacheDir.listFiles();
+            if (cached != null) {
+                Arrays.sort(cached, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+                for (File cf : cached) {
+                    if (!cf.getName().endsWith(".md") && !cf.getName().endsWith(".def") && !cf.getName().endsWith(".txt")) continue;
+                    try {
+                        StringBuilder sb = new StringBuilder();
+                        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(cf), "UTF-8"))) {
+                            String line;
+                            while ((line = br.readLine()) != null) sb.append(line).append("\n");
+                        }
+                        String pageName = cf.getName().replaceAll("\\.(md|def|txt)$", "").replace("-", " ");
+                        allEntries.addAll(parseMarkdownToDictEntries(pageName, sb.toString()));
+                    } catch (Exception ignored) {}
+                }
+            }
+        };
+        loadCachedOfficialDocs.run();
+
+        refreshDictUI[0] = () -> {
+            listContainer.removeAllViews();
+            String q = queryText[0].trim().toLowerCase();
+            int matchCount = 0;
+            for (final DictEntry item : allEntries) {
+                if (activeCat[0].equals("fav")) {
+                    if (!favSet.contains(item.title)) continue;
+                } else if (!activeCat[0].equals("all") && !activeCat[0].equals(item.category)) {
+                    continue;
+                }
+                if (!activeVer[0].equals("all") && !item.versions.contains(activeVer[0])) continue;
+                if (!q.isEmpty()) {
+                    boolean hit = item.title.toLowerCase().contains(q)
+                            || item.summary.toLowerCase().contains(q)
+                            || item.detail.toLowerCase().contains(q)
+                            || item.example.toLowerCase().contains(q)
+                            || item.versions.toLowerCase().contains(q);
+                    if (!hit) continue;
+                }
+                matchCount++;
+                if (matchCount > 250) break; // 防止一次渲染过多卡片卡顿
+
+                LinearLayout card = new LinearLayout(getContext());
+                card.setOrientation(LinearLayout.VERTICAL);
+                card.setPadding((int)(11*density), (int)(9*density), (int)(11*density), (int)(9*density));
+                GradientDrawable cbg = new GradientDrawable();
+                cbg.setColor(Color.parseColor("#1E2430"));
+                cbg.setCornerRadius(8f * density);
+                cbg.setStroke((int)(1*density), Color.parseColor(item.isOfficialSync ? "#0369A1" : "#334155"));
+                card.setBackground(cbg);
+                LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, -2);
+                clp.setMargins(0, 0, 0, (int)(7*density));
+
+                LinearLayout titleRow = new LinearLayout(getContext());
+                titleRow.setOrientation(LinearLayout.HORIZONTAL);
+                titleRow.setGravity(Gravity.CENTER_VERTICAL);
+                TextView tvTitle = new TextView(getContext());
+                tvTitle.setText((favSet.contains(item.title) ? "⭐ " : "") + item.title);
+                applyGlobalFontSettings(tvTitle, 1.0f, true);
+                tvTitle.setTextColor(Color.parseColor("#F8FAFC"));
+                titleRow.addView(tvTitle, new LinearLayout.LayoutParams(0, -2, 1f));
+
+                TextView tvVer = new TextView(getContext());
+                tvVer.setText(" " + item.versions + " ");
+                applyGlobalFontSettings(tvVer, 0.75f, true);
+                tvVer.setTextColor(Color.parseColor("#38BDF8"));
+                GradientDrawable vbg = new GradientDrawable();
+                vbg.setColor(Color.parseColor("#1E3A5F"));
+                vbg.setCornerRadius(5f * density);
+                tvVer.setBackground(vbg);
+                tvVer.setPadding((int)(5*density), (int)(2*density), (int)(5*density), (int)(2*density));
+                titleRow.addView(tvVer);
+                card.addView(titleRow);
+
+                TextView tvSum = new TextView(getContext());
+                tvSum.setText(item.summary);
+                applyGlobalFontSettings(tvSum, 0.85f, false);
+                tvSum.setTextColor(Color.parseColor("#CBD5E1"));
+                tvSum.setPadding(0, (int)(4*density), 0, 0);
+                tvSum.setMaxLines(2);
+                tvSum.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                card.addView(tvSum);
+
+                card.setOnClickListener(v -> {
+                    final Dialog dd = new Dialog(getContext());
+                    if (dd.getWindow() != null) dd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                    ScrollView dsv = new ScrollView(getContext());
+                    LinearLayout dbox = new LinearLayout(getContext());
+                    dbox.setOrientation(LinearLayout.VERTICAL);
+                    dbox.setPadding((int)(16*density), (int)(16*density), (int)(16*density), (int)(16*density));
+                    GradientDrawable dbg = new GradientDrawable();
+                    dbg.setColor(Color.parseColor("#F8171C26"));
+                    dbg.setCornerRadius(12f * density);
+                    dbg.setStroke((int)(1.5f * density), Color.parseColor("#38BDF8"));
+                    dbox.setBackground(dbg);
+
+                    TextView dt = new TextView(getContext()); dt.setText(item.title); applyGlobalFontSettings(dt, 1.18f, true); dt.setTextColor(Color.WHITE); dbox.addView(dt);
+                    TextView dv = new TextView(getContext()); dv.setText(L("适用引擎版本: ") + item.versions + (item.isOfficialSync ? L("  |  来源: 官方 GitHub 仓库") : L("  |  来源: 内置全量词库")));
+                    applyGlobalFontSettings(dv, 0.82f, false); dv.setTextColor(Color.parseColor("#38BDF8")); dv.setPadding(0, (int)(4*density), 0, (int)(10*density)); dbox.addView(dv);
+
+                    TextView dbody = new TextView(getContext()); dbody.setText(item.detail.isEmpty() ? item.summary : item.detail);
+                    applyGlobalFontSettings(dbody, 0.94f, false); dbody.setTextColor(Color.parseColor("#E2E8F0")); dbody.setTextIsSelectable(true);
+                    dbox.addView(dbody);
+
+                    if (item.example != null && !item.example.isEmpty()) {
+                        dbox.addView(createSubTitle(L("💻 语法 / 代码示例:")));
+                        TextView codeTv = new TextView(getContext());
+                        codeTv.setText(item.example);
+                        codeTv.setTypeface(Typeface.MONOSPACE);
+                        codeTv.setTextColor(Color.parseColor("#86EFAC"));
+                        codeTv.setTextSize(11.5f);
+                        codeTv.setTextIsSelectable(true);
+                        codeTv.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(8*density));
+                        GradientDrawable codeBg = new GradientDrawable(); codeBg.setColor(Color.parseColor("#0B0F17")); codeBg.setCornerRadius(6f*density); codeBg.setStroke(1, Color.parseColor("#334155"));
+                        codeTv.setBackground(codeBg);
+                        dbox.addView(codeTv, new LinearLayout.LayoutParams(-1, -2));
+                    }
+
+                    LinearLayout actRow = new LinearLayout(getContext()); actRow.setOrientation(LinearLayout.HORIZONTAL);
+                    LinearLayout.LayoutParams arp = new LinearLayout.LayoutParams(0, -2, 1f); arp.setMargins((int)(3*density), (int)(12*density), (int)(3*density), 0);
+                    Button bFav = createButton(favSet.contains(item.title) ? L("★ 取消收藏") : L("⭐ 收藏"), "#B45309");
+                    bFav.setOnClickListener(fv -> {
+                        if (favSet.contains(item.title)) favSet.remove(item.title); else favSet.add(item.title);
+                        prefs.edit().putStringSet("dict_favs", new HashSet<>(favSet)).apply();
+                        bFav.setText(favSet.contains(item.title) ? L("★ 取消收藏") : L("⭐ 收藏"));
+                        refreshDictUI[0].run();
+                    });
+                    actRow.addView(bFav, arp);
+
+                    if (item.example != null && !item.example.isEmpty()) {
+                        Button bCopy = createButton(L("📋 复制代码"), "#0284C7");
+                        bCopy.setOnClickListener(cv -> {
+                            try {
+                                android.content.ClipboardManager cm = (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                                if (cm != null) {
+                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("ik_dict", item.example));
+                                    Toast.makeText(getContext(), L("✅ 代码示例已复制到剪贴板"), Toast.LENGTH_SHORT).show();
+                                }
+                            } catch (Exception ignored) {}
+                        });
+                        actRow.addView(bCopy, arp);
+                    }
+                    Button bClose = createButton(L("关闭"), "#475569"); bClose.setOnClickListener(cv -> dd.dismiss());
+                    actRow.addView(bClose, arp);
+                    dbox.addView(actRow);
+
+                    dsv.addView(dbox);
+                    int sw = getContext().getResources().getDisplayMetrics().widthPixels;
+                    dd.setContentView(dsv, new ViewGroup.LayoutParams((int)(sw * 0.88f), -2));
+                    dd.show();
+                });
+
+                listContainer.addView(card, clp);
+            }
+            if (matchCount == 0) {
+                TextView empty = new TextView(getContext());
+                empty.setText(L("未找到匹配词条，可换个关键词或点击右上角【🔄 同步官方仓库】获取全部最新资料"));
+                applyGlobalFontSettings(empty, 0.92f, false);
+                empty.setTextColor(Color.parseColor("#94A3B8"));
+                empty.setPadding((int)(10*density), (int)(20*density), (int)(10*density), (int)(10*density));
+                listContainer.addView(empty);
+            }
+        };
+
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) { queryText[0] = s.toString(); refreshDictUI[0].run(); }
+        });
+        btnClearQ.setOnClickListener(v -> { searchInput.setText(""); queryText[0] = ""; refreshDictUI[0].run(); });
+
+        // 🔄 实时同步官方 GitHub 仓库 (ikemen-engine/Ikemen-GO Wiki + system.base.def)
+        btnSync.setOnClickListener(v -> {
+            btnSync.setEnabled(false);
+            syncStatus.setText(L("⏳ 正在连接 GitHub 官方仓库读取文档目录 (_Sidebar.md)..."));
+            new Thread(() -> {
+                java.util.LinkedHashSet<String> wikiPages = new java.util.LinkedHashSet<>();
+                // 核心官方 Wiki 必同步清单
+                String[] defaults = new String[] {
+                    "Home", "State-controllers-(new)", "State-controllers-(changed)",
+                    "Triggers-(new)", "Triggers-(changed)", "Lua",
+                    "Character-features", "Stage-features", "Screenpack-features",
+                    "Miscellaneous-info", "Command-line-arguments"
+                };
+                for (String p : defaults) wikiPages.add(p);
+
+                // 动态解析 _Sidebar.md 自动发现官方仓库新增的所有 Wiki 页面
+                String sidebarMd = httpGetWithFallback("[https://raw.githubusercontent.com/wiki/ikemen-engine/Ikemen-GO/_Sidebar.md](https://raw.githubusercontent.com/wiki/ikemen-engine/Ikemen-GO/_Sidebar.md)");
+                if (sidebarMd != null) {
+                    java.util.regex.Matcher m1 = java.util.regex.Pattern.compile("\\[\\[([^\\]|]+)(?:\\|([^\\]]+))?\\]\\]").matcher(sidebarMd);
+                    while (m1.find()) {
+                        String slug = (m1.group(2) != null ? m1.group(2) : m1.group(1)).trim().replace(" ", "-");
+                        if (!slug.isEmpty() && !slug.startsWith("http")) wikiPages.add(slug);
+                    }
+                    java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("/wiki/([A-Za-z0-9_\\-\\(\\)%]+)").matcher(sidebarMd);
+                    while (m2.find()) {
+                        String slug = m2.group(1).trim();
+                        if (!slug.isEmpty()) wikiPages.add(slug);
+                    }
+                }
+
+                int total = wikiPages.size() + 1;
+                int done = 0, ok = 0;
+                for (String slug : wikiPages) {
+                    done++;
+                    final int curD = done; final String curSlug = slug;
+                    uiHandler.post(() -> syncStatus.setText(L("⏳ 正在同步官方 Wiki (") + curD + "/" + total + "): " + curSlug));
+                    String md = httpGetWithFallback("[https://raw.githubusercontent.com/wiki/ikemen-engine/Ikemen-GO/](https://raw.githubusercontent.com/wiki/ikemen-engine/Ikemen-GO/)" + slug + ".md");
+                    if (md != null && md.length() > 30) {
+                        try {
+                            String safeName = slug.replaceAll("[^A-Za-z0-9_\\-\\(\\)]", "_") + ".md";
+                            try (FileOutputStream fos = new FileOutputStream(new File(cacheDir, safeName))) {
+                                fos.write(md.getBytes("UTF-8"));
+                            }
+                            ok++;
+                        } catch (Exception ignored) {}
+                    }
+                }
+
+                // 同步官方 system.base.def 参数参考注释
+                final int sysStep = total;
+                uiHandler.post(() -> syncStatus.setText(L("⏳ 正在同步官方配置参数 (") + sysStep + "/" + total + "): system.base.def"));
+                String sysDef = httpGetWithFallback("[https://raw.githubusercontent.com/ikemen-engine/Ikemen-GO/main/data/system.base.def](https://raw.githubusercontent.com/ikemen-engine/Ikemen-GO/main/data/system.base.def)");
+                if (sysDef == null) sysDef = httpGetWithFallback("[https://raw.githubusercontent.com/ikemen-engine/Ikemen-GO/develop/data/system.base.def](https://raw.githubusercontent.com/ikemen-engine/Ikemen-GO/develop/data/system.base.def)");
+                if (sysDef != null && sysDef.length() > 100) {
+                    try (FileOutputStream fos = new FileOutputStream(new File(cacheDir, "Official_system_base_def.txt"))) {
+                        fos.write(("## system.base.def 官方完整参数参考\n```ini\n" + sysDef + "\n```").getBytes("UTF-8"));
+                    } catch (Exception ignored) {}
+                    ok++;
+                }
+
+                final int okCount = ok;
+                final String nowStr = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(new java.util.Date());
+                uiHandler.post(() -> {
+                    btnSync.setEnabled(true);
+                    if (okCount > 0) {
+                        prefs.edit().putString("dict_last_sync", nowStr + " (" + okCount + " docs)").apply();
+                        loadCachedOfficialDocs.run();
+                        syncStatus.setText(L("✅ 官方仓库同步完成！已更新 ") + okCount + L(" 份文档，共收录 ") + allEntries.size() + L(" 条词条"));
+                        Toast.makeText(getContext(), L("✅ 官方资料同步成功！离线也可秒搜"), Toast.LENGTH_LONG).show();
+                        refreshDictUI[0].run();
+                    } else {
+                        syncStatus.setText(L("❌ 同步失败：请检查网络连接后重试（内置离线词库仍可正常使用）"));
+                        Toast.makeText(getContext(), L("❌ 无法连接 GitHub，请检查网络"), Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }).start();
+        });
+
+        updateFilterColors.run();
+        refreshDictUI[0].run();
         return root;
     }
 
