@@ -5567,7 +5567,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
     }
 
     private String httpGetWithFallback(String rawUrl) {
-        String[] candidates = new String[] { rawUrl, "https://ghfast.top/" + rawUrl };
+        String[] candidates = new String[] { rawUrl, "https://" + "ghfast.top/" + rawUrl };
         for (String urlStr : candidates) {
             java.net.HttpURLConnection conn = null;
             try {
@@ -5635,185 +5635,491 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
     private List<DictEntry> buildBuiltinDictionaryEntries() {
         List<DictEntry> list = new ArrayList<>();
-        // --- 🎮 核心控制器 (SCTRL: Win / 1.0 / 1.1 / IK-GO) ---
-        list.add(new DictEntry("HitDef", "sctrl", "Win/1.0/1.1/IK-GO",
-                "定义攻击判定参数（伤害、硬直、击飞、特效、防御属性等）",
-                "最核心的攻击控制器。常用参数：attr(S/C/A, NA/SA/HA/NP/SP/HP/NT/ST/HT)、hitflag(MAFD)、guardflag(MA/L/H)、damage(命中,防损)、pausetime、sparkno、hitsound、ground.type、ground.slidetime、ground.hittime、ground.velocity、air.velocity、fall、envshake。\nIkemen GO 扩展：支持 dizzypoints、guardpoints、redlife、score、hitonce、redirectid 等。",
-                "[State 200, HitDef]\ntype = HitDef\ntrigger1 = AnimElem = 3\nattr = S, NA\ndamage = 25, 0\nanimtype = Light\nguardflag = MA\nhitflag = MAF\npausetime = 8, 8\nground.type = High\nground.slidetime = 10\nground.hittime = 12\nground.velocity = -4\nair.velocity = -2.5, -3.5", false));
-        list.add(new DictEntry("StateTypeSet", "sctrl", "Win/1.0/1.1/IK-GO",
-                "动态修改角色当前状态类型(S/C/A/L)、攻击状态(I/A/H)与物理属性(S/C/A/N)",
-                "用于在中途切换站/蹲/空/倒地状态、结束攻击判定状态(movetype=I)避免对手一直防御，或切换重力物理。",
-                "[State 200, EndAttack]\ntype = StateTypeSet\ntrigger1 = AnimElemTime(4) >= 0\nmovetype = I", false));
-        list.add(new DictEntry("ChangeState", "sctrl", "Win/1.0/1.1/IK-GO",
-                "跳转到指定状态号 (Statedef)，并可选修改控制权 ctrl 与动画 anim",
-                "动作收招或连段取消的核心控制器。value 为目标状态号；ctrl = 1 恢复玩家操控；anim 可在切换同时指定动画。",
-                "[State 200, End]\ntype = ChangeState\ntrigger1 = AnimTime = 0\nvalue = 0\nctrl = 1", false));
-        list.add(new DictEntry("ChangeAnim / ChangeAnim2", "sctrl", "Win/1.0/1.1/IK-GO",
-                "切换自身动画 (ChangeAnim) 或给被投技抓中的对手播放自己的自定义动画 (ChangeAnim2)",
-                "value 指定 AIR 动作号，elem 指定从第几帧开始播放。ChangeAnim2 专用于自定义受击状态(Custom State)里调用攻击方的 AIR 动画。",
-                "[State 810, Anim]\ntype = ChangeAnim2\ntrigger1 = Time = 0\nvalue = 820", false));
-        list.add(new DictEntry("VelSet / VelAdd / VelMul", "sctrl", "Win/1.0/1.1/IK-GO",
-                "设置、累加或按比例缩放角色 X/Y 速度（X 正值为面向前方，Y 负值为向上）",
-                "VelSet 直接覆写速度；VelAdd 每帧叠加（常用于自定义重力）；VelMul 按倍率减速（如地面摩擦 x = 0.85）。",
-                "[State 1000, DashVel]\ntype = VelSet\ntrigger1 = Time = 0\nx = 8.5\ny = -4.0", false));
-        list.add(new DictEntry("PosSet / PosAdd / PosFreeze", "sctrl", "Win/1.0/1.1/IK-GO",
-                "设置绝对坐标、相对偏移坐标，或冻结当前帧移动",
-                "PosAdd 的 x 会自动按角色朝向翻转；PosSet 的 y = 0 代表地面。PosFreeze 常用于顿帧或空中滞空。",
-                "[State 1000, Step]\ntype = PosAdd\ntrigger1 = AnimElem = 2\nx = 12", false));
-        list.add(new DictEntry("Helper", "sctrl", "Win/1.0/1.1/IK-GO",
-                "生成独立实体（飞行道具、分身、援护、系统控制器）",
-                "可拥有独立状态机、变量和判定框。常用参数：helpertype(normal/player)、name、ID、stateno、pos、postype、ownpal、supermovetime、pausemovetime。\nIkemen GO 扩展：支持 remapPal、keyctrl 增强与 Helper(id, index) 精确索引。",
-                "[State 1000, Fireball]\ntype = Helper\ntrigger1 = AnimElem = 4\nhelpertype = normal\nname = \"Fireball\"\nID = 1005\nstateno = 1005\npos = 40, -60\npostype = p1\nownpal = 1", false));
-        list.add(new DictEntry("Explod / ModifyExplod / RemoveExplod", "sctrl", "Win/1.0/1.1/IK-GO",
-                "生成、实时修改或移除纯视觉特效（火花、残影、UI 贴图）",
-                "常用参数：anim、ID、pos、postype、bindtime、removetime、scale、sprpriority、ontop、trans(add/add1/sub/addalpha)。\nMUGEN 1.1+ & IK-GO 支持 angle/xangle/yangle 旋转与 space(stage/screen)。",
-                "[State 1000, FX]\ntype = Explod\ntrigger1 = AnimElem = 2\nanim = 7000\nID = 7000\npos = 30, -50\npostype = p1\nsprpriority = 3\nscale = 0.5, 0.5\nremovetime = -2", false));
-        list.add(new DictEntry("Projectile", "sctrl", "Win/1.0/1.1/IK-GO",
-                "发射内置简易飞行道具（自带命中与相杀逻辑）",
-                "适合简单波动拳；复杂轨迹/多段判定推荐用 Helper。常用参数：ProjID、projanim、projhitanim、projremanim、projscale、offset、velocity、remvelocity。",
-                "[State 1000, Proj]\ntype = Projectile\ntrigger1 = AnimElem = 4\nProjID = 1000\nprojanim = 1005\nprojhitanim = 1006\noffset = 45, -60\nvelocity = 6, 0\nattr = S, SP\ndamage = 55, 8", false));
-        list.add(new DictEntry("NotHitBy / HitBy", "sctrl", "Win/1.0/1.1/IK-GO",
-                "设置无敌属性（免疫哪些攻击）或仅可被哪些攻击命中",
-                "value 格式如 SCA（全无敌）、,AA（免打击）、,AT（免投技）、,AP（免飞行道具）。time 为持续帧数；value2 可叠加第二套规则。",
-                "[State 1100, Invincible]\ntype = NotHitBy\ntrigger1 = Time = 0\nvalue = SCA\ntime = 12", false));
-        list.add(new DictEntry("HitOverride", "sctrl", "Win/1.0/1.1/IK-GO",
-                "霸体/当身核心：被指定属性攻击命中时强制转入自定义状态",
-                "attr 指定拦截的攻击属性，stateno 指定受击后跳转的状态号，slot 为槽位(0~7)，time 为持续帧数。",
-                "[State 1200, Armor]\ntype = HitOverride\ntrigger1 = 1\nattr = SCA, AA, AP\nstateno = 1210\nslot = 0\ntime = 1", false));
-        list.add(new DictEntry("SuperPause / Pause", "sctrl", "Win/1.0/1.1/IK-GO",
-                "超杀暗屏定格 (SuperPause) 或全局时间暂停 (Pause)",
-                "SuperPause 支持 time、anim、sound、pos、movetime、darken、p2defmul、poweradd、unhittable。",
-                "[State 3000, SuperPause]\ntype = SuperPause\ntrigger1 = Time = 0\ntime = 40\nmovetime = 40\nanim = -1\ndarken = 1\npoweradd = -1000", false));
-        list.add(new DictEntry("VarSet / VarAdd / ParentVarSet / VarRangeSet", "sctrl", "Win/1.0/1.1/IK-GO",
-                "读写整数变量 var(0~59)、浮点变量 fvar(0~39) 与系统变量 sysvar(0~4)",
-                "Win/1.0/1.1 角色最多 60 个整数 var 与 40 个浮点 fvar；Ikemen GO 推荐使用无限命名变量 MapSet/MapAdd 替代硬编码编号。",
-                "[State 200, SetVar]\ntype = VarSet\ntrigger1 = Time = 0\nv = 10\nvalue = 1", false));
-        list.add(new DictEntry("MapSet / MapAdd / RootMapSet / ParentMapSet", "sctrl", "IK-GO",
-                "【IK专属】读写具名键值对变量 Map（无数量上限，彻底告别 var 编号冲突）",
-                "Ikemen GO 革命性特性！直接用字符串名字存数值，如 map(combo_cnt)，支持自身 MapSet、父级 ParentMapSet、本体 RootMapSet、全队 TeamMapSet。",
-                "[State 200, IKMap]\ntype = MapAdd\ntrigger1 = MoveHit = 1\nmap = \"custom_gauge\"\nvalue = 10", false));
-        list.add(new DictEntry("AssertSpecial", "sctrl", "Win/1.0/1.1/IK-GO",
-                "开启单帧特殊引擎标志（如不可防御、隐藏血条、禁止站防/蹲防、禁止转身等）",
-                "常用 flag：unguardable、nostandguard、nocrouchguard、noairguard、noautoturn、invisible、nobardisplay、noshadow、intro、roundnotover、timerfreeze。\nIK-GO 新增：globalnoshadow、nomusic、noKO、noko_slow 等。",
-                "[State 3000, NoBar]\ntype = AssertSpecial\ntrigger1 = 1\nflag = nobardisplay\nflag2 = noBG", false));
-        list.add(new DictEntry("TargetBind / TargetState / TargetLifeAdd", "sctrl", "Win/1.0/1.1/IK-GO",
-                "投技核心三件套：绑定对手坐标、强制对手进入自定义状态、增减对手血量",
-                "需在 HitDef 命中并捕获 Target 后生效。TargetState 强制对手执行我方 CNS 中的状态；TargetBind 将对手固定在相对坐标 pos。",
-                "[State 810, Bind]\ntype = TargetBind\ntrigger1 = AnimElem = 1\npos = 45, -60\ntime = 10", false));
-        list.add(new DictEntry("PalFX / BGPalFX / AllPalFX / RemapPal", "sctrl", "Win/1.0/1.1/IK-GO",
-                "角色/背景/全屏滤镜染色、闪烁、反色，以及 1.1+/IK 实时换色表",
-                "PalFX 支持 add(r,g,b)、mul(r,g,b)、sinadd、invertall、color(0=灰度~256=原色)。RemapPal (1.0+) 可动态把色表组 source 映射到 dest。",
-                "[State 3000, Flash]\ntype = PalFX\ntrigger1 = Time = 0\ntime = 15\nadd = 120, 40, 0\nsinadd = 60, 60, 60, 6", false));
-        list.add(new DictEntry("Zoom / Camera", "sctrl", "1.1/IK-GO",
-                "动态镜头缩放 (Zoom) 与 Ikemen GO 高级镜头视角控制 (Camera)",
-                "MUGEN 1.1 与 Ikemen GO 支持在招式中动态拉近/拉远镜头（scale、pos、lag、stagebound、camerabound）。IK-GO 额外提供 Camera 控制器。",
-                "[State 3000, SuperZoom]\ntype = Zoom\ntrigger1 = Time < 30\nscale = 1.25\npos = Pos X, Pos Y - 60\nlag = 0.85", false));
-        list.add(new DictEntry("Text / LifebarAction / Dialogue / PlayBgm", "sctrl", "IK-GO",
-                "【IK专属】屏幕任意位置绘制文字、触发血条演出、剧情对话与动态切换 BGM",
-                "Text 控制器支持 font、text、pos、layerno、scale、removetime 及 <color:RRGGBB> 行内变色；PlayBgm 可在战斗中随时切换音乐与音量；Dialogue 用于角色对话系统。",
-                "[State 3000, CutInText]\ntype = Text\ntrigger1 = Time = 0\ntext = \"<color:FF4444>CRITICAL ART!</color>\"\nfont = 1, 0, 0\npos = 160, 60\nremovetime = 60", false));
-        list.add(new DictEntry("LoadFile / SaveFile / PrintToConsole / RedirectID", "sctrl", "IK-GO",
-                "【IK专属】读写本地存档数据、控制台打印调试，以及跨实体 RedirectID 参数",
-                "Ikemen GO 中几乎所有控制器都支持通用参数 redirectid = <PlayerID>，无需切换自定义状态即可直接对指定 ID 实体执行控制器！",
-                "[State -2, Debug]\ntype = PrintToConsole\ntrigger1 = Time = 1\ntext = \"HP=%d, Power=%d\"\nparams = Life, Power", false));
-
-        // --- ⚡ 触发器 (Trigger: Win / 1.0 / 1.1 / IK-GO) ---
-        list.add(new DictEntry("Time / StateTime / AnimTime / AnimElem / AnimElemTime", "trigger", "Win/1.0/1.1/IK-GO",
-                "状态计时与动画帧数判定核心触发器",
-                "Time：进入当前状态后的帧数（从0开始）。\nAnimTime：距离当前动画播完还剩多少帧（负数，最后一帧结束时为 0）。\nAnimElem = N：当前动画正好切换到第 N 帧时为真。\nAnimElemTime(N)：距离第 N 帧开始过了多少帧。",
-                "trigger1 = AnimElem = 3\ntrigger2 = AnimTime = 0", false));
-        list.add(new DictEntry("StateNo / PrevStateNo / StateType / MoveType / Physics", "trigger", "Win/1.0/1.1/IK-GO",
-                "读取当前状态号、上一个状态号、站蹲空状态、攻防状态与物理状态",
-                "StateType: S(站) C(蹲) A(空) L(倒地)。MoveType: I(待机) A(攻击) H(受击)。常用于取消条件判断。",
-                "trigger1 = StateType != A && MoveType = I && Ctrl", false));
-        list.add(new DictEntry("MoveContact / MoveHit / MoveGuarded / MoveReversed", "trigger", "Win/1.0/1.1/IK-GO",
-                "检测当前状态的攻击是否接触、命中、被防御或被当身（并记录已过帧数）",
-                "命中当帧返回 1，之后每帧递增。取消连招通常写 MoveContact = [1, 10] 或 MoveHit。",
-                "trigger1 = Command = \"Special\" && MoveContact", false));
-        list.add(new DictEntry("P2BodyDist X/Y & P2Dist X/Y", "trigger", "Win/1.0/1.1/IK-GO",
-                "获取与对手之间的距离（BodyDist 算宽度边缘，Dist 算轴心原点）",
-                "AI 判断出招距离首选 P2BodyDist X（0 代表贴身，负数代表重叠）。Y 负值表示对手在上方。",
-                "trigger1 = P2BodyDist X = [0, 65] && P2BodyDist Y = [-50, 0]", false));
-        list.add(new DictEntry("AILevel", "trigger", "1.0/1.1/IK-GO",
-                "官方内置 AI 难度等级 (0=玩家手操, 1~8=电脑难度)",
-                "注意兼容差异：WinMUGEN 没有 AILevel 触发器（老角色用 var(59) 开关）；MUGEN 1.0/1.1 与 Ikemen GO 原生支持 AILevel，写 AI 时可用 AILevel > 0 并按 random < AILevel * 100 控制反应概率。",
-                "trigger1 = AILevel > 0 && Random < (AILevel * 80)", false));
-        list.add(new DictEntry("Command / SelfCommand", "trigger", "Win/1.0/1.1/IK-GO",
-                "检测 .cmd 中定义的搓招指令是否触发",
-                "Command = \"QCF_x\" 检测按键指令。Ikemen GO 新增 SelfCommand，即使处于被对手控制的自定义状态中也能读取自身按键。",
-                "trigger1 = Command = \"hadouken\" && Power >= 1000", false));
-        list.add(new DictEntry("NumHelper / NumExplod / NumProjID / NumTarget", "trigger", "Win/1.0/1.1/IK-GO",
-                "查询当前场上存活的指定 ID 的 Helper、特效、飞行道具或捕获目标数量",
-                "常用于限制同屏飞行道具数量（如 NumHelper(1005) = 0）或确认投技目标存在。",
-                "trigger1 = NumHelper(1005) = 0 && NumProjID(1000) = 0", false));
-        list.add(new DictEntry("GetHitVar(...)", "trigger", "Win/1.0/1.1/IK-GO",
-                "读取受击时的各种参数（伤害、硬直、击飞速度、连段数、是否倒地等）",
-                "常用字段：damage、hitcount、fallcount、hittime、slidetime、xvel、yvel、fall、hitshaketime、isbound、chainid。",
-                "trigger1 = GetHitVar(hitcount) >= 3", false));
-        list.add(new DictEntry("Map(name) / IsAsserted(flag) / GameMode / StageConst", "trigger", "IK-GO",
-                "【IK专属】读取 Map 变量、检测 AssertSpecial 标志、当前游戏模式与场景常量",
-                "Ikemen GO 新增大量信息查询触发器：map(key)、isAsserted(unguardable)、gameMode = \"training\"、hitDefVar(...)、explodVar(...)、clsnVar(...)、moveHitVar(...)、palfxVar(...)。",
-                "trigger1 = map(custom_gauge) >= 100 && !isAsserted(nobardisplay)", false));
-        list.add(new DictEntry("重定向: Root / Parent / Target / Helper(id, idx) / PlayerID(id)", "trigger", "Win/1.0/1.1/IK-GO",
-                "跨实体读取触发器数据（如读取本体血量或对手坐标）",
-                "语法：Root, Life、Parent, Var(1)、Target, StateNo、EnemyNear, Pos X。\nIkemen GO 增强：Helper(id, index) 支持第 2 参数指定同 ID 第几个 Helper，彻底解决多同类 Helper 定位难题。",
-                "trigger1 = Root, Alive && Helper(1005, 0), Pos X > 0", false));
-
-        // --- 🧬 ZSS & Lua (Ikemen GO 核心脚本) ---
-        list.add(new DictEntry("ZSS 语法基础 (Zero State Script)", "zss_lua", "IK-GO",
-                "Ikemen GO 现代化角色脚本语言，支持 if/else、switch、for、局部变量与函数",
-                "相比传统 CNS，ZSS 写法更接近 Go/C：无需重复写 trigger1/triggerall，支持代码块嵌套、ignoreHitPause {} 块、let 局部变量、switch/case、自定义 [Function Name(arg)] 与 call Name()。",
-                "[Statedef 200; type: S; movetype: A; physics: S; anim: 200; ctrl: 0;]\nif time = 0 {\n    playSnd{value: 0, 0}\n}\nif animElem = 3 {\n    hitDef{attr: S, NA; damage: 25, 0; guardflag: MA;}\n}\nif animTime = 0 {\n    changeState{value: 0; ctrl: 1;}\n}", false));
-        list.add(new DictEntry("ZSS [Function] 自定义函数与循环", "zss_lua", "IK-GO",
-                "在 ZSS 中定义可复用的函数、for 循环与局部变量 let",
-                "可用 [Function MyHelper(x, y) ret] 定义函数，内部用 let 声明局部临时变量，彻底省去占用角色 var(0~59)！",
-                "[Function SpawnSparks(cnt)]\nfor i = 0; $cnt - 1; 1 {\n    explod{anim: 7000; pos: $i * 10, -40;}\n}", false));
-        list.add(new DictEntry("Ikemen GO Lua 模块与钩子 (hook.add)", "zss_lua", "IK-GO",
-                "使用 Lua 编写自定义菜单、商店、剧情模式、HUD 与全局逻辑",
-                "Ikemen GO 支持 external/mods/*.lua 模块化扩展，通过 hook.add(\"loop\", \"my_id\", fn) 注入每帧逻辑，常用 API 包括 textImgNew/textImgDraw、animNew/animDraw、sndPlay、playBGM、commandGetState、main.f_menu 等。",
-                "hook.add(\"loop\", \"my_hud\", function()\n    -- 每帧自定义绘制逻辑\nend)", false));
-        list.add(new DictEntry("行内文字变色与图标标签 (<color:RRGGBB>)", "zss_lua", "IK-GO",
-                "Ikemen GO v1.0+ 字体 DEF 与界面文本支持行内富文本染色和按键图标",
-                "Screenpack、Storyboard、Lua、Lifebar、Text 与 LifebarAction 控制器全部支持 <color:RRGGBB>文本</color> 变色以及手柄按键提示图标。",
-                "text = \"按下 <color:38BDF8>A+B</color> 发动 <color:FF5252>觉醒技</color>\"", false));
-
-        // --- 📁 文件格式 (DEF / AIR / SFF / SND / 3D) ---
-        list.add(new DictEntry("角色配置文件 (.def)", "format", "Win/1.0/1.1/IK-GO",
-                "定义角色名、作者、引擎版本、CMD/CNS/SFF/AIR/SND/色表路径",
-                "[Info] 中 mugenversion 填 04,14,2001(Win) / 1.0 / 1.1；Ikemen GO 专属特性需加 ikemenVersion = 1.0。\n[Files] 指定 cmd、cns、st、stcommon、sprite、anim、sound 与 pal1~pal12。",
-                "[Info]\nname = \"Kyo\"\ndisplayname = \"Kyo Kusanagi\"\nmugenversion = 1.1\nikemenVersion = 1.0\nlocalcoord = 320, 240", false));
-        list.add(new DictEntry("动画与判定框文件 (.air)", "format", "Win/1.0/1.1/IK-GO",
-                "定义动作帧序列、持续时间、翻转、透明混合以及 Clsn1(打击框)/Clsn2(防御框)",
-                "每帧格式：Group, Item, OffsetX, OffsetY, Ticks [, Flip(H/V/VH) [, Trans(A/A1/S/ASxDx)]]。\nClsn1 为红框(攻击)，Clsn2 为蓝框(受击)；Clsn2Default 会应用到该动作后续所有未单独定义 Clsn2 的帧。",
-                "[Begin Action 200]\nClsn2Default: 1\n  Clsn2[0] = -15, -90, 15, 0\n200,0, 0,0, 3\nClsn1: 1\n  Clsn1[0] = 10, -75, 55, -55\n200,1, 0,0, 4", false));
-        list.add(new DictEntry("指令文件 (.cmd)", "format", "Win/1.0/1.1/IK-GO",
-                "定义搓招指令序列、按键缓冲时间与 [Statedef -1] 出招触发",
-                "符号说明：~松开、/按住、$方向泛指(如 $D 包含下/左下/右下)、+同时按、>严格顺序。time 控制搓招窗口帧数，buffer.time 控制预输入缓冲。",
-                "[Command]\nname = \"QCF_x\"\ncommand = ~D, DF, F, x\ntime = 15", false));
-        list.add(new DictEntry("常驻状态 (-1 / -2 / -3) 与公共状态 (0~5999)", "format", "Win/1.0/1.1/IK-GO",
-                "理解 MUGEN/IK 状态机每帧执行顺序与系统保留状态号",
-                "-1：指令出招（仅本体执行，被抓入自定义状态时不执行）。\n-2：全局常驻（即使被对手控制也每帧执行，适合血条/变量维护）。\n-3：仅本体在非自定义状态时执行（Helper 不执行 -3）。\n常用公共状态：0站立、10~12蹲、20走、40~52跳、100跑、120~155防、5000~5150受击倒地、5900开局。",
-                "[Statedef -2]\n; 每帧必然执行的全局检测", false));
-        list.add(new DictEntry("图像包 (.sff v1 vs v2) 与音频包 (.snd)", "format", "Win/1.0/1.1/IK-GO",
-                "SFFv1(256色PCX) 与 SFFv2(PNG/32位真彩) 区别，以及 SND 音频格式支持",
-                "SFFv1 仅支持 8-bit 索引色 PCX（依赖外部 .act 换色）；SFFv2 (1.0+/1.1/IK) 支持 RLE/LZ5/PNG8/PNG24/PNG32 真彩带透明通道，内置多套色表。\nIkemen GO 的 SND 除 WAV 外，还原生支持 OGG、MP3、FLAC 及 XM/MOD/IT 等音轨格式。",
-                "; SFF 9000,0 = 小头像(25x25)\n; SFF 9000,1 = 大头像(120x140)", false));
-        list.add(new DictEntry("地图与 3D 场景 (.def / .gltf / .glb)", "format", "Win/1.0/1.1/IK-GO",
-                "2D 视差图层地图配置与 Ikemen GO 专属 3D 模型场景",
-                "2D 地图包含 [Camera]、[PlayerInfo]、[Bound]、[StageInfo]、[BGdef] 与多个 [BG] 图层（delta 控制视差速度）。\nIkemen GO 支持 [Model] 直接加载 .gltf/.glb 3D 场景与动画骨骼。",
-                "[BG Sky]\ntype = normal\nspriteno = 0, 0\nstart = 0, 0\ndelta = 0.2, 0.2", false));
-
-        // --- 🔄 版本兼容差异 (WinMUGEN / 1.0 / 1.1 / IK-GO) ---
-        list.add(new DictEntry("WinMUGEN → 1.0 → 1.1 → Ikemen GO 核心差异速查", "compat", "Win/1.0/1.1/IK-GO",
-                "移植老角色/修 Bug 必看的跨版本兼容对照表",
-                "1. AI 检测：Win 无 AILevel（靠 var(59) 伪指令）；1.0+/IK 原生支持 AILevel。\n2. 分辨率与缩放：Win 固定 320x240；1.0+ 引入 localcoord；1.1+ 支持 Camera Zoom 与 32位 PNG SFFv2。\n3. 语法严格度：Win 容忍多余逗号/缺参数；Ikemen GO 解析更严格，报错会明确提示行号。\n4. 联机与脚本：仅 Ikemen GO 原生支持网络联机(含实验性回滚)、ZSS、Lua 模块、Map 变量、3D 地图与 MP4 过场。",
-                "; 跨版本兼容小技巧：\n; 在 .def 中声明 mugenversion = 1.1\n; IK 专属角色加 ikemenVersion = 1.0", false));
-        list.add(new DictEntry("常见报错与崩溃排查指南", "compat", "Win/1.0/1.1/IK-GO",
-                "快速定位 SFF 闪退、乱码、状态死循环、Helper 溢出等高频问题",
-                "1. 日文/韩文路径或角色名乱码：用桌面【🔣 乱码解字板】按 Shift_JIS/EUC-KR 转存为 UTF-8。\n2. 人物无限卡死：检查 ChangeState 是否缺 AnimTime=0 或触发条件永真导致同帧死循环。\n3. 图像替换失败：SFFv1 只能替换 PCX，SFFv2 禁止 PCX 必须用 PNG。\n4. 选人界面不显示：检查 select.def 路径，可用【🗂️ DEF生成器】一键扫描。",
-                "; 建议调试时在游戏内按 Ctrl+D 查看实时状态号与变量", false));
-
+        addDictMugenSctrls(list);
+        addDictIkemenSctrls(list);
+        addDictMugenTriggers(list);
+        addDictIkemenTriggers(list);
+        addDictZssAndLua(list);
+        addDictFormatsAndFiles(list);
+        addDictCommonStates(list);
+        addDictCompatAndGuides(list);
         return list;
+    }
+
+    private void addDictMugenSctrls(List<DictEntry> list) {
+        list.add(new DictEntry("HitDef", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "定义攻击判定核心参数（属性、伤害、硬直、击飞、火花、音效、防御与倒地）",
+                "最核心的攻击状态控制器。常用参数：\n• attr = S/C/A, NA/SA/HA/NP/SP/HP/NT/ST/HT（站蹲空 + 普/必/超 + 打击/飞道/投）\n• hitflag = MAFDP+-（可命中站/空/倒/倒地/飞道，+仅连段，-不可连段）\n• guardflag = MA/L/H（M中段/H上段/L下段/A空防）\n• damage = 命中伤害, 磨血伤害；pausetime = 攻方顿帧, 守方顿帧\n• sparkno / guard.sparkno / sparkxy / hitsound / guardsound\n• ground.type(High/Low/Trip/None)、ground.slidetime、ground.hittime、ground.velocity、air.velocity、fall、fall.recover、envshake、palfx。\n• Ikemen GO 扩展：dizzypoints、guardpoints、redlife、score、sparkscale、sparkangle、forcecrouch、keepstate、ignorereversaldef、p2clsncheck、unhittabletime、down.recovertime。",
+                "[State 200, HitDef]\ntype = HitDef\ntrigger1 = AnimElem = 3\nattr = S, NA\ndamage = 25, 0\nanimtype = Light\nguardflag = MA\nhitflag = MAF\npausetime = 8, 8\nsparkno = 0\nsparkxy = -10, -76\nhitsound = 5, 0\nguardsound = 6, 0\nground.type = High\nground.slidetime = 10\nground.hittime = 12\nground.velocity = -4\nair.velocity = -2.5, -3.5", false));
+
+        list.add(new DictEntry("StateTypeSet", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "动态修改状态类型(S/C/A/L)、攻防状态(I/A/H)与物理类型(S/C/A/N)",
+                "用于招式收招后取消攻击态(movetype = I)防止对手一直原地防御，或在空中/地面间动态切换物理重力(physics = A/S/C/N)。",
+                "[State 200, EndAttack]\ntype = StateTypeSet\ntrigger1 = AnimElemTime(4) >= 0\nmovetype = I", false));
+
+        list.add(new DictEntry("ChangeState / SelfState", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "跳转到指定状态号；SelfState 用于从对手自定义受击状态返回自身状态机",
+                "ChangeState：跳转到当前状态拥有者的 Statedef；参数 value、ctrl、anim。\nSelfState：强制回归自身状态列表（投技/自定义受击结束时必须用 SelfState 交还控制权）。\nIkemen GO 扩展：ChangeState 支持 continue = 1（在负状态中不中断后续代码）；SelfState 支持 ReadPlayerID。",
+                "[State 200, End]\ntype = ChangeState\ntrigger1 = AnimTime = 0\nvalue = 0\nctrl = 1", false));
+
+        list.add(new DictEntry("ChangeAnim / ChangeAnim2", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "切换自身动画(ChangeAnim)或令被投技抓中的对手播放我方动画(ChangeAnim2)",
+                "value 指定 AIR 动作号，elem 指定起始帧(从1开始)。ChangeAnim2 专用于自定义受击状态(P2StateNo)里调用攻击方的 AIR 帧序列，但绘制对手自身的 SFF 图片。\nIkemen GO 扩展：支持 elemtime、animplayerno、spriteplayerno、readplayerid 以及 F 前缀调用通用特效动画。",
+                "[State 810, GrabAnim]\ntype = ChangeAnim2\ntrigger1 = Time = 0\nvalue = 820\nelem = 1", false));
+
+        list.add(new DictEntry("VelSet / VelAdd / VelMul / Gravity", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "设置/累加/倍率缩放 X/Y 速度，或施加角色默认重力加速度(Gravity)",
+                "VelSet 直接覆写速度；VelAdd 每帧叠加（常用于自定义重力或加速冲刺）；VelMul 按倍率减速（如地面摩擦 x = 0.85）；Gravity 等价于 VelAdd y = Const(movement.yaccel)。X 正方向恒为角色面向前方，Y 负方向向上。",
+                "[State 1000, JumpKick]\ntype = VelSet\ntrigger1 = Time = 0\nx = 6.5\ny = -5.0\n\n[State 1000, Gravity]\ntype = Gravity\ntrigger1 = Time > 0", false));
+
+        list.add(new DictEntry("PosSet / PosAdd / PosFreeze / Offset", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "设置绝对坐标、相对位移、冻结当前帧位置或仅偏移贴图绘制位置",
+                "PosSet：直接设坐标(y=0为地面)；PosAdd：按面向增减坐标；PosFreeze：value=1 时冻结该帧速度位移（常用于滞空/顿帧）；Offset：仅改变图像显示偏移(x, y)，不影响实际判定框与物理坐标。",
+                "[State 1000, Step]\ntype = PosAdd\ntrigger1 = AnimElem = 2\nx = 14", false));
+
+        list.add(new DictEntry("Helper / DestroySelf", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "生成独立实体(飞行道具/分身/援护/系统逻辑)与销毁自身(DestroySelf)",
+                "Helper 拥有独立状态机、变量与判定框。核心参数：helpertype(normal/player)、name、ID、stateno、pos、postype、facing、keyctrl、ownpal、supermovetime、pausemovetime、size.xscale/yscale。\nDestroySelf：仅对 Helper 生效，立即销毁该 Helper。\nIkemen GO 扩展：clsnproxy、extendsmap、immortal、inheritchannels、inheritjuggle、preserve、ownclsnscale、ownprojectile、map.<name>、keyctrl 可填 1,2,3 继承负状态。",
+                "[State 1000, Fireball]\ntype = Helper\ntrigger1 = AnimElem = 4\nhelpertype = normal\nname = \"Fireball\"\nID = 1005\nstateno = 1005\npos = 40, -60\npostype = p1\nownpal = 1", false));
+
+        list.add(new DictEntry("Explod / ModifyExplod / RemoveExplod / ExplodBindTime", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "创建、实时修改、移除纯视觉特效贴图与绑定时间控制",
+                "核心参数：anim(可用 F 前缀调 fightfx)、ID、pos、postype(p1/p2/front/back/left/right)、bindtime(-1永久绑定)、removetime(-2播完销毁/-1永久)、vel、accel、scale、sprpriority、ontop、ownpal、shadow、trans(add/add1/sub/addalpha)、alpha、removeongethit。\nMUGEN 1.1/1.1b1+ 新增：space(stage/screen)、angle、xangle、yangle、remappal。\nIkemen GO 新增：interpolation.* 补间动画、palfx.*、afterimage.*、shader.*、syncid、window、xshear、under、hidewithbars、removeonchangestate。",
+                "[State 1000, FX]\ntype = Explod\ntrigger1 = AnimElem = 2\nanim = 7000\nID = 7000\npos = 30, -50\npostype = p1\nsprpriority = 3\nscale = 0.5, 0.5\nownpal = 1\nremovetime = -2", false));
+
+        list.add(new DictEntry("Projectile", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "发射内置简易飞行道具（自带命中、消弹与相杀逻辑）",
+                "核心参数：ProjID、projanim、projhitanim、projremanim、projcancelanim、projscale、projremove、projremovetime、projhits、projmisstime、projpriority、projedgebound、projstagebound、offset、velocity、remvelocity、accel，并支持几乎所有 HitDef 参数。\n复杂飞行道具（如追踪、可反弹、多段独立判定）建议改用 Helper。\nIkemen GO 新增：ModifyProjectile、projangle/xangle/yangle、projclsnangle、shader.*、支持 chainID/nochainID。",
+                "[State 1000, Hadouken]\ntype = Projectile\ntrigger1 = AnimElem = 4\nProjID = 1000\nprojanim = 1005\nprojhitanim = 1006\noffset = 45, -60\nvelocity = 6, 0\nattr = S, SP\ndamage = 55, 8\nguardflag = MA\npausetime = 0, 10", false));
+
+        list.add(new DictEntry("NotHitBy / HitBy", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "设置无敌属性（免疫指定攻击）或受击白名单（仅可被指定攻击命中）",
+                "value 格式：状态(S/C/A), 攻击类别(AA全打击/AT全投/AP全飞道 或 NA/SA/HA/NT/ST/HT/NP/SP/HP)。\ntime 持续帧数；value2 可叠加第二槽位。\nIkemen GO 扩展：支持 8 个独立槽位 slot = 0~7、attr 语法、stack = 1 叠加、clsn.group/clsn.index 针对特定防御框无敌、playerno/playerid 针对特定对手无敌。",
+                "[State 1100, DPInvincible]\ntype = NotHitBy\ntrigger1 = Time = 0\nvalue = SCA\ntime = 10", false));
+
+        list.add(new DictEntry("HitOverride", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "霸体 / 当身 / 超级护甲核心：拦截指定攻击并强制转入自定义状态",
+                "参数：attr(拦截的攻击属性)、stateno(受击后跳转状态号)、slot(槽位0~7)、time(持续帧数)、forceair(是否强制空中态)。\nIkemen GO 扩展：支持 guardflag / guardflag.not（如只当身上段/下段）、keepstate = 1（受击不切状态实现真霸体）、forceguard = 1。",
+                "[State 1200, SuperArmor]\ntype = HitOverride\ntrigger1 = 1\nattr = SCA, AA, AP\nstateno = 1210\nslot = 0\ntime = 1", false));
+
+        list.add(new DictEntry("ReversalDef", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "反击/当身判定：当自身红框(Clsn1)撞到对手攻击红框时反制对手",
+                "与 HitDef 相反，ReversalDef 是拿自己的 Clsn1 去碰对手的 Clsn1 来触发反击。核心参数：reversal.attr、pausetime、sparkno、hitsound、p1stateno、p2stateno、numhits。\nIkemen GO 扩展：支持 reversal.guardflag / reversal.guardflag.not 与 ModifyReversalDef。",
+                "[State 1300, Counter]\ntype = ReversalDef\ntrigger1 = AnimElem = 2\nreversal.attr = SCA, AA\npausetime = 12, 12\nsparkno = 40\np1stateno = 1310", false));
+
+        list.add(new DictEntry("SuperPause / Pause", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "超必杀暗屏定格(SuperPause)与全局时间暂停(Pause)",
+                "SuperPause 参数：time、anim(默认30, -1关闭)、sound、pos、movetime(自己可动帧数)、darken(1暗屏)、p2defmul(防连段补正)、poweradd(扣气如-1000)、unhittable(1期间无敌)、endcmdbuftime、pausebg。\nIkemen GO 扩展：SuperPause 新增 brightness(0~255精细暗度)。",
+                "[State 3000, SuperPause]\ntype = SuperPause\ntrigger1 = Time = 0\ntime = 40\nmovetime = 40\nanim = -1\ndarken = 1\npoweradd = -1000\nunhittable = 1", false));
+
+        list.add(new DictEntry("VarSet / VarAdd / VarRandom / VarRangeSet / ParentVarSet", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "读写整数 var(0~59)、浮点 fvar(0~39)、系统变量 sysvar(0~4) 及随机赋值",
+                "VarSet / VarAdd：v=编号 或 fv=编号，value=值（也可简写 var(10) = 1）。\nVarRandom：v=编号，range = 最小值, 最大值。\nVarRangeSet：批量清零/赋值（first, last, value 或 fvalue）。\nParentVarSet / ParentVarAdd：Helper 修改父级变量。\nIkemen GO 扩展：解除 60/40 上限（支持任意正 int32 编号），新增 RootVarSet/RootVarAdd 与无限命名变量 MapSet。",
+                "[State 200, SetVar]\ntype = VarSet\ntrigger1 = Time = 0\nvar(10) = 1\n\n[State 200, Rand]\ntype = VarRandom\ntrigger1 = Time = 0\nv = 11\nrange = 1, 3", false));
+
+        list.add(new DictEntry("AssertSpecial", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "激活单帧特殊引擎标志（每帧自动重置，需持续触发）",
+                "MUGEN 经典标志（每次最多 flag/flag2/flag3）：\n• 演出类：intro、roundnotover、nobardisplay、noBG、noFG、noshadow、invisible、globalnoshadow、nomusic、timerfreeze\n• 攻防类：unguardable、nostandguard、nocrouchguard、noairguard、noautoturn、nojugglecheck、nokosnd、nokoslow、noko、nowalk、noairjump\nIkemen GO 扩展：单次最多 8 个 flag（flag~flag8），支持 enabled = 0 反向关闭，新增 AutoGuard、AnimFreeze、AnimateHitpause、CameraFreeze、NoCornerPush、NoHardcodedKeys、NoGuardKO、NoHitDamage、SizePushOnly、ProjTypeCollision、RoundFreeze、RoundNotSkip、RunFirst、RunLast 等数十个标志。",
+                "[State 3000, Cinematic]\ntype = AssertSpecial\ntrigger1 = 1\nflag = nobardisplay\nflag2 = noBG\nflag3 = noFG", false));
+
+        list.add(new DictEntry("TargetBind / TargetState / TargetLifeAdd / TargetVelSet / TargetFacing / TargetDrop", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "投技与派生控制全家桶（绑定坐标、强切状态、扣血、调速、转向、释放目标）",
+                "需在 HitDef 命中并捕获 Target（NumTarget > 0）后生效：\n• TargetBind：time、id、pos = x, y（固定对手相对位置）\n• TargetState：value = 状态号（强制对手进入我方自定义受击状态）\n• TargetLifeAdd：value = 血量增减、kill(0不致死/1致死)、absolute(1无视攻防倍率)\n• TargetPowerAdd / TargetVelSet / TargetVelAdd / TargetFacing / TargetDrop。\nIkemen GO 扩展：支持 index 参数精确控制多个目标之一，TargetBind/Vel 支持 Z 轴，新增 TargetAdd / TargetDizzyPointsAdd / TargetGuardPointsAdd / TargetRedLifeAdd / TargetScoreAdd。",
+                "[State 810, Bind]\ntype = TargetBind\ntrigger1 = AnimElem = 1\npos = 45, -60\ntime = 12\n\n[State 810, Damage]\ntype = TargetLifeAdd\ntrigger1 = AnimElem = 4\nvalue = -90\nkill = 1", false));
+
+        list.add(new DictEntry("BindToParent / BindToRoot / BindToTarget", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "将 Helper 绑定到父级/本体坐标，或将自身吸附到目标身上",
+                "参数：time、facing(-1反向/0不改/1同向)、pos = x, y。BindToTarget 额外支持 pos = x, y, Head/Mid/Foot 绑定到对手头/腰/脚锚点。",
+                "[State 1005, FollowRoot]\ntype = BindToRoot\ntrigger1 = 1\ntime = 1\npos = 0, -50\nfacing = 1", false));
+
+        list.add(new DictEntry("PalFX / BGPalFX / AllPalFX / EnvColor / RemapPal", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "角色/背景/全屏滤镜调色闪烁、纯色闪屏与动态换色表(RemapPal 1.0+)",
+                "PalFX / BGPalFX / AllPalFX 参数：time、add(r,g,b)、mul(r,g,b, 256=原色)、sinadd(r,g,b,周期)、invertall(1反色)、color(0灰度~256原色)。\nEnvColor：全屏单色覆盖(value=r,g,b, time, under=1在角色后)。\nRemapPal（MUGEN 1.0+ 专属，Win无）：source = 组,号；dest = 组,号，动态切换 SFFv2 内置色表。\nIkemen GO 扩展：PalFX 新增 hue(色相)、sinmul、sincolor、sinhue、invertblend。",
+                "[State 3000, BurnFlash]\ntype = PalFX\ntrigger1 = Time = 0\ntime = 20\nadd = 180, 50, 0\nsinadd = 60, 30, 0, 8\ncolor = 256", false));
+
+        list.add(new DictEntry("AfterImage / AfterImageTime", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "开启角色残影拖尾特效与动态延长/终止残影时间",
+                "核心参数：time、length(缓存帧数最大60)、palcolor、palinvertall、palbright、palcontrast、palpostbright、paladd、palmul、timegap(采样间隔)、framegap(显示间隔)、trans(none/add/add1/sub)。\nAfterImageTime：time = 0 可立即关闭当前残影。\nIkemen GO 扩展：支持自定义 shader.* 残影着色器与修复 framegap 计数。",
+                "[State 3000, ShadowTrail]\ntype = AfterImage\ntrigger1 = Time = 0\ntime = 30\nlength = 12\npalbright = 30, 30, 60\npalcontrast = 120, 120, 220\ntimegap = 1\nframegap = 3\ntrans = add1", false));
+
+        list.add(new DictEntry("AngleDraw / AngleSet / AngleAdd / AngleMul", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "角色图像实时旋转与缩放绘制（单帧生效）",
+                "AngleDraw 每帧绘制时生效，支持 value(角度)、scale(x, y)（1.0+ 支持直接带参数）。AngleSet/AngleAdd/AngleMul 用于维护角度寄存器。\nIkemen GO 扩展：支持 3D 倾斜 xangle、yangle 以及旋转中心点 pivot = x, y。",
+                "[State 1000, Spin]\ntype = AngleDraw\ntrigger1 = 1\nvalue = Time * 15\nscale = 1.1, 1.1", false));
+
+        list.add(new DictEntry("PlaySnd / StopSnd / SndPan", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "播放音效、停止指定声道音效与实时调整左右声道声像",
+                "PlaySnd 参数：value = [F]组, 号（加 F 播 fight.snd 公共音效）、volume(旧版-255~255) / volumescale(1.0+推荐, 100=原音量)、channel(同声道会打断前音)、lowpriority、freqmul(音调倍率)、loop、pan / abspan。\nStopSnd：channel = 声道号（-1停全部；Ikemen GO 新增 -2 仅停自身全部声道）。\nIkemen GO 扩展：PlaySnd 新增 priority、loopstart、loopend、startposition、loopcount、stopongethit、stoponchangestate。",
+                "[State 200, Voice]\ntype = PlaySnd\ntrigger1 = AnimElem = 1\nvalue = 0, 1\nvolumescale = 100\nchannel = 0", false));
+
+        list.add(new DictEntry("LifeAdd / LifeSet / PowerAdd / PowerSet / HitAdd", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "直接增减/设定自身血量、能量气槽以及手动增加连击数(HitAdd)",
+                "LifeAdd：value、kill(0至少留1血/1可自杀)、absolute(1无视防御倍率)。\nPowerAdd / PowerSet：增减能量（通常 1000 = 1 格气）。\nHitAdd：value = N，常用于投技或无 HitDef 扣血时同步增加屏幕连击计数。",
+                "[State 3000, Heal]\ntype = LifeAdd\ntrigger1 = Time = 0\nvalue = 100\nabsolute = 1", false));
+
+        list.add(new DictEntry("AttackMulSet / DefenceMulSet / AttackDist / Width / PlayerPush / ScreenBound / Turn / CtrlSet", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "攻防倍率、近身防御距离、挤身宽、防推挤、镜头绑定、转身与控制权开关",
+                "• AttackMulSet / DefenceMulSet：动态调整攻防倍率（IK 中 DefenceMulSet 改为连乘不覆盖倒地补正）。\n• AttackDist：动态改变当前 HitDef 触发对手防御的距离。\n• Width：edge = 前, 后；player = 前, 后（单帧扩缩版边宽与挤身宽）。\n• PlayerPush：value = 0 关闭角色间挤身碰撞（穿身技必备）。\n• ScreenBound：value = 0 允许移出屏幕，movecamera = x, y 控制镜头是否跟随。\n• Turn：立即翻转朝向；CtrlSet：value = 0/1 开关操控权。",
+                "[State 1050, PassThrough]\ntype = PlayerPush\ntrigger1 = 1\nvalue = 0\n\n[State 1050, NoCam]\ntype = ScreenBound\ntrigger1 = 1\nvalue = 0\nmovecamera = 0, 0", false));
+
+        list.add(new DictEntry("EnvShake / FallEnvShake / HitFallSet / HitFallVel / HitFallDamage / HitVelSet / MoveHitReset", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "屏幕震动、倒地状态控制、受击速度应用与重置命中标记",
+                "• EnvShake：time、freq(默认60)、ampl(默认-4)、phase；IK 新增 decay(指数衰减)与 dir(震动角度)。\n• HitVelSet：x = 1, y = 1 将受击参数中的速度应用到角色。\n• HitFallSet / HitFallVel / HitFallDamage：用于自定义受击/倒地弹地逻辑。\n• MoveHitReset：清零 MoveHit/MoveGuarded/MoveContact 标记，方便同一状态多段判定独立检测。",
+                "[State 1000, Quake]\ntype = EnvShake\ntrigger1 = AnimElem = 4\ntime = 16\nfreq = 80\nampl = -6", false));
+
+        list.add(new DictEntry("DisplayToClipboard / AppendToClipboard / ClearClipboard / Null / SprPriority / Trans / MakeDust / GameMakeAnim / ForceFeedback", "sctrl", "Win/1.0/1.1/1.1b1/IK-GO",
+                "调试剪贴板打印、图层优先级、透明混合、扬尘、通用特效与手柄震动",
+                "• DisplayToClipboard / AppendToClipboard：在 Ctrl+D 调试栏输出 printf 格式化变量值。\n• SprPriority：value = -5~5 控制图层前后顺序（IK 新增 layerno = -1/0/1）。\n• Trans：trans = none/add/add1/sub/addalpha，alpha = 源, 目标（IK 新增 subadd）。\n• Null：空控制器，常用来在 trigger 中写赋值表达式如 var(1):=10。\n• MakeDust / GameMakeAnim：旧版扬尘与 fightfx 简易调用（新版推荐 Explod）。\n• ForceFeedback：手柄震动（IK 新增 lo / hi 双马达频率）。",
+                "[State -2, Debug]\ntype = DisplayToClipboard\ntrigger1 = 1\ntext = \"Pos=(%.1f, %.1f) Var10=%d\"\nparams = Pos X, Pos Y, var(10)", false));
+
+        list.add(new DictEntry("VictoryQuote", "sctrl", "1.0/1.1/1.1b1/IK-GO",
+                "【1.0+新增】指定本局胜利画面显示的台词编号（对应 CNS [Quotes]）",
+                "WinMUGEN 不支持！在 MUGEN 1.0/1.1/1.1b1 与 Ikemen GO 中，可在 CNS [Quotes] 定义 victory0~victory99，并用 VictoryQuote 的 value = N 在获胜前根据对手名字动态切换专属胜利台词。",
+                "[State 180, QuoteVsIori]\ntype = VictoryQuote\ntrigger1 = Enemy, Name = \"Iori\"\nvalue = 3", false));
+
+        list.add(new DictEntry("Zoom", "sctrl", "1.1/1.1b1/IK-GO",
+                "【1.1/1.1b1+新增】招式内动态镜头缩放（超杀特写核心）",
+                "MUGEN 1.1b1 为实验特性，Ikemen GO 已全面完善！参数：\n• scale：缩放倍率（>1 拉近放大，<1 拉远缩小）\n• pos = x, y：缩放焦点（相对屏幕中心，填 Pos X, Pos Y 锁定自身）\n• lag = 0~1：镜头平滑插值（0瞬切，越接近1越平缓）\n• time：持续帧数；stagebound / camerabound(1限制在地图/镜头边界内)；endlag(IK新增，结束回弹平滑度)。",
+                "[State 3000, SuperZoom]\ntype = Zoom\ntrigger1 = Time < 35\nscale = 1.3\npos = Pos X, Pos Y - 60\nlag = 0.85\nstagebound = 1", false));
+    }
+
+    private void addDictIkemenSctrls(List<DictEntry> list) {
+        list.add(new DictEntry("全局通用参数: RedirectID & fightfx F前缀", "sctrl", "IK-GO",
+                "【IK官方Wiki】跨实体直接执行控制器(RedirectID)与全控制器支持 F 前缀动画",
+                "1. RedirectID = <PlayerID>：Ikemen GO 中几乎所有新老控制器都支持该通用参数！无需把对手送入自定义状态(Custom State)，就能直接对指定 ID 实体执行 LifeAdd、MapAdd、VelSet、ChangeState 等操作。\n2. fightfx F 前缀：[Statedef]、ChangeState、SelfState、ChangeAnim、ChangeAnim2、Projectile 均支持 anim = F 300 调用通用特效动画。",
+                "[State -2, PoisonDot]\ntype = LifeAdd\ntrigger1 = Enemy, Map(poison) > 0 && GameTime % 30 = 0\nvalue = -5\nkill = 0\nRedirectID = Enemy, ID", false));
+
+        list.add(new DictEntry("MapSet / MapAdd / MapReset / ParentMap* / RootMap* / TeamMap*", "sctrl", "IK-GO",
+                "【IK官方Wiki】无限具名键值变量 Map（彻底取代 var 编号，支持数组索引与字符串）",
+                "Ikemen GO 最核心的现代变量系统：\n• MapSet / MapAdd：读写自身 map(\"名称\")；Nightly 版支持 index 参数当数组用，且支持存字符串！\n• MapReset：清空自身所有 Map（可用 exclude~exclude8 保留带指定前缀的 Map，.def [Map] 默认值会重置回初始值）。\n• ParentMapSet/Add、RootMapSet/Add、TeamMapSet/Add：跨父级、本体或全队读写。",
+                "[State 200, AddMeter]\ntype = MapAdd\ntrigger1 = MoveHit = 1\nmap = \"burst_gauge\"\nvalue = 15\n\n[State 5900, CleanMap]\ntype = MapReset\ntrigger1 = RoundNo = 1\nexclude = \"persist_\"", false));
+
+        list.add(new DictEntry("ModifyHitDef / ModifyProjectile / ModifyReversalDef / ModifyPlayer / ModifySnd", "sctrl", "IK-GO",
+                "【IK官方Wiki】运行时动态修改已激活的 HitDef、飞行道具、当身、角色属性与正在播放的音效",
+                "• ModifyHitDef / ModifyReversalDef：实时修改当前激活判定的伤害、hitflag、速度等。\n• ModifyProjectile：按 ID 与 index 实时改场上飞行道具的加速度、teamside、动画、ID。\n• ModifyPlayer：直接修改 ailevel、alive、attack、defence、displayname、lifebarname、lifemax、powermax、dizzypointsmax、guardpointsmax、teamside、movehit、hitpausetime 等底层字段。\n• ModifySnd：实时修改指定声道的音量、频移(freqmul)、声像、循环点与播放位置。",
+                "[State 1000, BoostHit]\ntype = ModifyHitDef\ntrigger1 = AnimElem = 5\ndamage = 120, 20\nhitflag = MAF\n\n[State -2, BossPhase2]\ntype = ModifyPlayer\ntrigger1 = Life < LifeMax / 2\ndisplayname = \"Awakened Boss\"\nattack = 130", false));
+
+        list.add(new DictEntry("Text / ModifyText / RemoveText / LifebarAction", "sctrl", "IK-GO",
+                "【IK官方Wiki】屏幕任意位置渲染格式化文字、打字机效果与血条提示演出",
+                "• Text：在屏幕任意坐标绘制文字，支持 printf 占位符(%d/%f/%v)、params、font([F]编号)、bank、align(1左/0中/-1右)、angle、pos、scale、color、textspacing、textdelay(打字机延迟)、velocity/accel/friction、palfx.*、hidewithbars 及 <color:RRGGBB> 行内变色。\n• ModifyText / RemoveText：按 ID/index 实时更新或移除文字。\n• LifebarAction：调用血条内置消息队列显示 FIRST ATTACK / COUNTER / DANGER 等同步图文音效提示。",
+                "[State 3000, ShowText]\ntype = Text\ntrigger1 = Time = 0\nid = 10\ntext = \"<color:FACC15>OVERDRIVE %d%%</color>\"\nparams = Map(od_pct)\nfont = F 0\nalign = 0\npos = 160, 50\nremovetime = 90", false));
+
+        list.add(new DictEntry("Dialogue", "sctrl", "IK-GO",
+                "【IK官方Wiki】开局或决胜局内置剧情对话系统（支持表情切换、语音与分支动作）",
+                "在第一局开场前(RoundState=1末帧)或决胜局结束前(RoundState=4)触发（可用 force=1 强制立即触发，hidebars=1 隐藏血条）。\ntext1, text2... 支持富文本控制标签：<p1>/<p2>切换说话方、<pXname=...>、<pXface=self/enemy,组,号>、<sound=...>、<anim=...>、<state=...>、<map=...>、<displayname=...>、<wait=帧数>。\n需界面 system.def 配置 [Dialogue Info] 启用。",
+                "[State 191, IntroTalk]\ntype = Dialogue\ntrigger1 = Enemy, Name = \"Kyo\"\nhidebars = 1\ntext1 = \"<p1><p1face=self,9000,0>终于等到你了，<displayname=enemy>！<wait=60>\"\ntext2 = \"<p2><p2face=enemy,9000,0>废话少说，放马过来！<wait=60>\"", false));
+
+        list.add(new DictEntry("PlayBgm / ModifyBgm", "sctrl", "IK-GO",
+                "【IK官方Wiki】战斗中动态切歌、恢复地图原BGM、实时变速变调与无缝循环点控制",
+                "PlayBgm 支持 mp3/ogg/wav/flac/mid/xm/mod/it/s3m：\n• source = \"match\" / \"stagedef\" / \"charparams\" / \"motif\"（快速恢复当前对战或地图原曲，支持 match.round1 等前缀）\n• bgm = \"路径\"（留空 \"\" 停止音乐）、volume、loop、loopstart、loopend、startposition、freqmul、loopcount。\nModifyBgm：实时调整当前播放 BGM 的音量、采样跳转位置与播放速度（freqmul = 0 暂停）。",
+                "[State 3000, BossTheme]\ntype = PlayBgm\ntrigger1 = Time = 0\nbgm = \"sound/boss_phase2.ogg\"\nvolume = 100\nloop = 1\nloopstart = 44100", false));
+
+        list.add(new DictEntry("LoadFile / SaveFile / PrintToConsole", "sctrl", "IK-GO",
+                "【IK官方Wiki】二进制存档持久化(var/fvar/map 读写)与调试控制台打印",
+                "• SaveFile / LoadFile：使用 Go gob 二进制格式在角色目录读写持久化数据（savedata = var / fvar / map，path = \"save.gob\"，可用 maps / maps.include 过滤特定 Map），轻松实现跨局养成/解锁/战绩记录。\n• PrintToConsole：向调试控制台与终端打印带 %v/%d/%f 格式化的调试日志。",
+                "[State -2, SaveProgress]\ntype = SaveFile\ntrigger1 = MatchOver && Win\nsavedata = map\npath = \"progress.gob\"\nmaps.include = \"rpg_\"", false));
+
+        list.add(new DictEntry("DizzySet / DizzyPoints* / GuardBreakSet / GuardPoints* / RedLife* / ScoreAdd", "sctrl", "IK-GO",
+                "【IK官方Wiki】官方原生眩晕(Dizzy)、破防(GuardBreak)、红血恢复(RedLife)与积分系统",
+                "Ikemen GO 原生内置四大商业格斗系统（默认由 data/dizzy.zss、guardbreak.zss、tag.zss、score.zss 驱动）：\n• DizzySet / DizzyPointsAdd / DizzyPointsSet / TargetDizzyPointsAdd\n• GuardBreakSet / GuardPointsAdd / GuardPointsSet / TargetGuardPointsAdd\n• RedLifeAdd / RedLifeSet / TargetRedLifeAdd（红血可恢复上限）\n• ScoreAdd / TargetScoreAdd（支持浮点积分如 CVS2 GP 系统）。",
+                "[State 3000, BreakGuard]\ntype = TargetGuardPointsAdd\ntrigger1 = MoveGuarded = 1\nvalue = -300", false));
+
+        list.add(new DictEntry("Camera / Depth / DepthBound / Height / GroundLevelOffset", "sctrl", "IK-GO",
+                "【IK官方Wiki】自由/追踪镜头、Z轴景深边界、垂直推挤高度与动态平台地面高度",
+                "• Camera [实验]：view = \"Fighting\" / \"Follow\" / \"Free\"，支持 pos.x/y 与 followid。\n• Height：单帧调整垂直推挤盒(top_extra, bottom_extra)，类似 Width 的纵向版。\n• Depth / DepthBound：控制 Z 轴(纵深)推挤宽度与是否突破 topbound/botbound。\n• GroundLevelOffset：临时修改当前角色的地面基准高度(pos y=0)，用于制作多层次平台地形！",
+                "[State -2, Platform]\ntype = GroundLevelOffset\ntrigger1 = Pos X = [-120, 120] && Pos Y + GroundLevel <= -80\nvalue = -80", false));
+
+        list.add(new DictEntry("OverrideClsn / TransformClsn / TransformSprite / RemapSprite / ModifyShadow / ModifyReflection", "sctrl", "IK-GO",
+                "【IK官方Wiki】实时覆写/旋转缩放判定框、透视切变精灵变形、批量换图预设与阴影倒影控制",
+                "• OverrideClsn：无需改 AIR 直接实时修改/清空 Clsn1/Clsn2/Size 判定框矩形。\n• TransformClsn：按 scale、angle、pivot 对判定框进行旋转与缩放。\n• TransformSprite：对角色精灵应用裁剪窗口 window、水平斜切 xshear、透视投影 projection(orthographic/perspective/perspective2) 与 focallength。\n• RemapSprite：单图替换(source/dest)或按 CNS [RemapPreset 名称] 一键批量换装/变身！\n• ModifyShadow / ModifyReflection：单独修改角色阴影与倒影的动画、颜色、偏移、裁剪与着色器。",
+                "[State 1000, Transform]\ntype = RemapSprite\ntrigger1 = Time = 0\npreset = \"SuperForm\"\nreset = 1", false));
+
+        list.add(new DictEntry("ShaderSet / Storyboard / ModifyStoryboard / RemoveStoryboard", "sctrl", "IK-GO",
+                "【IK官方Wiki】自定义 GLSL/Vulkan 着色器与战斗中随时播放过场/MP4 Storyboard",
+                "• ShaderSet：给角色应用在 .def [Shaders] 注册的自定义着色器，支持传 16 个浮点参数 param0~15(旧版 shaderparam.p0~p15) 与 2 张自定义纹理 tex1/tex2。\n• Storyboard：战斗中直接播放指定 .def 过场（含 MP4 视频），支持 space = none/stage/screen、pos、scale、bindid/bindtime 绑定角色做电影级超杀演出！",
+                "[State 3000, SuperShader]\ntype = ShaderSet\ntrigger1 = Time = 0\nshader = \"aura_glow\"\ntime = 60\nshaderparam.p0 = 1.5", false));
+
+        list.add(new DictEntry("ModifyStageBG / ModifyStageVar / ModifyBGCtrl / ModifyBGCtrl3D", "sctrl", "IK-GO",
+                "【IK官方Wiki】战斗中实时修改地图图层、地图镜头/物理参数与 2D/3D 背景控制器",
+                "• ModifyStageBG：按 ID/index 实时修改地图图层的速度、坐标、缩放、角度、透明、滤镜与着色器。\n• ModifyStageVar：动态改地图镜头缩放/边界、光照阴影、倒影、重力/推边、玩家起始点等。\n• ModifyBGCtrl / ModifyBGCtrl3D：动态修改带 sctrlid 标记的 2D/3D 地图背景控制器（非常适合搭配地图 AttachedChar 制作动态破坏场景）。",
+                "[State -2, StormStage]\ntype = ModifyStageBG\ntrigger1 = Time = 0\nID = 5\nvelocity.x = -8.0", false));
+
+        list.add(new DictEntry("TagIn / TagOut / MatchRestart / RunState / GetHitVarSet / RoundTimeAdd", "sctrl", "IK-GO",
+                "【IK官方Wiki】换人(Tag)待机切换、无刷新重载对局、不切状态执行子状态与修改回合时间",
+                "• TagIn / TagOut：控制队友进出 Standby 待机状态（待机时无敌、不推挤、镜头不跟随），可切换 leader。\n• MatchRestart：类似 F4/Shift+F4 重开回合或无缝重载角色/地图（可指定 p1def/stagedef/reload/preservevars/resetmatch）。\n• RunState [Nightly]：不改变当前 StateNo 的情况下执行某状态号的代码（含负状态）。\n• GetHitVarSet：无需受击直接修改 GetHitVar 字段；RoundTimeAdd/Set：增减回合倒计时。",
+                "[State 5600, SwitchOut]\ntype = TagOut\ntrigger1 = Time = 0\nstateno = 6565611", false));
+
+        list.add(new DictEntry("AssertInput / AssertCommand / AssertAnalogVector / ShiftInput / ChangeMovelist", "sctrl", "IK-GO",
+                "【IK官方Wiki】虚拟按键输入、强制触发指令、按键重映射(如混乱反转)与动态切换出招表",
+                "• AssertInput：单帧模拟按下最多 8 个按键(U/D/L/R/B/F/a~z/s/d/w/m)。\n• AssertCommand：直接激活指定名称的 .cmd 指令（name=\"\" 随机激活）。\n• ShiftInput：单帧把按键 input 映射为 output（如左右/上下反转中混乱状态，设为 none 可禁用按键）。\n• AssertAnalogVector：模拟摇杆浮点向量。\n• ChangeMovelist：切换暂停菜单里显示的招式表索引(对应 .def movelist0/1/2)。",
+                "[State -2, Confused]\ntype = ShiftInput\ntrigger1 = Map(confused) > 0\ninput = L\noutput = R", false));
+    }
+
+    private void addDictMugenTriggers(List<DictEntry> list) {
+        list.add(new DictEntry("Time / StateTime / AnimTime / AnimElem / AnimElemTime / AnimElemNo / Anim / AnimExist / SelfAnimExist", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "状态计时、动画剩余帧、关键帧判定与动画存在性检测核心触发器",
+                "• Time (同 StateTime)：进入当前状态经过的帧数（从 0 开始）。\n• AnimTime：距离当前动画播完的剩余帧数（负数，最后一帧结束瞬间为 0）。\n• AnimElem = N：当前正好处于第 N 帧首帧时为真；AnimElemTime(N)：距第 N 帧开始过了几帧。\n• AnimElemNo(offset)：返回偏移 offset 帧后的动画帧号。\n• AnimExist(N) / SelfAnimExist(N)：检测当前状态表/自身 AIR 是否存在 N 号动画（兼容通用受击动画必查）。",
+                "trigger1 = AnimElem = 3\ntrigger2 = AnimTime = 0\ntrigger3 = SelfAnimExist(5300)", false));
+
+        list.add(new DictEntry("StateNo / PrevStateNo / StateType / MoveType / Physics / Ctrl / Alive / Facing", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "读取当前/上一状态号、站蹲空倒(S/C/A/L)、攻防待(A/H/I)、操控权、存活与朝向",
+                "• StateType：S(站) C(蹲) A(空) L(倒地)；MoveType：I(待机) A(攻击) H(受击)。\n• Ctrl：1 可受玩家控制，0 不可控；Alive：1 存活，0 阵亡。\n• Facing：1 面向右，-1 面向左。",
+                "trigger1 = StateType != A && MoveType = I && Ctrl && Alive", false));
+
+        list.add(new DictEntry("MoveContact / MoveHit / MoveGuarded / MoveReversed / HitCount / UniqHitCount / HitPauseTime / InGuardDist", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "攻击命中/防御/当身检测、连击段数、顿帧剩余与对手是否处于防御距离",
+                "• MoveContact / MoveHit / MoveGuarded / MoveReversed：接触当帧返回 1，之后每非顿帧递增；连招取消常用 MoveContact = [1, 10]。\n• HitCount / UniqHitCount：当前状态命中总段数 / 独立招式命中数。\n• HitPauseTime：当前剩余顿帧数；InGuardDist：是否处于对手攻击可防御范围内（AI 防御判断常用）。",
+                "trigger1 = Command = \"QCF_x\" && MoveContact && HitPauseTime = 0", false));
+
+        list.add(new DictEntry("Pos / Vel / ScreenPos / BackEdgeDist / FrontEdgeDist / BackEdgeBodyDist / FrontEdgeBodyDist", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "坐标、速度、屏幕位置与前后版边距离（墙角检测核心）",
+                "• Pos X / Pos Y：相对屏幕中心与地面(y=0)的坐标；Vel X / Vel Y：当前速度。\n• ScreenPos X / Y：相对屏幕左上角的像素坐标。\n• BackEdgeBodyDist / FrontEdgeBodyDist：角色身体边缘到后/前屏幕边缘的距离（<= 10 通常代表在版边墙角）。",
+                "trigger1 = Pos Y >= 0 && Vel Y > 0\ntrigger2 = BackEdgeBodyDist <= 10", false));
+
+        list.add(new DictEntry("P2Dist / P2BodyDist / ParentDist / RootDist / P2Life / P2StateNo / P2StateType / P2MoveType", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "对手相对距离（轴心 Dist vs 身体边缘 BodyDist）及对手状态速查",
+                "• P2BodyDist X：角色前宽到对手前宽的距离（贴身为0，重叠为负），AI 判断出招距离首选！\n• P2Dist X / Y：两角色轴心原点的距离。\n• ParentDist / RootDist：Helper 到父级/本体的距离。\n• Ikemen GO 扩展：P2Dist Z / P2BodyDist Z / ParentDist Z / RootDist Z。",
+                "trigger1 = P2BodyDist X = [-5, 70] && P2StateType != L && P2MoveType != H", false));
+
+        list.add(new DictEntry("AILevel", "trigger", "1.0/1.1/1.1b1/IK-GO",
+                "【1.0+新增】官方原生 AI 难度等级（0=玩家手操，1~8=电脑难度）",
+                "WinMUGEN 不存在此触发器（老角色用 var(59) 开关检测按键异常）；MUGEN 1.0/1.1/1.1b1 与 Ikemen GO 原生支持 AILevel，写 AI 时可用 AILevel > 0 并按 Random < AILevel * 80 梯度控制反应。\nIkemen GO 额外提供浮点精度 AILevelF。",
+                "trigger1 = AILevel > 0 && Random < (AILevel * 75)", false));
+
+        list.add(new DictEntry("Command / Random / PalNo / Life / LifeMax / Power / PowerMax", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "搓招指令、随机数(0~999)、当前色表号(1~12)与血量/能量槽数值",
+                "• Command = \"指令名\"：检测 .cmd 中定义的指令是否触发。\n• Random：每帧随机返回 0~999 的整数（如 Random < 300 代表 30% 概率）。\n• PalNo：当前选用色表编号（1~12，常用于 12P 狂级开关）。\n• Life / LifeMax / Power / PowerMax：读取当前与最大血/气值。",
+                "trigger1 = Command = \"Super\" && Power >= 1000 && Life <= LifeMax * 0.3", false));
+
+        list.add(new DictEntry("Var / FVar / SysVar / SysFVar / Const / Const240p / Const480p / Const720p", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "读取变量、角色 CNS 常量与跨分辨率自动换算(Const240p/480p/720p 1.0+)",
+                "• Var(0~59) / FVar(0~39) / SysVar(0~4) / SysFVar(0~4)（IK 解除上限）。\n• Const(data.life) / Const(velocity.walk.fwd.x) / Const(size.head.pos.y) 等读取 CNS 常量。\n• Const240p(x) / Const480p(x) / Const720p(x)（1.0+ 新增）：把数值按目标分辨率自动换算到角色 localcoord 坐标系。\n• Ikemen GO 新增 Const1080p(x) 与自定义 [Constants] 读取。",
+                "trigger1 = Pos Y <= Const240p(-60) && Var(10) = 1", false));
+
+        list.add(new DictEntry("GetHitVar(...)", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "读取最近一次受击的详细参数（伤害、硬直、击飞速度、连段数、是否倒地等）",
+                "经典参数：xveladd、yveladd、type、animtype、airtype、groundtype、damage、hitcount、fallcount、hitshaketime、hittime、slidetime、ctrltime、recovertime、xoff、yoff、xvel、yvel、yaccel、hitid、chainid、guarded、isbound、fall、fall.damage、fall.xvel、fall.yvel、fall.recover、fall.time、fall.kill、fall.envshake.*。\nIkemen GO 新增：attr、hitflag、guardflag、guardcount、guarddamage、guardko、hitdamage、dizzypoints、guardpoints、redlife、score、playerid、playerno、projid、teamside、frame、sparkx/y、ground/air/down/guard.velocity.x/y/z。",
+                "trigger1 = GetHitVar(hitcount) >= 3 && GetHitVar(fall)", false));
+
+        list.add(new DictEntry("NumHelper / NumExplod / NumProj / NumProjID / NumTarget / NumEnemy / NumPartner / IsHelper / ID / PlayerIDExist", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "实体数量统计、Helper 身份识别与全局唯一 PlayerID 存活检测",
+                "• NumHelper(id) / NumExplod(id) / NumProjID(id) / NumTarget(id)：统计指定 ID 的存活数量（省略参数统计全部）。\n• IsHelper / IsHelper(id)：判断当前执行者是否为 Helper。\n• ID：返回当前实体的唯一整数 ID；PlayerIDExist(id)：检查该实体是否仍存活。",
+                "trigger1 = !IsHelper && NumHelper(1005) = 0 && NumTarget(200) > 0", false));
+
+        list.add(new DictEntry("ProjHit / ProjGuarded / ProjContact / ProjHitTime / ProjGuardedTime / ProjContactTime / ProjCancelTime", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "内置 Projectile 飞行道具的命中、被防、接触与相杀状态检测",
+                "语法：ProjHit1000 = 1, < 10（检测 ID=1000 的飞行道具是否在 10 帧内命中；省略 ID 检测任意飞行道具）。ProjHitTime(1000) 返回距离上次命中的帧数（未命中返回 -1）。",
+                "trigger1 = ProjHit1000 = 1 || ProjGuarded1000 = 1", false));
+
+        list.add(new DictEntry("RoundState / RoundNo / RoundsExisted / MatchNo / MatchOver / GameTime / TicksPerSecond / Win / Lose / DrawGame", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "回合阶段(0~4)、局数、全局帧计时与胜负/完美胜/超杀胜判断",
+                "• RoundState：0开场淡入、1开场演出、2正式战斗、3决出胜负(KO慢放)、4胜利姿势。\n• Win / WinKO / WinTime / WinPerfect；Lose / LoseKO / LoseTime；DrawGame。\n• GameTime：进入对战后的总帧数（暂停时仍递增）；TicksPerSecond 通常为 60。\n• Ikemen GO 新增：WinHyper、WinSpecial、WinClutch、FightTime、RoundTime、StageTime、IntroState、OutroState。",
+                "trigger1 = RoundState = 2 && !MatchOver", false));
+
+        list.add(new DictEntry("Name / AuthorName / P1Name~P4Name / TeamMode / TeamSide / IsHomeTeam / HitDefAttr / HitOver / HitShakeOver / HitFall / HitVel / CanRecover", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "角色名/作者名、组队模式、受击结束判定、受身条件与攻击属性检测",
+                "• TeamMode：single / simul / turns（IK 新增 tag）；TeamSide：1 为 P1 侧，2 为 P2 侧。\n• HitDefAttr = SCA, NA, SA：检测对手当前激活 HitDef 的属性（写 AI 自动防上/下段或投技必备）。\n• HitOver / HitShakeOver：受击硬直/受击顿帧是否结束；CanRecover：是否满足空中受身条件。",
+                "trigger1 = EnemyNear, HitDefAttr = SCA, NT, ST, HT", false));
+
+        list.add(new DictEntry("CameraPos / CameraZoom / ScreenWidth / ScreenHeight / GameWidth / GameHeight / BackEdge / FrontEdge / LeftEdge / RightEdge / TopEdge / BottomEdge", "trigger", "1.0/1.1/1.1b1/IK-GO",
+                "【1.0/1.1/1.1b1+新增】镜头坐标、实时缩放倍率与屏幕/版边坐标触发器",
+                "• GameWidth / GameHeight（1.0+）：当前分辨率逻辑宽高。\n• CameraPos X / Y、CameraZoom、ScreenWidth / ScreenHeight、LeftEdge / RightEdge / TopEdge / BottomEdge、BackEdge / FrontEdge（1.1 / 1.1b1+ 新增）：用于自适应全屏特效、精准定位画面边缘与跟随镜头缩放！",
+                "trigger1 = CameraZoom < 1.0 && ScreenPos X < ScreenWidth / 2", false));
+
+        list.add(new DictEntry("数学函数与条件表达式: IfElse / Cond / Abs / Floor / Ceil / Sin / Cos / Tan / Asin / Acos / Atan / Exp / Ln / Log / Pi / E", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "数学三角函数、对数指数、条件三目运算与短路求值 Cond(1.1+)",
+                "• IfElse(条件, 真值, 假值)：注意 IfElse 会**同时计算**真假两个分支！如果分支含除零或非法重定向会报错。\n• Cond(条件, 真值, 假值)（1.1 / 1.1b1 / IK 新增）：**短路求值**！只计算命中的分支，写安全重定向（如 Cond(NumTarget, Target, Pos X, 0)）绝对首选！\n• Ikemen GO 新增：Atan2、Clamp、Deg、Rad、Lerp、Min、Max、Round、Sign、Float、RandomRange。",
+                "value = Cond(NumTarget > 0, Target, Pos X, Pos X)", false));
+
+        list.add(new DictEntry("跨实体重定向: Root / Parent / Target / Partner / Enemy / EnemyNear / Helper / PlayerID", "trigger", "Win/1.0/1.1/1.1b1/IK-GO",
+                "读取其他实体的任意触发器数据（支持多级链式重定向）",
+                "语法：<重定向目标>, <触发器>（如 EnemyNear(0), StateNo）。\n• Root：本体；Parent：直接父级；Helper(id)：指定 ID 的 Helper；Target(id)：捕获的目标；EnemyNear(n)：按距离从近到远第 n 个对手；PlayerID(id)：按唯一 ID 查实体。\n• Ikemen GO 增强：新增 P2、Player(n)、PlayerIndex(n)、HelperIndex(n)、StateOwner，且 Helper(id, index) 与 Target(id, index) 支持按索引精确区分同 ID 多实体！",
+                "trigger1 = Root, Alive && EnemyNear(0), StateType != L", false));
+    }
+
+    private void addDictIkemenTriggers(List<DictEntry> list) {
+        list.add(new DictEntry("IK 新重定向: P2 / Player(n) / PlayerIndex(n) / HelperIndex(n) / StateOwner", "trigger", "IK-GO",
+                "【IK官方Wiki】更稳定的对手重定向 P2、按索引遍历全部实体/Helper 与状态拥有者重定向",
+                "• P2, <触发器>：自动指向当前锁定的主要对手（忽略已 KO 的 5150 状态，比 EnemyNear 更防抖）。\n• Player(n)：指向 1~8 号玩家（配合 PlayerNoExist(n) 使用）。\n• PlayerIndex(n) / HelperIndex(n)：按底层索引遍历场上所有实体或 Helper（搭配 ZSS for 循环与 NumPlayer / PlayerIndexExist / HelperIndexExist 极其强大）。\n• StateOwner：在自定义受击状态中直接指向施法者本体。",
+                "trigger1 = P2, DizzyPoints <= 100\ntrigger2 = StateOwner, AILevel > 0", false));
+
+        list.add(new DictEntry("Map(name) / IsAsserted(flag) / GameMode / GameOption / GameVar / MotifState / FightScreenState", "trigger", "IK-GO",
+                "【IK官方Wiki】读取 Map 变量、检测引擎标志、游戏模式、配置项与血条/过场状态",
+                "• Map(name) / Map(name, index)：读取具名变量（未设返回 0；Nightly 支持数组与字符串）。\n• IsAsserted(flag)：检测某 AssertSpecial 标志是否激活（如 IsAsserted(nobardisplay)）。\n• GameMode：检测当前模式（arcade/versus/training/survival/watch/netplayversus 等）。\n• GameVar(param)：读取 superpausetime/pausetime/slowtime/introtime/hidebars。\n• FightScreenState / MotifState：检测是否正在显示 Round/Fight/KO/Win/VictoryScreen/Continue。",
+                "trigger1 = Map(awakened) = 1 && GameMode = \"training\"\ntrigger2 = !IsAsserted(noBG) && GameVar(superpausetime) = 0", false));
+
+        list.add(new DictEntry("HitDefVar / MoveHitVar / HitByAttr / ReversalDefAttr / HitOverridden / GuardCount", "trigger", "IK-GO",
+                "【IK官方Wiki】反查当前激活 HitDef/ReversalDef 参数、上次命中详情与霸体触发检测",
+                "• HitDefVar(param)：查询当前激活 HitDef 的 hitdamage、guarddamage、guardflag、hitflag、pausetime、sparkx/y、ground/air.velocity 等。\n• MoveHitVar(param)：查询刚打出的攻击详情（frame 命中当帧、playerid、playerno、sparkx/y、power、overridden、cornerpush.veloff），即使未捕获 Target 也有效！\n• HitByAttr(S, NT)：检测自身当前是否可被指定属性命中。\n• ReversalDefAttr：检测当前当身属性；HitOverridden：本帧是否触发了 HitOverride；GuardCount：连防段数。",
+                "trigger1 = MoveHit = 1 && MoveHitVar(frame) = 1\ntrigger2 = P2, HitDefVar(guardflag) = L", false));
+
+        list.add(new DictEntry("ClsnOverlap / ProjClsnOverlap / ClsnVar / ExplodVar / ProjVar / SpriteVar / AnimElemVar", "trigger", "IK-GO",
+                "【IK官方Wiki】原生判定框重叠检测与实时查询判定框/特效/飞道/精灵/动画帧底层属性",
+                "• ClsnOverlap(box1, targetID, box2)：直接调用引擎底层旋转/缩放判定盒检测（支持 Clsn1/Clsn2/Size/Dummy）。\n• ClsnVar(Clsn2, 0, Top/Bottom/Front/Back)：读取判定框精确坐标。\n• ExplodVar(id, idx, param) / ProjVar(id, idx, param)：读取特效或飞道坐标、速度、动画帧、缩放、角度、着色器等。\n• SpriteVar(Group/Image/Width/Height/XOffset/YOffset) 与 AnimElemVar(NumClsn1/NumClsn2/HFlip/AlphaSource...)。",
+                "trigger1 = ClsnOverlap(clsn1, P2, ID, clsn2)\ntrigger2 = AnimElemVar(NumClsn1) > 0", false));
+
+        list.add(new DictEntry("StageConst / StageVar / StageBGVar / NumStageBG / StageFrontEdgeDist / StageBackEdgeDist / GroundLevel", "trigger", "IK-GO",
+                "【IK官方Wiki】读取地图自定义常量、地图图层属性、舞台边界距离与动态地面高度",
+                "• StageConst(name)：读取地图 .def [Constants] 中的自定义常量（如水面地形 WaterGround = 1）。\n• StageVar(param)：支持读取 ModifyStageVar 可改的全部地图参数及 localcoord/version。\n• StageBGVar(id, idx, param) / NumStageBG(id)：查询地图图层位置/速度/动画帧。\n• StageFrontEdgeDist / StageBackEdgeDist：距地图绝对尽头(墙角)的距离。\n• GroundLevel：当前地面基准高度（由 GroundLevelOffset 改变）。",
+                "trigger1 = StageConst(WaterGround) = 1 && StageFrontEdgeDist < 80", false));
+
+        list.add(new DictEntry("Dizzy / GuardBreak / RedLife / Standby / TeamLeader / TeamSize / MemberNo / ComboCount / ReceivedDamage / Score", "trigger", "IK-GO",
+                "【IK官方Wiki】眩晕/破防/红血/换人待机/队伍领导者、连段总伤与积分触发器",
+                "• Dizzy / DizzyPoints / DizzyPointsMax；GuardBreak / GuardPoints / GuardPointsMax；RedLife。\n• Standby：是否在 Tag 后台待机；TeamLeader / TeamSize / MemberNo / PlayerNo / ConsecutiveWins / DecisiveRound。\n• ComboCount / ReceivedHits / ReceivedDamage：当前连段实时总连击数与总伤害。\n• Score / ScoreTotal / FirstAttack / WinHyper / WinSpecial / WinClutch（残血反杀胜）。",
+                "trigger1 = !Standby && TeamLeader = PlayerNo && ComboCount >= 5", false));
+
+        list.add(new DictEntry("InputTime / Analog / SelfCommand / AILevelF / InCustomState / InCustomAnim / JugglePoints / PauseTime / DebugMode", "trigger", "IK-GO",
+                "【IK官方Wiki】按键蓄力时长、摇杆模拟量、自定义状态检测、剩余浮空点数与调试检测",
+                "• InputTime(key)：返回按键按住(>0)或松开(<0)的精确帧数（蓄力技神技，支持 B/F/D/U/L/R/a~z/s/d/w/m）。\n• Analog(LeftX/RightTrigger...)：读取摇杆/扳机浮点模拟量。\n• SelfCommand：即使处于被对手控制的自定义状态也能读自身按键。\n• InCustomState / InCustomAnim / InDialogue / InRunState / SelfStatenoExist(N)。\n• JugglePoints(targetID)：读取对目标剩余可用浮空点数。\n• PauseTime（仅 Statedef -4 有效）/ DebugMode(clsndisplay/accel...) / IkemenVersion / MugenVersion / LocalCoord。",
+                "trigger1 = InputTime(B) >= 30 && InputTime(F) = 1\ntrigger2 = !InCustomState && JugglePoints(P2, ID) >= 2", false));
+
+        list.add(new DictEntry("IK 数学与视觉状态触发器: Atan2 / Clamp / Lerp / Min / Max / Round / Sign / RandomRange / PalFXVar / ZoomVar / BGMVar / SoundVar / Shader", "trigger", "IK-GO",
+                "【IK官方Wiki】现代数学函数库与实时查询滤镜、镜头缩放、音乐、声道与着色器状态",
+                "• 数学：Atan2(dy, dx)、Clamp(v, min, max)、Lerp(a, b, t)、Min/Max、Round(v, prec)、Sign(v)、Deg/Rad、Float(x)、RandomRange(lo, hi)。\n• 状态反查：PalFXVar(add.r/time/hue...)、EnvShakeVar(time/freq/ampl)、ZoomVar(scale/pos.x/y/lag/time)、BGMVar(volume/position/filename)、SoundVar(ch, isplaying/freqmul)、Shader、Alpha(source/dest)、Angle/XAngle/YAngle/Scale/Xshear/DrawPal(group/index)/SprPriority/LayerNo。",
+                "fvar(0) = Clamp(Lerp(0, 100, Time / 30.0), 0, 100)\nvar(1) = RandomRange(-200, 200)", false));
+    }
+
+    private void addDictZssAndLua(List<DictEntry> list) {
+        list.add(new DictEntry("ZSS 语法基础 (Zero State Script)", "zss_lua", "IK-GO",
+                "Ikemen GO 现代化角色脚本语言：大括号代码块、if/else、switch 与无冗余 trigger",
+                "ZSS 文件以 .zss 结尾（可在 .def 的 st 项直接加载，与 .cns 完美混用）。\n核心优势：\n• 用 if / else if / else {} 替代冗长的 triggerall + trigger1~N\n• 控制器用大括号传参：hitDef{attr: S, NA; damage: 25, 0;}\n• 用 ignoreHitPause {} 与 persistent(0) {} 统一包裹多条语句，代码量减少 60%！",
+                "[Statedef 200; type: S; movetype: A; physics: S; anim: 200; ctrl: 0;]\nif time = 0 {\n    playSnd{value: 0, 0}\n}\nif animElem = 3 {\n    hitDef{attr: S, NA; damage: 25, 0; guardflag: MA;}\n}\nif animTime = 0 {\n    changeState{value: 0; ctrl: 1;}\n}", false));
+
+        list.add(new DictEntry("ZSS 高级特性: [Function] / let 局部变量 / for 循环 / switch / call", "zss_lua", "IK-GO",
+                "在 ZSS 中编写可复用函数、局部变量($x)、for 循环与分支 switch",
+                "• 局部变量：let x = pos x + 20; 使用时加 $ 前缀（如 $x），完全不占用角色 var(0~59)！\n• 自定义函数：[Function MyFunc(a, b) ret] ... 调用用 call MyFunc(10, 20) 或直接作为表达式取值。\n• 循环与分支：for i = 0; 9; 1 { ... }、switch stateNo { case 200, 210: ... default: ... }。",
+                "[Function SpawnRing(cnt, radius)]\nfor i = 0; $cnt - 1; 1 {\n    let ang = $i * (2 * pi / $cnt);\n    explod{\n        anim: 7000;\n        pos: cos($ang) * $radius, sin($ang) * $radius - 50;\n    }\n}", false));
+
+        list.add(new DictEntry("Ikemen GO Lua 模块系统与钩子 (hook.add)", "zss_lua", "IK-GO",
+                "使用 Lua 编写自定义菜单、剧情模式、商店、3D/2D 特效 HUD 与独立游戏模式",
+                "• 模块加载：把脚本放在 external/mods/<模块名>.lua 即可自动挂载。\n• 核心钩子：hook.add(\"loop\", \"id\", fn)（每帧渲染循环）、hook.add(\"main.t_itemname\", ...)（注册自定义主菜单模式）、hook.add(\"motif.f_...\", ...)。\n• 常用内置全局 API：textImgNew/textImgSetText/textImgDraw、animNew/animUpdate/animDraw、sndPlay、playBGM、commandGetState、start.f_selectSimple、launchFight、config、motif、main。",
+                "local myTxt = textImgNew()\ntextImgSetFont(myTxt, motif.font_data[1])\ntextImgSetPos(myTxt, 160, 20)\nhook.add(\"loop\", \"my_mod_hud\", function()\n    textImgSetText(myTxt, \"MOD ACTIVE\")\n    textImgDraw(myTxt)\nend)", false));
+
+        list.add(new DictEntry("富文本行内变色与手柄按键图标标签 (<color:RRGGBB>)", "zss_lua", "IK-GO",
+                "Ikemen GO v1.0+ 支持在界面、血条、剧情、Lua 与 Text 控制器中行内变色与插图标",
+                "支持在 Screenpack、Storyboard、Lua、Lifebar、Text 与 LifebarAction 文本中使用 <color:RRGGBB>变色文字</color> 以及动态手柄/键盘按键图标（需字体 DEF 与 [Glyphs] 配合）。",
+                "text = \"按下 <color:38BDF8>A+B</color> 发动 <color:EF4444>觉醒技</color>\"", false));
+    }
+
+    private void addDictFormatsAndFiles(List<DictEntry> list) {
+        list.add(new DictEntry("角色定义文件 (.def) 全版本字段详解", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "角色入口文件：版本声明、坐标缩放、素材路径、色表、出招表、Map 与着色器",
+                "• [Info]：name、displayname、versiondate、mugenversion（Win填 04,14,2001；1.0填 1.0；1.1/1.1b1填 1.1）、ikemenVersion（IK专属填 1.0）、author、pal.defaults、localcoord（1.0+默认320,240；高清可设640,480或1280,720）、lifebarname(IK)、portraitscale(IK)、fightfx.prefix(IK)。\n• [Files]：cmd、cns、st、st1~st9、stcommon、sprite、anim、sound、ai(1.0+)、pal1~pal12(Win/SFFv1)、movelist / movelist1(IK)、font0~font9(IK)、fx(IK)。\n• [Arcade]：intro.storyboard、ending.storyboard。\n• [Map](IK) / [Shaders](IK) / [Palette Keymap](1.0+)。",
+                "[Info]\nname = \"Kyo\"\ndisplayname = \"Kyo Kusanagi\"\nmugenversion = 1.1\nikemenVersion = 1.0\nlocalcoord = 320, 240\n\n[Files]\ncmd = kyo.cmd\ncns = kyo.cns\nst = kyo.cns\nstcommon = common1.cns\nsprite = kyo.sff\nanim = kyo.air\nsound = kyo.snd\nmovelist = movelist.dat", false));
+
+        list.add(new DictEntry("角色常量与状态文件 (.cns)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "定义角色血气/尺寸/速度/摩擦常量、胜利台词 [Quotes] 与 [Statedef] 状态机",
+                "核心区块：\n• [Data]：life、power(1.0+)、attack、defence、fall.defence_up、liedown.time、airjuggle、sparkno、guard.sparkno、KO.echo、IntPersistIndex、FloatPersistIndex；IK 新增 dizzypoints、guardpoints、hitsound.channel。\n• [Size]：xscale/yscale、ground.back/front、air.back/front、height、attack.dist、head.pos、mid.pos；IK 新增 stand/crouch/air/down.sizebox、weight、pushfactor、depth、attack.depth。\n• [Velocity] / [Movement]：走跑跳受击速度、重力 yaccel、摩擦系数与空中跳次数。\n• [Quotes](1.0+)：victory0~victory99。\n• [Constants](IK)：无限自定义常量；[RemapPreset 名称](IK)：批量换图预设。",
+                "[Data]\nlife = 1000\npower = 3000\nattack = 100\ndefence = 100\nairjuggle = 15\n\n[Constants]\nFireballState = 1000", false));
+
+        list.add(new DictEntry("动画与判定框文件 (.air)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "定义动作帧序列、持续帧数、翻转、混合、插值补间与 Clsn1/Clsn2 判定框",
+                "• 帧语法：Group, Item, OffX, OffY, Ticks [, Flip(H/V/VH) [, Trans(A/A1/S/ASxDx) [, ScaleX, ScaleY, Angle(1.1+)]]]。\n• Ticks = -1 表示永久停留在最后一帧；Loopstart 标记循环起点。\n• Clsn1(红框=攻击判定)、Clsn2(蓝框=受击判定)；Clsn1Default/Clsn2Default 应用于后续所有未单独写框的帧。\n• 1.1/1.1b1+ 支持 Interpolate Offset / Scale / Angle / Blend 线性补间。\n• Ikemen GO 新增：Copy Action N 复用动作、SSxDx 减法透明与 SA/SASxDx (SubAdd) 透明模式。",
+                "[Begin Action 200]\nClsn2Default: 1\n  Clsn2[0] = -15, -90, 15, 0\n200,0, 0,0, 3\nClsn1: 1\n  Clsn1[0] = 10, -75, 58, -52\n200,1, 0,0, 4\n200,2, 0,0, 5", false));
+
+        list.add(new DictEntry("指令文件 (.cmd) 符号与缓冲区详解", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "搓招符号全解(~ / $ + > | *)、按键缓冲与 [Statedef -1] 出招优先级",
+                "• 方向：U/D/B/F 及斜向 UF/UB/DF/DB（IK 新增绝对左右 L/R 与回中 N）。\n• 按键：a/b/c/x/y/z/s（IK 新增 d/w/m）。\n• 修饰符：~松开(~30B蓄力30帧松开)、/按住(/30B持续蓄力)、$模糊方向($D含下/左下/右下)、+同时按、>严格禁止夹杂其他键。\n• Ikemen GO 新增：| 或逻辑(x|y|z)、* 方向缓冲模糊(*D)、[Defaults] 支持 steptime、autogreater、buffer.hitpause/pauseend/shared。\n• [Statedef -1] 从上到下匹配，大招/超杀必须写在普通拳脚前面！",
+                "[Defaults]\ncommand.time = 15\ncommand.buffer.time = 2\n\n[Command]\nname = \"QCF_P\"\ncommand = ~D, DF, F, x | y | z\ntime = 18\nsteptime = 8", false));
+
+        list.add(new DictEntry("图像包 (.sff v1 / v2.00 / v2.01 1.1b1) 完整对比", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "SFFv1(Win 256色PCX)、SFFv2.00(1.0 索引色) 与 SFFv2.01(1.1/1.1b1 32位真彩PNG)",
+                "• SFFv1 (v1.01, WinMUGEN)：仅支持 8-bit 256色 PCX，依赖外部 .act 文件换色，体积大。\n• SFFv2.00 (MUGEN 1.0)：引入内置色表块与 RLE8/RLE5/LZ5 压缩，但仍仅支持 8-bit 索引色。\n• SFFv2.01 (MUGEN 1.1 / 1.1b1 / Ikemen GO)：全面支持 PNG8 / PNG24 / PNG32 真彩带半透明 Alpha 通道（仅 1.1 OpenGL 与 IK-GO 支持 32位 PNG），彻底消除毛边与色表限制！\n• 常用保留图号：9000,0 小头像(25x25)、9000,1 大头像(120x140)。",
+                "; 转换建议：\n; 仅需 Win 兼容用 SFFv1\n; 1.1b1 / Ikemen GO 高清半透明特效请保存为 SFFv2.01 (PNG32)", false));
+
+        list.add(new DictEntry("音频包 (.snd) 与 BGM / MIDI 音色库支持", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "SND 音效包格式与各版本 BGM 音频格式兼容性对照",
+                "• MUGEN Win/1.0/1.1：.snd 仅支持未压缩 PCM WAV（8/16-bit）；BGM 支持 MP3/OGG/MIDI/MOD/XM/IT/S3M。\n• Ikemen GO：.snd 除 WAV 外还支持 OGG/MP3/FLAC；BGM 额外支持 FLAC、无缝采样循环点(bgmloopstart/end)、多曲随机播放(逗号分隔)及 MIDI SoundFont（将 soundfont.sf2 放入 sound/ 目录即可）。\n• 通用保留音效：11,0 阵亡惨叫(KO回声)。",
+                "; 角色受击/格挡常用 fight.snd 公共音效：\n; hitsound = 5, 0 (轻击) / 5, 2 (重击)\n; guardsound = 6, 0 (防御)", false));
+
+        list.add(new DictEntry("主配置文件: mugen.cfg (Win/1.0/1.1/1.1b1) vs config.ini (IK-GO)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "画面渲染模式、分辨率、内存补丁、音频声道与核心引擎参数速查",
+                "• WinMUGEN mugen.cfg：[Video Win] Width/Height、Depth(16/32)、DXMode、BlitMode(Normal/PageFlip)、Stretch。\n• MUGEN 1.0 mugen.cfg：[Config] GameWidth/GameHeight(支持720p)、[Video] RenderMode = System/DirectX。\n• MUGEN 1.1 / 1.1b1 mugen.cfg：[Video] RenderMode = OpenGL（1.1b1 必须开 OpenGL 才能启用 32位 PNG 与 Zoom 缩放！）、SafeMode、SpriteDecompressionBufferSize、Precache；高配整合包需给 mugen.exe 打 4GB Patch。\n• Ikemen GO save/config.ini（旧版 config.json）：集中管理 OpenGL 2.1/3.2、Vulkan 1.3、Rollback 帧延迟、SOCDResolution(0~4)、ButtonAssist、CommonStates/CommonFx/CommonShaders 与调试开关。",
+                "; MUGEN 1.1b1 开启高清与缩放必改：\n[Video]\nRenderMode = OpenGL\nSafeMode = 0\n\n; Ikemen GO config.ini 输入防冲突：\n[Input]\nSOCDResolution = 4\nButtonAssist = 1", false));
+
+        list.add(new DictEntry("界面包配置 (system.def / Motif) 与 IK 菜单子目录语法", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "定义标题界面、选人框、VS 画面、胜利画面(1.0+)、排序与 IK 自定义子菜单",
+                "核心区块：[Info]、[Files](spr/snd/logo/intro/select/fight/font)、[Title Info]、[TitleBGdef]、[Select Info](rows/columns/cell.size/portrait)、[VS Screen]、[Demo Mode]、[Continue Screen]、[Victory Screen](1.0+)、[Option Info]。\nIkemen GO 扩展：\n• 菜单编排：menu.itemname.<子菜单>.<模式id> = \"名称\"，留空值（如 menu.itemname.watch = ）才能彻底隐藏默认项！\n• 新增区块：[Dialogue Info](对话框)、[Hiscore Info](排行榜)、[Glyphs](出招表图标)、Order Select(KOF式排兵布阵)、3D Motif 模型背景。\n• 完整参数参考引擎自带 data/system.base.def。",
+                "[Title Info]\nmenu.itemname.arcade = \"街机模式\"\nmenu.itemname.extras = \"扩展模式\"\nmenu.itemname.extras.freebattle = \"快速对战\"\nmenu.itemname.extras.bossrush = \"BOSS挑战\"\nmenu.itemname.extras.back = \"返回\"", false));
+
+        list.add(new DictEntry("选人表与模式配置 (select.def)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "挂载角色、地图、街机顺序、专属BGM、ZIP压缩包直读与剧情模式",
+                "• [Characters] 行格式：角色路径, 专属地图路径, 参数1=值, 参数2=值。\n  常用参数：includestage=0/1、order=1~10、music=路径、randomselect、empty。\n  Ikemen GO 新增：可直接写 .zip 路径（如 chars/kfm.zip）、ai=等级、maxmatches、vsscreen=0、victoryscreen=0、rounds=N、time=N、single=1、bonus=1、hidden=1~3、unlock=Lua条件、1~12 专属色表与专属 BGM。\n• [ExtraStages]：列出可选地图（IK 同样支持 stages/xxx.zip）。\n• [Options]：arcade.maxmatches / team.maxmatches 控制各 order 难度出场人数。\n• [StoryMode](IK)：注册剧情章节弧。",
+                "[Characters]\nkfm, stages/stage0.def, order=1, music=sound/kfm.ogg\nchars/boss.zip, stages/boss.def, order=5, ai=8, hidden=2\n\n[ExtraStages]\nstages/stage0.def\nstages/3d_arena.zip", false));
+
+        list.add(new DictEntry("血条与战斗界面 (fight.def)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "配置血条、气槽、计时器、连击提示、Round/Fight/KO 演出与 IK 新条槽",
+                "核心区块：[Files](sff/snd/font/fightfx.sff/fightfx.air/common.snd)、[Lifebar]、[Simul Lifebar]、[Turns Lifebar]、[Powerbar]、[Face]、[Name]、[Time]、[Combo]、[Round]、[WinIcon]。\nIkemen GO 扩展：\n• [Tag Lifebar] 与 pX.red（红血可恢复条）\n• [StunBar]（眩晕条）、[GuardBar]（防槽）、[Score]（积分）、[Action]（LifebarAction 提示队列）、clutch.threshold（残血反杀阈值默认10%）。",
+                "[Lifebar]\np1.pos = 140, 12\np1.bg0.anim = 10\np1.front.spr = 12, 0\np1.range.x = 0, -125", false));
+
+        list.add(new DictEntry("过场动画与视频 (storyboard.def)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "制作片头 Logo、角色开场/结局过场与 Ikemen GO MP4 视频播放",
+                "结构：[SceneDef]（spr/startscene/stopmusic/key.skip）+ [Scene 0]、[Scene 1]... 每个场景可设 fadein/fadeout、clearcolor、layerall.pos、layer0~9.anim/text/starttime/vel、bgm、end.time。\nIkemen GO 扩展：支持 layerX.video 播放 MP4 视频、行内变色、以及通过 Storyboard 控制器在战斗中随时叠加播放！",
+                "[SceneDef]\nspr = intro.sff\nstartscene = 0\n\n[Scene 0]\nfadein.time = 30\nfadeout.time = 30\nbgm = sound/intro.ogg\nlayer0.anim = 0\nend.time = 300", false));
+
+        list.add(new DictEntry("字体格式 (.fnt v1 位图 vs .def Font v2 TrueType/SFFv2)", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "WinMUGEN 二进制 .fnt 字体与 1.0+/1.1/IK 矢量 TrueType / SFFv2 字体配置",
+                "• Font v1 (.fnt, Win/全版本)：PCX + 索引表打包的旧式固定大小位图字体。\n• Font v2 (.def, MUGEN 1.0/1.1/1.1b1/IK-GO)：纯文本配置！支持：\n  1) Type = truetype：直接调用 .ttf/.otf 矢量字体（完美支持中文字库！），可配 Size、Spacing、Offset、Blend、Outline(IK)。\n  2) Type = bitmap：直接引用 SFFv2 图像包制作高清真彩艺术字。\n• Ikemen GO 扩展：支持 RGBA 真彩、多色库 Bank、行内 <color:RRGGBB> 变色与防锯齿。",
+                "[FNT v2]\nfntversion = 2,00\nname = \"ChineseFont\"\n\n[Def]\nType = truetype\nSize = 14, 16\nFile = simhei.ttf\nBlend = 1", false));
+
+        list.add(new DictEntry("地图场景 (.def) 全特性：2D 视差 / 1.1 Zoom / Z轴景深 / 3D .gltf", "format", "Win/1.0/1.1/1.1b1/IK-GO",
+                "2D 多层视差、1.1 镜头缩放、IK 动态多曲/交互角色/Z轴纵深与 3D 场景",
+                "核心区块：[Info]、[Camera]、[PlayerInfo]、[Bound]、[StageInfo]、[Shadow]、[Reflection]、[Music]、[BGdef]、[BG 名称]、[BGCtrlDef]。\n• 1.1 / 1.1b1 新增：[Camera] startzoom、zoomin、zoomout、tensionhigh/low；[BG] zoomdelta、mask、trans。\n• Ikemen GO 专属：\n  - [Model]：直接加载 .gltf/.glb 3D 场景与 HDR 环境光(Environment/Offset/Scale)，[Camera] 支持 fov/near/far/yshift。\n  - [Info]：AttachedChar1~4(地图交互脚本角色)、RoundXDef(按回合切换地图)、RoundLoop。\n  - [Music]：roundX.bgmusic、final.bgmusic、life.bgmusic(残血切歌)、victory.bgmusic、逗号分隔多曲随机。\n  - [Scaling]：topz/botz/topscale/botscale/depthtoscreen 启用 2.5D Z轴移动。\n  - 地图选人缩略图：SFF 9000,1 (240x100)，支持 .zip 打包加载。",
+                "[Camera]\nboundleft = -150\nboundright = 150\nstartzoom = 1.0\nzoomout = 0.75\nzoomin = 1.0\n\n[Music]\nbgmusic = sound/stage_r1.ogg\nfinal.bgmusic = sound/stage_final.ogg\nlife.bgmusic = sound/pinch.ogg\nbgmratio = 30", false));
+
+        list.add(new DictEntry("出招表 (movelist.dat) 与 [Glyphs] 图标语法", "format", "IK-GO",
+                "【IK官方Wiki】暂停菜单内置可视化招式表（自动渲染方向箭头与拳脚图标）",
+                "在角色 .def [Files] 中声明 movelist = movelist.dat（可配 movelist1/2 并用 ChangeMovelist 切换）。\n文本中用 <#RRGGBBAA>文字</> 变色，用 TAB 键控制对齐（0个左对齐、1个居中、2个右对齐），并直接插入内置图标代码：\n• 方向：_D _DF _F _B _U _QCF _QCB _HCF _HCB _DSF(升龙) _XFF(前前) ~B(蓄力后)\n• 按键：^LP ^MP ^HP ^LK ^MK ^HK ^P ^K ^2P ^3P ^A~^Z _+(同时按)\n• 标签：_AIR _EX _MAX _CLOSE _FAR _HOLD _MASH _THROW",
+                "<#FACC15>:必杀技:</>\n波动拳\t_QCF_+^P\n升龙拳\t_DSF_+^P\nEX 波动拳\t_EX _QCF_+^2P", false));
+
+        list.add(new DictEntry("全局通用扩展 (Common Air/Cmd/Const/Fx/States/Shaders)", "format", "IK-GO",
+                "【IK官方Wiki】无需修改角色文件即可为所有角色统一注入通用特效、状态、常量与着色器",
+                "在 save/config.ini 中可配置全局 Common 文件数组，对所有角色自动生效：\n• CommonAir / CommonCmd / CommonConst：追加到所有角色的动画/指令/常量中。\n• CommonStates：如 data/functions.zss、action.zss、dizzy.zss、guardbreak.zss、tag.zss、score.zss。\n• CommonFx：自定义前缀特效包（如 prefix = MK，即可用 MK10 调用动画/音效；F 和 S 为引擎保留前缀）。\n• CommonShaders [Nightly]：全局共享着色器，角色可按同名覆盖。",
+                "; CommonFx .def 示例：\n[Info]\nprefix = MYFX\nfx.scale = 1\nlocalcoord = 320, 240\n[Files]\nsff = myfx.sff\nair = myfx.air\nsnd = myfx.snd", false));
+
+        list.add(new DictEntry("自定义 Sprite Shader (OpenGL GLSL & Vulkan SPIR-V)", "format", "IK-GO",
+                "【IK官方Wiki】为角色/特效/地图编写自定义扭曲、发光、溶解、抓屏后处理着色器",
+                "支持 OpenGL 2.1 (#version 120)、OpenGL 3.2 (#version 150) 与 Vulkan 1.3 (需用 Vulkan SDK glslc 预编译为 .spv)。\n内置给自定义精灵着色器的专属变量：\n• iTime(游戏秒数)、sTime(着色器激活帧数，暂停时冻结)、iResolution、aspectRatio\n• bgl_RenderedTexture（声明该词将触发 GrabPass 抓屏背景纹理，注意即使注释掉也会触发！）\n• tex1 / tex2（控制器传入的附加精灵/动画纹理）与 p0~p15 / param[16]（16个动态浮点参数）。",
+                "; 角色 .def 中注册着色器：\n[Shaders]\nmy_glow = glow.frag\n\n; 编译 Vulkan SPV 命令：\n; glslc -fshader-stage=frag glow.frag -o glow.frag.spv -std=450", false));
+
+        list.add(new DictEntry("Ikemen GO 命令行启动参数 & 联机 Netplay / Rollback", "format", "IK-GO",
+                "【IK官方Wiki】快速启动对战、自动化压力测试、指定配置/血条与 P2P/回滚联机参数",
+                "• 快速对战：./Ikemen_GO p1 p2 -s stage0 -p1.ai 8 -p1.pal 2 -rounds 3 -time 99\n• 资源覆盖：-r <motif路径>、-fight <血条路径>、-storyboard <过场>、-config <配置>、-debug、-windowed、-nomusic、-nosound、-maxpowermode、-speed 150、-stresstest 4\n• 联机参数：-ip <主机IP>(留空做主机)、-tcpport <端口>(默认7500)、-udpport <回滚UDP端口>。\n• 联机须知：双方必须保证角色/地图/游戏规则设置一致（画面/音频/按键可各自不同）；公网直连需主机路由器转发 7500 端口，或使用 Radmin/ZeroTier/Hamachi 组虚拟局域网。",
+                "./Ikemen_GO kfm suave -s stage0 -p1.ai 4 -p2.ai 8 -rounds 2 -debug", false));
+    }
+
+    private void addDictCommonStates(List<DictEntry> list) {
+        list.add(new DictEntry("全局常驻状态执行顺序: -4 / -3 / -2 / -1 / 正常状态 / +1", "common", "Win/1.0/1.1/1.1b1/IK-GO",
+                "掌握每帧状态机执行顺序、暂停穿透与 Helper 继承规则（排错必看）",
+                "MUGEN 仅支持 -3 / -2 / -1 且同号负状态不可跨文件重复声明。\nIkemen GO 解除多文件重复声明限制（自动追加合并），并新增 -4 与 +1，每帧严格按以下顺序执行：\n1. -4 [IK]：无视 Pause/SuperPause、自定义状态与 Helper 限制，每帧必跑！\n2. -3：仅本体在非自定义状态且非暂停时执行（Helper 不跑）。\n3. -2：本体每帧执行（即使被对手抓入自定义状态也跑，暂停时不跑）。\n4. -1：指令出招区（仅本体非自定义状态时执行，Helper 需 keyctrl=1）。\n5. 正常状态 (0~N)：当前 StateNo 对应的状态。\n6. +1 [IK]：在正常状态执行完毕后运行，同样穿透暂停/自定义状态/Helper，适合帧尾统一校准！",
+                "[Statedef -4]\n; 即使处于 SuperPause 也会每帧执行\n[State -4, KeepTimer]\ntype = MapAdd\ntrigger1 = 1\nmap = \"real_ticks\"\nvalue = 1", false));
+
+        list.add(new DictEntry("common1.cns 公共状态号速查表: 移动与防御 (0 ~ 199)", "common", "Win/1.0/1.1/1.1b1/IK-GO",
+                "站立、下蹲、行走、跳跃、奔跑、防反与开场/胜利/挑衅标准状态号",
+                "• 0：站立待机 | 10~12：下蹲/蹲姿/起身\n• 20：前进/后退行走 | 40：起跳准备 | 45：空中二段跳 | 50：空中滞空 | 51：自由下落 | 52：落地\n• 100：前冲奔跑 | 105~106：后撤步/后撤落地\n• 120：防御准备 | 130/131/132：站/蹲/空防御姿态 | 140：防御结束 | 150~155：站/蹲/空受防硬直与滑退\n• 170：败北 | 175：平局 | 180~189：胜利姿势 | 190~194：开场演出 | 195：挑衅",
+                "; 在 State 180 中随机分支胜利姿势：\n[State 180, RandomWin]\ntype = ChangeState\ntrigger1 = Time = 0\nvalue = 181 + (Random % 2)", false));
+
+        list.add(new DictEntry("common1.cns 公共状态号速查表: 受击/倒地/受身/开局 (5000 ~ 5999)", "common", "Win/1.0/1.1/1.1b1/IK-GO",
+                "受击硬直、击飞倒地、受身、KO 阵亡、眩晕与回合初始化标准状态号",
+                "• 5000~5001：站立受击震动/滑退 | 5010~5011：蹲姿受击 | 5020：空中受击震动\n• 5030~5050：空中击飞/过渡/下落 | 5070~5071：绊倒(Trip)击飞与落地\n• 5080~5081：倒地追击受击 | 5100~5101：倒地砸地弹起 | 5110：倒地躺平 | 5120：起身无敌\n• 5150：KO 阵亡躺地（不可再受击）\n• 5200~5201：地面受身 | 5210：空中受身\n• 5300：传统 Dizzy 眩晕状态 | 5500：续关画面\n• 5900：回合开始初始化（默认在第一局重置 var/fvar）",
+                "; Ikemen GO 系统保留扩展状态号 (data/common.const)：\n; 6565300~6565310 = dizzy.zss 眩晕状态\n; 6565400~6565401 = guardbreak.zss 破防状态\n; 6565600~6565621 = tag.zss 换人进出场状态", false));
+    }
+
+    private void addDictCompatAndGuides(List<DictEntry> list) {
+        list.add(new DictEntry("全版本进化史与兼容对照: WinMUGEN → 1.0 → 1.1a4 → 1.1b1 → Ikemen GO", "compat", "Win/1.0/1.1/1.1b1/IK-GO",
+                "一图看懂五个历史版本的核心能力边界与角色/地图移植必改项",
+                "1. WinMUGEN (2004)：固定 320x240，仅 SFFv1(PCX)，无 AILevel/VictoryQuote/localcoord，语法容错极高（允许悬空逗号、变量越界等“黑科技”）。\n2. MUGEN 1.0 (2011)：引入 localcoord 高清支持、SFFv2.00(8位压缩)、Font v2 TrueType、AILevel、VictoryQuote、RemapPal、Const240p/480p/720p。\n3. MUGEN 1.1a4 / 1.1b1 (2013-2014)：引入 OpenGL 渲染、SFFv2.01(32位真彩PNG)、地图与招式 Zoom 缩放、CameraPos/CameraZoom、Cond 短路三目、Explod 旋转与补间。\n   ※ 1.1b1 特别注意：需开 RenderMode=OpenGL，高内存包需打 4GB Patch，[Shadow] color 在 1.1 中表现与旧版不同。\n4. Ikemen GO (0.98 → 0.99 → 1.0+)：开源现代引擎！完全兼容 Win/1.0/1.1，原生支持 64位无限内存、OpenGL/Vulkan、3D `.gltf` 地图、MP4 过场、ZSS/Lua、无限 var & 具名 Map、网络回滚联机、Tag/Dizzy/GuardBreak/RedLife/Movelist 与 Android 移植！",
+                "; Ikemen GO 兼容指示器：\n; 按 Ctrl+D 可在剪贴板首行看到该角色当前运行在哪个兼容模式\n; (WinMugen / 1.0 / 1.1 / Ikemen GO)", false));
+
+        list.add(new DictEntry("Ikemen GO 与 MUGEN 底层机制细微差异 (帧优势/墙角/浮空/角色处理序)", "compat", "1.0/1.1/1.1b1/IK-GO",
+                "【IK官方Wiki】为什么同一角色在 IK 中手感略有不同？四大底层机制差异详解",
+                "1. 防御与帧优势(+1 hittime)：MUGEN 在执行状态前判防御（导致回待机当帧不能防）；IK 先执行状态再判防御，为兼容老角色，无 ikemenVersion 的 MUGEN 角色所有 HitDef 自动 +1 hittime。\n2. 角色处理顺序：按 MoveType A 玩家 → MoveType A Helper → MoveType I 玩家 → H 玩家 → I/H Helper 排序（同级按 ID 升序），消除 1P/2P 站位不公。\n3. 墙角推挤(Corner Push)：IK 会缓存推挤速度直到对手真正碰到墙角才触发，且有 ikemenVersion 时按受击方姿态计算摩擦。\n4. 浮空(Juggle)：非攻击态 Statedef 的 juggle 默认归 0 不继承上一状态；有 ikemenVersion 时 HitDef 可直接使用 air.juggle。",
+                "; 若希望角色启用全部现代 IK 机制（而非旧 MUGEN 兼容模式）：\n[Info]\nmugenversion = 1.1\nikemenVersion = 1.0", false));
+
+        list.add(new DictEntry("常见闪退、乱码、贴图异常与脚本报错速查手册", "compat", "Win/1.0/1.1/1.1b1/IK-GO",
+                "快速定位 SFF 报错、日韩文乱码、状态死循环、Win地图平铺错位与音频失效",
+                "1. 日文/韩文路径或名字乱码：使用本桌面【🔣 乱码解字板】将 Shift_JIS / EUC-KR 转为 UTF-8。\n2. WinMUGEN 老地图背景错位：检查 tilespacing 是否只写了 1 个数字（IK/1.1 需写 X, Y 两个值）。\n3. 角色进入某招后游戏卡死：检查 ChangeState 是否缺 AnimTime = 0 或条件永真导致单帧无限跳转死循环。\n4. 替换贴图失败：SFFv1 仅接受 256色 PCX，SFFv2 仅接受 PNG；本桌面【🖼️ SFF查看器】已自动识别版本。\n5. 找不到角色或地图：检查 select.def 路径大小写（安卓 Linux 文件系统严格区分大小写！）或直接用【🗂️ DEF生成器】自动生成。",
+                "; 调试快捷键（电脑/外接键盘）：\n; Ctrl+D 显示状态号与变量 | Ctrl+C 显示红蓝判定框\n; F1 秒杀对手 | F4 重开本局 | Shift+F4 重载角色与地图", false));
     }
 
     private View buildDictionaryContent() {
@@ -5855,7 +6161,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         final TextView syncStatus = new TextView(getContext());
         String lastSyncTime = prefs.getString("dict_last_sync", "");
         syncStatus.setText(lastSyncTime.isEmpty()
-                ? L("📚 已内置 Win/1.0/1.1/IK-GO 离线词库，点右上角可实时同步官方 GitHub 仓库全部最新 Wiki")
+                ? L("📚 已内置 Win/1.0/1.1/1.1b1/IK-GO 全中文词库 (") + allEntries.size() + L(" 条)，点右上角可同步官方 GitHub 全部 Wiki")
                 : L("✅ 上次官方同步: ") + lastSyncTime);
         applyGlobalFontSettings(syncStatus, 0.82f, false);
         syncStatus.setTextColor(Color.parseColor("#94A3B8"));
@@ -5865,16 +6171,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         // 版本筛选胶囊
         HorizontalScrollView verScroll = new HorizontalScrollView(getContext()); verScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout verRow = new LinearLayout(getContext()); verRow.setOrientation(LinearLayout.HORIZONTAL);
-        final String[] verKeys = {"all", "Win", "1.0", "1.1", "IK-GO"};
-        final String[] verNames = {L("全部版本"), "WinMUGEN", "MUGEN 1.0", "MUGEN 1.1", "Ikemen GO"};
+        final String[] verKeys = {"all", "Win", "1.0", "1.1", "1.1b1", "IK-GO"};
+        final String[] verNames = {L("全部版本"), "WinMUGEN", "MUGEN 1.0", "MUGEN 1.1", "MUGEN 1.1b1", "Ikemen GO"};
         final Button[] verBtns = new Button[verKeys.length];
 
         // 分类标签栏
         HorizontalScrollView catScroll = new HorizontalScrollView(getContext()); catScroll.setHorizontalScrollBarEnabled(false);
         catScroll.setTag("layout_toolbar");
         LinearLayout catRow = new LinearLayout(getContext()); catRow.setOrientation(LinearLayout.HORIZONTAL);
-        final String[] catKeys = {"all", "fav", "sctrl", "trigger", "zss_lua", "format", "compat", "official"};
-        final String[] catNames = {L("🔥 全部"), L("⭐ 收藏"), L("🎮 控制器"), L("⚡ 触发器"), L("🧬 ZSS/Lua"), L("📁 文件格式"), L("🔄 版本差异"), L("🌐 官方同步")};
+        final String[] catKeys = {"all", "fav", "sctrl", "trigger", "zss_lua", "format", "common", "compat", "official"};
+        final String[] catNames = {L("🔥 全部"), L("⭐ 收藏"), L("🎮 控制器"), L("⚡ 触发器"), L("🧬 ZSS/Lua"), L("📁 文件配置"), L("🧱 公共状态"), L("🔄 版本兼容"), L("🌐 官方同步")};
         final Button[] catBtns = new Button[catKeys.length];
 
         ScrollView listScroll = new ScrollView(getContext());
@@ -5968,7 +6274,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     if (!hit) continue;
                 }
                 matchCount++;
-                if (matchCount > 250) break; // 防止一次渲染过多卡片卡顿
+                if (matchCount > 400) break; // 防止一次渲染过多卡片卡顿
 
                 LinearLayout card = new LinearLayout(getContext());
                 card.setOrientation(LinearLayout.VERTICAL);
@@ -6099,23 +6405,28 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         });
         btnClearQ.setOnClickListener(v -> { searchInput.setText(""); queryText[0] = ""; refreshDictUI[0].run(); });
 
-        // 🔄 实时同步官方 GitHub 仓库 (ikemen-engine/Ikemen-GO Wiki + system.base.def)
+        // 🔄 实时同步官方 GitHub 仓库 (ikemen-engine/Ikemen-GO 全部 Wiki + 官方核心配置/常量/ZSS)
         btnSync.setOnClickListener(v -> {
             btnSync.setEnabled(false);
             syncStatus.setText(L("⏳ 正在连接 GitHub 官方仓库读取文档目录 (_Sidebar.md)..."));
             new Thread(() -> {
+                final String WIKI_RAW_BASE = "https://" + "raw.githubusercontent.com/wiki/ikemen-engine/Ikemen-GO/";
+                final String REPO_RAW_MAIN = "https://" + "raw.githubusercontent.com/ikemen-engine/Ikemen-GO/main/";
+                final String REPO_RAW_DEV  = "https://" + "raw.githubusercontent.com/ikemen-engine/Ikemen-GO/develop/";
+
                 java.util.LinkedHashSet<String> wikiPages = new java.util.LinkedHashSet<>();
-                // 核心官方 Wiki 必同步清单
+                // 核心官方 Wiki 全量必同步清单
                 String[] defaults = new String[] {
                     "Home", "State-controllers-(new)", "State-controllers-(changed)",
-                    "Triggers-(new)", "Triggers-(changed)", "Lua",
-                    "Character-features", "Stage-features", "Screenpack-features",
-                    "Miscellaneous-info", "Command-line-arguments"
+                    "Triggers-(new)", "Triggers-(changed)", "ZSS", "Lua",
+                    "Character-features", "Stage-features", "Background-features",
+                    "Screenpack-features", "Storyboard-features", "Lifebar-features",
+                    "Font-features", "Miscellaneous-info", "Command-line-arguments"
                 };
                 for (String p : defaults) wikiPages.add(p);
 
                 // 动态解析 _Sidebar.md 自动发现官方仓库新增的所有 Wiki 页面
-                String sidebarMd = httpGetWithFallback("[https://raw.githubusercontent.com/wiki/ikemen-engine/Ikemen-GO/_Sidebar.md](https://raw.githubusercontent.com/wiki/ikemen-engine/Ikemen-GO/_Sidebar.md)");
+                String sidebarMd = httpGetWithFallback(WIKI_RAW_BASE + "_Sidebar.md");
                 if (sidebarMd != null) {
                     java.util.regex.Matcher m1 = java.util.regex.Pattern.compile("\\[\\[([^\\]|]+)(?:\\|([^\\]]+))?\\]\\]").matcher(sidebarMd);
                     while (m1.find()) {
@@ -6129,13 +6440,19 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     }
                 }
 
-                int total = wikiPages.size() + 1;
+                String[][] repoDocs = new String[][] {
+                    { "data/system.base.def", "Official_system_base_def.txt", "## system.base.def 官方完整界面参数参考\n```ini\n", "\n```" },
+                    { "data/common.const", "Official_common_const.txt", "## data/common.const 官方内置系统常量参考\n```ini\n", "\n```" },
+                    { "data/common1.cns.zss", "Official_common1_cns_zss.txt", "## data/common1.cns.zss 官方公共状态源码参考\n```zss\n", "\n```" }
+                };
+
+                int total = wikiPages.size() + repoDocs.length;
                 int done = 0, ok = 0;
                 for (String slug : wikiPages) {
                     done++;
                     final int curD = done; final String curSlug = slug;
                     uiHandler.post(() -> syncStatus.setText(L("⏳ 正在同步官方 Wiki (") + curD + "/" + total + "): " + curSlug));
-                    String md = httpGetWithFallback("[https://raw.githubusercontent.com/wiki/ikemen-engine/Ikemen-GO/](https://raw.githubusercontent.com/wiki/ikemen-engine/Ikemen-GO/)" + slug + ".md");
+                    String md = httpGetWithFallback(WIKI_RAW_BASE + slug + ".md");
                     if (md != null && md.length() > 30) {
                         try {
                             String safeName = slug.replaceAll("[^A-Za-z0-9_\\-\\(\\)]", "_") + ".md";
@@ -6147,16 +6464,19 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     }
                 }
 
-                // 同步官方 system.base.def 参数参考注释
-                final int sysStep = total;
-                uiHandler.post(() -> syncStatus.setText(L("⏳ 正在同步官方配置参数 (") + sysStep + "/" + total + "): system.base.def"));
-                String sysDef = httpGetWithFallback("[https://raw.githubusercontent.com/ikemen-engine/Ikemen-GO/main/data/system.base.def](https://raw.githubusercontent.com/ikemen-engine/Ikemen-GO/main/data/system.base.def)");
-                if (sysDef == null) sysDef = httpGetWithFallback("[https://raw.githubusercontent.com/ikemen-engine/Ikemen-GO/develop/data/system.base.def](https://raw.githubusercontent.com/ikemen-engine/Ikemen-GO/develop/data/system.base.def)");
-                if (sysDef != null && sysDef.length() > 100) {
-                    try (FileOutputStream fos = new FileOutputStream(new File(cacheDir, "Official_system_base_def.txt"))) {
-                        fos.write(("## system.base.def 官方完整参数参考\n```ini\n" + sysDef + "\n```").getBytes("UTF-8"));
-                    } catch (Exception ignored) {}
-                    ok++;
+                // 同步官方核心配置/常量/公共状态参考文件
+                for (String[] rd : repoDocs) {
+                    done++;
+                    final int curD = done; final String docPath = rd[0];
+                    uiHandler.post(() -> syncStatus.setText(L("⏳ 正在同步官方仓库文件 (") + curD + "/" + total + "): " + docPath));
+                    String body = httpGetWithFallback(REPO_RAW_MAIN + docPath);
+                    if (body == null) body = httpGetWithFallback(REPO_RAW_DEV + docPath);
+                    if (body != null && body.length() > 80) {
+                        try (FileOutputStream fos = new FileOutputStream(new File(cacheDir, rd[1]))) {
+                            fos.write((rd[2] + body + rd[3]).getBytes("UTF-8"));
+                        } catch (Exception ignored) {}
+                        ok++;
+                    }
                 }
 
                 final int okCount = ok;
@@ -6176,6 +6496,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 });
             }).start();
         });
+
 
         updateFilterColors.run();
         refreshDictUI[0].run();
