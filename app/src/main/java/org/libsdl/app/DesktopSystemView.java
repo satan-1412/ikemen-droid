@@ -7016,6 +7016,96 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         return sb.toString();
     }
 
+    // 严格按 Ikemen GO .cmd 规范清洗与修正按键序列：方向必须大写(U/D/B/F/UB/UF/DB/DF/L/R/N)，按键必须小写(a/b/c/x/y/z/s/d/w/m)
+    private String sanitizeIkCommandSeq(String raw) {
+        if (raw == null) return "s, s";
+        String s = raw.trim()
+                .replace('，', ',').replace('＋', '+').replace('～', '~')
+                .replace('／', '/').replace('＄', '$').replace('＞', '>').replace('｜', '|');
+        // 全角字母转半角
+        StringBuilder asciiSb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= 0xFF21 && c <= 0xFF3A) asciiSb.append((char) (c - 0xFEE0));
+            else if (c >= 0xFF41 && c <= 0xFF5A) asciiSb.append((char) (c - 0xFEE0));
+            else if (c >= 0xFF10 && c <= 0xFF19) asciiSb.append((char) (c - 0xFEE0));
+            else asciiSb.append(c);
+        }
+        s = asciiSb.toString().trim();
+        if (s.isEmpty()) return "s, s";
+
+        // 判断整个序列里是否带有明确方向键，用于智能区分用户误输的大写 B（是方向后B还是按键b）
+        boolean hasExplicitDir = java.util.regex.Pattern.compile("(?<![A-Za-z])(DF|DB|UF|UB|U|D|F)(?![A-Za-z])").matcher(s).find();
+        boolean hasUpperBtn = java.util.regex.Pattern.compile("(?<![A-Za-z])[ACXYZS](?![A-Za-z])").matcher(s).find();
+
+        String[] steps = s.split(",");
+        StringBuilder outSteps = new StringBuilder();
+        for (String stepRaw : steps) {
+            String step = stepRaw.trim();
+            if (step.isEmpty()) continue;
+            // 支持同时按(+)或逻辑或(|)
+            String sep = step.contains("+") ? "+" : (step.contains("|") ? "|" : "");
+            String[] atoms = sep.isEmpty() ? new String[]{step} : step.split(sep.equals("+") ? "\\+" : "\\|");
+            boolean isChord = atoms.length > 1;
+            StringBuilder outAtoms = new StringBuilder();
+            for (String atomRaw : atoms) {
+                String tok = atomRaw.trim();
+                if (tok.isEmpty()) continue;
+                // 提取前导修饰符（~, /, $, >, *, 以及 ~数字 如 ~30D）
+                java.util.regex.Matcher mm = java.util.regex.Pattern.compile("^([~/$>*0-9]*)([A-Za-z]+)$").matcher(tok);
+                if (!mm.matches()) continue;
+                String prefix = mm.group(1);
+                String sym = mm.group(2);
+                String symUp = sym.toUpperCase();
+                String symLow = sym.toLowerCase();
+                String normSym = null;
+                if (symUp.equals("DF") || symUp.equals("DB") || symUp.equals("UF") || symUp.equals("UB")) {
+                    normSym = symUp;
+                } else if (sym.equals("b") || sym.equals("d")) {
+                    // 用户明确输入小写 b / d，保留为攻击键
+                    normSym = sym;
+                } else if (symUp.equals("B")) {
+                    // 组合键(如 A+B) 或 与大写按键同行且无其他方向(如 A,B) 时自动转为按键 b，否则保留方向 B
+                    normSym = (isChord || (!hasExplicitDir && hasUpperBtn)) ? "b" : "B";
+                } else if (symUp.equals("U") || symUp.equals("D") || symUp.equals("F") || symUp.equals("L") || symUp.equals("R") || symUp.equals("N")) {
+                    normSym = symUp;
+                } else if (symLow.equals("a") || symLow.equals("c") || symLow.equals("x") || symLow.equals("y")
+                        || symLow.equals("z") || symLow.equals("s") || symLow.equals("w") || symLow.equals("m")) {
+                    normSym = symLow;
+                }
+                if (normSym == null) continue;
+                if (outAtoms.length() > 0) outAtoms.append(sep);
+                outAtoms.append(prefix).append(normSym);
+            }
+            if (outAtoms.length() > 0) {
+                if (outSteps.length() > 0) outSteps.append(", ");
+                outSteps.append(outAtoms);
+            }
+        }
+        return outSteps.length() > 0 ? outSteps.toString() : "s, s";
+    }
+
+    // 生成符合 Ikemen GO 规范的 [Command] 块：对双键同按(如 a+b / x+y)自动补齐 /a, b 与 /b, a 容错并加 buffer.time，彻底解决触屏与键盘双键按不出来的问题
+    private String buildIkCommandBlocks(String cmdName, String cleanSeq, int cmdTime) {
+        StringBuilder sb = new StringBuilder();
+        String compact = cleanSeq.replaceAll("\\s+", "");
+        if (!compact.contains(",") && compact.contains("+")) {
+            String[] parts = compact.split("\\+");
+            sb.append("\n; [自动移植指令] ").append(cmdName).append(" (双键容错模式)\n");
+            sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = ").append(compact).append("\ntime = 1\nbuffer.time = 5\n");
+            if (parts.length == 2 && !parts[0].isEmpty() && !parts[1].isEmpty()
+                    && !parts[0].startsWith("/") && !parts[1].startsWith("/")
+                    && !parts[0].startsWith("~") && !parts[1].startsWith("~")) {
+                sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = /").append(parts[0]).append(", ").append(parts[1]).append("\ntime = 8\nbuffer.time = 5\n");
+                sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = /").append(parts[1]).append(", ").append(parts[0]).append("\ntime = 8\nbuffer.time = 5\n");
+            }
+        } else {
+            sb.append("\n; [自动移植指令] ").append(cmdName).append("\n");
+            sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = ").append(cleanSeq).append("\ntime = ").append(cmdTime).append("\nbuffer.time = 4\n");
+        }
+        return sb.toString();
+    }
+
     private void openCharacterEditorWindow() {
         final String winTitle = L("🥷 角色编辑器");
         final boolean[] isDirty = {false};
@@ -8015,7 +8105,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     String[] scanL = rewrittenCns.split("\n", -1);
                                     String scType = "";
                                     java.util.regex.Pattern pAnimNum = java.util.regex.Pattern.compile("(?i)^\\s*(anim|value|projanim|projhitanim|projremanim|projcancelanim)\\s*=\\s*(\\d+)\\s*$");
-                                    java.util.regex.Pattern pSparkS = java.util.regex.Pattern.compile("(?i)^\\s*(?:sparkno|guard\\.sparkno)\\s*=\\s*S\\s*(\\d+)\\s*$");
+                                    java.util.regex.Pattern pSparkS = java.util.regex.Pattern.compile("(?i)^\\s*(?:sparkno|guard\\.sparkno)\\s*=\\s*S\\s*(\\d+)");
                                     for (String sl : scanL) {
                                         int ci = sl.indexOf(';');
                                         String sc = (ci >= 0 ? sl.substring(0, ci) : sl).trim();
@@ -8283,14 +8373,65 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     }
                                 }
 
-                                // 若源技能是 Helper 辅助体状态（有 DestroySelf 但无回站立 ChangeState），自动补一个收招回站立防卡死
+                                // 飞行/Helper/子状态防跳空与防卡死保护：检查 ChangeState/HitOverride/p1stateno 是否指向目标角色不存在的状态
                                 String cnsBodyStr = cnsOut.toString().trim();
+                                int fixedMissingTargets = 0;
+                                if (!srcIsZss) {
+                                    StringBuilder safeCns = new StringBuilder();
+                                    String[] sLines = cnsBodyStr.split("\n", -1);
+                                    String curScType = "";
+                                    java.util.regex.Pattern pValNum = java.util.regex.Pattern.compile("(?i)^(\\s*(?:value|stateno)\\s*=\\s*)(\\d+)(.*)$");
+                                    java.util.regex.Pattern pP1St = java.util.regex.Pattern.compile("(?i)^(\\s*p1stateno\\s*=\\s*)(\\d+)(.*)$");
+                                    for (String sl : sLines) {
+                                        int ci = sl.indexOf(';');
+                                        String cp = (ci >= 0 ? sl.substring(0, ci) : sl);
+                                        String cm = (ci >= 0 ? sl.substring(ci) : "");
+                                        String tr = cp.trim();
+                                        String lw = tr.toLowerCase();
+                                        if (lw.startsWith("[state ") || lw.startsWith("[statedef ")) curScType = "";
+                                        else if (lw.matches("^type\\s*=\\s*[a-z0-9_]+$")) curScType = lw.substring(lw.indexOf('=') + 1).trim();
+                                        else {
+                                            java.util.regex.Matcher mp1 = pP1St.matcher(cp);
+                                            if (mp1.find()) {
+                                                try {
+                                                    int tgt = Integer.parseInt(mp1.group(2));
+                                                    boolean okTgt = (tgt == newStateNo || usedStates.contains(tgt) || (tgt >= 0 && tgt <= 199) || (tgt >= 5000 && tgt <= 5999));
+                                                    if (!okTgt) {
+                                                        cp = "; [IK防卡死: 原 p1stateno=" + tgt + " 目标角色不存在已屏蔽] " + tr;
+                                                        fixedMissingTargets++;
+                                                    }
+                                                } catch (Exception ignored) {}
+                                            } else if (curScType.equals("changestate") || curScType.equals("hitoverride")) {
+                                                java.util.regex.Matcher mvn = pValNum.matcher(cp);
+                                                if (mvn.find()) {
+                                                    try {
+                                                        int tgt = Integer.parseInt(mvn.group(2));
+                                                        boolean okTgt = (tgt == newStateNo || usedStates.contains(tgt) || (tgt >= 0 && tgt <= 199) || (tgt >= 5000 && tgt <= 5999));
+                                                        if (!okTgt) {
+                                                            cp = mvn.group(1) + "0 ; [IK防卡死: 原目标状态 " + tgt + " 不存在，已安全回站立]";
+                                                            if (curScType.equals("changestate")) cp += "\nctrl = 1";
+                                                            fixedMissingTargets++;
+                                                        }
+                                                    } catch (Exception ignored) {}
+                                                }
+                                            }
+                                        }
+                                        safeCns.append(cp).append(cm).append("\n");
+                                    }
+                                    cnsBodyStr = safeCns.toString().trim();
+                                }
+
+                                // 若源技能是 Helper/飞行道具状态（有 DestroySelf 或无回 0/50 站立/落地 ChangeState），自动补收招兜底防卡死
                                 boolean hasDestroySelf = cnsBodyStr.toLowerCase().contains("destroyself");
-                                boolean hasReturnIdle = cnsBodyStr.toLowerCase().contains("changestate");
-                                if (hasDestroySelf && !hasReturnIdle) {
-                                    cnsBodyStr += srcIsZss
-                                            ? ("\n# [IK防卡死兜底] 原状态为Helper，玩家直接触发时自动收招\nif !isHelper && (animTime = 0 || time >= 90) {\n\tchangeState{value: 0; ctrl: 1}\n}")
-                                            : ("\n[State " + newStateNo + ", AutoReturnIdle]\ntype = ChangeState\ntrigger1 = !IsHelper && (AnimTime = 0 || Time >= 90)\nvalue = 0\nctrl = 1");
+                                boolean isAirState = "A".equalsIgnoreCase(st.type)
+                                        || java.util.regex.Pattern.compile("(?im)^\\s*type\\s*=\\s*A\\b").matcher(cnsBodyStr).find();
+                                boolean hasSafeReturn = java.util.regex.Pattern.compile("(?im)^\\s*value\\s*[:=]\\s*(?:0|50)\\b").matcher(cnsBodyStr).find();
+                                if (hasDestroySelf || !hasSafeReturn) {
+                                    if (srcIsZss) {
+                                        cnsBodyStr += "\n# [IK防卡死兜底] 玩家直接触发时自动收招/落地\nif !isHelper && (animTime = 0 || time >= 90 || frontEdgeDist <= -50) {\n\tchangeState{value: ifelse(pos y < 0, 50, 0); ctrl: 1}\n}";
+                                    } else {
+                                        cnsBodyStr += "\n[State " + newStateNo + ", AutoReturnIdle]\ntype = ChangeState\ntrigger1 = !IsHelper && (AnimTime = 0 || Time >= 90 || FrontEdgeDist <= -50)\nvalue = ifelse(Pos Y < 0, 50, 0)\nctrl = 1";
+                                    }
                                 }
 
                                 // 决定安全写入目标文件：若目标主状态为 ZSS 而源为 CNS（或反之），自动创建独立侧挂文件并注册到目标 .def 的 [Files] stN！
@@ -8396,10 +8537,12 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     }
                                 }
 
-                                // 5.2 自愈清理：移除无对应 [Command] 的孤儿 [State -1, CloneSkill_...]（根治 Command doesn't exist 闪退）以及空 [Command] 块
+                                // 5.2 自愈清理：移除无对应 [Command] 的孤儿 [State -1]、空 [Command] 块，并自动修复已有非法大小写 command（如 A,B -> a, b 根治 Invalid symbol 闪退）
                                 int healedOrphans = 0;
+                                int healedBadCmds = 0;
                                 StringBuilder healedCmd = new StringBuilder();
                                 String[] origLines = cmdOrig.split("\n", -1);
+                                boolean inHealCmdBlock = false;
                                 for (int li = 0; li < origLines.length; li++) {
                                     String curL = origLines[li];
                                     String curTrim = curL.trim().toLowerCase();
@@ -8413,8 +8556,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             if (nc.startsWith("name") && nc.contains("=")) hasName = true;
                                             endBlock++;
                                         }
-                                        if (!hasName) { li = endBlock - 1; continue; }
+                                        if (!hasName) { li = endBlock - 1; inHealCmdBlock = false; continue; }
+                                        inHealCmdBlock = true;
                                     } else if (curTrim.startsWith("[state -1")) {
+                                        inHealCmdBlock = false;
                                         int endBlock = li + 1;
                                         String refCmd = "";
                                         while (endBlock < origLines.length) {
@@ -8429,46 +8574,70 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             li = endBlock - 1;
                                             continue;
                                         }
+                                    } else if (curTrim.startsWith("[")) {
+                                        inHealCmdBlock = false;
+                                    } else if (inHealCmdBlock) {
+                                        int ci = curL.indexOf(';');
+                                        String codeP = (ci >= 0 ? curL.substring(0, ci) : curL);
+                                        String cmtP = (ci >= 0 ? curL.substring(ci) : "");
+                                        java.util.regex.Matcher cmLine = java.util.regex.Pattern.compile("(?i)^(\\s*command\\s*=\\s*)(.+)$").matcher(codeP);
+                                        if (cmLine.find()) {
+                                            String oldVal = cmLine.group(2).trim();
+                                            // 仅当存在明确非法符号（如大写 A/C/X/Y/Z/S/W/M 或全角字符）时才自动修复，避免误伤原角色正常指令
+                                            if (java.util.regex.Pattern.compile("(?<![A-Za-z])[ACXYZSWM](?![A-Za-z])|[，＋～／Ａ-Ｚａ-ｚ]").matcher(oldVal).find()) {
+                                                String fixedVal = sanitizeIkCommandSeq(oldVal);
+                                                curL = cmLine.group(1) + fixedVal + (cmtP.isEmpty() ? " ; [IK自愈修复非法按键符号]" : cmtP);
+                                                healedBadCmds++;
+                                            }
+                                        }
                                     }
                                     healedCmd.append(curL).append("\n");
                                 }
                                 cmdOrig = healedCmd.toString();
 
-                                // 5.3 确保 cmdName 唯一，且重复按键自动升级为双击触发
+                                // 5.3 按 Ikemen GO 规范强制标准化按键大小写与符号 + 确保 cmdName 唯一 + 重复按键自动升级双击
                                 String finalCmdName = cmdName;
                                 int nameSuffix = 2;
                                 while (existingCmdNames.contains(finalCmdName.toLowerCase())) {
                                     finalCmdName = cmdName + "_" + (nameSuffix++);
                                 }
-                                String finalCmdSeq = rawInputSeq;
+                                String cleanInputSeq = sanitizeIkCommandSeq(rawInputSeq);
+                                String finalCmdSeq = cleanInputSeq;
                                 int cmdTime = 18;
                                 String cmdConflictNote = "";
+                                if (!cleanInputSeq.replaceAll("\\s+", "").equals(rawInputSeq.replaceAll("\\s+", ""))) {
+                                    cmdConflictNote = "🔧 已按 Ikemen GO 规范自动修正按键大小写/符号: [" + rawInputSeq + "] → [" + cleanInputSeq + "]";
+                                }
                                 String normSeq = finalCmdSeq.replaceAll("\\s+", "").toLowerCase();
                                 if (existingCmdSeqs.contains(normSeq)) {
                                     String dblSeq = finalCmdSeq + ", " + finalCmdSeq;
                                     if (!existingCmdSeqs.contains(dblSeq.replaceAll("\\s+", "").toLowerCase())) {
                                         finalCmdSeq = dblSeq;
                                         cmdTime = 25;
-                                        cmdConflictNote = "⚠️ 检测到目标 .cmd 已占用按键 [" + rawInputSeq + "]，已自动升级为双击触发: " + finalCmdSeq + " (time=25)";
+                                        cmdConflictNote += (cmdConflictNote.isEmpty() ? "" : "\n") + "⚠️ 检测到目标 .cmd 已占用按键 [" + cleanInputSeq + "]，已自动升级为双击触发: " + finalCmdSeq + " (time=25)";
                                     } else {
                                         String triSeq = finalCmdSeq + ", " + finalCmdSeq + ", " + finalCmdSeq;
                                         if (!existingCmdSeqs.contains(triSeq.replaceAll("\\s+", "").toLowerCase())) {
                                             finalCmdSeq = triSeq;
                                             cmdTime = 32;
-                                            cmdConflictNote = "⚠️ 按键 [" + rawInputSeq + "] 与双击均被占用，已自动升级为三击触发: " + finalCmdSeq;
+                                            cmdConflictNote += (cmdConflictNote.isEmpty() ? "" : "\n") + "⚠️ 按键 [" + cleanInputSeq + "] 与双击均被占用，已自动升级为三击触发: " + finalCmdSeq;
                                         } else {
                                             finalCmdSeq = "~D, D, " + finalCmdSeq;
                                             cmdTime = 25;
-                                            cmdConflictNote = "⚠️ 按键 [" + rawInputSeq + "] 已被占用，已自动改配组合触发: " + finalCmdSeq;
+                                            cmdConflictNote += (cmdConflictNote.isEmpty() ? "" : "\n") + "⚠️ 按键 [" + cleanInputSeq + "] 已被占用，已自动改配组合触发: " + finalCmdSeq;
                                         }
                                     }
                                 }
 
-                                String cmdDefBlock = "\n; [自动移植指令] " + finalCmdName + "\n[Command]\nname = \"" + finalCmdName + "\"\ncommand = " + finalCmdSeq + "\ntime = " + cmdTime + "\n";
+                                String cmdDefBlock = buildIkCommandBlocks(finalCmdName, finalCmdSeq, cmdTime);
                                 boolean cmdIsZss = tCmd.getName().toLowerCase().endsWith(".zss");
+                                // 若为飞行/空中/Helper技能，放宽空中触发限制(ctrl即可)，否则地面触发(statetype != A && ctrl)
+                                String condCns = (isAirState || hasDestroySelf) ? "ctrl" : "statetype != A && ctrl";
+                                String condZss = (isAirState || hasDestroySelf) ? "ctrl" : "stateType != A && ctrl";
                                 String stateNeg1Block = cmdIsZss
-                                        ? ("\n# [自动移植触发器] " + finalCmdName + "\nif command = \"" + finalCmdName + "\" && stateType != A && ctrl {\n\tchangeState{value: " + newStateNo + "}\n}\n")
-                                        : ("\n; [自动移植触发器] " + finalCmdName + "\n[State -1, " + finalCmdName + "]\ntype = ChangeState\nvalue = " + newStateNo + "\ntriggerall = command = \"" + finalCmdName + "\"\ntrigger1 = statetype != A && ctrl\n");
+                                        ? ("\n# [自动移植触发器] " + finalCmdName + "\nif command = \"" + finalCmdName + "\" && " + condZss + " {\n\tchangeState{value: " + newStateNo + "}\n}\n")
+                                        : ("\n; [自动移植触发器] " + finalCmdName + "\n[State -1, " + finalCmdName + "]\ntype = ChangeState\nvalue = " + newStateNo + "\ntriggerall = command = \"" + finalCmdName + "\"\ntrigger1 = " + condCns + "\n");
+
 
                                 // 严格行首锚定，绝不误匹配注释中的 ; [Statedef -1]
                                 java.util.regex.Matcher neg1M = java.util.regex.Pattern.compile("(?im)^\\s*(\\[\\s*statedef\\s+-1[^\\]]*\\][^\\r\\n]*\\r?\\n?)").matcher(cmdOrig);
@@ -8486,7 +8655,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 report.append("🎉 全自动移植已完成，进游戏可直接搓招触发！\n");
                                 report.append("🎮 游戏内触发方式: ").append(prettifyCmdSequence(finalCmdSeq)).append("  (").append(finalCmdSeq).append(")\n");
                                 if (!cmdConflictNote.isEmpty()) report.append(cmdConflictNote).append("\n");
-                                if (healedOrphans > 0) report.append("🛠️ 已自动修复目标 .cmd 中 ").append(healedOrphans).append(" 处缺失指令的孤儿触发器（防止闪退）\n");
+                                if (healedOrphans > 0) report.append("🛠️ 已自动清理目标 .cmd 中 ").append(healedOrphans).append(" 处缺失指令的孤儿触发器（防止闪退）\n");
+                                if (healedBadCmds > 0) report.append("🛠️ 已自动修复目标 .cmd 中 ").append(healedBadCmds).append(" 处非法大小写/符号指令（防止 Invalid symbol 闪退）\n");
+                                if (fixedMissingTargets > 0) report.append("🛡️ 已自动兜底修复 ").append(fixedMissingTargets).append(" 处不存在的跳转子状态（防止触发后卡死）\n");
                                 report.append("\n• 目标角色: ").append(targetDef.getName()).append(" (已自动创建 .bak 备份)\n");
                                 report.append("• 状态写入: ").append(writeStateFile.getName()).append(" → [Statedef ").append(newStateNo).append("]").append(defMountNote).append("\n");
                                 report.append("• CMD 写入: ").append(tCmd.getName()).append(" → [Command] + [State -1, ").append(finalCmdName).append("]\n");
