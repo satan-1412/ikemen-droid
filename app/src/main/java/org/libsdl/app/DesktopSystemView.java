@@ -4654,7 +4654,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
     // ⚔️ 模块 8：判定框工坊 (AIR 打击框 Clsn1 / 防御框 Clsn2 可视化绘制与代码生成)
     // ======================================================================================
     private static class ClsnBox {
-        int type; // 1 = Clsn1 打击框 (红), 2 = Clsn2 防御框 (蓝)
+        int type; // 1 = Clsn1 打击框 (红), 2 = Clsn2 防御框 (蓝), 3 = 无敌框 (金/NotHitBy)
         int x1, y1, x2, y2;
         int strokeId;
         ClsnBox(int type, int x1, int y1, int x2, int y2) {
@@ -4802,7 +4802,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         final GoEngineBridge.SffFrame[] curFrame = {null};
 
         final java.util.Map<String, List<ClsnBox>> frameBoxesMap = new java.util.LinkedHashMap<>();
-        // 工具模式: 0=移动缩放画布, 1=绘制打击框(Clsn1), 2=绘制防御框(Clsn2)
+        // 工具模式: 0=移动缩放画布, 1=绘制打击框(Clsn1), 2=绘制防御框(Clsn2), 3=绘制无敌框(NotHitBy)
         final int[] editMode = {1};
         // 绘制形状: 0=矩形, 1=椭圆, 2=多边形点连, 3=手绘自动闭合, 4=点删单框
         final int[] shapeMode = {0};
@@ -4810,6 +4810,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         final int[] strokeSeq = {1};
         final boolean[] showClsn1 = {true};
         final boolean[] showClsn2 = {true};
+        final boolean[] showInvul = {true};
         final float[] canvasScale = {2.0f};
         final float[] originX = {0f};
         final float[] originY = {0f};
@@ -4832,6 +4833,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             private final Paint stroke1 = new Paint(Paint.ANTI_ALIAS_FLAG);
             private final Paint fill2 = new Paint();
             private final Paint stroke2 = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint fill3 = new Paint();
+            private final Paint stroke3 = new Paint(Paint.ANTI_ALIAS_FLAG);
             private final Paint dashPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             private final Paint bmpPaint = new Paint();
@@ -4850,6 +4853,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 stroke1.setColor(Color.parseColor("#FF5252")); stroke1.setStyle(Paint.Style.STROKE); stroke1.setStrokeWidth(Math.max(2f, 1.5f * density));
                 fill2.setColor(Color.argb(78, 33, 150, 243)); fill2.setStyle(Paint.Style.FILL);
                 stroke2.setColor(Color.parseColor("#38BDF8")); stroke2.setStyle(Paint.Style.STROKE); stroke2.setStrokeWidth(Math.max(2f, 1.5f * density));
+                fill3.setColor(Color.argb(66, 250, 204, 21)); fill3.setStyle(Paint.Style.FILL);
+                stroke3.setColor(Color.parseColor("#FACC15")); stroke3.setStyle(Paint.Style.STROKE); stroke3.setStrokeWidth(Math.max(2.2f, 1.8f * density));
+                stroke3.setPathEffect(new android.graphics.DashPathEffect(new float[]{7f * density, 5f * density}, 0));
                 dashPaint.setColor(Color.parseColor("#FDE047"));
                 dashPaint.setStyle(Paint.Style.STROKE);
                 dashPaint.setStrokeWidth(Math.max(2f, 1.5f * density));
@@ -4905,21 +4911,24 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 String key = currentKey();
                 List<ClsnBox> boxes = frameBoxesMap.get(key);
                 if (boxes != null) {
-                    int c1Idx = 0, c2Idx = 0;
+                    int c1Idx = 0, c2Idx = 0, invIdx = 0;
                     for (ClsnBox b : boxes) {
                         if (b.type == 1 && !showClsn1[0]) continue;
                         if (b.type == 2 && !showClsn2[0]) continue;
+                        if (b.type == 3 && !showInvul[0]) continue;
                         float l = mugenToScreenX(b.x1), t = mugenToScreenY(b.y1);
                         float r = mugenToScreenX(b.x2), bt = mugenToScreenY(b.y2);
-                        canvas.drawRect(l, t, r, bt, b.type == 1 ? fill1 : fill2);
-                        canvas.drawRect(l, t, r, bt, b.type == 1 ? stroke1 : stroke2);
-                        String tag = (b.type == 1) ? ("C1[" + (c1Idx++) + "]") : ("C2[" + (c2Idx++) + "]");
+                        Paint fP = (b.type == 1) ? fill1 : (b.type == 3 ? fill3 : fill2);
+                        Paint sP = (b.type == 1) ? stroke1 : (b.type == 3 ? stroke3 : stroke2);
+                        canvas.drawRect(l, t, r, bt, fP);
+                        canvas.drawRect(l, t, r, bt, sP);
+                        String tag = (b.type == 1) ? ("C1[" + (c1Idx++) + "]") : (b.type == 3 ? ("INV[" + (invIdx++) + "]") : ("C2[" + (c2Idx++) + "]"));
                         canvas.drawText(tag, l + 2f * density, t + 11f * density, labelPaint);
                     }
                 }
 
-                Paint activeFill = (editMode[0] == 1) ? fill1 : fill2;
-                Paint activeStroke = (editMode[0] == 1) ? stroke1 : stroke2;
+                Paint activeFill = (editMode[0] == 1) ? fill1 : (editMode[0] == 3 ? fill3 : fill2);
+                Paint activeStroke = (editMode[0] == 1) ? stroke1 : (editMode[0] == 3 ? stroke3 : stroke2);
 
                 // 矩形 / 椭圆 实时预览
                 if (isDrawing && (shapeMode[0] == 0 || shapeMode[0] == 1)) {
@@ -5126,7 +5135,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 if (shapeMode[0] == 0) {
                                     ClsnBox nb = new ClsnBox(editMode[0], dragStartX, dragStartY, dragCurX, dragCurY, sid);
                                     list.add(nb);
-                                    statusBar.setText((nb.type == 1 ? L("🟥 已添加打击框 Clsn1: ") : L("🟦 已添加防御框 Clsn2: ")) + nb.x1 + ", " + nb.y1 + ", " + nb.x2 + ", " + nb.y2);
+                                    String tLbl = (nb.type == 1) ? L("🟥 已添加打击框 Clsn1: ") : (nb.type == 3 ? L("🟨 已添加无敌框 NotHitBy: ") : L("🟦 已添加防御框 Clsn2: "));
+                                    statusBar.setText(tLbl + nb.x1 + ", " + nb.y1 + ", " + nb.x2 + ", " + nb.y2);
                                 } else {
                                     int rx1 = Math.min(dragStartX, dragCurX), ry1 = Math.min(dragStartY, dragCurY);
                                     int rx2 = Math.max(dragStartX, dragCurX), ry2 = Math.max(dragStartY, dragCurY);
@@ -5175,9 +5185,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         curBmp[0] = bmp;
                         String key = tf.group + "," + tf.item;
                         List<ClsnBox> list = frameBoxesMap.get(key);
-                        int c1 = 0, c2 = 0;
-                        if (list != null) { for (ClsnBox b : list) { if (b.type == 1) c1++; else c2++; } }
-                        statusBar.setText(L("帧: ") + (frameIdx[0] + 1) + "/" + groupFrames.size() + " | [" + tf.group + "," + tf.item + "] | " + L("打击框:") + c1 + " | " + L("防御框:") + c2);
+                        int c1 = 0, c2 = 0, c3 = 0;
+                        if (list != null) { for (ClsnBox b : list) { if (b.type == 1) c1++; else if (b.type == 3) c3++; else c2++; } }
+                        statusBar.setText(L("帧: ") + (frameIdx[0] + 1) + "/" + groupFrames.size() + " | [" + tf.group + "," + tf.item + "] | " + L("打击:") + c1 + " | " + L("防御:") + c2 + " | " + L("无敌:") + c3);
                         clsnCanvas.invalidate();
                     });
                 } catch (Throwable ignored) {}
@@ -5211,6 +5221,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         Button btnModePan = createButton(L("🖐️ 移动画布"), "#334155");
         Button btnModeAtk = createButton(L("🟥 打击框(Clsn1)"), "#D32F2F");
         Button btnModeDef = createButton(L("🟦 防御框(Clsn2)"), "#1976D2");
+        Button btnModeInv = createButton(L("🟨 无敌框(NotHitBy)"), "#B45309");
         Button btnShapeMode = createButton(L("⬜ 形状: 矩形"), "#0F766E");
         Button btnClosePoly = createButton(L("✅ 闭合多边形"), "#059669");
         Button btnAutoDetect = createButton(L("🪄 识别图片边界"), "#0284C7");
@@ -5222,6 +5233,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         Button btnGroup = createButton(L("📁 选组"), "#334155");
         Button btnToggleC1 = createButton(L("👁️ 打击:开"), "#B71C1C");
         Button btnToggleC2 = createButton(L("👁️ 防御:开"), "#0D47A1");
+        Button btnToggleInv = createButton(L("👁️ 无敌:开"), "#A16207");
         Button btnExportAir = createButton(L("📋 生成/导出 AIR"), "#2E7D32");
 
         btnClosePoly.setVisibility(View.GONE);
@@ -5230,6 +5242,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             btnModePan.setBackgroundColor(editMode[0] == 0 ? Color.parseColor("#0284C7") : Color.parseColor("#334155"));
             btnModeAtk.setBackgroundColor(editMode[0] == 1 ? Color.parseColor("#EF4444") : Color.parseColor("#5D2020"));
             btnModeDef.setBackgroundColor(editMode[0] == 2 ? Color.parseColor("#0EA5E9") : Color.parseColor("#1A3A5C"));
+            btnModeInv.setBackgroundColor(editMode[0] == 3 ? Color.parseColor("#EAB308") : Color.parseColor("#6B4E16"));
             btnClosePoly.setVisibility((editMode[0] != 0 && shapeMode[0] == 2) ? View.VISIBLE : View.GONE);
         };
         updateModeHighlight.run();
@@ -5237,6 +5250,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         btnModePan.setOnClickListener(v -> { editMode[0] = 0; updateModeHighlight.run(); });
         btnModeAtk.setOnClickListener(v -> { editMode[0] = 1; updateModeHighlight.run(); });
         btnModeDef.setOnClickListener(v -> { editMode[0] = 2; updateModeHighlight.run(); });
+        btnModeInv.setOnClickListener(v -> { editMode[0] = 3; updateModeHighlight.run(); });
 
         // 5 种绘制方式选择：矩形 / 椭圆 / 多边形 / 手绘自动闭合 / 点删单框
         btnShapeMode.setOnClickListener(v -> {
@@ -5317,9 +5331,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             Button bContourDef = createButton(L("🧬 异形轮廓贴合防御框 (多段贴边)"), "#0F766E");
             Button bFullAtk = createButton(L("🟥 整图外接打击框 (特效/飞行道具)"), "#DC2626");
             Button bContourAtk = createButton(L("🔥 异形轮廓贴合打击框 (多段贴边)"), "#EA580C");
+            Button bFullInv = createButton(L("🟨 整图外接无敌框 (标记本帧无敌)"), "#CA8A04");
 
             View.OnClickListener runDetect = dv -> {
-                int targetType = (dv == bFullAtk || dv == bContourAtk) ? 1 : 2;
+                int targetType = (dv == bFullAtk || dv == bContourAtk) ? 1 : (dv == bFullInv ? 3 : 2);
                 boolean contour = (dv == bContourDef || dv == bContourAtk);
                 int sid = strokeSeq[0]++;
                 List<ClsnBox> detected = detectSpriteBoundsToClsn(curBmp[0], curFrame[0], targetType, contour, shapeSlices[0], sid);
@@ -5330,7 +5345,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     List<ClsnBox> list = frameBoxesMap.get(key);
                     if (list == null) { list = new ArrayList<>(); frameBoxesMap.put(key, list); }
                     list.addAll(detected);
-                    statusBar.setText(L("🪄 自动识别成功，已生成 ") + detected.size() + (targetType == 1 ? L(" 个打击框") : L(" 个防御框")));
+                    String kindTxt = (targetType == 1) ? L(" 个打击框") : (targetType == 3 ? L(" 个无敌框") : L(" 个防御框"));
+                    statusBar.setText(L("🪄 自动识别成功，已生成 ") + detected.size() + kindTxt);
                     clsnCanvas.invalidate();
                 }
                 ad.dismiss();
@@ -5338,7 +5354,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             bFullDef.setOnClickListener(runDetect); bContourDef.setOnClickListener(runDetect);
             bFullAtk.setOnClickListener(runDetect); bContourAtk.setOnClickListener(runDetect);
-            al.addView(bFullDef, alp); al.addView(bContourDef, alp); al.addView(bFullAtk, alp); al.addView(bContourAtk, alp);
+            bFullInv.setOnClickListener(runDetect);
+            al.addView(bFullDef, alp); al.addView(bContourDef, alp); al.addView(bFullAtk, alp); al.addView(bContourAtk, alp); al.addView(bFullInv, alp);
             ad.setContentView(al); ad.show();
         });
 
@@ -5492,18 +5509,26 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             btnToggleC2.setText(showClsn2[0] ? L("👁️ 防御:开") : L("👁️ 防御:关"));
             clsnCanvas.invalidate();
         });
+        btnToggleInv.setOnClickListener(v -> {
+            showInvul[0] = !showInvul[0];
+            btnToggleInv.setText(showInvul[0] ? L("👁️ 无敌:开") : L("👁️ 无敌:关"));
+            clsnCanvas.invalidate();
+        });
 
         btnExportAir.setOnClickListener(v -> {
             StringBuilder sb = new StringBuilder();
+            StringBuilder invulCns = new StringBuilder();
             int actionNum = (curFrame[0] != null) ? curFrame[0].group : 0;
             sb.append("[Begin Action ").append(actionNum).append("]\n");
             boolean hasAny = false;
+            int elemIdx = 0;
             for (java.util.Map.Entry<String, List<ClsnBox>> entry : frameBoxesMap.entrySet()) {
                 List<ClsnBox> boxes = entry.getValue();
                 if (boxes == null || boxes.isEmpty()) continue;
                 hasAny = true;
-                List<ClsnBox> c1 = new ArrayList<>(), c2 = new ArrayList<>();
-                for (ClsnBox b : boxes) { if (b.type == 1) c1.add(b); else c2.add(b); }
+                elemIdx++;
+                List<ClsnBox> c1 = new ArrayList<>(), c2 = new ArrayList<>(), inv = new ArrayList<>();
+                for (ClsnBox b : boxes) { if (b.type == 1) c1.add(b); else if (b.type == 3) inv.add(b); else c2.add(b); }
                 if (!c1.isEmpty()) {
                     sb.append("Clsn1: ").append(c1.size()).append("\n");
                     for (int i = 0; i < c1.size(); i++) {
@@ -5511,7 +5536,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         sb.append("  Clsn1[").append(i).append("] = ").append(b.x1).append(", ").append(b.y1).append(", ").append(b.x2).append(", ").append(b.y2).append("\n");
                     }
                 }
-                if (!c2.isEmpty()) {
+                if (!inv.isEmpty()) {
+                    sb.append("; [无敌帧 Elem ").append(elemIdx).append("] 已自动移除 Clsn2 受击防御框实现无敌\n");
+                    invulCns.append("[State ").append(actionNum).append(", Invul_Elem").append(elemIdx).append("]\ntype = NotHitBy\ntrigger1 = AnimElem = ").append(elemIdx).append("\nvalue = SCA\ntime = 5\n\n");
+                } else if (!c2.isEmpty()) {
                     sb.append("Clsn2: ").append(c2.size()).append("\n");
                     for (int i = 0; i < c2.size(); i++) {
                         ClsnBox b = c2.get(i);
@@ -5520,8 +5548,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 }
                 sb.append(entry.getKey()).append(", 0, 0, 5\n\n");
             }
+            if (invulCns.length() > 0) {
+                sb.append("; === 配套 CNS 无敌帧控制器 (可直接粘贴到对应 Statedef) ===\n").append(invulCns.toString());
+            }
             if (!hasAny) {
-                Toast.makeText(getContext(), L("⚠️ 当前尚未绘制任何打击框或防御框"), Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), L("⚠️ 当前尚未绘制任何打击框、防御框或无敌框"), Toast.LENGTH_SHORT).show();
                 return;
             }
             final String airCode = sb.toString();
@@ -5559,11 +5590,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         });
 
         bar.addView(btnLoadSff, bp); bar.addView(btnLoadAct, bp); bar.addView(btnLoadAir, bp);
-        bar.addView(btnModePan, bp); bar.addView(btnModeAtk, bp); bar.addView(btnModeDef, bp);
+        bar.addView(btnModePan, bp); bar.addView(btnModeAtk, bp); bar.addView(btnModeDef, bp); bar.addView(btnModeInv, bp);
         bar.addView(btnShapeMode, bp); bar.addView(btnClosePoly, bp); bar.addView(btnAutoDetect, bp); bar.addView(btnPrecision, bp);
         bar.addView(btnUndo, bp); bar.addView(btnClear, bp);
         bar.addView(btnPrev, bp); bar.addView(btnNext, bp); bar.addView(btnGroup, bp);
-        bar.addView(btnToggleC1, bp); bar.addView(btnToggleC2, bp);
+        bar.addView(btnToggleC1, bp); bar.addView(btnToggleC2, bp); bar.addView(btnToggleInv, bp);
         bar.addView(btnExportAir, bp);
         barScroll.addView(bar);
         root.addView(barScroll);
@@ -7817,11 +7848,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             }
             final String completeSkillCode = fullBundle.toString().trim();
 
-            // 双模式复刻技能操作区
-            dbox.addView(createSubTitle(L("🧬 复刻技能 (一键移植到其他角色):")));
+                        // 双模式复刻技能操作区
+            dbox.addView(createSubTitle(L("🧬 复刻技能 (一键全自动移植到其他角色并可直接触发):")));
             LinearLayout cloneRow = new LinearLayout(getContext()); cloneRow.setOrientation(LinearLayout.HORIZONTAL);
             Button bCloneCode = createButton(L("📋 仅复制完整代码"), "#2563EB");
-            Button bCloneFull = createButton(L("🚀 复刻代码+注入目标SFF"), "#7C3AED");
+            Button bCloneFull = createButton(L("🚀 一键全自动移植到角色(.def)"), "#7C3AED");
             LinearLayout.LayoutParams crp = new LinearLayout.LayoutParams(0, -2, 1f); crp.setMargins((int)(2*density), (int)(3*density), (int)(2*density), (int)(6*density));
 
             bCloneCode.setOnClickListener(v -> {
@@ -7831,154 +7862,384 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             });
 
             bCloneFull.setOnClickListener(v -> {
-                if (sffFileRef[0] == null || !sffFileRef[0].exists()) {
-                    Toast.makeText(getContext(), L("⚠️ 当前角色缺少 SFF 文件，无法导出图片帧"), Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                if (framesToPlay.isEmpty()) {
-                    Toast.makeText(getContext(), L("⚠️ 当前状态未解析到可移植的精灵帧"), Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                showWin10FilePicker(L("选择目标角色的 .sff 文件 (将自动检测冲突并注入)"), 4, null, null, targetSff -> {
-                    if (targetSff == null || !targetSff.exists() || !targetSff.getName().toLowerCase().endsWith(".sff")) {
-                        Toast.makeText(getContext(), L("❌ 请选择有效的目标 .sff 文件"), Toast.LENGTH_SHORT).show();
+                showWin10FilePicker(L("选择目标角色的 .def (自动写入 SFF/SND/AIR/CNS/CMD)"), 15, null, null, targetDef -> {
+                    if (targetDef == null || !targetDef.exists() || !targetDef.getName().toLowerCase().endsWith(".def")) {
+                        Toast.makeText(getContext(), L("❌ 请选择有效的目标角色 .def 文件"), Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    Toast.makeText(getContext(), L("⏳ 正在扫描目标 SFF 编号并注入技能精灵帧..."), Toast.LENGTH_SHORT).show();
-                    new Thread(() -> {
-                        try {
-                            File bak = new File(targetSff.getAbsolutePath() + ".bak");
-                            if (!bak.exists()) copyFileToSandbox(targetSff, bak);
+                    // 解析目标 .def 中的关联文件
+                    File tBaseDir = targetDef.getParentFile();
+                    java.util.Map<String, String> tFiles = new java.util.LinkedHashMap<>();
+                    String tDefTxt = readTextAutoCharset(targetDef);
+                    String tSec = "";
+                    for (String rl : tDefTxt.split("\n")) {
+                        int ci = rl.indexOf(';');
+                        String t = (ci >= 0 ? rl.substring(0, ci) : rl).trim();
+                        if (t.isEmpty()) continue;
+                        if (t.startsWith("[") && t.endsWith("]")) { tSec = t.substring(1, t.length() - 1).trim().toLowerCase(); continue; }
+                        int eq = t.indexOf('=');
+                        if (eq > 0 && "files".equals(tSec)) {
+                            tFiles.put(t.substring(0, eq).trim().toLowerCase(), t.substring(eq + 1).trim().replace("\"", ""));
+                        }
+                    }
+                    final File tSff = resolveCharSubFile(tBaseDir, tFiles.get("sprite"));
+                    final File tSnd = resolveCharSubFile(tBaseDir, tFiles.get("sound"));
+                    final File tAir = resolveCharSubFile(tBaseDir, tFiles.get("anim"));
+                    final File tCmd = resolveCharSubFile(tBaseDir, tFiles.get("cmd"));
+                    File tCnsTmp = resolveCharSubFile(tBaseDir, tFiles.get("st"));
+                    if (tCnsTmp == null) tCnsTmp = resolveCharSubFile(tBaseDir, tFiles.get("cns"));
+                    final File tCns = tCnsTmp;
 
-                            List<GoEngineBridge.SffFrame> targetFrames = GoEngineBridge.getAllFrames(targetSff.getAbsolutePath());
-                            java.util.HashSet<String> occupied = new java.util.HashSet<>();
-                            int maxGroup = 0;
-                            for (GoEngineBridge.SffFrame tf : targetFrames) {
-                                occupied.add(tf.group + "," + tf.item);
-                                if (tf.group > maxGroup && tf.group < 9000) maxGroup = tf.group;
+                    if (tCns == null || tCmd == null) {
+                        Toast.makeText(getContext(), L("❌ 目标角色缺少 CNS 或 CMD 文件，无法自动注入"), Toast.LENGTH_LONG).show();
+                        return;
+                    }
+
+                    // 扫描目标 CNS/AIR 已占用的 StateNo / ActionNo，自动推荐不冲突编号
+                    String tCnsRaw = readTextAutoCharset(tCns);
+                    String tAirRaw = (tAir != null && tAir.exists()) ? readTextAutoCharset(tAir) : "";
+                    java.util.HashSet<Integer> usedStates = new java.util.HashSet<>();
+                    java.util.regex.Matcher smt = java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+(-?\\d+)").matcher(tCnsRaw);
+                    while (smt.find()) { try { usedStates.add(Integer.parseInt(smt.group(1))); } catch (Exception ignored) {} }
+                    java.util.HashSet<Integer> usedAnims = new java.util.HashSet<>();
+                    java.util.regex.Matcher amt = java.util.regex.Pattern.compile("(?i)\\[\\s*begin\\s+action\\s+(-?\\d+)").matcher(tAirRaw);
+                    while (amt.find()) { try { usedAnims.add(Integer.parseInt(amt.group(1))); } catch (Exception ignored) {} }
+
+                    int recState = st.stateNo;
+                    if (recState < 200 || usedStates.contains(recState)) {
+                        recState = 3500;
+                        while (usedStates.contains(recState)) recState++;
+                    }
+                    int recAnim = (finalResolvedAnim >= 0) ? finalResolvedAnim : recState;
+                    if (usedAnims.contains(recAnim)) {
+                        recAnim = recState;
+                        while (usedAnims.contains(recAnim)) recAnim++;
+                    }
+
+                    String defaultRawCmd = "~D, DF, F, x";
+                    if (!st.linkedCmd.isEmpty()) {
+                        for (CharCmdItem ci : cmdItems) {
+                            if (ci.name.equalsIgnoreCase(st.linkedCmd) && !ci.rawCommand.isEmpty()) {
+                                defaultRawCmd = ci.rawCommand; break;
                             }
+                        }
+                    }
 
-                            // 收集本技能去重后的 (group, item)
-                            java.util.LinkedHashMap<String, int[]> uniquePairs = new java.util.LinkedHashMap<>();
-                            for (AirFrameSpec af : framesToPlay) {
-                                if (af.group < 0 || af.item < 0) continue;
-                                uniquePairs.put(af.group + "," + af.item, new int[]{af.group, af.item});
-                            }
+                    // 弹窗让用户确认触发按键与目标编号
+                    final Dialog cfgD = new Dialog(getContext());
+                    if (cfgD.getWindow() != null) cfgD.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                    ScrollView csv = new ScrollView(getContext());
+                    LinearLayout cbox = new LinearLayout(getContext()); cbox.setOrientation(LinearLayout.VERTICAL);
+                    cbox.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
+                    GradientDrawable cbg = new GradientDrawable(); cbg.setColor(Color.parseColor("#F8141A24")); cbg.setCornerRadius(12f*density); cbg.setStroke(2, Color.parseColor("#7C3AED")); cbox.setBackground(cbg);
+                    cbox.addView(createSubTitle(L("🚀 一键移植到: ") + targetDef.getName()));
 
-                            java.util.LinkedHashMap<String, int[]> remapTable = new java.util.LinkedHashMap<>();
-                            int injectedOk = 0, remappedCnt = 0, failedCnt = 0;
-                            File tmpDir = new File(getContext().getCacheDir(), "skill_clone_tmp");
-                            if (!tmpDir.exists()) tmpDir.mkdirs();
+                    final EditText eCmdName = createInput(L("CMD 指令名"), "CloneSkill_" + recState);
+                    final EditText eCmdKeys = createInput(L("搓招按键 (如 ~D, DF, F, x)"), defaultRawCmd);
+                    final EditText eNewState = createInput(L("写入目标 State 编号"), String.valueOf(recState));
+                    eNewState.setInputType(InputType.TYPE_CLASS_NUMBER);
+                    final EditText eNewAnim = createInput(L("写入目标 AIR 动作号"), String.valueOf(recAnim));
+                    eNewAnim.setInputType(InputType.TYPE_CLASS_NUMBER);
 
-                            for (java.util.Map.Entry<String, int[]> en : uniquePairs.entrySet()) {
-                                int og = en.getValue()[0], oi = en.getValue()[1];
-                                int ng = og, ni = oi;
-                                if (occupied.contains(ng + "," + ni)) {
-                                    // 先在同组找空闲 item，超过 250 仍满则开辟新组
-                                    boolean found = false;
-                                    for (int tryI = 0; tryI <= 250; tryI++) {
-                                        if (!occupied.contains(ng + "," + tryI)) { ni = tryI; found = true; break; }
+                    cbox.addView(createSubTitle(L("1. 游戏内触发按键 (支持一键选常用键):")));
+                    cbox.addView(eCmdKeys);
+                    HorizontalScrollView psc = new HorizontalScrollView(getContext()); psc.setHorizontalScrollBarEnabled(false);
+                    LinearLayout prow = new LinearLayout(getContext()); prow.setOrientation(LinearLayout.HORIZONTAL);
+                    String[][] presets = {
+                        {"↓↘→+x", "~D, DF, F, x"}, {"↓↙←+x", "~D, DB, B, x"},
+                        {"x+y", "x+y"}, {"a+b", "a+b"}, {"s(挑衅键)", "s"}
+                    };
+                    LinearLayout.LayoutParams pbp = new LinearLayout.LayoutParams(-2, -2); pbp.setMargins(0, (int)(4*density), (int)(4*density), (int)(6*density));
+                    for (final String[] pr : presets) {
+                        Button pb = createButton(pr[0], "#263147");
+                        pb.setPadding((int)(8*density), (int)(3*density), (int)(8*density), (int)(3*density));
+                        pb.setOnClickListener(pv -> eCmdKeys.setText(pr[1]));
+                        prow.addView(pb, pbp);
+                    }
+                    psc.addView(prow); cbox.addView(psc);
+
+                    cbox.addView(createSubTitle(L("2. 指令名称 (自动写入目标 .cmd):"))); cbox.addView(eCmdName);
+                    cbox.addView(createSubTitle(L("3. 目标 State 编号 (冲突已自动避让):"))); cbox.addView(eNewState);
+                    cbox.addView(createSubTitle(L("4. 目标 AIR 动作号 (冲突已自动避让):"))); cbox.addView(eNewAnim);
+
+                    Button bExecClone = createButton(L("✅ 开始全自动移植 (SFF+SND+AIR+CNS+CMD)"), "#16A34A");
+                    LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(-1, -2); ep.setMargins(0, (int)(10*density), 0, 0);
+                    final int fDefState = recState, fDefAnim = recAnim;
+                    bExecClone.setOnClickListener(ev -> {
+                        cfgD.dismiss();
+                        final String cmdName = eCmdName.getText().toString().trim().isEmpty() ? ("CloneSkill_" + fDefState) : eCmdName.getText().toString().trim();
+                        final String cmdSeq = eCmdKeys.getText().toString().trim().isEmpty() ? "~D, DF, F, x" : eCmdKeys.getText().toString().trim();
+                        int tmpSt = fDefState, tmpAn = fDefAnim;
+                        try { tmpSt = Integer.parseInt(eNewState.getText().toString().trim()); } catch (Exception ignored) {}
+                        try { tmpAn = Integer.parseInt(eNewAnim.getText().toString().trim()); } catch (Exception ignored) {}
+                        final int newStateNo = tmpSt, newAnimNo = tmpAn;
+
+                        Toast.makeText(getContext(), L("⏳ 正在全自动移植精灵、音效与全部代码..."), Toast.LENGTH_SHORT).show();
+                        new Thread(() -> {
+                            try {
+                                File tmpDir = new File(getContext().getCacheDir(), "skill_clone_tmp");
+                                if (!tmpDir.exists()) tmpDir.mkdirs();
+
+                                // ① SFF 精灵帧注入 + 冲突自动改号
+                                java.util.LinkedHashMap<String, int[]> sffRemap = new java.util.LinkedHashMap<>();
+                                int sffOk = 0, sffRemapped = 0;
+                                if (sffFileRef[0] != null && sffFileRef[0].exists() && tSff != null && tSff.exists() && !framesToPlay.isEmpty()) {
+                                    File bak = new File(tSff.getAbsolutePath() + ".bak");
+                                    if (!bak.exists()) copyFileToSandbox(tSff, bak);
+                                    List<GoEngineBridge.SffFrame> targetFrames = GoEngineBridge.getAllFrames(tSff.getAbsolutePath());
+                                    java.util.HashSet<String> occSff = new java.util.HashSet<>();
+                                    int maxG = 0;
+                                    for (GoEngineBridge.SffFrame tf : targetFrames) {
+                                        occSff.add(tf.group + "," + tf.item);
+                                        if (tf.group > maxG && tf.group < 9000) maxG = tf.group;
                                     }
-                                    if (!found) {
-                                        ng = Math.max(maxGroup + 1, 7000);
-                                        ni = 0;
-                                        while (occupied.contains(ng + "," + ni)) ni++;
-                                        maxGroup = ng;
+                                    java.util.LinkedHashMap<String, int[]> uniqSff = new java.util.LinkedHashMap<>();
+                                    for (AirFrameSpec af : framesToPlay) {
+                                        if (af.group >= 0 && af.item >= 0) uniqSff.put(af.group + "," + af.item, new int[]{af.group, af.item});
                                     }
-                                    remappedCnt++;
+                                    for (java.util.Map.Entry<String, int[]> en : uniqSff.entrySet()) {
+                                        int og = en.getValue()[0], oi = en.getValue()[1];
+                                        int ng = og, ni = oi;
+                                        if (occSff.contains(ng + "," + ni)) {
+                                            boolean found = false;
+                                            for (int tryI = 0; tryI <= 250; tryI++) {
+                                                if (!occSff.contains(ng + "," + tryI)) { ni = tryI; found = true; break; }
+                                            }
+                                            if (!found) {
+                                                ng = Math.max(maxG + 1, 7000); ni = 0;
+                                                while (occSff.contains(ng + "," + ni)) ni++;
+                                                maxG = ng;
+                                            }
+                                            sffRemapped++;
+                                        }
+                                        occSff.add(ng + "," + ni);
+                                        sffRemap.put(og + "," + oi, new int[]{ng, ni});
+                                        byte[] pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, "");
+                                        if (pngBytes != null && pngBytes.length > 0) {
+                                            File tmpPng = new File(tmpDir, "f_" + og + "_" + oi + ".png");
+                                            try (FileOutputStream fos = new FileOutputStream(tmpPng)) { fos.write(pngBytes); }
+                                            GoEngineBridge.SffFrame srcMeta = sffFrameLookup.get(og + "," + oi);
+                                            short ax = (srcMeta != null) ? (short) srcMeta.x : 0;
+                                            short ay = (srcMeta != null) ? (short) srcMeta.y : 0;
+                                            if (Api.addSffFrame(tSff.getAbsolutePath(), ng, ni, ax, ay, tmpPng.getAbsolutePath())) sffOk++;
+                                            tmpPng.delete();
+                                        }
+                                    }
                                 }
-                                occupied.add(ng + "," + ni);
-                                remapTable.put(og + "," + oi, new int[]{ng, ni});
 
-                                byte[] pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, "");
-                                if (pngBytes != null && pngBytes.length > 0) {
-                                    File tmpPng = new File(tmpDir, "f_" + og + "_" + oi + ".png");
-                                    try (FileOutputStream fos = new FileOutputStream(tmpPng)) { fos.write(pngBytes); }
-                                    GoEngineBridge.SffFrame srcMeta = sffFrameLookup.get(og + "," + oi);
-                                    short ax = (srcMeta != null) ? (short) srcMeta.x : 0;
-                                    short ay = (srcMeta != null) ? (short) srcMeta.y : 0;
-                                    boolean ok = Api.addSffFrame(targetSff.getAbsolutePath(), ng, ni, ax, ay, tmpPng.getAbsolutePath());
-                                    if (ok) injectedOk++; else failedCnt++;
-                                    tmpPng.delete();
-                                } else {
-                                    failedCnt++;
-                                }
-                            }
-
-                            // 同步修改 AIR 代码中的旧精灵编号 -> 新编号
-                            String airRaw = (finalResolvedAnim >= 0 && airActionRawText.containsKey(finalResolvedAnim)) ? airActionRawText.get(finalResolvedAnim) : "";
-                            StringBuilder rewrittenAir = new StringBuilder();
-                            if (!airRaw.isEmpty()) {
-                                for (String line : airRaw.split("\n", -1)) {
-                                    String trimmed = line.trim();
-                                    if (trimmed.matches("^-?\\d+\\s*,\\s*-?\\d+\\s*,.*")) {
-                                        String[] ps = trimmed.split(",", 3);
-                                        if (ps.length >= 3) {
-                                            String key = ps[0].trim() + "," + ps[1].trim();
-                                            int[] mapped = remapTable.get(key);
-                                            if (mapped != null) {
-                                                line = mapped[0] + ", " + mapped[1] + "," + ps[2];
+                                // ② SND 绑定音效提取注入 + 冲突自动改号 + 同步改写 CNS 音效调用
+                                java.util.LinkedHashMap<String, int[]> sndRemap = new java.util.LinkedHashMap<>();
+                                int sndOk = 0, sndRemapped = 0;
+                                String rewrittenCns = st.codePreview;
+                                if (sndFileRef[0] != null && sndFileRef[0].exists() && tSnd != null && tSnd.exists()) {
+                                    // 扫描 CNS 中所有 PlaySnd 的 value = [S]g, i 以及 hitsound/guardsound/sound = [S]g, i（跳过 F 公共音效）
+                                    java.util.LinkedHashMap<String, int[]> foundSnds = new java.util.LinkedHashMap<>();
+                                    String[] cLines = rewrittenCns.split("\n", -1);
+                                    boolean inPlaySnd = false;
+                                    java.util.regex.Pattern sndPairPat = java.util.regex.Pattern.compile("(?i)^\\s*(value|hitsound|guardsound|sound)\\s*=\\s*(?:S)?(\\d+)\\s*,\\s*(\\d+)");
+                                    for (String cl : cLines) {
+                                        int ci = cl.indexOf(';');
+                                        String cClean = (ci >= 0 ? cl.substring(0, ci) : cl).trim();
+                                        String cLow = cClean.toLowerCase();
+                                        if (cLow.startsWith("[state ")) inPlaySnd = false;
+                                        else if (cLow.matches("^type\\s*=\\s*playsnd$")) inPlaySnd = true;
+                                        else {
+                                            java.util.regex.Matcher m = sndPairPat.matcher(cClean);
+                                            if (m.find()) {
+                                                String kName = m.group(1).toLowerCase();
+                                                if (!kName.equals("value") || inPlaySnd) {
+                                                    int sg = Integer.parseInt(m.group(2));
+                                                    int si = Integer.parseInt(m.group(3));
+                                                    foundSnds.put(sg + "," + si, new int[]{sg, si});
+                                                }
                                             }
                                         }
                                     }
-                                    rewrittenAir.append(line).append("\n");
-                                }
-                            }
-
-                            StringBuilder report = new StringBuilder();
-                            report.append("; ===== 技能复刻完成报告 =====\n");
-                            report.append("; 目标 SFF: ").append(targetSff.getName()).append(" (原文件已备份 .bak)\n");
-                            report.append("; 成功注入精灵帧: ").append(injectedOk).append(" | 冲突自动改号: ").append(remappedCnt).append(" | 失败: ").append(failedCnt).append("\n");
-                            if (remappedCnt > 0) {
-                                report.append("; --- 编号自动重映射明细 (旧 -> 新) ---\n");
-                                for (java.util.Map.Entry<String, int[]> rm : remapTable.entrySet()) {
-                                    String newKey = rm.getValue()[0] + "," + rm.getValue()[1];
-                                    if (!rm.getKey().equals(newKey)) {
-                                        report.append(";   [").append(rm.getKey()).append("]  ==>  [").append(newKey).append("]\n");
+                                    if (!foundSnds.isEmpty()) {
+                                        File bak = new File(tSnd.getAbsolutePath() + ".bak");
+                                        if (!bak.exists()) copyFileToSandbox(tSnd, bak);
+                                        List<GoEngineBridge.SndNode> tNodes = GoEngineBridge.scanSnd(tSnd.getAbsolutePath());
+                                        java.util.HashSet<String> occSnd = new java.util.HashSet<>();
+                                        int maxSndG = 0;
+                                        for (GoEngineBridge.SndNode sn : tNodes) {
+                                            occSnd.add(sn.group + "," + sn.item);
+                                            if (sn.group > maxSndG && sn.group < 9000) maxSndG = sn.group;
+                                        }
+                                        for (java.util.Map.Entry<String, int[]> en : foundSnds.entrySet()) {
+                                            int sg = en.getValue()[0], si = en.getValue()[1];
+                                            int nsg = sg, nsi = si;
+                                            if (occSnd.contains(nsg + "," + nsi)) {
+                                                boolean found = false;
+                                                for (int tryI = 0; tryI <= 250; tryI++) {
+                                                    if (!occSnd.contains(nsg + "," + tryI)) { nsi = tryI; found = true; break; }
+                                                }
+                                                if (!found) {
+                                                    nsg = Math.max(maxSndG + 1, 7000); nsi = 0;
+                                                    while (occSnd.contains(nsg + "," + nsi)) nsi++;
+                                                    maxSndG = nsg;
+                                                }
+                                                sndRemapped++;
+                                            }
+                                            occSnd.add(nsg + "," + nsi);
+                                            sndRemap.put(sg + "," + si, new int[]{nsg, nsi});
+                                            byte[] wavBytes = Api.extractSndAudio(sndFileRef[0].getAbsolutePath(), sg, si);
+                                            if (wavBytes != null && wavBytes.length > 0) {
+                                                File tmpWav = new File(tmpDir, "s_" + sg + "_" + si + ".wav");
+                                                try (FileOutputStream fos = new FileOutputStream(tmpWav)) { fos.write(wavBytes); }
+                                                if (Api.addSndAudio(tSnd.getAbsolutePath(), nsg, nsi, tmpWav.getAbsolutePath())) sndOk++;
+                                                tmpWav.delete();
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                            report.append("\n; ================= CNS/ST 完整代码 =================\n").append(st.codePreview);
-                            if (rewrittenAir.length() > 0) {
-                                report.append("\n\n; ================= 同步改号后的 AIR 动作代码 =================\n").append(rewrittenAir.toString().trim());
-                            }
 
-                            final String finalReport = report.toString();
-                            final int fOk = injectedOk, fRm = remappedCnt;
-                            uiHandler.post(() -> {
-                                final Dialog rd = new Dialog(getContext());
-                                if (rd.getWindow() != null) rd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-                                ScrollView rsv = new ScrollView(getContext());
-                                LinearLayout rbox = new LinearLayout(getContext()); rbox.setOrientation(LinearLayout.VERTICAL);
-                                rbox.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
-                                GradientDrawable rbg = new GradientDrawable(); rbg.setColor(Color.parseColor("#F8141A24")); rbg.setCornerRadius(12f*density); rbg.setStroke(2, Color.parseColor("#22C55E")); rbox.setBackground(rbg);
-                                rbox.addView(createSubTitle(L("✅ 复刻注入完成 (注入 ") + fOk + L(" 帧 / 自动改号 ") + fRm + L(" 帧)")));
-                                TextView rtv = new TextView(getContext());
-                                rtv.setText(finalReport); rtv.setTypeface(Typeface.MONOSPACE); rtv.setTextSize(10.5f); rtv.setTextColor(Color.parseColor("#86EFAC")); rtv.setTextIsSelectable(true);
-                                rbox.addView(rtv);
-                                LinearLayout rbtns = new LinearLayout(getContext()); rbtns.setOrientation(LinearLayout.HORIZONTAL);
-                                Button bCopyNew = createButton(L("📋 复制同步后代码"), "#16A34A");
-                                Button bDone = createButton(L("关闭"), "#475569");
-                                LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0, -2, 1f); bp.setMargins((int)(3*density), (int)(8*density), (int)(3*density), 0);
-                                bCopyNew.setOnClickListener(cv2 -> {
-                                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
-                                    if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("ClonedSkillCode", finalReport));
-                                    Toast.makeText(getContext(), L("✅ 已复制同步改号后的完整技能代码"), Toast.LENGTH_SHORT).show();
+                                // ③ 同步改写 CNS 状态号 / 动作号 / 音效调用并追加写入目标 .cns
+                                StringBuilder cnsOut = new StringBuilder();
+                                String[] cnsLines = rewrittenCns.split("\n", -1);
+                                boolean inPs = false, inCa = false, inHead = false;
+                                java.util.regex.Pattern sndRepPat = java.util.regex.Pattern.compile("(?i)^(\\s*(?:value|hitsound|guardsound|sound)\\s*=\\s*(?:S)?)(\\d+)(\\s*,\\s*)(\\d+)(.*)$");
+                                for (String line : cnsLines) {
+                                    int ci = line.indexOf(';');
+                                    String codePart = (ci >= 0 ? line.substring(0, ci) : line);
+                                    String cmtPart = (ci >= 0 ? line.substring(ci) : "");
+                                    String trimmed = codePart.trim();
+                                    String low = trimmed.toLowerCase();
+                                    if (low.matches("^\\[\\s*statedef\\s+-?\\d+.*")) {
+                                        codePart = "[Statedef " + newStateNo + "]";
+                                        inHead = true; inPs = false; inCa = false;
+                                    } else if (low.startsWith("[state ")) {
+                                        inHead = false; inPs = false; inCa = false;
+                                    } else if (low.matches("^type\\s*=\\s*playsnd$")) {
+                                        inPs = true;
+                                    } else if (low.matches("^type\\s*=\\s*changeanim2?$")) {
+                                        inCa = true;
+                                    } else if (inHead && low.matches("^anim\\s*=\\s*-?\\d+$")) {
+                                        codePart = "anim = " + newAnimNo;
+                                    } else if (inCa && low.matches("^value\\s*=\\s*-?\\d+$") && finalResolvedAnim >= 0) {
+                                        try {
+                                            int vOld = Integer.parseInt(trimmed.substring(trimmed.indexOf('=') + 1).trim());
+                                            if (vOld == finalResolvedAnim) codePart = "value = " + newAnimNo;
+                                        } catch (Exception ignored) {}
+                                    } else if (!sndRemap.isEmpty()) {
+                                        java.util.regex.Matcher m = sndRepPat.matcher(codePart);
+                                        if (m.find()) {
+                                            boolean isVal = m.group(1).trim().toLowerCase().startsWith("value");
+                                            if (!isVal || inPs) {
+                                                int[] mapped = sndRemap.get(m.group(2) + "," + m.group(4));
+                                                if (mapped != null) {
+                                                    codePart = m.group(1) + mapped[0] + m.group(3) + mapped[1] + m.group(5);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    cnsOut.append(codePart).append(cmtPart).append("\n");
+                                }
+                                String finalCnsBlock = "\n\n; === [自动移植技能] " + cmdName + " (State " + newStateNo + ") ===\n" + cnsOut.toString().trim() + "\n";
+                                File cnsBak = new File(tCns.getAbsolutePath() + ".bak");
+                                if (!cnsBak.exists()) copyFileToSandbox(tCns, cnsBak);
+                                try (FileOutputStream fos = new FileOutputStream(tCns, true)) { fos.write(finalCnsBlock.getBytes("UTF-8")); }
+
+                                // ④ 同步改写 AIR 动作号与 SFF 帧编号，并追加写入目标 .air
+                                boolean airWritten = false;
+                                String airRaw = (finalResolvedAnim >= 0 && airActionRawText.containsKey(finalResolvedAnim)) ? airActionRawText.get(finalResolvedAnim) : "";
+                                StringBuilder rewrittenAir = new StringBuilder();
+                                if (!airRaw.isEmpty() && tAir != null && tAir.exists()) {
+                                    for (String line : airRaw.split("\n", -1)) {
+                                        String trimmed = line.trim();
+                                        if (trimmed.toLowerCase().startsWith("[begin action")) {
+                                            line = "[Begin Action " + newAnimNo + "]";
+                                        } else if (trimmed.matches("^-?\\d+\\s*,\\s*-?\\d+\\s*,.*")) {
+                                            String[] ps = trimmed.split(",", 3);
+                                            if (ps.length >= 3) {
+                                                int[] mapped = sffRemap.get(ps[0].trim() + "," + ps[1].trim());
+                                                if (mapped != null) line = mapped[0] + ", " + mapped[1] + "," + ps[2];
+                                            }
+                                        }
+                                        rewrittenAir.append(line).append("\n");
+                                    }
+                                    File airBak = new File(tAir.getAbsolutePath() + ".bak");
+                                    if (!airBak.exists()) copyFileToSandbox(tAir, airBak);
+                                    String airAppend = "\n\n; === [自动移植动作] " + cmdName + " ===\n" + rewrittenAir.toString().trim() + "\n";
+                                    try (FileOutputStream fos = new FileOutputStream(tAir, true)) { fos.write(airAppend.getBytes("UTF-8")); }
+                                    airWritten = true;
+                                }
+
+                                // ⑤ 自动同步注入 [Command] 与 [State -1] 触发器到目标 .cmd
+                                File cmdBak = new File(tCmd.getAbsolutePath() + ".bak");
+                                if (!cmdBak.exists()) copyFileToSandbox(tCmd, cmdBak);
+                                String cmdOrig = readTextAutoCharset(tCmd);
+                                String cmdDefBlock = "\n; [自动移植指令] " + cmdName + "\n[Command]\nname = \"" + cmdName + "\"\ncommand = " + cmdSeq + "\ntime = 18\n";
+                                String stateNeg1Block = "\n; [自动移植触发器] " + cmdName + "\n[State -1, " + cmdName + "]\ntype = ChangeState\nvalue = " + newStateNo + "\ntriggerall = command = \"" + cmdName + "\"\ntrigger1 = statetype != A && ctrl\n";
+
+                                java.util.regex.Matcher neg1M = java.util.regex.Pattern.compile("(?i)(\\[\\s*statedef\\s+-1[^\\]]*\\][^\n]*\n?)").matcher(cmdOrig);
+                                String newCmdText;
+                                if (neg1M.find()) {
+                                    int idxStart = neg1M.start();
+                                    int idxEnd = neg1M.end();
+                                    newCmdText = cmdOrig.substring(0, idxStart) + cmdDefBlock + "\n" + cmdOrig.substring(idxStart, idxEnd) + stateNeg1Block + cmdOrig.substring(idxEnd);
+                                } else {
+                                    newCmdText = cmdOrig + "\n" + cmdDefBlock + "\n[Statedef -1]\n" + stateNeg1Block;
+                                }
+                                try (FileOutputStream fos = new FileOutputStream(tCmd)) { fos.write(newCmdText.getBytes("UTF-8")); }
+
+                                StringBuilder report = new StringBuilder();
+                                report.append("🎉 全自动移植已完成，进游戏可直接搓招触发！\n");
+                                report.append("🎮 游戏内触发方式: ").append(prettifyCmdSequence(cmdSeq)).append("  (").append(cmdSeq).append(")\n\n");
+                                report.append("• 目标角色: ").append(targetDef.getName()).append(" (已自动创建 .bak 备份)\n");
+                                report.append("• CNS 写入: ").append(tCns.getName()).append(" → [Statedef ").append(newStateNo).append("]\n");
+                                report.append("• CMD 写入: ").append(tCmd.getName()).append(" → [Command] + [State -1, ").append(cmdName).append("]\n");
+                                report.append("• AIR 写入: ").append(airWritten ? (tAir.getName() + " → [Begin Action " + newAnimNo + "]") : "无独立动作").append("\n");
+                                report.append("• SFF 注入: ").append(sffOk).append(" 帧 (冲突自动改号 ").append(sffRemapped).append(" 帧)\n");
+                                report.append("• SND 注入: ").append(sndOk).append(" 条绑定音效 (冲突自动改号 ").append(sndRemapped).append(" 条)\n");
+                                if (sffRemapped > 0) {
+                                    report.append("\n--- SFF 精灵改号对照 ---\n");
+                                    for (java.util.Map.Entry<String, int[]> rm : sffRemap.entrySet()) {
+                                        String nk = rm.getValue()[0] + "," + rm.getValue()[1];
+                                        if (!rm.getKey().equals(nk)) report.append("  [").append(rm.getKey()).append("] -> [").append(nk).append("]\n");
+                                    }
+                                }
+                                if (sndRemapped > 0) {
+                                    report.append("\n--- SND 音效改号对照 ---\n");
+                                    for (java.util.Map.Entry<String, int[]> rm : sndRemap.entrySet()) {
+                                        String nk = rm.getValue()[0] + "," + rm.getValue()[1];
+                                        if (!rm.getKey().equals(nk)) report.append("  [").append(rm.getKey()).append("] -> [").append(nk).append("]\n");
+                                    }
+                                }
+
+                                final String finalRep = report.toString();
+                                uiHandler.post(() -> {
+                                    final Dialog rd = new Dialog(getContext());
+                                    if (rd.getWindow() != null) rd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                                    ScrollView rsv = new ScrollView(getContext());
+                                    LinearLayout rbox = new LinearLayout(getContext()); rbox.setOrientation(LinearLayout.VERTICAL);
+                                    rbox.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
+                                    GradientDrawable rbg = new GradientDrawable(); rbg.setColor(Color.parseColor("#F8141A24")); rbg.setCornerRadius(12f*density); rbg.setStroke(2, Color.parseColor("#22C55E")); rbox.setBackground(rbg);
+                                    rbox.addView(createSubTitle(L("✅ 技能全自动移植成功")));
+                                    TextView rtv = new TextView(getContext());
+                                    rtv.setText(finalRep); rtv.setTypeface(Typeface.MONOSPACE); rtv.setTextSize(10.8f); rtv.setTextColor(Color.parseColor("#86EFAC")); rtv.setTextIsSelectable(true);
+                                    rbox.addView(rtv);
+                                    Button bDone = createButton(L("太棒了，关闭"), "#16A34A");
+                                    LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, -2); bp.setMargins(0, (int)(10*density), 0, 0);
+                                    bDone.setOnClickListener(cv2 -> rd.dismiss());
+                                    rbox.addView(bDone, bp);
+                                    rsv.addView(rbox);
+                                    int sw2 = getContext().getResources().getDisplayMetrics().widthPixels;
+                                    rd.setContentView(rsv, new ViewGroup.LayoutParams((int)(sw2 * 0.88f), -2));
+                                    rd.show();
                                 });
-                                bDone.setOnClickListener(cv2 -> rd.dismiss());
-                                rbtns.addView(bCopyNew, bp); rbtns.addView(bDone, bp);
-                                rbox.addView(rbtns);
-                                rsv.addView(rbox);
-                                int sw2 = getContext().getResources().getDisplayMetrics().widthPixels;
-                                rd.setContentView(rsv, new ViewGroup.LayoutParams((int)(sw2 * 0.88f), -2));
-                                rd.show();
-                            });
-                        } catch (Exception ex) {
-                            uiHandler.post(() -> Toast.makeText(getContext(), L("❌ 复刻注入失败: ") + ex.getMessage(), Toast.LENGTH_LONG).show());
-                        }
-                    }).start();
+                            } catch (Exception ex) {
+                                uiHandler.post(() -> Toast.makeText(getContext(), L("❌ 自动移植失败: ") + ex.getMessage(), Toast.LENGTH_LONG).show());
+                            }
+                        }).start();
+                    });
+                    cbox.addView(bExecClone, ep);
+                    csv.addView(cbox);
+                    int swCfg = getContext().getResources().getDisplayMetrics().widthPixels;
+                    cfgD.setContentView(csv, new ViewGroup.LayoutParams((int)(swCfg * 0.88f), -2));
+                    cfgD.show();
                 });
             });
+
             cloneRow.addView(bCloneCode, crp); cloneRow.addView(bCloneFull, crp);
             dbox.addView(cloneRow);
 
@@ -8595,13 +8856,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         String error;
     }
 
-    private static final String PREF_AI_POOLS = "ikemen_ai_pools_v1";
-    private static final String PREF_AI_ACTIVE_POOL = "ikemen_ai_active_pool_v1";
-    private static final String PREF_AI_ACTIVE_MODEL = "ikemen_ai_active_model_v1";
+    private interface AiStreamCallback { void onDelta(String deltaText); }
+
+    private static final String PREF_AI_POOLS = "ikemen_ai_pools_v2";
+    private static final String PREF_AI_ACTIVE_POOL = "ikemen_ai_active_pool_v2";
+    private static final String PREF_AI_ACTIVE_MODEL = "ikemen_ai_active_model_v2";
     private static final String PREF_AI_SYS_PROMPT = "ikemen_ai_sys_prompt_v1";
     private static final String PREF_AI_TEMP = "ikemen_ai_temp_v1";
     private static final String PREF_AI_MAX_TOKENS = "ikemen_ai_max_tokens_v1";
     private static final String PREF_AI_CTX_TURNS = "ikemen_ai_ctx_turns_v1";
+    private static final String PREF_AI_STREAM = "ikemen_ai_stream_v1";
 
     private List<AiPoolConfig> loadAiPools() {
         List<AiPoolConfig> list = new ArrayList<>();
@@ -8637,11 +8901,22 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             } catch (Exception ignored) {}
         }
         if (list.isEmpty()) {
-            // 默认预填可免费测试对话的主池 (Pollinations.ai 免Key OpenAI兼容端点)
+            // 默认预填双免费测试节点的主池：优先 LLM7.io (免Key/无单次402限制) + Pollinations 备用，自动故障切换
             AiPoolConfig primary = new AiPoolConfig();
             primary.id = "pool_primary";
-            primary.name = L("主池 · 免费测试 (Pollinations)");
+            primary.name = L("主池 · 免费测试 (LLM7 + Pollinations)");
             primary.isPrimary = true;
+
+            AiEndpointConfig epLlm7 = new AiEndpointConfig();
+            epLlm7.id = "ep_llm7";
+            epLlm7.name = "LLM7.io Free (OpenAI)";
+            epLlm7.protocol = "openai";
+            epLlm7.baseUrl = "https://" + "api.llm7.io/v1";
+            epLlm7.keys.add("unused");
+            epLlm7.models.add("default");
+            epLlm7.models.add("gpt-4o-mini-2024-07-18");
+            epLlm7.models.add("mistral-small-2503");
+            primary.endpoints.add(epLlm7);
 
             AiEndpointConfig epFree = new AiEndpointConfig();
             epFree.id = "ep_pollinations";
@@ -8652,7 +8927,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             epFree.models.add("openai");
             epFree.models.add("mistral");
             epFree.models.add("searchgpt");
-            epFree.models.add("llama");
             primary.endpoints.add(epFree);
             list.add(primary);
 
@@ -8847,7 +9121,91 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         return out;
     }
 
-    private String callSingleAiEndpoint(AiEndpointConfig ep, String apiKey, String model, List<AiChatMessage> history, String sysPrompt, double temp, int maxTokens) throws Exception {
+        private String aiHttpStreamRequest(String urlStr, java.util.Map<String, String> headers, String jsonBody, String proto, AiStreamCallback cb) throws Exception {
+        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(urlStr).openConnection();
+        conn.setRequestMethod("POST");
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(60000);
+        conn.setRequestProperty("Accept", "text/event-stream, application/json");
+        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+        conn.setRequestProperty("User-Agent", "IkemenDroid-AIStudio/1.0");
+        if (headers != null) {
+            for (java.util.Map.Entry<String, String> h : headers.entrySet()) {
+                if (h.getValue() != null && !h.getValue().isEmpty()) conn.setRequestProperty(h.getKey(), h.getValue());
+            }
+        }
+        conn.setDoOutput(true);
+        try (java.io.OutputStream os = conn.getOutputStream()) { os.write(jsonBody.getBytes("UTF-8")); }
+        int code = conn.getResponseCode();
+        InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
+        if (is == null) { conn.disconnect(); throw new Exception("HTTP " + code); }
+        BufferedReader br = new BufferedReader(new InputStreamReader(is, "UTF-8"));
+        if (code < 200 || code >= 300) {
+            StringBuilder err = new StringBuilder();
+            String l; while ((l = br.readLine()) != null) err.append(l);
+            br.close(); conn.disconnect();
+            throw new Exception("HTTP " + code + ": " + err.toString());
+        }
+        StringBuilder fullOut = new StringBuilder();
+        StringBuilder rawFallback = new StringBuilder();
+        String line;
+        while ((line = br.readLine()) != null) {
+            rawFallback.append(line).append("\n");
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
+            if (trimmed.startsWith("data:")) trimmed = trimmed.substring(5).trim();
+            if (trimmed.equals("[DONE]") || !trimmed.startsWith("{")) continue;
+            try {
+                JSONObject jo = new JSONObject(trimmed);
+                String delta = "";
+                if ("gemini".equals(proto)) {
+                    org.json.JSONArray cands = jo.optJSONArray("candidates");
+                    if (cands != null && cands.length() > 0) {
+                        JSONObject cont = cands.getJSONObject(0).optJSONObject("content");
+                        if (cont != null) {
+                            org.json.JSONArray parts = cont.optJSONArray("parts");
+                            if (parts != null) for (int i = 0; i < parts.length(); i++) delta += parts.getJSONObject(i).optString("text", "");
+                        }
+                    }
+                } else if ("claude".equals(proto)) {
+                    JSONObject d = jo.optJSONObject("delta");
+                    if (d != null) delta = d.optString("text", "");
+                } else if ("ollama".equals(proto)) {
+                    JSONObject m = jo.optJSONObject("message");
+                    if (m != null) delta = m.optString("content", "");
+                } else if ("cohere".equals(proto)) {
+                    JSONObject d = jo.optJSONObject("delta");
+                    if (d != null && d.optJSONObject("message") != null && d.optJSONObject("message").optJSONObject("content") != null) {
+                        delta = d.optJSONObject("message").optJSONObject("content").optString("text", "");
+                    }
+                } else {
+                    org.json.JSONArray ch = jo.optJSONArray("choices");
+                    if (ch != null && ch.length() > 0) {
+                        JSONObject c0 = ch.getJSONObject(0);
+                        JSONObject d = c0.optJSONObject("delta");
+                        if (d != null) delta = d.optString("content", "");
+                        else if (c0.optJSONObject("message") != null) delta = c0.optJSONObject("message").optString("content", "");
+                    }
+                }
+                if (delta != null && !delta.isEmpty()) {
+                    fullOut.append(delta);
+                    if (cb != null) cb.onDelta(delta);
+                }
+            } catch (Exception ignored) {}
+        }
+        br.close();
+        conn.disconnect();
+        if (fullOut.length() > 0) return fullOut.toString().trim();
+        // 若接口忽略 stream=true 返回纯文本，兜底返回
+        String rawStr = rawFallback.toString().trim();
+        if (!rawStr.isEmpty() && !rawStr.startsWith("{")) {
+            if (cb != null) cb.onDelta(rawStr);
+            return rawStr;
+        }
+        throw new Exception("流式接口返回空内容");
+    }
+
+    private String callSingleAiEndpoint(AiEndpointConfig ep, String apiKey, String model, List<AiChatMessage> history, String sysPrompt, double temp, int maxTokens, boolean useStream, AiStreamCallback streamCb) throws Exception {
         String base = ep.baseUrl == null ? "" : ep.baseUrl.trim();
         while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
         java.util.Map<String, String> hdrs = new java.util.HashMap<>();
@@ -8855,10 +9213,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         String proto = ep.protocol == null ? "openai" : ep.protocol.toLowerCase();
 
         if ("gemini".equals(proto)) {
+            String suffix = useStream ? ":streamGenerateContent?alt=sse" : ":generateContent";
             String url = base.contains("/v1")
-                ? (base + "/models/" + model + ":generateContent")
-                : (base + "/v1beta/models/" + model + ":generateContent");
-            if (apiKey != null && !apiKey.isEmpty()) url += "?key=" + java.net.URLEncoder.encode(apiKey, "UTF-8");
+                ? (base + "/models/" + model + suffix)
+                : (base + "/v1beta/models/" + model + suffix);
+            if (apiKey != null && !apiKey.isEmpty()) url += (url.contains("?") ? "&key=" : "?key=") + java.net.URLEncoder.encode(apiKey, "UTF-8");
             JSONObject body = new JSONObject();
             if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
                 JSONObject si = new JSONObject();
@@ -8880,6 +9239,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             if (maxTokens > 0) gcfg.put("maxOutputTokens", maxTokens);
             body.put("generationConfig", gcfg);
 
+            if (useStream) return aiHttpStreamRequest(url, hdrs, body.toString(), proto, streamCb);
             String resp = aiHttpRequest(url, "POST", hdrs, body.toString(), code);
             if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
             JSONObject jo = new JSONObject(resp);
@@ -8904,6 +9264,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             body.put("model", model);
             body.put("max_tokens", maxTokens > 0 ? maxTokens : 2048);
             body.put("temperature", temp);
+            if (useStream) body.put("stream", true);
             if (sysPrompt != null && !sysPrompt.trim().isEmpty()) body.put("system", sysPrompt);
             org.json.JSONArray msgs = new org.json.JSONArray();
             for (AiChatMessage m : history) {
@@ -8911,6 +9272,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             }
             body.put("messages", msgs);
 
+            if (useStream) return aiHttpStreamRequest(url, hdrs, body.toString(), proto, streamCb);
             String resp = aiHttpRequest(url, "POST", hdrs, body.toString(), code);
             if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
             JSONObject jo = new JSONObject(resp);
@@ -8926,13 +9288,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             if (apiKey != null && !apiKey.isEmpty()) hdrs.put("Authorization", "Bearer " + apiKey);
             JSONObject body = new JSONObject();
             body.put("model", model);
-            body.put("stream", false);
+            body.put("stream", useStream);
             org.json.JSONArray msgs = new org.json.JSONArray();
             if (sysPrompt != null && !sysPrompt.trim().isEmpty()) msgs.put(new JSONObject().put("role", "system").put("content", sysPrompt));
             for (AiChatMessage m : history) msgs.put(new JSONObject().put("role", m.role).put("content", m.content));
             body.put("messages", msgs);
             body.put("options", new JSONObject().put("temperature", temp));
 
+            if (useStream) return aiHttpStreamRequest(url, hdrs, body.toString(), proto, streamCb);
             String resp = aiHttpRequest(url, "POST", hdrs, body.toString(), code);
             if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
             JSONObject jo = new JSONObject(resp);
@@ -8945,11 +9308,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             JSONObject body = new JSONObject();
             body.put("model", model);
             body.put("temperature", temp);
+            if (useStream) body.put("stream", true);
             org.json.JSONArray msgs = new org.json.JSONArray();
             if (sysPrompt != null && !sysPrompt.trim().isEmpty()) msgs.put(new JSONObject().put("role", "system").put("content", sysPrompt));
             for (AiChatMessage m : history) msgs.put(new JSONObject().put("role", m.role).put("content", m.content));
             body.put("messages", msgs);
 
+            if (useStream) return aiHttpStreamRequest(url, hdrs, body.toString(), proto, streamCb);
             String resp = aiHttpRequest(url, "POST", hdrs, body.toString(), code);
             if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
             JSONObject jo = new JSONObject(resp);
@@ -8963,7 +9328,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             }
             throw new Exception("Cohere 返回空内容");
         } else {
-            // openai & azure & pollinations 兼容协议
+            // openai & azure & llm7 & pollinations 兼容协议
             String url;
             if ("azure".equals(proto)) {
                 url = base.contains("/chat/completions") ? base : (base + "/openai/deployments/" + model + "/chat/completions?api-version=2024-06-01");
@@ -8980,12 +9345,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             JSONObject body = new JSONObject();
             body.put("model", model);
             body.put("temperature", temp);
+            if (useStream) body.put("stream", true);
             if (maxTokens > 0) body.put("max_tokens", maxTokens);
             org.json.JSONArray msgs = new org.json.JSONArray();
             if (sysPrompt != null && !sysPrompt.trim().isEmpty()) msgs.put(new JSONObject().put("role", "system").put("content", sysPrompt));
             for (AiChatMessage m : history) msgs.put(new JSONObject().put("role", m.role).put("content", m.content));
             body.put("messages", msgs);
 
+            if (useStream) return aiHttpStreamRequest(url, hdrs, body.toString(), proto, streamCb);
             String resp = aiHttpRequest(url, "POST", hdrs, body.toString(), code);
             if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
             String trim = resp.trim();
@@ -9006,7 +9373,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         }
     }
 
-    private AiCallResult callAiWithFailover(List<AiPoolConfig> pools, String preferredPoolId, String preferredModel, List<AiChatMessage> history, String sysPrompt, double temp, int maxTokens) {
+    private AiCallResult callAiWithFailover(List<AiPoolConfig> pools, String preferredPoolId, String preferredModel, List<AiChatMessage> history, String sysPrompt, double temp, int maxTokens, boolean useStream, AiStreamCallback streamCb) {
+
         AiCallResult res = new AiCallResult();
         StringBuilder trace = new StringBuilder();
 
@@ -9044,7 +9412,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     for (int mi = 0; mi < modelOrder.size(); mi++) {
                         String tryModel = modelOrder.get(mi);
                         try {
-                            String reply = callSingleAiEndpoint(ep, key, tryModel, history, sysPrompt, temp, maxTokens);
+                            String reply = callSingleAiEndpoint(ep, key, tryModel, history, sysPrompt, temp, maxTokens, useStream, streamCb);
                             res.ok = true;
                             res.reply = reply;
                             res.usedInfo = pool.name + " / " + ep.name + " [" + ep.protocol + "] / " + tryModel + (keyOrder.size() > 1 ? " (Key#" + (ki + 1) + ")" : "");
@@ -9080,7 +9448,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         final List<AiPoolConfig> pools = loadAiPools();
         final List<AiChatMessage> messages = new ArrayList<>();
         final String[] activePoolId = { prefs.getString(PREF_AI_ACTIVE_POOL, pools.get(0).id) };
-        final String[] activeModel = { prefs.getString(PREF_AI_ACTIVE_MODEL, "openai") };
+        final String[] activeModel = { prefs.getString(PREF_AI_ACTIVE_MODEL, "default") };
         final boolean[] isSending = {false};
 
         // 顶部工具条（选池 / 选模型 / 池管理 / 对话参数 / 清空）
@@ -9268,18 +9636,48 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             final String sysPrompt = prefs.getString(PREF_AI_SYS_PROMPT, L("你是专业的 MUGEN 与 Ikemen GO 开发助手，请使用清晰简洁的中文回答。"));
             final double temp = prefs.getFloat(PREF_AI_TEMP, 0.7f);
             final int maxTok = prefs.getInt(PREF_AI_MAX_TOKENS, 2048);
+            final boolean useStream = prefs.getBoolean(PREF_AI_STREAM, true);
+
+            final AiChatMessage streamingMsg = useStream ? new AiChatMessage("assistant", L("⏳ 正在连接流式输出..."), "") : null;
+            if (streamingMsg != null) {
+                messages.add(streamingMsg);
+                renderMessages.run();
+            }
+            final StringBuilder liveBuf = new StringBuilder();
+            final long[] lastUiTick = {0};
 
             new Thread(() -> {
-                final AiCallResult res = callAiWithFailover(pools, activePoolId[0], activeModel[0], ctxSlice, sysPrompt, temp, maxTok);
+                AiStreamCallback cb = useStream ? delta -> {
+                    liveBuf.append(delta);
+                    long now = System.currentTimeMillis();
+                    if (now - lastUiTick[0] >= 80) {
+                        lastUiTick[0] = now;
+                        final String snap = liveBuf.toString();
+                        uiHandler.post(() -> {
+                            if (streamingMsg != null) {
+                                streamingMsg.content = snap;
+                                renderMessages.run();
+                            }
+                        });
+                    }
+                } : null;
+
+                final AiCallResult res = callAiWithFailover(pools, activePoolId[0], activeModel[0], ctxSlice, sysPrompt, temp, maxTok, useStream, cb);
                 uiHandler.post(() -> {
                     isSending[0] = false;
                     btnSend.setText(L("🚀 发送"));
                     btnSend.setBackgroundColor(Color.parseColor("#16A34A"));
-                    if (res.ok) {
-                        String meta = "⚡ " + res.usedInfo + (res.trace != null && !res.trace.isEmpty() ? "\n↪️ " + L("故障自动切换记录:\n") + res.trace : "");
-                        messages.add(new AiChatMessage("assistant", res.reply, meta));
+                    String finalContent = res.ok
+                        ? res.reply
+                        : ("❌ " + res.error + (res.trace != null && !res.trace.isEmpty() ? "\n\n" + res.trace : ""));
+                    String finalMeta = res.ok
+                        ? ("⚡ " + res.usedInfo + (useStream ? " [Stream]" : "") + (res.trace != null && !res.trace.isEmpty() ? "\n↪️ " + L("故障自动切换记录:\n") + res.trace : ""))
+                        : L("全部通道均失败");
+                    if (streamingMsg != null) {
+                        streamingMsg.content = finalContent;
+                        streamingMsg.meta = finalMeta;
                     } else {
-                        messages.add(new AiChatMessage("assistant", "❌ " + res.error + (res.trace != null && !res.trace.isEmpty() ? "\n\n" + res.trace : ""), L("全部通道均失败")));
+                        messages.add(new AiChatMessage("assistant", finalContent, finalMeta));
                     }
                     renderMessages.run();
                 });
@@ -9383,11 +9781,20 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             final EditText eTemp = createInput(L("温度 Temperature (0.0~2.0)"), String.valueOf(prefs.getFloat(PREF_AI_TEMP, 0.7f)));
             final EditText eMaxT = createInput(L("最大输出 Token (如 2048)"), String.valueOf(prefs.getInt(PREF_AI_MAX_TOKENS, 2048)));
             final EditText eCtx = createInput(L("上下文记忆轮数 (如 8)"), String.valueOf(prefs.getInt(PREF_AI_CTX_TURNS, 8)));
+            final boolean[] streamFlag = { prefs.getBoolean(PREF_AI_STREAM, true) };
+            final Button bStreamToggle = createButton(streamFlag[0] ? L("⚡ 流式输出 (SSE打字机): 开启") : L("⚡ 流式输出 (SSE打字机): 关闭"), streamFlag[0] ? "#0284C7" : "#475569");
+            bStreamToggle.setOnClickListener(stv -> {
+                streamFlag[0] = !streamFlag[0];
+                bStreamToggle.setText(streamFlag[0] ? L("⚡ 流式输出 (SSE打字机): 开启") : L("⚡ 流式输出 (SSE打字机): 关闭"));
+                bStreamToggle.setBackgroundColor(Color.parseColor(streamFlag[0] ? "#0284C7" : "#475569"));
+            });
 
             box.addView(createSubTitle(L("系统提示词:"))); box.addView(eSys);
             box.addView(createSubTitle(L("温度 (Temperature):"))); box.addView(eTemp);
             box.addView(createSubTitle(L("最大输出长度 (Max Tokens):"))); box.addView(eMaxT);
             box.addView(createSubTitle(L("上下文轮数:"))); box.addView(eCtx);
+            LinearLayout.LayoutParams stp = new LinearLayout.LayoutParams(-1, -2); stp.setMargins(0, (int)(8*density), 0, 0);
+            box.addView(bStreamToggle, stp);
 
             Button bSave = createButton(L("💾 保存参数"), "#16A34A");
             LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2); sp.setMargins(0, (int)(10*density), 0, 0);
@@ -9401,6 +9808,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                      .putFloat(PREF_AI_TEMP, Math.max(0f, Math.min(2f, t)))
                      .putInt(PREF_AI_MAX_TOKENS, Math.max(64, mt))
                      .putInt(PREF_AI_CTX_TURNS, Math.max(1, Math.min(50, ct)))
+                     .putBoolean(PREF_AI_STREAM, streamFlag[0])
                      .apply();
                 Toast.makeText(getContext(), L("✅ 对话参数已保存"), Toast.LENGTH_SHORT).show();
                 d.dismiss();
@@ -9444,7 +9852,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 pools.clear();
                 pools.addAll(loadAiPools());
                 activePoolId[0] = pools.get(0).id;
-                activeModel[0] = "openai";
+                activeModel[0] = "default";
                 refreshHeaderUI.run();
                 md.dismiss();
                 openPoolManagerRef[0].run();
