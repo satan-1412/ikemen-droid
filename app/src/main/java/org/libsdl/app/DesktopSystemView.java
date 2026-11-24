@@ -549,6 +549,7 @@ public class DesktopSystemView extends Dialog {
         createDesktopIcon("clsn_editor", "⚔️", L("判定框工坊"));
         createDesktopIcon("char_editor", "🥷", L("角色编辑器"));
         createDesktopIcon("ikemen_dict", "📚", L("引擎词典"));
+        createDesktopIcon("ai_chat", "🤖", L("AI对话工坊"));
     }
 
     private void createDesktopIcon(final String id, String iconStr, String name) {
@@ -597,6 +598,7 @@ public class DesktopSystemView extends Dialog {
                             else if (id.equals("clsn_editor")) openAppWindow(L("⚔️ 判定框工坊 (打击/防御框)"), buildClsnEditorContent("", ""), null);
                             else if (id.equals("char_editor")) openCharacterEditorWindow();
                             else if (id.equals("ikemen_dict")) openAppWindow(L("📚 MUGEN/IK 全能词典"), buildDictionaryContent(), null);
+                            else if (id.equals("ai_chat")) openAppWindow(L("🤖 AI对话工坊"), buildAiChatContent(), null);
                             lastClickTime = 0; 
                         } else lastClickTime = clickTime;
                     }
@@ -629,6 +631,7 @@ public class DesktopSystemView extends Dialog {
         if (windowTitle.contains(L("色表")) || windowTitle.contains("ACT")) return "palette_editor";
         if (windowTitle.contains(L("词典")) || windowTitle.contains("MUGEN/IK")) return "ikemen_dict";
         if (windowTitle.contains(L("角色编辑器")) || windowTitle.contains("CharEditor")) return "char_editor";
+        if (windowTitle.contains(L("AI对话工坊")) || windowTitle.contains("AI")) return "ai_chat";
         if (windowTitle.contains("GIF")) return "gif_viewer";
         return "win_" + Math.abs(windowTitle.hashCode());
     }
@@ -6903,6 +6906,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         boolean dirty = false;
     }
 
+    private static class AirFrameSpec {
+        int group;
+        int item;
+        int offX;
+        int offY;
+        int ticks;
+        List<int[]> clsn1 = new ArrayList<>();
+        List<int[]> clsn2 = new ArrayList<>();
+    }
+
     private static class CharStateItem {
         int stateNo;
         String title = "";
@@ -6911,6 +6924,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         String physics = "";
         int anim = -1;
         int powerAdd = 0;
+        boolean hasInvul = false;
+        List<Integer> changeAnimTargets = new ArrayList<>();
         File sourceFile;
         String linkedCmd = "";
         String codePreview = "";
@@ -7015,7 +7030,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         final java.util.Map<String, String[]> cnsStatsMap = new java.util.LinkedHashMap<>();
         final List<CharCmdItem> cmdItems = new ArrayList<>();
         final List<CharStateItem> stateItems = new ArrayList<>();
-        final java.util.Map<Integer, List<int[]>> airActionFrames = new java.util.HashMap<>();
+        final java.util.Map<Integer, List<AirFrameSpec>> airActionFrames = new java.util.HashMap<>();
+        final java.util.Map<Integer, String> airActionRawText = new java.util.HashMap<>();
+        final List<GoEngineBridge.SffFrame> cachedSffFrames = new ArrayList<>();
+        final java.util.Map<String, GoEngineBridge.SffFrame> sffFrameLookup = new java.util.HashMap<>();
         final int[] activeTab = {0};
 
         // 顶部角色英雄卡片（头像 + 信息 + 核心保存操作）
@@ -7481,7 +7499,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             renderListOnly.run();
         };
 
-        // --- 技能详情 + SFF 动画实时预览 + 单技能伤害调整弹窗 ---
+        // --- 技能详情 + SFF 动作与判定框(攻/防/无敌)开关预览 + 完整代码与双模式技能复刻 ---
         openStateDetailRef[0] = (final CharStateItem st) -> {
             final Dialog sd = new Dialog(getContext());
             if (sd.getWindow() != null) sd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
@@ -7495,41 +7513,193 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             applyGlobalFontSettings(dTitle, 1.12f, true); dTitle.setTextColor(Color.WHITE); dbox.addView(dTitle);
 
             TextView dMeta = new TextView(getContext());
-            dMeta.setText("Type=" + st.type + " | MoveType=" + st.moveType + " | Anim=" + st.anim + (st.linkedCmd.isEmpty() ? "" : " | 🎯 " + st.linkedCmd) + (st.sourceFile != null ? "\n📄 " + st.sourceFile.getName() : ""));
+            dMeta.setText("Type=" + st.type + " | MoveType=" + st.moveType + " | Anim=" + st.anim + (st.hasInvul ? " | 🛡️NotHitBy" : "") + (st.linkedCmd.isEmpty() ? "" : " | 🎯 " + st.linkedCmd) + (st.sourceFile != null ? "\n📄 " + st.sourceFile.getName() : ""));
             applyGlobalFontSettings(dMeta, 0.8f, false); dMeta.setTextColor(Color.parseColor("#38BDF8")); dMeta.setPadding(0, (int)(3*density), 0, (int)(8*density));
             dbox.addView(dMeta);
 
             final boolean[] animPlaying = {false};
+            final boolean[] showBoxes = {true};
             final long[] animGen = {0};
             final int[] curAnimIdx = {0};
-            final List<int[]> framesToPlay = new ArrayList<>();
-            int targetAnim = (st.anim >= 0) ? st.anim : st.stateNo;
-            if (airActionFrames.containsKey(targetAnim)) {
-                framesToPlay.addAll(airActionFrames.get(targetAnim));
+            final List<AirFrameSpec> framesToPlay = new ArrayList<>();
+
+            // 多级兜底解析动作帧，确保全部状态都能预览动作与图片
+            int resolvedAnim = -1;
+            String previewSourceNote = "";
+            if (st.anim >= 0 && airActionFrames.containsKey(st.anim) && !airActionFrames.get(st.anim).isEmpty()) {
+                resolvedAnim = st.anim;
+                framesToPlay.addAll(airActionFrames.get(resolvedAnim));
+                previewSourceNote = L("AIR动作 ") + resolvedAnim;
             }
+            if (framesToPlay.isEmpty() && !st.changeAnimTargets.isEmpty()) {
+                for (int ca : st.changeAnimTargets) {
+                    if (airActionFrames.containsKey(ca) && !airActionFrames.get(ca).isEmpty()) {
+                        resolvedAnim = ca;
+                        framesToPlay.addAll(airActionFrames.get(ca));
+                        previewSourceNote = L("ChangeAnim 动作 ") + ca;
+                        break;
+                    }
+                }
+            }
+            if (framesToPlay.isEmpty() && airActionFrames.containsKey(st.stateNo) && !airActionFrames.get(st.stateNo).isEmpty()) {
+                resolvedAnim = st.stateNo;
+                framesToPlay.addAll(airActionFrames.get(st.stateNo));
+                previewSourceNote = L("同号AIR动作 ") + st.stateNo;
+            }
+            if (framesToPlay.isEmpty() && !cachedSffFrames.isEmpty()) {
+                int tryGroup = (st.anim >= 0) ? st.anim : st.stateNo;
+                for (GoEngineBridge.SffFrame sf : cachedSffFrames) {
+                    if (sf.group == tryGroup) {
+                        AirFrameSpec af = new AirFrameSpec(); af.group = sf.group; af.item = sf.item; af.ticks = 6;
+                        framesToPlay.add(af);
+                        if (framesToPlay.size() >= 30) break;
+                    }
+                }
+                if (!framesToPlay.isEmpty()) {
+                    resolvedAnim = tryGroup;
+                    previewSourceNote = L("SFF同组兜底 Group ") + tryGroup;
+                }
+            }
+            if (framesToPlay.isEmpty() && airActionFrames.containsKey(0) && !airActionFrames.get(0).isEmpty()) {
+                resolvedAnim = 0;
+                framesToPlay.addAll(airActionFrames.get(0));
+                previewSourceNote = L("默认站姿兜底 AIR 0");
+            }
+            if (framesToPlay.isEmpty() && !cachedSffFrames.isEmpty()) {
+                for (GoEngineBridge.SffFrame sf : cachedSffFrames) {
+                    if (sf.group == 0) {
+                        AirFrameSpec af = new AirFrameSpec(); af.group = sf.group; af.item = sf.item; af.ticks = 6;
+                        framesToPlay.add(af);
+                        if (framesToPlay.size() >= 12) break;
+                    }
+                }
+                if (framesToPlay.isEmpty()) {
+                    GoEngineBridge.SffFrame sf0 = cachedSffFrames.get(0);
+                    AirFrameSpec af = new AirFrameSpec(); af.group = sf0.group; af.item = sf0.item; af.ticks = 6;
+                    framesToPlay.add(af);
+                }
+                previewSourceNote = L("SFF精灵兜底预览");
+            }
+            final int finalResolvedAnim = resolvedAnim;
+            final String finalSourceNote = previewSourceNote;
+
             if (sffFileRef[0] != null && sffFileRef[0].exists() && !framesToPlay.isEmpty()) {
-                final ImageView animPreview = new ImageView(getContext());
-                animPreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                final Bitmap[] curBmpRef = {null};
+                final AirFrameSpec[] curSpecRef = {framesToPlay.get(0)};
+
+                final View animCanvas = new View(getContext()) {
+                    private final Paint pImg = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+                    private final Paint pAxis = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    private final Paint pAtkFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    private final Paint pAtkStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    private final Paint pDefFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    private final Paint pDefStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    private final Paint pInvFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    private final Paint pInvStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    private final Paint pLbl = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    {
+                        pAxis.setColor(Color.parseColor("#5594A3B8")); pAxis.setStrokeWidth(1.2f * density);
+                        pAtkFill.setColor(Color.parseColor("#44EF4444")); pAtkFill.setStyle(Paint.Style.FILL);
+                        pAtkStroke.setColor(Color.parseColor("#FFEF4444")); pAtkStroke.setStyle(Paint.Style.STROKE); pAtkStroke.setStrokeWidth(2f * density);
+                        pDefFill.setColor(Color.parseColor("#443B82F6")); pDefFill.setStyle(Paint.Style.FILL);
+                        pDefStroke.setColor(Color.parseColor("#FF38BDF8")); pDefStroke.setStyle(Paint.Style.STROKE); pDefStroke.setStrokeWidth(2f * density);
+                        pInvFill.setColor(Color.parseColor("#33FACC15")); pInvFill.setStyle(Paint.Style.FILL);
+                        pInvStroke.setColor(Color.parseColor("#FFFACC15")); pInvStroke.setStyle(Paint.Style.STROKE); pInvStroke.setStrokeWidth(2.2f * density);
+                        pInvStroke.setPathEffect(new android.graphics.DashPathEffect(new float[]{8f*density, 5f*density}, 0));
+                        pLbl.setColor(Color.parseColor("#FDE047")); pLbl.setTextSize(10.5f * density); pLbl.setFakeBoldText(true);
+                    }
+                    @Override protected void onDraw(Canvas canvas) {
+                        super.onDraw(canvas);
+                        int vw = getWidth(), vh = getHeight();
+                        if (vw <= 0 || vh <= 0) return;
+                        Bitmap bmp = curBmpRef[0];
+                        AirFrameSpec sp = curSpecRef[0];
+                        if (bmp == null) return;
+
+                        GoEngineBridge.SffFrame meta = sffFrameLookup.get(sp.group + "," + sp.item);
+                        int ax = (meta != null) ? meta.x : (bmp.getWidth() / 2);
+                        int ay = (meta != null) ? meta.y : bmp.getHeight();
+                        float imgL = -ax + sp.offX;
+                        float imgT = -ay + sp.offY;
+                        float imgR = imgL + bmp.getWidth();
+                        float imgB = imgT + bmp.getHeight();
+
+                        float minX = imgL, maxX = imgR, minY = imgT, maxY = imgB;
+                        if (showBoxes[0]) {
+                            for (int[] b : sp.clsn1) { minX = Math.min(minX, Math.min(b[0], b[2])); maxX = Math.max(maxX, Math.max(b[0], b[2])); minY = Math.min(minY, Math.min(b[1], b[3])); maxY = Math.max(maxY, Math.max(b[1], b[3])); }
+                            for (int[] b : sp.clsn2) { minX = Math.min(minX, Math.min(b[0], b[2])); maxX = Math.max(maxX, Math.max(b[0], b[2])); minY = Math.min(minY, Math.min(b[1], b[3])); maxY = Math.max(maxY, Math.max(b[1], b[3])); }
+                        }
+                        float bw = Math.max(16f, maxX - minX);
+                        float bh = Math.max(16f, maxY - minY);
+                        float pad = 12f * density;
+                        float scale = Math.min((vw - pad * 2f) / bw, (vh - pad * 2f) / bh);
+                        if (scale > 4f) scale = 4f;
+                        float ox = (vw - bw * scale) * 0.5f - minX * scale;
+                        float oy = (vh - bh * scale) * 0.5f - minY * scale;
+
+                        if (showBoxes[0]) {
+                            canvas.drawLine(0, oy, vw, oy, pAxis);
+                            canvas.drawLine(ox, 0, ox, vh, pAxis);
+                        }
+
+                        android.graphics.RectF dstImg = new android.graphics.RectF(ox + imgL * scale, oy + imgT * scale, ox + imgR * scale, oy + imgB * scale);
+                        canvas.drawBitmap(bmp, null, dstImg, pImg);
+
+                        if (showBoxes[0]) {
+                            // 蓝色防御框 Clsn2
+                            for (int[] b : sp.clsn2) {
+                                float l = ox + Math.min(b[0], b[2]) * scale, t = oy + Math.min(b[1], b[3]) * scale;
+                                float r = ox + Math.max(b[0], b[2]) * scale, bt = oy + Math.max(b[1], b[3]) * scale;
+                                canvas.drawRect(l, t, r, bt, pDefFill);
+                                canvas.drawRect(l, t, r, bt, pDefStroke);
+                            }
+                            // 红色攻击框 Clsn1
+                            for (int[] b : sp.clsn1) {
+                                float l = ox + Math.min(b[0], b[2]) * scale, t = oy + Math.min(b[1], b[3]) * scale;
+                                float r = ox + Math.max(b[0], b[2]) * scale, bt = oy + Math.max(b[1], b[3]) * scale;
+                                canvas.drawRect(l, t, r, bt, pAtkFill);
+                                canvas.drawRect(l, t, r, bt, pAtkStroke);
+                            }
+                            // 金色无敌框 (当状态含 NotHitBy 或该帧无防御框 Clsn2 时标识无敌受击区)
+                            boolean isFrameInvul = st.hasInvul || sp.clsn2.isEmpty();
+                            if (isFrameInvul) {
+                                canvas.drawRect(dstImg.left, dstImg.top, dstImg.right, dstImg.bottom, pInvFill);
+                                canvas.drawRect(dstImg.left, dstImg.top, dstImg.right, dstImg.bottom, pInvStroke);
+                                canvas.drawText(st.hasInvul ? L("🛡️ 无敌态 (NotHitBy)") : L("🛡️ 无防御框 (无敌帧)"), 8f * density, 16f * density, pLbl);
+                            }
+                        }
+                    }
+                };
                 GradientDrawable abg = new GradientDrawable(); abg.setColor(Color.parseColor("#0B0F17")); abg.setCornerRadius(8f*density); abg.setStroke(1, Color.parseColor("#334155"));
-                animPreview.setBackground(abg);
-                dbox.addView(animPreview, new LinearLayout.LayoutParams(-1, (int)(150*density)));
+                animCanvas.setBackground(abg);
+                dbox.addView(animCanvas, new LinearLayout.LayoutParams(-1, (int)(185*density)));
 
                 final TextView tvFrameStat = new TextView(getContext());
                 applyGlobalFontSettings(tvFrameStat, 0.78f, false); tvFrameStat.setTextColor(Color.parseColor("#94A3B8")); tvFrameStat.setGravity(Gravity.CENTER);
                 dbox.addView(tvFrameStat);
 
+                Runnable updateFrameStatText = () -> {
+                    AirFrameSpec sp = curSpecRef[0];
+                    String boxInfo = showBoxes[0]
+                        ? (" | 🔴攻:" + sp.clsn1.size() + " 🔵防:" + sp.clsn2.size() + ((st.hasInvul || sp.clsn2.isEmpty()) ? " 🟡无敌" : ""))
+                        : L(" | 纯图模式");
+                    tvFrameStat.setText(finalSourceNote + " | " + (curAnimIdx[0]+1) + "/" + framesToPlay.size() + " | SFF[" + sp.group + "," + sp.item + "]" + boxInfo);
+                };
+
                 Runnable showOneFrame = () -> {
                     if (framesToPlay.isEmpty()) return;
                     if (curAnimIdx[0] < 0) curAnimIdx[0] = framesToPlay.size() - 1;
                     if (curAnimIdx[0] >= framesToPlay.size()) curAnimIdx[0] = 0;
-                    final int[] fSpec = framesToPlay.get(curAnimIdx[0]);
+                    final AirFrameSpec fSpec = framesToPlay.get(curAnimIdx[0]);
                     new Thread(() -> {
                         try {
-                            byte[] raw = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), fSpec[0], fSpec[1], "");
+                            byte[] raw = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), fSpec.group, fSpec.item, "");
                             final Bitmap bmp = (raw != null && raw.length > 0) ? BitmapFactory.decodeByteArray(raw, 0, raw.length) : null;
                             uiHandler.post(() -> {
-                                animPreview.setImageBitmap(bmp);
-                                tvFrameStat.setText(L("动作 ") + targetAnim + " | " + (curAnimIdx[0]+1) + "/" + framesToPlay.size() + " | SFF[" + fSpec[0] + "," + fSpec[1] + "]");
+                                curSpecRef[0] = fSpec;
+                                curBmpRef[0] = bmp;
+                                animCanvas.invalidate();
+                                updateFrameStatText.run();
                             });
                         } catch (Throwable ignored) {}
                     }).start();
@@ -7538,28 +7708,37 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
                 LinearLayout pBar = new LinearLayout(getContext()); pBar.setOrientation(LinearLayout.HORIZONTAL); pBar.setGravity(Gravity.CENTER);
                 Button bPrev = createButton("⏪", "#334155");
-                Button bPlay = createButton(L("▶️ 播放招式"), "#0284C7");
+                Button bPlay = createButton(L("▶️ 播放"), "#0284C7");
                 Button bNext = createButton("⏭️", "#334155");
-                LinearLayout.LayoutParams pbp = new LinearLayout.LayoutParams(0, -2, 1f); pbp.setMargins((int)(3*density), (int)(5*density), (int)(3*density), (int)(8*density));
-                bPrev.setOnClickListener(v -> { animPlaying[0] = false; animGen[0]++; bPlay.setText(L("▶️ 播放招式")); curAnimIdx[0]--; showOneFrame.run(); });
-                bNext.setOnClickListener(v -> { animPlaying[0] = false; animGen[0]++; bPlay.setText(L("▶️ 播放招式")); curAnimIdx[0]++; showOneFrame.run(); });
+                final Button bToggleBox = createButton(L("🔲 框:开"), "#0F766E");
+                LinearLayout.LayoutParams pbp = new LinearLayout.LayoutParams(0, -2, 1f); pbp.setMargins((int)(2*density), (int)(5*density), (int)(2*density), (int)(8*density));
+                bPrev.setOnClickListener(v -> { animPlaying[0] = false; animGen[0]++; bPlay.setText(L("▶️ 播放")); curAnimIdx[0]--; showOneFrame.run(); });
+                bNext.setOnClickListener(v -> { animPlaying[0] = false; animGen[0]++; bPlay.setText(L("▶️ 播放")); curAnimIdx[0]++; showOneFrame.run(); });
+                bToggleBox.setOnClickListener(v -> {
+                    showBoxes[0] = !showBoxes[0];
+                    bToggleBox.setText(showBoxes[0] ? L("🔲 框:开") : L("🖼️ 纯图"));
+                    bToggleBox.setBackgroundColor(Color.parseColor(showBoxes[0] ? "#0F766E" : "#475569"));
+                    animCanvas.invalidate();
+                    updateFrameStatText.run();
+                });
                 bPlay.setOnClickListener(v -> {
                     animPlaying[0] = !animPlaying[0];
-                    bPlay.setText(animPlaying[0] ? L("⏸️ 暂停") : L("▶️ 播放招式"));
+                    bPlay.setText(animPlaying[0] ? L("⏸️ 暂停") : L("▶️ 播放"));
                     if (animPlaying[0]) {
                         final long g = ++animGen[0];
                         new Thread(() -> {
                             while (animPlaying[0] && g == animGen[0]) {
-                                int[] sp = framesToPlay.get(curAnimIdx[0]);
-                                long waitMs = Math.max(40, Math.min(400, (sp[2] <= 0 ? 5 : sp[2]) * 16L));
+                                final AirFrameSpec sp = framesToPlay.get(curAnimIdx[0]);
+                                long waitMs = Math.max(40, Math.min(400, (sp.ticks <= 0 ? 5 : sp.ticks) * 16L));
                                 byte[] raw = null;
-                                try { raw = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), sp[0], sp[1], ""); } catch (Throwable ignored) {}
+                                try { raw = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), sp.group, sp.item, ""); } catch (Throwable ignored) {}
                                 final Bitmap bmp = (raw != null && raw.length > 0) ? BitmapFactory.decodeByteArray(raw, 0, raw.length) : null;
-                                final int idxNow = curAnimIdx[0];
                                 uiHandler.post(() -> {
                                     if (animPlaying[0] && g == animGen[0]) {
-                                        animPreview.setImageBitmap(bmp);
-                                        tvFrameStat.setText(L("动作 ") + targetAnim + " | " + (idxNow+1) + "/" + framesToPlay.size() + " | SFF[" + sp[0] + "," + sp[1] + "]");
+                                        curSpecRef[0] = sp;
+                                        curBmpRef[0] = bmp;
+                                        animCanvas.invalidate();
+                                        updateFrameStatText.run();
                                     }
                                 });
                                 try { Thread.sleep(waitMs); } catch (InterruptedException ignored) {}
@@ -7570,7 +7749,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         animGen[0]++;
                     }
                 });
-                pBar.addView(bPrev, pbp); pBar.addView(bPlay, pbp); pBar.addView(bNext, pbp);
+                pBar.addView(bPrev, pbp); pBar.addView(bPlay, pbp); pBar.addView(bNext, pbp); pBar.addView(bToggleBox, pbp);
                 dbox.addView(pBar);
             }
 
@@ -7617,10 +7796,196 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 }
             }
 
-            if (!st.codePreview.isEmpty()) {
-                dbox.addView(createSubTitle(L("📝 状态源码预览:")));
+            // 组装完整复刻代码（完整 CNS + 关联 AIR + CMD 触发参考）
+            final StringBuilder fullBundle = new StringBuilder();
+            fullBundle.append("; ================= CNS/ST 状态完整代码 =================\n");
+            fullBundle.append(st.codePreview);
+            if (finalResolvedAnim >= 0 && airActionRawText.containsKey(finalResolvedAnim)) {
+                fullBundle.append("\n\n; ================= AIR 动作完整代码 (Action ").append(finalResolvedAnim).append(") =================\n");
+                fullBundle.append(airActionRawText.get(finalResolvedAnim));
+            }
+            if (!st.linkedCmd.isEmpty()) {
+                for (CharCmdItem ci : cmdItems) {
+                    if (ci.name.equalsIgnoreCase(st.linkedCmd)) {
+                        fullBundle.append("\n\n; ================= CMD 指令触发参考 =================\n")
+                                  .append("[Command]\nname = \"").append(ci.name).append("\"\ncommand = ").append(ci.rawCommand).append("\ntime = 15\n")
+                                  .append("\n[State -1, ").append(ci.name).append("]\ntype = ChangeState\nvalue = ").append(st.stateNo)
+                                  .append("\ntriggerall = command = \"").append(ci.name).append("\"\ntrigger1 = ctrl");
+                        break;
+                    }
+                }
+            }
+            final String completeSkillCode = fullBundle.toString().trim();
+
+            // 双模式复刻技能操作区
+            dbox.addView(createSubTitle(L("🧬 复刻技能 (一键移植到其他角色):")));
+            LinearLayout cloneRow = new LinearLayout(getContext()); cloneRow.setOrientation(LinearLayout.HORIZONTAL);
+            Button bCloneCode = createButton(L("📋 仅复制完整代码"), "#2563EB");
+            Button bCloneFull = createButton(L("🚀 复刻代码+注入目标SFF"), "#7C3AED");
+            LinearLayout.LayoutParams crp = new LinearLayout.LayoutParams(0, -2, 1f); crp.setMargins((int)(2*density), (int)(3*density), (int)(2*density), (int)(6*density));
+
+            bCloneCode.setOnClickListener(v -> {
+                android.content.ClipboardManager cm = (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("SkillCode", completeSkillCode));
+                Toast.makeText(getContext(), L("✅ 已复制完整技能代码 (CNS + AIR + CMD)"), Toast.LENGTH_SHORT).show();
+            });
+
+            bCloneFull.setOnClickListener(v -> {
+                if (sffFileRef[0] == null || !sffFileRef[0].exists()) {
+                    Toast.makeText(getContext(), L("⚠️ 当前角色缺少 SFF 文件，无法导出图片帧"), Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                if (framesToPlay.isEmpty()) {
+                    Toast.makeText(getContext(), L("⚠️ 当前状态未解析到可移植的精灵帧"), Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                showWin10FilePicker(L("选择目标角色的 .sff 文件 (将自动检测冲突并注入)"), 4, null, null, targetSff -> {
+                    if (targetSff == null || !targetSff.exists() || !targetSff.getName().toLowerCase().endsWith(".sff")) {
+                        Toast.makeText(getContext(), L("❌ 请选择有效的目标 .sff 文件"), Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    Toast.makeText(getContext(), L("⏳ 正在扫描目标 SFF 编号并注入技能精灵帧..."), Toast.LENGTH_SHORT).show();
+                    new Thread(() -> {
+                        try {
+                            File bak = new File(targetSff.getAbsolutePath() + ".bak");
+                            if (!bak.exists()) copyFileToSandbox(targetSff, bak);
+
+                            List<GoEngineBridge.SffFrame> targetFrames = GoEngineBridge.getAllFrames(targetSff.getAbsolutePath());
+                            java.util.HashSet<String> occupied = new java.util.HashSet<>();
+                            int maxGroup = 0;
+                            for (GoEngineBridge.SffFrame tf : targetFrames) {
+                                occupied.add(tf.group + "," + tf.item);
+                                if (tf.group > maxGroup && tf.group < 9000) maxGroup = tf.group;
+                            }
+
+                            // 收集本技能去重后的 (group, item)
+                            java.util.LinkedHashMap<String, int[]> uniquePairs = new java.util.LinkedHashMap<>();
+                            for (AirFrameSpec af : framesToPlay) {
+                                if (af.group < 0 || af.item < 0) continue;
+                                uniquePairs.put(af.group + "," + af.item, new int[]{af.group, af.item});
+                            }
+
+                            java.util.LinkedHashMap<String, int[]> remapTable = new java.util.LinkedHashMap<>();
+                            int injectedOk = 0, remappedCnt = 0, failedCnt = 0;
+                            File tmpDir = new File(getContext().getCacheDir(), "skill_clone_tmp");
+                            if (!tmpDir.exists()) tmpDir.mkdirs();
+
+                            for (java.util.Map.Entry<String, int[]> en : uniquePairs.entrySet()) {
+                                int og = en.getValue()[0], oi = en.getValue()[1];
+                                int ng = og, ni = oi;
+                                if (occupied.contains(ng + "," + ni)) {
+                                    // 先在同组找空闲 item，超过 250 仍满则开辟新组
+                                    boolean found = false;
+                                    for (int tryI = 0; tryI <= 250; tryI++) {
+                                        if (!occupied.contains(ng + "," + tryI)) { ni = tryI; found = true; break; }
+                                    }
+                                    if (!found) {
+                                        ng = Math.max(maxGroup + 1, 7000);
+                                        ni = 0;
+                                        while (occupied.contains(ng + "," + ni)) ni++;
+                                        maxGroup = ng;
+                                    }
+                                    remappedCnt++;
+                                }
+                                occupied.add(ng + "," + ni);
+                                remapTable.put(og + "," + oi, new int[]{ng, ni});
+
+                                byte[] pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, "");
+                                if (pngBytes != null && pngBytes.length > 0) {
+                                    File tmpPng = new File(tmpDir, "f_" + og + "_" + oi + ".png");
+                                    try (FileOutputStream fos = new FileOutputStream(tmpPng)) { fos.write(pngBytes); }
+                                    GoEngineBridge.SffFrame srcMeta = sffFrameLookup.get(og + "," + oi);
+                                    short ax = (srcMeta != null) ? (short) srcMeta.x : 0;
+                                    short ay = (srcMeta != null) ? (short) srcMeta.y : 0;
+                                    boolean ok = Api.addSffFrame(targetSff.getAbsolutePath(), ng, ni, ax, ay, tmpPng.getAbsolutePath());
+                                    if (ok) injectedOk++; else failedCnt++;
+                                    tmpPng.delete();
+                                } else {
+                                    failedCnt++;
+                                }
+                            }
+
+                            // 同步修改 AIR 代码中的旧精灵编号 -> 新编号
+                            String airRaw = (finalResolvedAnim >= 0 && airActionRawText.containsKey(finalResolvedAnim)) ? airActionRawText.get(finalResolvedAnim) : "";
+                            StringBuilder rewrittenAir = new StringBuilder();
+                            if (!airRaw.isEmpty()) {
+                                for (String line : airRaw.split("\n", -1)) {
+                                    String trimmed = line.trim();
+                                    if (trimmed.matches("^-?\\d+\\s*,\\s*-?\\d+\\s*,.*")) {
+                                        String[] ps = trimmed.split(",", 3);
+                                        if (ps.length >= 3) {
+                                            String key = ps[0].trim() + "," + ps[1].trim();
+                                            int[] mapped = remapTable.get(key);
+                                            if (mapped != null) {
+                                                line = mapped[0] + ", " + mapped[1] + "," + ps[2];
+                                            }
+                                        }
+                                    }
+                                    rewrittenAir.append(line).append("\n");
+                                }
+                            }
+
+                            StringBuilder report = new StringBuilder();
+                            report.append("; ===== 技能复刻完成报告 =====\n");
+                            report.append("; 目标 SFF: ").append(targetSff.getName()).append(" (原文件已备份 .bak)\n");
+                            report.append("; 成功注入精灵帧: ").append(injectedOk).append(" | 冲突自动改号: ").append(remappedCnt).append(" | 失败: ").append(failedCnt).append("\n");
+                            if (remappedCnt > 0) {
+                                report.append("; --- 编号自动重映射明细 (旧 -> 新) ---\n");
+                                for (java.util.Map.Entry<String, int[]> rm : remapTable.entrySet()) {
+                                    String newKey = rm.getValue()[0] + "," + rm.getValue()[1];
+                                    if (!rm.getKey().equals(newKey)) {
+                                        report.append(";   [").append(rm.getKey()).append("]  ==>  [").append(newKey).append("]\n");
+                                    }
+                                }
+                            }
+                            report.append("\n; ================= CNS/ST 完整代码 =================\n").append(st.codePreview);
+                            if (rewrittenAir.length() > 0) {
+                                report.append("\n\n; ================= 同步改号后的 AIR 动作代码 =================\n").append(rewrittenAir.toString().trim());
+                            }
+
+                            final String finalReport = report.toString();
+                            final int fOk = injectedOk, fRm = remappedCnt;
+                            uiHandler.post(() -> {
+                                final Dialog rd = new Dialog(getContext());
+                                if (rd.getWindow() != null) rd.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                                ScrollView rsv = new ScrollView(getContext());
+                                LinearLayout rbox = new LinearLayout(getContext()); rbox.setOrientation(LinearLayout.VERTICAL);
+                                rbox.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
+                                GradientDrawable rbg = new GradientDrawable(); rbg.setColor(Color.parseColor("#F8141A24")); rbg.setCornerRadius(12f*density); rbg.setStroke(2, Color.parseColor("#22C55E")); rbox.setBackground(rbg);
+                                rbox.addView(createSubTitle(L("✅ 复刻注入完成 (注入 ") + fOk + L(" 帧 / 自动改号 ") + fRm + L(" 帧)")));
+                                TextView rtv = new TextView(getContext());
+                                rtv.setText(finalReport); rtv.setTypeface(Typeface.MONOSPACE); rtv.setTextSize(10.5f); rtv.setTextColor(Color.parseColor("#86EFAC")); rtv.setTextIsSelectable(true);
+                                rbox.addView(rtv);
+                                LinearLayout rbtns = new LinearLayout(getContext()); rbtns.setOrientation(LinearLayout.HORIZONTAL);
+                                Button bCopyNew = createButton(L("📋 复制同步后代码"), "#16A34A");
+                                Button bDone = createButton(L("关闭"), "#475569");
+                                LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0, -2, 1f); bp.setMargins((int)(3*density), (int)(8*density), (int)(3*density), 0);
+                                bCopyNew.setOnClickListener(cv2 -> {
+                                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                                    if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("ClonedSkillCode", finalReport));
+                                    Toast.makeText(getContext(), L("✅ 已复制同步改号后的完整技能代码"), Toast.LENGTH_SHORT).show();
+                                });
+                                bDone.setOnClickListener(cv2 -> rd.dismiss());
+                                rbtns.addView(bCopyNew, bp); rbtns.addView(bDone, bp);
+                                rbox.addView(rbtns);
+                                rsv.addView(rbox);
+                                int sw2 = getContext().getResources().getDisplayMetrics().widthPixels;
+                                rd.setContentView(rsv, new ViewGroup.LayoutParams((int)(sw2 * 0.88f), -2));
+                                rd.show();
+                            });
+                        } catch (Exception ex) {
+                            uiHandler.post(() -> Toast.makeText(getContext(), L("❌ 复刻注入失败: ") + ex.getMessage(), Toast.LENGTH_LONG).show());
+                        }
+                    }).start();
+                });
+            });
+            cloneRow.addView(bCloneCode, crp); cloneRow.addView(bCloneFull, crp);
+            dbox.addView(cloneRow);
+
+            if (!completeSkillCode.isEmpty()) {
+                dbox.addView(createSubTitle(L("📝 完整技能源码 (CNS + AIR + CMD):")));
                 TextView codeTv = new TextView(getContext());
-                codeTv.setText(st.codePreview);
+                codeTv.setText(completeSkillCode);
                 codeTv.setTypeface(Typeface.MONOSPACE);
                 codeTv.setTextSize(10.5f);
                 codeTv.setTextColor(Color.parseColor("#86EFAC"));
@@ -7639,16 +8004,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             sd.setOnDismissListener(di -> { animPlaying[0] = false; animGen[0]++; });
             dsv.addView(dbox);
             int sw = getContext().getResources().getDisplayMetrics().widthPixels;
-            sd.setContentView(dsv, new ViewGroup.LayoutParams((int)(sw * 0.86f), -2));
+            sd.setContentView(dsv, new ViewGroup.LayoutParams((int)(sw * 0.88f), -2));
             sd.show();
         };
 
-        // --- Tab 3：关联文件总览 ---
+        // --- Tab 3：关联文件总览（支持直接调用 SND/SFF/判定框 工具打开） ---
         renderTab3Ref[0] = () -> {
             tab3Box.removeAllViews();
             if (defFileRef[0] == null) return;
             File baseDir = defFileRef[0].getParentFile();
-            tab3Box.addView(createSubTitle(L("📄 DEF 引用文件清单:")));
+            tab3Box.addView(createSubTitle(L("📄 DEF 引用文件清单 (点击右侧按钮直达对应工具):")));
             for (java.util.Map.Entry<String, String> en : defFilesMap.entrySet()) {
                 final File rf = resolveCharSubFile(baseDir, en.getValue());
                 LinearLayout row = new LinearLayout(getContext()); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
@@ -7666,7 +8031,33 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
                 if (rf != null && rf.exists()) {
                     String low = rf.getName().toLowerCase();
-                    if (low.endsWith(".def") || low.endsWith(".cns") || low.endsWith(".cmd") || low.endsWith(".st") || low.endsWith(".zss") || low.endsWith(".air") || low.endsWith(".txt") || low.endsWith(".dat")) {
+                    if (low.endsWith(".sff")) {
+                        Button bSff = createButton(L("🖼️ SFF查看器"), "#6366F1");
+                        bSff.setPadding((int)(8*density), (int)(4*density), (int)(8*density), (int)(4*density));
+                        bSff.setOnClickListener(vv -> new Thread(() -> {
+                            List<GoEngineBridge.SffFrame> fs = GoEngineBridge.getAllFrames(rf.getAbsolutePath());
+                            uiHandler.post(() -> showAssetViewerWindow(rf.getName(), rf.getAbsolutePath(), fs));
+                        }).start());
+                        row.addView(bSff);
+                    } else if (low.endsWith(".snd")) {
+                        Button bSnd = createButton(L("🎵 SND预览器"), "#D97706");
+                        bSnd.setPadding((int)(8*density), (int)(4*density), (int)(8*density), (int)(4*density));
+                        bSnd.setOnClickListener(vv -> new Thread(() -> {
+                            List<GoEngineBridge.SndNode> ns = GoEngineBridge.scanSnd(rf.getAbsolutePath());
+                            uiHandler.post(() -> showSndViewerWindow(rf.getAbsolutePath(), rf.getName(), ns));
+                        }).start());
+                        row.addView(bSnd);
+                    } else if (low.endsWith(".def") || low.endsWith(".cns") || low.endsWith(".cmd") || low.endsWith(".st") || low.endsWith(".zss") || low.endsWith(".air") || low.endsWith(".txt") || low.endsWith(".dat")) {
+                        if (low.endsWith(".air")) {
+                            Button bClsn = createButton(L("⚔️ 判定框"), "#DB2777");
+                            bClsn.setPadding((int)(7*density), (int)(4*density), (int)(7*density), (int)(4*density));
+                            bClsn.setOnClickListener(vv -> {
+                                String sp = (sffFileRef[0] != null && sffFileRef[0].exists()) ? sffFileRef[0].getAbsolutePath() : "";
+                                openAppWindow(L("⚔️ 判定框工坊 (打击/防御框)"), buildClsnEditorContent(sp, ""), null);
+                            });
+                            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-2, -2); cp.setMargins(0, 0, (int)(4*density), 0);
+                            row.addView(bClsn, cp);
+                        }
                         Button bView = createButton(L("👁️ 查看"), "#334155");
                         bView.setPadding((int)(8*density), (int)(4*density), (int)(8*density), (int)(4*density));
                         bView.setOnClickListener(vv -> {
@@ -7677,7 +8068,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             GradientDrawable vbg = new GradientDrawable(); vbg.setColor(Color.parseColor("#F8141A24")); vbg.setCornerRadius(10f*density); vbg.setStroke(2, Color.parseColor("#38BDF8")); vb.setBackground(vbg);
                             vb.addView(createSubTitle("📄 " + rf.getName()));
                             String txt = readTextAutoCharset(rf);
-                            if (txt.length() > 35000) txt = txt.substring(0, 35000) + "\n... (内容过长已截断预览)";
+                            if (txt.length() > 60000) txt = txt.substring(0, 60000) + "\n... (内容过长已截断预览)";
                             TextView ct = new TextView(getContext()); ct.setText(txt); ct.setTypeface(Typeface.MONOSPACE); ct.setTextSize(10.5f); ct.setTextColor(Color.parseColor("#CBD5E1")); ct.setTextIsSelectable(true);
                             vb.addView(ct);
                             Button bOk = createButton(L("关闭"), "#475569"); bOk.setOnClickListener(okv -> vd.dismiss()); vb.addView(bOk);
@@ -7692,6 +8083,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             }
         };
 
+
         // --- 核心解析器：载入角色 .def 及全部关联文件 ---
         final Runnable[] loadCharacterRef = {null};
         loadCharacterRef[0] = () -> {
@@ -7701,6 +8093,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             new Thread(() -> {
                 defInfoMap.clear(); defFilesMap.clear(); cnsStatsMap.clear();
                 cmdItems.clear(); stateItems.clear(); allStateFiles.clear(); airActionFrames.clear();
+                airActionRawText.clear(); cachedSffFrames.clear(); sffFrameLookup.clear();
                 cnsFileRef[0] = null; sffFileRef[0] = null; sndFileRef[0] = null; airFileRef[0] = null; cmdFileRef[0] = null;
                 movelistFileRef[0] = null; movelistContentRef[0] = "";
 
@@ -7836,30 +8229,82 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     }
                 }
 
-                // 解析 AIR 动作帧序列
+                // 缓存 SFF 帧表（供所有状态兜底预览 + 判定框轴心定位 + 复刻注入）
+                if (sffFileRef[0] != null && sffFileRef[0].exists()) {
+                    try {
+                        List<GoEngineBridge.SffFrame> sfs = GoEngineBridge.getAllFrames(sffFileRef[0].getAbsolutePath());
+                        if (sfs != null) {
+                            cachedSffFrames.addAll(sfs);
+                            for (GoEngineBridge.SffFrame sf : sfs) {
+                                sffFrameLookup.put(sf.group + "," + sf.item, sf);
+                            }
+                        }
+                    } catch (Throwable ignored) {}
+                }
+
+                // 解析 AIR 完整动作块 + Clsn1/Clsn2/Default 判定框
                 if (airFileRef[0] != null) {
                     String airTxt = readTextAutoCharset(airFileRef[0]);
                     int curAct = -1;
+                    StringBuilder curAirBlock = new StringBuilder();
+                    List<int[]> defClsn1 = new ArrayList<>(), defClsn2 = new ArrayList<>();
+                    List<int[]> curClsn1 = null, curClsn2 = null;
+                    int readingBoxMode = 0; // 1=defC1, 2=defC2, 3=curC1, 4=curC2
                     for (String raw : airTxt.split("\n")) {
                         int ci = raw.indexOf(';');
                         String t = (ci >= 0 ? raw.substring(0, ci) : raw).trim();
-                        if (t.isEmpty()) continue;
-                        if (t.toLowerCase().startsWith("[begin action")) {
+                        String low = t.toLowerCase();
+                        if (low.startsWith("[begin action")) {
+                            if (curAct >= 0 && curAirBlock.length() > 0) airActionRawText.put(curAct, curAirBlock.toString().trim());
+                            curAirBlock.setLength(0);
+                            curAirBlock.append(raw).append("\n");
+                            defClsn1.clear(); defClsn2.clear(); curClsn1 = null; curClsn2 = null; readingBoxMode = 0;
                             try { curAct = Integer.parseInt(t.replaceAll("[^0-9\\-]", "")); } catch (Exception e) { curAct = -1; }
-                        } else if (curAct >= 0 && t.matches("^-?\\d+\\s*,\\s*-?\\d+\\s*,.*")) {
+                            continue;
+                        }
+                        if (curAct >= 0) curAirBlock.append(raw).append("\n");
+                        if (t.isEmpty() || curAct < 0) continue;
+
+                        if (low.startsWith("clsn1default:")) { defClsn1.clear(); readingBoxMode = 1; }
+                        else if (low.startsWith("clsn2default:")) { defClsn2.clear(); readingBoxMode = 2; }
+                        else if (low.startsWith("clsn1:")) { curClsn1 = new ArrayList<>(); readingBoxMode = 3; }
+                        else if (low.startsWith("clsn2:")) { curClsn2 = new ArrayList<>(); readingBoxMode = 4; }
+                        else if ((low.startsWith("clsn1[") || low.startsWith("clsn2[")) && t.contains("=")) {
+                            String rhs = t.substring(t.indexOf('=') + 1).trim();
+                            String[] bs = rhs.split(",");
+                            if (bs.length >= 4) {
+                                try {
+                                    int[] box = new int[]{
+                                        Integer.parseInt(bs[0].trim()), Integer.parseInt(bs[1].trim()),
+                                        Integer.parseInt(bs[2].trim()), Integer.parseInt(bs[3].trim())
+                                    };
+                                    if (readingBoxMode == 1) defClsn1.add(box);
+                                    else if (readingBoxMode == 2) defClsn2.add(box);
+                                    else if (readingBoxMode == 3 && curClsn1 != null) curClsn1.add(box);
+                                    else if (readingBoxMode == 4 && curClsn2 != null) curClsn2.add(box);
+                                } catch (Exception ignored) {}
+                            }
+                        } else if (t.matches("^-?\\d+\\s*,\\s*-?\\d+\\s*,.*")) {
                             String[] ps = t.split(",");
                             if (ps.length >= 5) {
                                 try {
-                                    int g = Integer.parseInt(ps[0].trim());
-                                    int it = Integer.parseInt(ps[1].trim());
-                                    int tk = Integer.parseInt(ps[4].trim());
-                                    List<int[]> fl = airActionFrames.get(curAct);
+                                    AirFrameSpec af = new AirFrameSpec();
+                                    af.group = Integer.parseInt(ps[0].trim());
+                                    af.item = Integer.parseInt(ps[1].trim());
+                                    af.offX = Integer.parseInt(ps[2].trim());
+                                    af.offY = Integer.parseInt(ps[3].trim());
+                                    af.ticks = Integer.parseInt(ps[4].trim());
+                                    if (curClsn1 != null) af.clsn1.addAll(curClsn1); else af.clsn1.addAll(defClsn1);
+                                    if (curClsn2 != null) af.clsn2.addAll(curClsn2); else af.clsn2.addAll(defClsn2);
+                                    List<AirFrameSpec> fl = airActionFrames.get(curAct);
                                     if (fl == null) { fl = new ArrayList<>(); airActionFrames.put(curAct, fl); }
-                                    if (fl.size() < 40) fl.add(new int[]{g, it, tk});
+                                    fl.add(af);
                                 } catch (Exception ignored) {}
                             }
+                            curClsn1 = null; curClsn2 = null; readingBoxMode = 0;
                         }
                     }
+                    if (curAct >= 0 && curAirBlock.length() > 0) airActionRawText.put(curAct, curAirBlock.toString().trim());
                 }
 
                 // 解析全部状态文件中的 [Statedef N] 与 HitDef/Projectile 伤害节点
@@ -7900,7 +8345,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             continue;
                         }
                         if (curSt != null) {
-                            if (curCode.length() < 1800) curCode.append(raw).append("\n");
+                            curCode.append(raw).append("\n");
                             if (low.startsWith("[state ")) {
                                 curCtrlType = ""; curHit = null;
                             } else {
@@ -7914,6 +8359,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                                 curSt.type = v.toUpperCase();
                                             } else {
                                                 curCtrlType = v.toLowerCase();
+                                                if (curCtrlType.equals("nothitby")) curSt.hasInvul = true;
                                                 if (curCtrlType.equals("hitdef") || curCtrlType.equals("projectile")) {
                                                     curHit = new CharHitItem();
                                                     curHit.sourceFile = sf;
@@ -7924,6 +8370,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                         else if ("physics".equals(k)) curSt.physics = v.toUpperCase();
                                         else if ("anim".equals(k)) { try { curSt.anim = Integer.parseInt(v); } catch (Exception ignored) {} }
                                         else if ("poweradd".equals(k)) { try { curSt.powerAdd = Integer.parseInt(v); } catch (Exception ignored) {} }
+                                    } else if ((curCtrlType.equals("changeanim") || curCtrlType.equals("changeanim2")) && "value".equals(k)) {
+                                        try {
+                                            int caVal = Integer.parseInt(v.replaceAll("[^0-9\\-]", ""));
+                                            if (!curSt.changeAnimTargets.contains(caVal)) curSt.changeAnimTargets.add(caVal);
+                                        } catch (Exception ignored) {}
                                     } else if (curHit != null) {
                                         if ("attr".equals(k)) curHit.attr = v;
                                         else if ("guardflag".equals(k)) curHit.guardFlag = v;
@@ -8103,6 +8554,1112 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             String sp = (sffFileRef[0] != null && sffFileRef[0].exists()) ? sffFileRef[0].getAbsolutePath() : "";
             openAppWindow(L("⚔️ 判定框工坊 (打击/防御框)"), buildClsnEditorContent(sp, ""), null);
         });
+
+        return root;
+    }
+
+    // =========================================================================
+    // 【模块十一】：🤖 AI对话工坊 (全协议兼容 + 多Key + 模型拉取 + 多池/备用池自动故障转移)
+    // =========================================================================
+    private static class AiEndpointConfig {
+        String id;
+        String name;
+        String protocol; // openai, gemini, claude, ollama, cohere, azure
+        String baseUrl;
+        List<String> keys = new ArrayList<>();
+        List<String> models = new ArrayList<>();
+        boolean enabled = true;
+    }
+
+    private static class AiPoolConfig {
+        String id;
+        String name;
+        boolean isPrimary = false;
+        List<AiEndpointConfig> endpoints = new ArrayList<>();
+    }
+
+    private static class AiChatMessage {
+        String role; // user, assistant
+        String content;
+        String meta;
+        AiChatMessage(String role, String content, String meta) {
+            this.role = role; this.content = content; this.meta = meta;
+        }
+    }
+
+    private static class AiCallResult {
+        boolean ok;
+        String reply;
+        String usedInfo;
+        String trace;
+        String error;
+    }
+
+    private static final String PREF_AI_POOLS = "ikemen_ai_pools_v1";
+    private static final String PREF_AI_ACTIVE_POOL = "ikemen_ai_active_pool_v1";
+    private static final String PREF_AI_ACTIVE_MODEL = "ikemen_ai_active_model_v1";
+    private static final String PREF_AI_SYS_PROMPT = "ikemen_ai_sys_prompt_v1";
+    private static final String PREF_AI_TEMP = "ikemen_ai_temp_v1";
+    private static final String PREF_AI_MAX_TOKENS = "ikemen_ai_max_tokens_v1";
+    private static final String PREF_AI_CTX_TURNS = "ikemen_ai_ctx_turns_v1";
+
+    private List<AiPoolConfig> loadAiPools() {
+        List<AiPoolConfig> list = new ArrayList<>();
+        String raw = prefs.getString(PREF_AI_POOLS, "");
+        if (raw != null && !raw.trim().isEmpty()) {
+            try {
+                org.json.JSONArray arr = new org.json.JSONArray(raw);
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject po = arr.getJSONObject(i);
+                    AiPoolConfig p = new AiPoolConfig();
+                    p.id = po.optString("id", "pool_" + i);
+                    p.name = po.optString("name", "Pool " + (i + 1));
+                    p.isPrimary = po.optBoolean("isPrimary", i == 0);
+                    org.json.JSONArray eps = po.optJSONArray("endpoints");
+                    if (eps != null) {
+                        for (int j = 0; j < eps.length(); j++) {
+                            JSONObject eo = eps.getJSONObject(j);
+                            AiEndpointConfig ep = new AiEndpointConfig();
+                            ep.id = eo.optString("id", "ep_" + j);
+                            ep.name = eo.optString("name", "API " + (j + 1));
+                            ep.protocol = eo.optString("protocol", "openai");
+                            ep.baseUrl = eo.optString("baseUrl", "");
+                            ep.enabled = eo.optBoolean("enabled", true);
+                            org.json.JSONArray ks = eo.optJSONArray("keys");
+                            if (ks != null) for (int k = 0; k < ks.length(); k++) ep.keys.add(ks.optString(k, ""));
+                            org.json.JSONArray ms = eo.optJSONArray("models");
+                            if (ms != null) for (int m = 0; m < ms.length(); m++) ep.models.add(ms.optString(m, ""));
+                            p.endpoints.add(ep);
+                        }
+                    }
+                    list.add(p);
+                }
+            } catch (Exception ignored) {}
+        }
+        if (list.isEmpty()) {
+            // 默认预填可免费测试对话的主池 (Pollinations.ai 免Key OpenAI兼容端点)
+            AiPoolConfig primary = new AiPoolConfig();
+            primary.id = "pool_primary";
+            primary.name = L("主池 · 免费测试 (Pollinations)");
+            primary.isPrimary = true;
+
+            AiEndpointConfig epFree = new AiEndpointConfig();
+            epFree.id = "ep_pollinations";
+            epFree.name = "Pollinations Free (OpenAI)";
+            epFree.protocol = "openai";
+            epFree.baseUrl = "https://" + "text.pollinations.ai/openai";
+            epFree.keys.add("pollinations-free-test");
+            epFree.models.add("openai");
+            epFree.models.add("mistral");
+            epFree.models.add("searchgpt");
+            epFree.models.add("llama");
+            primary.endpoints.add(epFree);
+            list.add(primary);
+
+            // 预置备用池 1：Google Gemini + OpenRouter 模板（填入自己的 Key 即可自动接管）
+            AiPoolConfig backup1 = new AiPoolConfig();
+            backup1.id = "pool_backup_1";
+            backup1.name = L("备用池1 · Gemini / OpenRouter");
+            backup1.isPrimary = false;
+
+            AiEndpointConfig epGem = new AiEndpointConfig();
+            epGem.id = "ep_gemini_tpl";
+            epGem.name = "Google Gemini (原生)";
+            epGem.protocol = "gemini";
+            epGem.baseUrl = "https://" + "generativelanguage.googleapis.com";
+            epGem.models.add("gemini-2.5-flash");
+            epGem.models.add("gemini-2.0-flash");
+            epGem.enabled = false;
+            backup1.endpoints.add(epGem);
+
+            AiEndpointConfig epOr = new AiEndpointConfig();
+            epOr.id = "ep_openrouter_tpl";
+            epOr.name = "OpenRouter / DeepSeek (OpenAI兼容)";
+            epOr.protocol = "openai";
+            epOr.baseUrl = "https://" + "openrouter.ai/api/v1";
+            epOr.models.add("deepseek/deepseek-chat-v3-0324:free");
+            epOr.models.add("google/gemini-2.0-flash-exp:free");
+            epOr.enabled = false;
+            backup1.endpoints.add(epOr);
+            list.add(backup1);
+
+            saveAiPools(list);
+        }
+        return list;
+    }
+
+    private void saveAiPools(List<AiPoolConfig> pools) {
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray();
+            for (AiPoolConfig p : pools) {
+                JSONObject po = new JSONObject();
+                po.put("id", p.id);
+                po.put("name", p.name);
+                po.put("isPrimary", p.isPrimary);
+                org.json.JSONArray eps = new org.json.JSONArray();
+                for (AiEndpointConfig ep : p.endpoints) {
+                    JSONObject eo = new JSONObject();
+                    eo.put("id", ep.id);
+                    eo.put("name", ep.name);
+                    eo.put("protocol", ep.protocol);
+                    eo.put("baseUrl", ep.baseUrl);
+                    eo.put("enabled", ep.enabled);
+                    org.json.JSONArray ks = new org.json.JSONArray();
+                    for (String k : ep.keys) if (k != null && !k.trim().isEmpty()) ks.put(k.trim());
+                    eo.put("keys", ks);
+                    org.json.JSONArray ms = new org.json.JSONArray();
+                    for (String m : ep.models) if (m != null && !m.trim().isEmpty()) ms.put(m.trim());
+                    eo.put("models", ms);
+                    eps.put(eo);
+                }
+                po.put("endpoints", eps);
+                arr.put(po);
+            }
+            prefs.edit().putString(PREF_AI_POOLS, arr.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    private String aiHttpRequest(String urlStr, String method, java.util.Map<String, String> headers, String jsonBody, int[] outCode) throws Exception {
+        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(urlStr).openConnection();
+        conn.setRequestMethod(method);
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(45000);
+        conn.setRequestProperty("Accept", "application/json");
+        conn.setRequestProperty("User-Agent", "IkemenDroid-AIStudio/1.0");
+        if (headers != null) {
+            for (java.util.Map.Entry<String, String> h : headers.entrySet()) {
+                if (h.getValue() != null && !h.getValue().isEmpty()) conn.setRequestProperty(h.getKey(), h.getValue());
+            }
+        }
+        if (jsonBody != null) {
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            byte[] data = jsonBody.getBytes("UTF-8");
+            try (java.io.OutputStream os = conn.getOutputStream()) { os.write(data); }
+        }
+        int code = conn.getResponseCode();
+        if (outCode != null && outCode.length > 0) outCode[0] = code;
+        InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
+        if (is == null) return "";
+        BufferedReader br = new BufferedReader(new InputStreamReader(is, "UTF-8"));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = br.readLine()) != null) sb.append(line).append("\n");
+        br.close();
+        conn.disconnect();
+        return sb.toString().trim();
+    }
+
+    private List<String> fetchModelsForEndpoint(AiEndpointConfig ep, String apiKey) throws Exception {
+        List<String> out = new ArrayList<>();
+        String base = ep.baseUrl == null ? "" : ep.baseUrl.trim();
+        while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+        java.util.Map<String, String> hdrs = new java.util.HashMap<>();
+        int[] code = {0};
+
+        if ("gemini".equalsIgnoreCase(ep.protocol)) {
+            String url = base.contains("/v1") ? (base + "/models") : (base + "/v1beta/models");
+            if (apiKey != null && !apiKey.isEmpty()) url += (url.contains("?") ? "&key=" : "?key=") + java.net.URLEncoder.encode(apiKey, "UTF-8");
+            String resp = aiHttpRequest(url, "GET", hdrs, null, code);
+            if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
+            JSONObject jo = new JSONObject(resp);
+            org.json.JSONArray ms = jo.optJSONArray("models");
+            if (ms != null) {
+                for (int i = 0; i < ms.length(); i++) {
+                    String n = ms.getJSONObject(i).optString("name", "");
+                    if (n.startsWith("models/")) n = n.substring(7);
+                    if (!n.isEmpty()) out.add(n);
+                }
+            }
+        } else if ("ollama".equalsIgnoreCase(ep.protocol)) {
+            String url = base.endsWith("/api/tags") ? base : (base + "/api/tags");
+            if (apiKey != null && !apiKey.isEmpty()) hdrs.put("Authorization", "Bearer " + apiKey);
+            String resp = aiHttpRequest(url, "GET", hdrs, null, code);
+            if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
+            JSONObject jo = new JSONObject(resp);
+            org.json.JSONArray ms = jo.optJSONArray("models");
+            if (ms != null) {
+                for (int i = 0; i < ms.length(); i++) {
+                    String n = ms.getJSONObject(i).optString("name", "");
+                    if (!n.isEmpty()) out.add(n);
+                }
+            }
+        } else if ("claude".equalsIgnoreCase(ep.protocol)) {
+            String url = base.endsWith("/models") ? base : (base.endsWith("/v1") ? base + "/models" : base + "/v1/models");
+            if (apiKey != null && !apiKey.isEmpty()) hdrs.put("x-api-key", apiKey);
+            hdrs.put("anthropic-version", "2023-06-01");
+            String resp = aiHttpRequest(url, "GET", hdrs, null, code);
+            if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
+            JSONObject jo = new JSONObject(resp);
+            org.json.JSONArray ds = jo.optJSONArray("data");
+            if (ds != null) for (int i = 0; i < ds.length(); i++) { String id = ds.getJSONObject(i).optString("id", ""); if (!id.isEmpty()) out.add(id); }
+        } else if ("cohere".equalsIgnoreCase(ep.protocol)) {
+            String url = base.endsWith("/models") ? base : (base + "/v1/models");
+            if (apiKey != null && !apiKey.isEmpty()) hdrs.put("Authorization", "Bearer " + apiKey);
+            String resp = aiHttpRequest(url, "GET", hdrs, null, code);
+            if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
+            JSONObject jo = new JSONObject(resp);
+            org.json.JSONArray ms = jo.optJSONArray("models");
+            if (ms != null) for (int i = 0; i < ms.length(); i++) { String id = ms.getJSONObject(i).optString("name", ""); if (!id.isEmpty()) out.add(id); }
+        } else {
+            // openai / azure / pollinations / generic
+            String url;
+            if (base.contains("text.pollinations.ai")) {
+                url = "https://" + "text.pollinations.ai/models";
+            } else if (base.endsWith("/chat/completions")) {
+                url = base.substring(0, base.length() - "/chat/completions".length()) + "/models";
+            } else if (base.endsWith("/models")) {
+                url = base;
+            } else if (base.endsWith("/v1") || base.endsWith("/openai")) {
+                url = base + "/models";
+            } else {
+                url = base + "/v1/models";
+            }
+            if (apiKey != null && !apiKey.isEmpty() && !"pollinations-free-test".equals(apiKey)) {
+                if ("azure".equalsIgnoreCase(ep.protocol)) hdrs.put("api-key", apiKey);
+                else hdrs.put("Authorization", "Bearer " + apiKey);
+            }
+            String resp = aiHttpRequest(url, "GET", hdrs, null, code);
+            if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
+            String trim = resp.trim();
+            if (trim.startsWith("[")) {
+                org.json.JSONArray arr = new org.json.JSONArray(trim);
+                for (int i = 0; i < arr.length(); i++) {
+                    Object o = arr.get(i);
+                    if (o instanceof JSONObject) {
+                        String n = ((JSONObject) o).optString("name", ((JSONObject) o).optString("id", ""));
+                        if (!n.isEmpty()) out.add(n);
+                    } else if (o instanceof String) {
+                        out.add((String) o);
+                    }
+                }
+            } else {
+                JSONObject jo = new JSONObject(trim);
+                org.json.JSONArray ds = jo.optJSONArray("data");
+                if (ds != null) {
+                    for (int i = 0; i < ds.length(); i++) {
+                        String id = ds.getJSONObject(i).optString("id", "");
+                        if (!id.isEmpty()) out.add(id);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private String callSingleAiEndpoint(AiEndpointConfig ep, String apiKey, String model, List<AiChatMessage> history, String sysPrompt, double temp, int maxTokens) throws Exception {
+        String base = ep.baseUrl == null ? "" : ep.baseUrl.trim();
+        while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+        java.util.Map<String, String> hdrs = new java.util.HashMap<>();
+        int[] code = {0};
+        String proto = ep.protocol == null ? "openai" : ep.protocol.toLowerCase();
+
+        if ("gemini".equals(proto)) {
+            String url = base.contains("/v1")
+                ? (base + "/models/" + model + ":generateContent")
+                : (base + "/v1beta/models/" + model + ":generateContent");
+            if (apiKey != null && !apiKey.isEmpty()) url += "?key=" + java.net.URLEncoder.encode(apiKey, "UTF-8");
+            JSONObject body = new JSONObject();
+            if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
+                JSONObject si = new JSONObject();
+                org.json.JSONArray sp = new org.json.JSONArray();
+                sp.put(new JSONObject().put("text", sysPrompt));
+                si.put("parts", sp);
+                body.put("system_instruction", si);
+            }
+            org.json.JSONArray contents = new org.json.JSONArray();
+            for (AiChatMessage m : history) {
+                JSONObject c = new JSONObject();
+                c.put("role", "assistant".equals(m.role) ? "model" : "user");
+                c.put("parts", new org.json.JSONArray().put(new JSONObject().put("text", m.content)));
+                contents.put(c);
+            }
+            body.put("contents", contents);
+            JSONObject gcfg = new JSONObject();
+            gcfg.put("temperature", temp);
+            if (maxTokens > 0) gcfg.put("maxOutputTokens", maxTokens);
+            body.put("generationConfig", gcfg);
+
+            String resp = aiHttpRequest(url, "POST", hdrs, body.toString(), code);
+            if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
+            JSONObject jo = new JSONObject(resp);
+            org.json.JSONArray cands = jo.optJSONArray("candidates");
+            if (cands != null && cands.length() > 0) {
+                JSONObject cont = cands.getJSONObject(0).optJSONObject("content");
+                if (cont != null) {
+                    org.json.JSONArray parts = cont.optJSONArray("parts");
+                    if (parts != null && parts.length() > 0) {
+                        StringBuilder sb = new StringBuilder();
+                        for (int i = 0; i < parts.length(); i++) sb.append(parts.getJSONObject(i).optString("text", ""));
+                        if (sb.length() > 0) return sb.toString().trim();
+                    }
+                }
+            }
+            throw new Exception("Gemini 返回空内容");
+        } else if ("claude".equals(proto)) {
+            String url = base.endsWith("/messages") ? base : (base.endsWith("/v1") ? base + "/messages" : base + "/v1/messages");
+            if (apiKey != null && !apiKey.isEmpty()) hdrs.put("x-api-key", apiKey);
+            hdrs.put("anthropic-version", "2023-06-01");
+            JSONObject body = new JSONObject();
+            body.put("model", model);
+            body.put("max_tokens", maxTokens > 0 ? maxTokens : 2048);
+            body.put("temperature", temp);
+            if (sysPrompt != null && !sysPrompt.trim().isEmpty()) body.put("system", sysPrompt);
+            org.json.JSONArray msgs = new org.json.JSONArray();
+            for (AiChatMessage m : history) {
+                msgs.put(new JSONObject().put("role", "assistant".equals(m.role) ? "assistant" : "user").put("content", m.content));
+            }
+            body.put("messages", msgs);
+
+            String resp = aiHttpRequest(url, "POST", hdrs, body.toString(), code);
+            if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
+            JSONObject jo = new JSONObject(resp);
+            org.json.JSONArray carr = jo.optJSONArray("content");
+            if (carr != null && carr.length() > 0) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < carr.length(); i++) sb.append(carr.getJSONObject(i).optString("text", ""));
+                if (sb.length() > 0) return sb.toString().trim();
+            }
+            throw new Exception("Claude 返回空内容");
+        } else if ("ollama".equals(proto)) {
+            String url = base.endsWith("/api/chat") ? base : (base + "/api/chat");
+            if (apiKey != null && !apiKey.isEmpty()) hdrs.put("Authorization", "Bearer " + apiKey);
+            JSONObject body = new JSONObject();
+            body.put("model", model);
+            body.put("stream", false);
+            org.json.JSONArray msgs = new org.json.JSONArray();
+            if (sysPrompt != null && !sysPrompt.trim().isEmpty()) msgs.put(new JSONObject().put("role", "system").put("content", sysPrompt));
+            for (AiChatMessage m : history) msgs.put(new JSONObject().put("role", m.role).put("content", m.content));
+            body.put("messages", msgs);
+            body.put("options", new JSONObject().put("temperature", temp));
+
+            String resp = aiHttpRequest(url, "POST", hdrs, body.toString(), code);
+            if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
+            JSONObject jo = new JSONObject(resp);
+            JSONObject msg = jo.optJSONObject("message");
+            if (msg != null && !msg.optString("content", "").trim().isEmpty()) return msg.optString("content").trim();
+            throw new Exception("Ollama 返回空内容");
+        } else if ("cohere".equals(proto)) {
+            String url = base.endsWith("/chat") ? base : (base + "/v2/chat");
+            if (apiKey != null && !apiKey.isEmpty()) hdrs.put("Authorization", "Bearer " + apiKey);
+            JSONObject body = new JSONObject();
+            body.put("model", model);
+            body.put("temperature", temp);
+            org.json.JSONArray msgs = new org.json.JSONArray();
+            if (sysPrompt != null && !sysPrompt.trim().isEmpty()) msgs.put(new JSONObject().put("role", "system").put("content", sysPrompt));
+            for (AiChatMessage m : history) msgs.put(new JSONObject().put("role", m.role).put("content", m.content));
+            body.put("messages", msgs);
+
+            String resp = aiHttpRequest(url, "POST", hdrs, body.toString(), code);
+            if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
+            JSONObject jo = new JSONObject(resp);
+            JSONObject msg = jo.optJSONObject("message");
+            if (msg != null) {
+                org.json.JSONArray carr = msg.optJSONArray("content");
+                if (carr != null && carr.length() > 0) {
+                    String txt = carr.getJSONObject(0).optString("text", "").trim();
+                    if (!txt.isEmpty()) return txt;
+                }
+            }
+            throw new Exception("Cohere 返回空内容");
+        } else {
+            // openai & azure & pollinations 兼容协议
+            String url;
+            if ("azure".equals(proto)) {
+                url = base.contains("/chat/completions") ? base : (base + "/openai/deployments/" + model + "/chat/completions?api-version=2024-06-01");
+                if (apiKey != null && !apiKey.isEmpty()) hdrs.put("api-key", apiKey);
+            } else {
+                if (base.endsWith("/chat/completions")) url = base;
+                else if (base.contains("text.pollinations.ai/openai")) url = base;
+                else if (base.endsWith("/v1")) url = base + "/chat/completions";
+                else url = base + "/v1/chat/completions";
+                if (apiKey != null && !apiKey.isEmpty() && !"pollinations-free-test".equals(apiKey)) {
+                    hdrs.put("Authorization", "Bearer " + apiKey);
+                }
+            }
+            JSONObject body = new JSONObject();
+            body.put("model", model);
+            body.put("temperature", temp);
+            if (maxTokens > 0) body.put("max_tokens", maxTokens);
+            org.json.JSONArray msgs = new org.json.JSONArray();
+            if (sysPrompt != null && !sysPrompt.trim().isEmpty()) msgs.put(new JSONObject().put("role", "system").put("content", sysPrompt));
+            for (AiChatMessage m : history) msgs.put(new JSONObject().put("role", m.role).put("content", m.content));
+            body.put("messages", msgs);
+
+            String resp = aiHttpRequest(url, "POST", hdrs, body.toString(), code);
+            if (code[0] < 200 || code[0] >= 300) throw new Exception("HTTP " + code[0] + ": " + resp);
+            String trim = resp.trim();
+            if (trim.startsWith("{")) {
+                JSONObject jo = new JSONObject(trim);
+                org.json.JSONArray choices = jo.optJSONArray("choices");
+                if (choices != null && choices.length() > 0) {
+                    JSONObject msg = choices.getJSONObject(0).optJSONObject("message");
+                    if (msg != null) {
+                        String content = msg.optString("content", "").trim();
+                        if (!content.isEmpty()) return content;
+                    }
+                }
+            } else if (!trim.isEmpty()) {
+                return trim;
+            }
+            throw new Exception("OpenAI 兼容接口返回空内容");
+        }
+    }
+
+    private AiCallResult callAiWithFailover(List<AiPoolConfig> pools, String preferredPoolId, String preferredModel, List<AiChatMessage> history, String sysPrompt, double temp, int maxTokens) {
+        AiCallResult res = new AiCallResult();
+        StringBuilder trace = new StringBuilder();
+
+        // 排序池：先当前选中池，再主池，再其余备用池
+        List<AiPoolConfig> ordered = new ArrayList<>();
+        for (AiPoolConfig p : pools) if (p.id.equals(preferredPoolId)) ordered.add(p);
+        for (AiPoolConfig p : pools) if (p.isPrimary && !ordered.contains(p)) ordered.add(p);
+        for (AiPoolConfig p : pools) if (!ordered.contains(p)) ordered.add(p);
+
+        for (AiPoolConfig pool : ordered) {
+            for (AiEndpointConfig ep : pool.endpoints) {
+                if (!ep.enabled || ep.baseUrl == null || ep.baseUrl.trim().isEmpty()) continue;
+
+                // 决定模型尝试顺序：若新 API 支持当前选定模型则优先用它，否则自动换该 API 的其他可用模型
+                List<String> modelOrder = new ArrayList<>();
+                if (preferredModel != null && !preferredModel.isEmpty() && ep.models.contains(preferredModel)) {
+                    modelOrder.add(preferredModel);
+                }
+                for (String m : ep.models) {
+                    if (m != null && !m.trim().isEmpty() && !modelOrder.contains(m.trim())) modelOrder.add(m.trim());
+                }
+                if (modelOrder.isEmpty()) {
+                    if (preferredModel != null && !preferredModel.isEmpty()) modelOrder.add(preferredModel);
+                    else modelOrder.add("openai");
+                }
+
+                // 决定 Key 尝试顺序（无 Key 时允许匿名测试端点尝试 1 次）
+                List<String> keyOrder = new ArrayList<>();
+                for (String k : ep.keys) if (k != null && !k.trim().isEmpty()) keyOrder.add(k.trim());
+                if (keyOrder.isEmpty()) keyOrder.add("");
+
+                for (int ki = 0; ki < keyOrder.size(); ki++) {
+                    String key = keyOrder.get(ki);
+                    boolean keyHardFailed = false;
+                    for (int mi = 0; mi < modelOrder.size(); mi++) {
+                        String tryModel = modelOrder.get(mi);
+                        try {
+                            String reply = callSingleAiEndpoint(ep, key, tryModel, history, sysPrompt, temp, maxTokens);
+                            res.ok = true;
+                            res.reply = reply;
+                            res.usedInfo = pool.name + " / " + ep.name + " [" + ep.protocol + "] / " + tryModel + (keyOrder.size() > 1 ? " (Key#" + (ki + 1) + ")" : "");
+                            res.trace = trace.toString().trim();
+                            return res;
+                        } catch (Exception e) {
+                            String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                            if (errMsg.length() > 90) errMsg = errMsg.substring(0, 90) + "...";
+                            trace.append("× ").append(pool.name).append("/").append(ep.name).append("(").append(tryModel).append(", Key#").append(ki + 1).append("): ").append(errMsg).append("\n");
+                            // 401/402/403/429 属于 Key 鉴权或额度上限问题，立即切下一个 Key
+                            if (errMsg.contains("HTTP 401") || errMsg.contains("HTTP 402") || errMsg.contains("HTTP 403") || errMsg.contains("HTTP 429")) {
+                                keyHardFailed = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!keyHardFailed) break;
+                }
+            }
+        }
+        res.ok = false;
+        res.error = L("所有主池与备用池的 API/Key 均调用失败，请检查网络或配置。");
+        res.trace = trace.toString().trim();
+        return res;
+    }
+
+    private View buildAiChatContent() {
+        LinearLayout root = new LinearLayout(getContext());
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.parseColor("#111622"));
+        final Handler uiHandler = new Handler(Looper.getMainLooper());
+
+        final List<AiPoolConfig> pools = loadAiPools();
+        final List<AiChatMessage> messages = new ArrayList<>();
+        final String[] activePoolId = { prefs.getString(PREF_AI_ACTIVE_POOL, pools.get(0).id) };
+        final String[] activeModel = { prefs.getString(PREF_AI_ACTIVE_MODEL, "openai") };
+        final boolean[] isSending = {false};
+
+        // 顶部工具条（选池 / 选模型 / 池管理 / 对话参数 / 清空）
+        HorizontalScrollView topScroll = new HorizontalScrollView(getContext());
+        topScroll.setHorizontalScrollBarEnabled(false);
+        topScroll.setTag("layout_toolbar");
+        LinearLayout topBar = new LinearLayout(getContext());
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setPadding((int)(8*density), (int)(6*density), (int)(8*density), (int)(6*density));
+        topBar.setBackgroundColor(Color.parseColor("#1A2233"));
+
+        final Button btnSelectPool = createButton(L("🗂️ 主池"), "#0284C7");
+        final Button btnSelectModel = createButton(L("🧠 模型"), "#4F46E5");
+        Button btnManagePools = createButton(L("⚙️ API池/Key管理"), "#0F766E");
+        Button btnChatParams = createButton(L("🎛️ 参数"), "#334155");
+        Button btnClearChat = createButton(L("🧹 清空"), "#7F1D1D");
+        LinearLayout.LayoutParams tbp = new LinearLayout.LayoutParams(-2, -2);
+        tbp.setMargins(0, 0, (int)(5*density), 0);
+        topBar.addView(btnSelectPool, tbp);
+        topBar.addView(btnSelectModel, tbp);
+        topBar.addView(btnManagePools, tbp);
+        topBar.addView(btnChatParams, tbp);
+        topBar.addView(btnClearChat, tbp);
+        topScroll.addView(topBar);
+        root.addView(topScroll);
+
+        final TextView tvStatusStrip = new TextView(getContext());
+        applyGlobalFontSettings(tvStatusStrip, 0.78f, false);
+        tvStatusStrip.setTextColor(Color.parseColor("#94A3B8"));
+        tvStatusStrip.setBackgroundColor(Color.parseColor("#161D2C"));
+        tvStatusStrip.setPadding((int)(10*density), (int)(4*density), (int)(10*density), (int)(4*density));
+        root.addView(tvStatusStrip);
+
+        final Runnable refreshHeaderUI = () -> {
+            AiPoolConfig curPool = pools.isEmpty() ? null : pools.get(0);
+            for (AiPoolConfig p : pools) if (p.id.equals(activePoolId[0])) { curPool = p; break; }
+            if (curPool != null) {
+                activePoolId[0] = curPool.id;
+                btnSelectPool.setText("🗂️ " + curPool.name);
+            }
+            btnSelectModel.setText("🧠 " + activeModel[0]);
+            int enabledEps = 0, totalKeys = 0;
+            for (AiPoolConfig p : pools) {
+                for (AiEndpointConfig ep : p.endpoints) {
+                    if (ep.enabled) { enabledEps++; totalKeys += Math.max(1, ep.keys.size()); }
+                }
+            }
+            tvStatusStrip.setText(L("已启用 ") + pools.size() + L(" 个池 | ") + enabledEps + L(" 个节点 | ") + totalKeys + L(" 组Key | 限流/报错自动切Key与备用池"));
+        };
+        refreshHeaderUI.run();
+
+        // 对话消息列表
+        final ScrollView chatScroll = new ScrollView(getContext());
+        chatScroll.setTag("layout_preview");
+        final LinearLayout chatBox = new LinearLayout(getContext());
+        chatBox.setOrientation(LinearLayout.VERTICAL);
+        chatBox.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(12*density));
+        chatScroll.addView(chatBox, new FrameLayout.LayoutParams(-1, -2));
+        root.addView(chatScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        final Runnable renderMessages = () -> {
+            chatBox.removeAllViews();
+            if (messages.isEmpty()) {
+                TextView welcome = new TextView(getContext());
+                welcome.setText(L("🤖 欢迎使用 AI 对话工坊！\n• 已默认预置免费测试池 (Pollinations OpenAI 协议)，直接发消息即可测试。\n• 点击【⚙️ API池/Key管理】可添加 GPT / Gemini / Claude / DeepSeek / Ollama / Cohere / Azure 等任意多协议节点，支持多 Key、拉取模型列表与多备用池自动故障转移。"));
+                applyGlobalFontSettings(welcome, 0.88f, false);
+                welcome.setTextColor(Color.parseColor("#CBD5E1"));
+                welcome.setPadding((int)(12*density), (int)(12*density), (int)(12*density), (int)(12*density));
+                GradientDrawable wbg = new GradientDrawable();
+                wbg.setColor(Color.parseColor("#1A2334")); wbg.setCornerRadius(10f*density); wbg.setStroke(1, Color.parseColor("#334155"));
+                welcome.setBackground(wbg);
+                chatBox.addView(welcome);
+                return;
+            }
+            for (final AiChatMessage msg : messages) {
+                boolean isUser = "user".equals(msg.role);
+                LinearLayout row = new LinearLayout(getContext());
+                row.setOrientation(LinearLayout.VERTICAL);
+                row.setGravity(isUser ? Gravity.END : Gravity.START);
+                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
+                rlp.setMargins(0, 0, 0, (int)(8*density));
+
+                LinearLayout bubble = new LinearLayout(getContext());
+                bubble.setOrientation(LinearLayout.VERTICAL);
+                bubble.setPadding((int)(11*density), (int)(8*density), (int)(11*density), (int)(8*density));
+                GradientDrawable bbg = new GradientDrawable();
+                bbg.setColor(Color.parseColor(isUser ? "#1E3A8A" : "#1C2434"));
+                bbg.setCornerRadius(10f*density);
+                bbg.setStroke(1, Color.parseColor(isUser ? "#3B82F6" : "#334155"));
+                bubble.setBackground(bbg);
+
+                TextView tvBody = new TextView(getContext());
+                tvBody.setText(msg.content);
+                applyGlobalFontSettings(tvBody, 0.92f, false);
+                tvBody.setTextColor(Color.parseColor("#F8FAFC"));
+                tvBody.setTextIsSelectable(true);
+                bubble.addView(tvBody);
+
+                if (msg.meta != null && !msg.meta.isEmpty()) {
+                    TextView tvMeta = new TextView(getContext());
+                    tvMeta.setText(msg.meta);
+                    applyGlobalFontSettings(tvMeta, 0.72f, false);
+                    tvMeta.setTextColor(Color.parseColor("#38BDF8"));
+                    tvMeta.setPadding(0, (int)(4*density), 0, 0);
+                    bubble.addView(tvMeta);
+                }
+
+                if (!isUser) {
+                    TextView btnCopy = new TextView(getContext());
+                    btnCopy.setText(L("📋 复制回复"));
+                    applyGlobalFontSettings(btnCopy, 0.74f, true);
+                    btnCopy.setTextColor(Color.parseColor("#94A3B8"));
+                    btnCopy.setPadding(0, (int)(4*density), 0, 0);
+                    btnCopy.setOnClickListener(cv -> {
+                        android.content.ClipboardManager cm = (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                        if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("AiReply", msg.content));
+                        Toast.makeText(getContext(), L("✅ 已复制回复内容"), Toast.LENGTH_SHORT).show();
+                    });
+                    bubble.addView(btnCopy);
+                }
+                row.addView(bubble, new LinearLayout.LayoutParams(-2, -2));
+                chatBox.addView(row, rlp);
+            }
+            chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+        };
+        renderMessages.run();
+
+        // 快捷提示词条
+        HorizontalScrollView chipScroll = new HorizontalScrollView(getContext());
+        chipScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout chipBar = new LinearLayout(getContext());
+        chipBar.setOrientation(LinearLayout.HORIZONTAL);
+        chipBar.setPadding((int)(8*density), (int)(3*density), (int)(8*density), (int)(3*density));
+        final EditText inputBox = createInput(L("输入问题（如：帮我写一个带浮空的 HitDef）..."), "");
+        inputBox.setMaxLines(4);
+
+        String[] quickPrompts = {
+            L("测试连通性"),
+            L("帮我写一个带击飞的HitDef"),
+            L("解释Ikemen GO的ZSS语法"),
+            L("排查CNS状态机报错")
+        };
+        LinearLayout.LayoutParams qcp = new LinearLayout.LayoutParams(-2, -2);
+        qcp.setMargins(0, 0, (int)(5*density), 0);
+        for (final String qp : quickPrompts) {
+            Button qb = createButton(qp, "#232C3F");
+            qb.setPadding((int)(8*density), (int)(3*density), (int)(8*density), (int)(3*density));
+            qb.setOnClickListener(v -> inputBox.setText(qp));
+            chipBar.addView(qb, qcp);
+        }
+        chipScroll.addView(chipBar);
+        root.addView(chipScroll);
+
+        // 底部输入栏
+        LinearLayout inputBar = new LinearLayout(getContext());
+        inputBar.setOrientation(LinearLayout.HORIZONTAL);
+        inputBar.setGravity(Gravity.CENTER_VERTICAL);
+        inputBar.setPadding((int)(8*density), (int)(5*density), (int)(8*density), (int)(8*density));
+        inputBar.setBackgroundColor(Color.parseColor("#161D2C"));
+        final Button btnSend = createButton(L("🚀 发送"), "#16A34A");
+        btnSend.setPadding((int)(14*density), (int)(8*density), (int)(14*density), (int)(8*density));
+        inputBar.addView(inputBox, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout.LayoutParams sbp = new LinearLayout.LayoutParams(-2, -2); sbp.setMargins((int)(6*density), 0, 0, 0);
+        inputBar.addView(btnSend, sbp);
+        root.addView(inputBar);
+
+        // 发送逻辑（带多 Key / 多池 / 模型自动回退）
+        btnSend.setOnClickListener(v -> {
+            if (isSending[0]) return;
+            final String q = inputBox.getText().toString().trim();
+            if (q.isEmpty()) return;
+            inputBox.setText("");
+            messages.add(new AiChatMessage("user", q, ""));
+            renderMessages.run();
+            isSending[0] = true;
+            btnSend.setText(L("⏳ 思考中"));
+            btnSend.setBackgroundColor(Color.parseColor("#475569"));
+
+            final int ctxTurns = Math.max(1, prefs.getInt(PREF_AI_CTX_TURNS, 8));
+            final List<AiChatMessage> ctxSlice = new ArrayList<>();
+            int startIdx = Math.max(0, messages.size() - ctxTurns * 2);
+            for (int i = startIdx; i < messages.size(); i++) ctxSlice.add(messages.get(i));
+
+            final String sysPrompt = prefs.getString(PREF_AI_SYS_PROMPT, L("你是专业的 MUGEN 与 Ikemen GO 开发助手，请使用清晰简洁的中文回答。"));
+            final double temp = prefs.getFloat(PREF_AI_TEMP, 0.7f);
+            final int maxTok = prefs.getInt(PREF_AI_MAX_TOKENS, 2048);
+
+            new Thread(() -> {
+                final AiCallResult res = callAiWithFailover(pools, activePoolId[0], activeModel[0], ctxSlice, sysPrompt, temp, maxTok);
+                uiHandler.post(() -> {
+                    isSending[0] = false;
+                    btnSend.setText(L("🚀 发送"));
+                    btnSend.setBackgroundColor(Color.parseColor("#16A34A"));
+                    if (res.ok) {
+                        String meta = "⚡ " + res.usedInfo + (res.trace != null && !res.trace.isEmpty() ? "\n↪️ " + L("故障自动切换记录:\n") + res.trace : "");
+                        messages.add(new AiChatMessage("assistant", res.reply, meta));
+                    } else {
+                        messages.add(new AiChatMessage("assistant", "❌ " + res.error + (res.trace != null && !res.trace.isEmpty() ? "\n\n" + res.trace : ""), L("全部通道均失败")));
+                    }
+                    renderMessages.run();
+                });
+            }).start();
+        });
+
+        btnClearChat.setOnClickListener(v -> {
+            messages.clear();
+            renderMessages.run();
+            Toast.makeText(getContext(), L("🧹 已清空当前对话"), Toast.LENGTH_SHORT).show();
+        });
+
+        // 切换当前首选池
+        btnSelectPool.setOnClickListener(v -> {
+            final Dialog d = new Dialog(getContext());
+            if (d.getWindow() != null) d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
+            GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#F5171F2E")); bg.setCornerRadius(12f*density); bg.setStroke(2, Color.parseColor("#38BDF8")); box.setBackground(bg);
+            box.addView(createSubTitle(L("🗂️ 选择优先使用的 API 池:")));
+            for (final AiPoolConfig p : pools) {
+                Button pb = createButton((p.id.equals(activePoolId[0]) ? "✅ " : "") + p.name + " (" + p.endpoints.size() + " API)", p.id.equals(activePoolId[0]) ? "#0284C7" : "#243044");
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, (int)(5*density), 0, 0);
+                pb.setOnClickListener(pv -> {
+                    activePoolId[0] = p.id;
+                    prefs.edit().putString(PREF_AI_ACTIVE_POOL, p.id).apply();
+                    for (AiEndpointConfig ep : p.endpoints) {
+                        if (ep.enabled && !ep.models.isEmpty()) {
+                            if (!ep.models.contains(activeModel[0])) {
+                                activeModel[0] = ep.models.get(0);
+                                prefs.edit().putString(PREF_AI_ACTIVE_MODEL, activeModel[0]).apply();
+                            }
+                            break;
+                        }
+                    }
+                    refreshHeaderUI.run();
+                    d.dismiss();
+                });
+                box.addView(pb, lp);
+            }
+            d.setContentView(box, new ViewGroup.LayoutParams((int)(300*density), -2));
+            d.show();
+        });
+
+        // 切换首选模型（聚合所有已启用池的模型 + 支持手动输入）
+        btnSelectModel.setOnClickListener(v -> {
+            final Dialog d = new Dialog(getContext());
+            if (d.getWindow() != null) d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            ScrollView sv = new ScrollView(getContext());
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
+            GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#F5171F2E")); bg.setCornerRadius(12f*density); bg.setStroke(2, Color.parseColor("#6366F1")); box.setBackground(bg);
+            box.addView(createSubTitle(L("🧠 选择首选模型 (不可用时自动换池内其他模型):")));
+
+            final EditText customIn = createInput(L("手动输入任意模型名..."), activeModel[0]);
+            Button bUseCustom = createButton(L("✔️ 使用该模型"), "#4F46E5");
+            bUseCustom.setOnClickListener(cv -> {
+                String cm = customIn.getText().toString().trim();
+                if (!cm.isEmpty()) {
+                    activeModel[0] = cm;
+                    prefs.edit().putString(PREF_AI_ACTIVE_MODEL, cm).apply();
+                    refreshHeaderUI.run();
+                }
+                d.dismiss();
+            });
+            box.addView(customIn);
+            LinearLayout.LayoutParams up = new LinearLayout.LayoutParams(-1, -2); up.setMargins(0, (int)(5*density), 0, (int)(8*density));
+            box.addView(bUseCustom, up);
+
+            java.util.LinkedHashSet<String> allModels = new java.util.LinkedHashSet<>();
+            for (AiPoolConfig p : pools) {
+                for (AiEndpointConfig ep : p.endpoints) {
+                    if (ep.enabled) allModels.addAll(ep.models);
+                }
+            }
+            for (final String m : allModels) {
+                Button mb = createButton((m.equals(activeModel[0]) ? "✅ " : "• ") + m, m.equals(activeModel[0]) ? "#4F46E5" : "#243044");
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, (int)(4*density), 0, 0);
+                mb.setOnClickListener(mv -> {
+                    activeModel[0] = m;
+                    prefs.edit().putString(PREF_AI_ACTIVE_MODEL, m).apply();
+                    refreshHeaderUI.run();
+                    d.dismiss();
+                });
+                box.addView(mb, lp);
+            }
+            sv.addView(box);
+            d.setContentView(sv, new ViewGroup.LayoutParams((int)(310*density), -2));
+            d.show();
+        });
+
+        // 对话参数设置弹窗 (System Prompt / Temperature / Max Tokens / 上下文轮数)
+        btnChatParams.setOnClickListener(v -> {
+            final Dialog d = new Dialog(getContext());
+            if (d.getWindow() != null) d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            ScrollView sv = new ScrollView(getContext());
+            LinearLayout box = new LinearLayout(getContext()); box.setOrientation(LinearLayout.VERTICAL); box.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
+            GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.parseColor("#F5171F2E")); bg.setCornerRadius(12f*density); bg.setStroke(2, Color.parseColor("#38BDF8")); box.setBackground(bg);
+            box.addView(createSubTitle(L("🎛️ AI 对话参数设置")));
+
+            final EditText eSys = createInput(L("系统提示词 (System Prompt)"), prefs.getString(PREF_AI_SYS_PROMPT, L("你是专业的 MUGEN 与 Ikemen GO 开发助手，请使用清晰简洁的中文回答。")));
+            eSys.setMinLines(3);
+            final EditText eTemp = createInput(L("温度 Temperature (0.0~2.0)"), String.valueOf(prefs.getFloat(PREF_AI_TEMP, 0.7f)));
+            final EditText eMaxT = createInput(L("最大输出 Token (如 2048)"), String.valueOf(prefs.getInt(PREF_AI_MAX_TOKENS, 2048)));
+            final EditText eCtx = createInput(L("上下文记忆轮数 (如 8)"), String.valueOf(prefs.getInt(PREF_AI_CTX_TURNS, 8)));
+
+            box.addView(createSubTitle(L("系统提示词:"))); box.addView(eSys);
+            box.addView(createSubTitle(L("温度 (Temperature):"))); box.addView(eTemp);
+            box.addView(createSubTitle(L("最大输出长度 (Max Tokens):"))); box.addView(eMaxT);
+            box.addView(createSubTitle(L("上下文轮数:"))); box.addView(eCtx);
+
+            Button bSave = createButton(L("💾 保存参数"), "#16A34A");
+            LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2); sp.setMargins(0, (int)(10*density), 0, 0);
+            bSave.setOnClickListener(sv2 -> {
+                float t = 0.7f; int mt = 2048; int ct = 8;
+                try { t = Float.parseFloat(eTemp.getText().toString().trim()); } catch (Exception ignored) {}
+                try { mt = Integer.parseInt(eMaxT.getText().toString().trim()); } catch (Exception ignored) {}
+                try { ct = Integer.parseInt(eCtx.getText().toString().trim()); } catch (Exception ignored) {}
+                prefs.edit()
+                     .putString(PREF_AI_SYS_PROMPT, eSys.getText().toString().trim())
+                     .putFloat(PREF_AI_TEMP, Math.max(0f, Math.min(2f, t)))
+                     .putInt(PREF_AI_MAX_TOKENS, Math.max(64, mt))
+                     .putInt(PREF_AI_CTX_TURNS, Math.max(1, Math.min(50, ct)))
+                     .apply();
+                Toast.makeText(getContext(), L("✅ 对话参数已保存"), Toast.LENGTH_SHORT).show();
+                d.dismiss();
+            });
+            box.addView(bSave, sp);
+            sv.addView(box);
+            int sw = getContext().getResources().getDisplayMetrics().widthPixels;
+            d.setContentView(sv, new ViewGroup.LayoutParams((int)(sw * 0.84f), -2));
+            d.show();
+        });
+
+        // 完整的 API 池 / 备用池 / 多Key / 多协议 / 拉取模型管理器
+        final Runnable[] openPoolManagerRef = {null};
+        openPoolManagerRef[0] = () -> {
+            final Dialog md = new Dialog(getContext());
+            if (md.getWindow() != null) md.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            ScrollView msv = new ScrollView(getContext());
+            final LinearLayout mbox = new LinearLayout(getContext()); mbox.setOrientation(LinearLayout.VERTICAL);
+            mbox.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
+            GradientDrawable mbg = new GradientDrawable(); mbg.setColor(Color.parseColor("#F8141A24")); mbg.setCornerRadius(12f*density); mbg.setStroke(2, Color.parseColor("#0F766E")); mbox.setBackground(mbg);
+
+            mbox.addView(createSubTitle(L("⚙️ API 多池与多 Key 管理中心 (支持 OpenAI/Gemini/Claude/Ollama/Cohere/Azure)")));
+
+            LinearLayout topAct = new LinearLayout(getContext()); topAct.setOrientation(LinearLayout.HORIZONTAL);
+            Button bAddPool = createButton(L("➕ 新建备用池"), "#0284C7");
+            Button bResetDef = createButton(L("🔄 恢复免费测试默认"), "#475569");
+            LinearLayout.LayoutParams tap = new LinearLayout.LayoutParams(0, -2, 1f); tap.setMargins((int)(2*density), (int)(4*density), (int)(2*density), (int)(8*density));
+            bAddPool.setOnClickListener(v -> {
+                AiPoolConfig np = new AiPoolConfig();
+                np.id = "pool_" + System.currentTimeMillis();
+                np.name = L("备用池 ") + pools.size();
+                np.isPrimary = false;
+                pools.add(np);
+                saveAiPools(pools);
+                refreshHeaderUI.run();
+                md.dismiss();
+                openPoolManagerRef[0].run();
+            });
+            bResetDef.setOnClickListener(v -> {
+                prefs.edit().remove(PREF_AI_POOLS).apply();
+                pools.clear();
+                pools.addAll(loadAiPools());
+                activePoolId[0] = pools.get(0).id;
+                activeModel[0] = "openai";
+                refreshHeaderUI.run();
+                md.dismiss();
+                openPoolManagerRef[0].run();
+            });
+            topAct.addView(bAddPool, tap); topAct.addView(bResetDef, tap);
+            mbox.addView(topAct);
+
+            for (int pi = 0; pi < pools.size(); pi++) {
+                final int poolIdx = pi;
+                final AiPoolConfig pool = pools.get(pi);
+                LinearLayout pCard = new LinearLayout(getContext()); pCard.setOrientation(LinearLayout.VERTICAL);
+                pCard.setPadding((int)(10*density), (int)(8*density), (int)(10*density), (int)(8*density));
+                GradientDrawable pbg = new GradientDrawable(); pbg.setColor(Color.parseColor("#1B2333")); pbg.setCornerRadius(8f*density);
+                pbg.setStroke(1, Color.parseColor(pool.isPrimary ? "#38BDF8" : "#334155"));
+                pCard.setBackground(pbg);
+                LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(-1, -2); plp.setMargins(0, 0, 0, (int)(8*density));
+
+                LinearLayout pHead = new LinearLayout(getContext()); pHead.setOrientation(LinearLayout.HORIZONTAL); pHead.setGravity(Gravity.CENTER_VERTICAL);
+                TextView pTitle = new TextView(getContext());
+                pTitle.setText((pool.isPrimary ? "⭐ " : "📦 ") + pool.name);
+                applyGlobalFontSettings(pTitle, 0.94f, true); pTitle.setTextColor(Color.WHITE);
+                pHead.addView(pTitle, new LinearLayout.LayoutParams(0, -2, 1f));
+
+                Button bAddEp = createButton(L("+ API节点"), "#16A34A");
+                bAddEp.setPadding((int)(7*density), (int)(3*density), (int)(7*density), (int)(3*density));
+                Button bDelPool = createButton("🗑️", "#991B1B");
+                bDelPool.setPadding((int)(7*density), (int)(3*density), (int)(7*density), (int)(3*density));
+                LinearLayout.LayoutParams hbp = new LinearLayout.LayoutParams(-2, -2); hbp.setMargins((int)(4*density), 0, 0, 0);
+                pHead.addView(bAddEp, hbp);
+                if (pools.size() > 1) pHead.addView(bDelPool, hbp);
+                pCard.addView(pHead);
+
+                bDelPool.setOnClickListener(dv -> {
+                    pools.remove(poolIdx);
+                    saveAiPools(pools);
+                    refreshHeaderUI.run();
+                    md.dismiss();
+                    openPoolManagerRef[0].run();
+                });
+
+                // 节点编辑器打开器（新建或修改已有 API 节点）
+                final Runnable[] openEpEditorFactory = {null};
+                final AiEndpointConfig[] editingEpRef = {null};
+                openEpEditorFactory[0] = () -> {
+                    final boolean isNew = (editingEpRef[0] == null);
+                    final AiEndpointConfig target = isNew ? new AiEndpointConfig() : editingEpRef[0];
+                    if (isNew) {
+                        target.id = "ep_" + System.currentTimeMillis();
+                        target.name = "Custom API";
+                        target.protocol = "openai";
+                        target.baseUrl = "https://" + "api.openai.com/v1";
+                        target.enabled = true;
+                    }
+                    final Dialog ed = new Dialog(getContext());
+                    if (ed.getWindow() != null) ed.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+                    ScrollView esv = new ScrollView(getContext());
+                    LinearLayout ebox = new LinearLayout(getContext()); ebox.setOrientation(LinearLayout.VERTICAL);
+                    ebox.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
+                    GradientDrawable ebg = new GradientDrawable(); ebg.setColor(Color.parseColor("#F8141A24")); ebg.setCornerRadius(12f*density); ebg.setStroke(2, Color.parseColor("#6366F1")); ebox.setBackground(ebg);
+                    ebox.addView(createSubTitle(isNew ? L("➕ 新增 API 节点") : L("✏️ 编辑 API 节点")));
+
+                    final EditText eName = createInput(L("节点名称（如 DeepSeek / Gemini）"), target.name);
+                    final String[] protos = {"openai", "gemini", "claude", "ollama", "cohere", "azure"};
+                    final String[] protoSel = { target.protocol };
+                    HorizontalScrollView psc = new HorizontalScrollView(getContext()); psc.setHorizontalScrollBarEnabled(false);
+                    LinearLayout prow = new LinearLayout(getContext()); prow.setOrientation(LinearLayout.HORIZONTAL);
+                    final Button[] pbs = new Button[protos.length];
+                    LinearLayout.LayoutParams pbp = new LinearLayout.LayoutParams(-2, -2); pbp.setMargins(0, (int)(3*density), (int)(4*density), (int)(5*density));
+                    for (int k = 0; k < protos.length; k++) {
+                        final int ki = k;
+                        pbs[k] = createButton(protos[k], protos[k].equalsIgnoreCase(protoSel[0]) ? "#4F46E5" : "#263147");
+                        pbs[k].setPadding((int)(8*density), (int)(4*density), (int)(8*density), (int)(4*density));
+                        pbs[k].setOnClickListener(pv -> {
+                            protoSel[0] = protos[ki];
+                            for (int x = 0; x < pbs.length; x++) pbs[x].setBackgroundColor(Color.parseColor(x == ki ? "#4F46E5" : "#263147"));
+                        });
+                        prow.addView(pbs[k], pbp);
+                    }
+                    psc.addView(prow);
+
+                    final EditText eUrl = createInput(L("Base URL（如 ") + "https://" + "api.openai.com/v1）", target.baseUrl);
+                    StringBuilder ksInit = new StringBuilder();
+                    for (String k : target.keys) { if (ksInit.length() > 0) ksInit.append("\n"); ksInit.append(k); }
+                    final EditText eKeys = createInput(L("多个 API Key（每行一个，额度用完自动切下一个）"), ksInit.toString());
+                    eKeys.setMinLines(2);
+
+                    StringBuilder msInit = new StringBuilder();
+                    for (String m : target.models) { if (msInit.length() > 0) msInit.append(", "); msInit.append(m); }
+                    final EditText eModels = createInput(L("模型列表（逗号分隔，可点下方按钮自动拉取）"), msInit.toString());
+                    eModels.setMinLines(2);
+
+                    final boolean[] enFlag = { target.enabled };
+                    final Button bToggleEn = createButton(enFlag[0] ? L("✅ 状态: 已启用") : L("⏸️ 状态: 已停用"), enFlag[0] ? "#16A34A" : "#475569");
+                    bToggleEn.setOnClickListener(ev -> {
+                        enFlag[0] = !enFlag[0];
+                        bToggleEn.setText(enFlag[0] ? L("✅ 状态: 已启用") : L("⏸️ 状态: 已停用"));
+                        bToggleEn.setBackgroundColor(Color.parseColor(enFlag[0] ? "#16A34A" : "#475569"));
+                    });
+
+                    Button bFetchModels = createButton(L("🔄 从该 API 自动拉取可用模型列表"), "#0284C7");
+                    bFetchModels.setOnClickListener(fv -> {
+                        AiEndpointConfig tmp = new AiEndpointConfig();
+                        tmp.protocol = protoSel[0];
+                        tmp.baseUrl = eUrl.getText().toString().trim();
+                        String firstKey = "";
+                        for (String kl : eKeys.getText().toString().split("[\n,]")) {
+                            if (!kl.trim().isEmpty()) { firstKey = kl.trim(); break; }
+                        }
+                        final String fk = firstKey;
+                        Toast.makeText(getContext(), L("⏳ 正在向接口拉取模型列表..."), Toast.LENGTH_SHORT).show();
+                        new Thread(() -> {
+                            try {
+                                final List<String> fetched = fetchModelsForEndpoint(tmp, fk);
+                                uiHandler.post(() -> {
+                                    if (fetched.isEmpty()) {
+                                        Toast.makeText(getContext(), L("⚠️ 接口返回了空模型列表"), Toast.LENGTH_SHORT).show();
+                                    } else {
+                                        StringBuilder msb = new StringBuilder();
+                                        int cap = Math.min(fetched.size(), 40);
+                                        for (int i = 0; i < cap; i++) {
+                                            if (i > 0) msb.append(", ");
+                                            msb.append(fetched.get(i));
+                                        }
+                                        eModels.setText(msb.toString());
+                                        Toast.makeText(getContext(), L("✅ 成功拉取 ") + fetched.size() + L(" 个模型！"), Toast.LENGTH_SHORT).show();
+                                    }
+                                });
+                            } catch (Exception ex) {
+                                uiHandler.post(() -> Toast.makeText(getContext(), L("❌ 拉取失败: ") + ex.getMessage(), Toast.LENGTH_LONG).show());
+                            }
+                        }).start();
+                    });
+
+                    ebox.addView(createSubTitle(L("名称:"))); ebox.addView(eName);
+                    ebox.addView(createSubTitle(L("协议格式:"))); ebox.addView(psc);
+                    ebox.addView(createSubTitle(L("API 地址 (Base URL):"))); ebox.addView(eUrl);
+                    ebox.addView(createSubTitle(L("API Keys (支持多个，每行一个):"))); ebox.addView(eKeys);
+                    ebox.addView(createSubTitle(L("支持模型列表:"))); ebox.addView(eModels);
+                    LinearLayout.LayoutParams bfp = new LinearLayout.LayoutParams(-1, -2); bfp.setMargins(0, (int)(6*density), 0, 0);
+                    ebox.addView(bFetchModels, bfp);
+                    ebox.addView(bToggleEn, bfp);
+
+                    LinearLayout actR = new LinearLayout(getContext()); actR.setOrientation(LinearLayout.HORIZONTAL);
+                    Button bSaveEp = createButton(L("💾 保存节点"), "#16A34A");
+                    Button bCancelEp = createButton(L("取消"), "#475569");
+                    LinearLayout.LayoutParams arp = new LinearLayout.LayoutParams(0, -2, 1f); arp.setMargins((int)(3*density), (int)(10*density), (int)(3*density), 0);
+                    bSaveEp.setOnClickListener(sv2 -> {
+                        target.name = eName.getText().toString().trim();
+                        if (target.name.isEmpty()) target.name = protoSel[0].toUpperCase();
+                        target.protocol = protoSel[0];
+                        target.baseUrl = eUrl.getText().toString().trim();
+                        target.enabled = enFlag[0];
+                        target.keys.clear();
+                        for (String k : eKeys.getText().toString().split("[\n,]")) if (!k.trim().isEmpty()) target.keys.add(k.trim());
+                        target.models.clear();
+                        for (String m : eModels.getText().toString().split("[\n,]")) if (!m.trim().isEmpty()) target.models.add(m.trim());
+                        if (isNew) pool.endpoints.add(target);
+                        saveAiPools(pools);
+                        refreshHeaderUI.run();
+                        ed.dismiss();
+                        md.dismiss();
+                        openPoolManagerRef[0].run();
+                    });
+                    bCancelEp.setOnClickListener(cv -> ed.dismiss());
+                    actR.addView(bSaveEp, arp); actR.addView(bCancelEp, arp);
+                    ebox.addView(actR);
+
+                    esv.addView(ebox);
+                    int sw2 = getContext().getResources().getDisplayMetrics().widthPixels;
+                    ed.setContentView(esv, new ViewGroup.LayoutParams((int)(sw2 * 0.88f), -2));
+                    ed.show();
+                };
+
+                bAddEp.setOnClickListener(av -> { editingEpRef[0] = null; openEpEditorFactory[0].run(); });
+
+                for (int ei = 0; ei < pool.endpoints.size(); ei++) {
+                    final int epIdx = ei;
+                    final AiEndpointConfig ep = pool.endpoints.get(ei);
+                    LinearLayout eRow = new LinearLayout(getContext()); eRow.setOrientation(LinearLayout.HORIZONTAL); eRow.setGravity(Gravity.CENTER_VERTICAL);
+                    eRow.setPadding((int)(8*density), (int)(6*density), (int)(8*density), (int)(6*density));
+                    GradientDrawable ebg = new GradientDrawable(); ebg.setColor(Color.parseColor("#131A26")); ebg.setCornerRadius(6f*density); ebg.setStroke(1, Color.parseColor(ep.enabled ? "#334155" : "#451A1A"));
+                    eRow.setBackground(ebg);
+                    LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(-1, -2); elp.setMargins(0, (int)(5*density), 0, 0);
+
+                    TextView eTv = new TextView(getContext());
+                    eTv.setText((ep.enabled ? "🟢 " : "⚪ ") + ep.name + " [" + ep.protocol + "]\nKey:" + ep.keys.size() + " | 模型:" + ep.models.size());
+                    applyGlobalFontSettings(eTv, 0.8f, false); eTv.setTextColor(Color.parseColor("#CBD5E1"));
+                    eRow.addView(eTv, new LinearLayout.LayoutParams(0, -2, 1f));
+
+                    Button bEd = createButton(L("编辑"), "#334155"); bEd.setPadding((int)(7*density), (int)(3*density), (int)(7*density), (int)(3*density));
+                    Button bRm = createButton("✕", "#7F1D1D"); bRm.setPadding((int)(7*density), (int)(3*density), (int)(7*density), (int)(3*density));
+                    bEd.setOnClickListener(ev -> { editingEpRef[0] = ep; openEpEditorFactory[0].run(); });
+                    bRm.setOnClickListener(rv -> {
+                        pool.endpoints.remove(epIdx);
+                        saveAiPools(pools);
+                        refreshHeaderUI.run();
+                        md.dismiss();
+                        openPoolManagerRef[0].run();
+                    });
+                    eRow.addView(bEd, hbp); eRow.addView(bRm, hbp);
+                    pCard.addView(eRow, elp);
+                }
+                mbox.addView(pCard, plp);
+            }
+
+            Button bClose = createButton(L("完成关闭"), "#475569");
+            bClose.setOnClickListener(cv -> md.dismiss());
+            mbox.addView(bClose, new LinearLayout.LayoutParams(-1, -2));
+
+            msv.addView(mbox);
+            int sw = getContext().getResources().getDisplayMetrics().widthPixels;
+            md.setContentView(msv, new ViewGroup.LayoutParams((int)(sw * 0.90f), -2));
+            md.show();
+        };
+        btnManagePools.setOnClickListener(v -> openPoolManagerRef[0].run());
 
         return root;
     }
