@@ -7891,16 +7891,31 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     final File tCns = tCnsTmp;
 
                     if (tCns == null || tCmd == null) {
-                        Toast.makeText(getContext(), L("❌ 目标角色缺少 CNS 或 CMD 文件，无法自动注入"), Toast.LENGTH_LONG).show();
+                        Toast.makeText(getContext(), L("❌ 目标角色缺少 CNS/ZSS 或 CMD 文件，无法自动注入"), Toast.LENGTH_LONG).show();
                         return;
                     }
 
-                    // 扫描目标 CNS/AIR 已占用的 StateNo / ActionNo，自动推荐不冲突编号
-                    String tCnsRaw = readTextAutoCharset(tCns);
-                    String tAirRaw = (tAir != null && tAir.exists()) ? readTextAutoCharset(tAir) : "";
+                    // 判断源技能是否为 ZSS 语法（Ikemen GO 兼容优先：绝不将 CNS 与 ZSS 混写进同一文件！）
+                    final boolean srcIsZss = (st.sourceFile != null && st.sourceFile.getName().toLowerCase().endsWith(".zss"))
+                            || java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+-?\\d+\\s*;").matcher(st.codePreview).find();
+
+                    // 扫描目标角色全部状态文件 (st / st0..stN / cns，含 .zss 与 .cns) 已占用的 StateNo
                     java.util.HashSet<Integer> usedStates = new java.util.HashSet<>();
-                    java.util.regex.Matcher smt = java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+(-?\\d+)").matcher(tCnsRaw);
-                    while (smt.find()) { try { usedStates.add(Integer.parseInt(smt.group(1))); } catch (Exception ignored) {} }
+                    java.util.LinkedHashSet<File> tAllStFiles = new java.util.LinkedHashSet<>();
+                    tAllStFiles.add(tCns);
+                    for (java.util.Map.Entry<String, String> tEn : tFiles.entrySet()) {
+                        String tk = tEn.getKey();
+                        if (tk.equals("st") || tk.matches("^st\\d+$") || tk.equals("cns")) {
+                            File tsf = resolveCharSubFile(tBaseDir, tEn.getValue());
+                            if (tsf != null && tsf.exists()) tAllStFiles.add(tsf);
+                        }
+                    }
+                    java.util.regex.Pattern tSdPat = java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+(-?\\d+)");
+                    for (File tsf : tAllStFiles) {
+                        java.util.regex.Matcher smt = tSdPat.matcher(readTextAutoCharset(tsf));
+                        while (smt.find()) { try { usedStates.add(Integer.parseInt(smt.group(1))); } catch (Exception ignored) {} }
+                    }
+                    String tAirRaw = (tAir != null && tAir.exists()) ? readTextAutoCharset(tAir) : "";
                     java.util.HashSet<Integer> usedAnims = new java.util.HashSet<>();
                     java.util.regex.Matcher amt = java.util.regex.Pattern.compile("(?i)\\[\\s*begin\\s+action\\s+(-?\\d+)").matcher(tAirRaw);
                     while (amt.find()) { try { usedAnims.add(Integer.parseInt(amt.group(1))); } catch (Exception ignored) {} }
@@ -7932,22 +7947,22 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     LinearLayout cbox = new LinearLayout(getContext()); cbox.setOrientation(LinearLayout.VERTICAL);
                     cbox.setPadding((int)(14*density), (int)(14*density), (int)(14*density), (int)(14*density));
                     GradientDrawable cbg = new GradientDrawable(); cbg.setColor(Color.parseColor("#F8141A24")); cbg.setCornerRadius(12f*density); cbg.setStroke(2, Color.parseColor("#7C3AED")); cbox.setBackground(cbg);
-                    cbox.addView(createSubTitle(L("🚀 一键移植到: ") + targetDef.getName()));
+                    cbox.addView(createSubTitle(L("🚀 一键移植到: ") + targetDef.getName() + (srcIsZss ? " [ZSS]" : " [CNS]")));
 
                     final EditText eCmdName = createInput(L("CMD 指令名"), "CloneSkill_" + recState);
-                    final EditText eCmdKeys = createInput(L("搓招按键 (如 ~D, DF, F, x)"), defaultRawCmd);
+                    final EditText eCmdKeys = createInput(L("搓招按键 (冲突将自动升级为双击触发)"), defaultRawCmd);
                     final EditText eNewState = createInput(L("写入目标 State 编号"), String.valueOf(recState));
                     eNewState.setInputType(InputType.TYPE_CLASS_NUMBER);
                     final EditText eNewAnim = createInput(L("写入目标 AIR 动作号"), String.valueOf(recAnim));
                     eNewAnim.setInputType(InputType.TYPE_CLASS_NUMBER);
 
-                    cbox.addView(createSubTitle(L("1. 游戏内触发按键 (支持一键选常用键):")));
+                    cbox.addView(createSubTitle(L("1. 游戏内触发按键 (若按键重复自动转双击触发):")));
                     cbox.addView(eCmdKeys);
                     HorizontalScrollView psc = new HorizontalScrollView(getContext()); psc.setHorizontalScrollBarEnabled(false);
                     LinearLayout prow = new LinearLayout(getContext()); prow.setOrientation(LinearLayout.HORIZONTAL);
                     String[][] presets = {
                         {"↓↘→+x", "~D, DF, F, x"}, {"↓↙←+x", "~D, DB, B, x"},
-                        {"x+y", "x+y"}, {"a+b", "a+b"}, {"s(挑衅键)", "s"}
+                        {"x+y", "x+y"}, {"a+b", "a+b"}, {"s(挑衅键)", "s"}, {"s,s(双击挑衅)", "s, s"}
                     };
                     LinearLayout.LayoutParams pbp = new LinearLayout.LayoutParams(-2, -2); pbp.setMargins(0, (int)(4*density), (int)(4*density), (int)(6*density));
                     for (final String[] pr : presets) {
@@ -7959,16 +7974,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     psc.addView(prow); cbox.addView(psc);
 
                     cbox.addView(createSubTitle(L("2. 指令名称 (自动写入目标 .cmd):"))); cbox.addView(eCmdName);
-                    cbox.addView(createSubTitle(L("3. 目标 State 编号 (冲突已自动避让):"))); cbox.addView(eNewState);
+                    cbox.addView(createSubTitle(L("3. 目标 State 编号 (已全文件防撞号):"))); cbox.addView(eNewState);
                     cbox.addView(createSubTitle(L("4. 目标 AIR 动作号 (冲突已自动避让):"))); cbox.addView(eNewAnim);
 
-                    Button bExecClone = createButton(L("✅ 开始全自动移植 (SFF+SND+AIR+CNS+CMD)"), "#16A34A");
+                    Button bExecClone = createButton(L("✅ 开始全自动移植 (IK/ZSS 防闪退模式)"), "#16A34A");
                     LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(-1, -2); ep.setMargins(0, (int)(10*density), 0, 0);
                     final int fDefState = recState, fDefAnim = recAnim;
                     bExecClone.setOnClickListener(ev -> {
                         cfgD.dismiss();
                         final String cmdName = eCmdName.getText().toString().trim().isEmpty() ? ("CloneSkill_" + fDefState) : eCmdName.getText().toString().trim();
-                        final String cmdSeq = eCmdKeys.getText().toString().trim().isEmpty() ? "~D, DF, F, x" : eCmdKeys.getText().toString().trim();
+                        final String rawInputSeq = eCmdKeys.getText().toString().trim().isEmpty() ? "~D, DF, F, x" : eCmdKeys.getText().toString().trim();
                         int tmpSt = fDefState, tmpAn = fDefAnim;
                         try { tmpSt = Integer.parseInt(eNewState.getText().toString().trim()); } catch (Exception ignored) {}
                         try { tmpAn = Integer.parseInt(eNewAnim.getText().toString().trim()); } catch (Exception ignored) {}
@@ -8027,30 +8042,43 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     }
                                 }
 
-                                // ② SND 绑定音效提取注入 + 冲突自动改号 + 同步改写 CNS 音效调用
+                                // ② SND 绑定音效提取注入 + 冲突自动改号（同时兼容 CNS 与 ZSS 语法，跳过 F 公共音效）
                                 java.util.LinkedHashMap<String, int[]> sndRemap = new java.util.LinkedHashMap<>();
                                 int sndOk = 0, sndRemapped = 0;
                                 String rewrittenCns = st.codePreview;
                                 if (sndFileRef[0] != null && sndFileRef[0].exists() && tSnd != null && tSnd.exists()) {
-                                    // 扫描 CNS 中所有 PlaySnd 的 value = [S]g, i 以及 hitsound/guardsound/sound = [S]g, i（跳过 F 公共音效）
                                     java.util.LinkedHashMap<String, int[]> foundSnds = new java.util.LinkedHashMap<>();
-                                    String[] cLines = rewrittenCns.split("\n", -1);
-                                    boolean inPlaySnd = false;
-                                    java.util.regex.Pattern sndPairPat = java.util.regex.Pattern.compile("(?i)^\\s*(value|hitsound|guardsound|sound)\\s*=\\s*(?:S)?(\\d+)\\s*,\\s*(\\d+)");
-                                    for (String cl : cLines) {
-                                        int ci = cl.indexOf(';');
-                                        String cClean = (ci >= 0 ? cl.substring(0, ci) : cl).trim();
-                                        String cLow = cClean.toLowerCase();
-                                        if (cLow.startsWith("[state ")) inPlaySnd = false;
-                                        else if (cLow.matches("^type\\s*=\\s*playsnd$")) inPlaySnd = true;
-                                        else {
-                                            java.util.regex.Matcher m = sndPairPat.matcher(cClean);
-                                            if (m.find()) {
-                                                String kName = m.group(1).toLowerCase();
-                                                if (!kName.equals("value") || inPlaySnd) {
-                                                    int sg = Integer.parseInt(m.group(2));
-                                                    int si = Integer.parseInt(m.group(3));
-                                                    foundSnds.put(sg + "," + si, new int[]{sg, si});
+                                    if (srcIsZss) {
+                                        // ZSS 语法：playSnd{value: [S ]g, i} / hitsound: [S ]g, i / guardsound: [S ]g, i
+                                        java.util.regex.Matcher zm1 = java.util.regex.Pattern.compile("(?i)playsnd\\s*\\{[^}]*?value\\s*:\\s*(?:S\\s*)?(\\d+)\\s*,\\s*(\\d+)").matcher(rewrittenCns);
+                                        while (zm1.find()) {
+                                            int sg = Integer.parseInt(zm1.group(1)), si = Integer.parseInt(zm1.group(2));
+                                            foundSnds.put(sg + "," + si, new int[]{sg, si});
+                                        }
+                                        java.util.regex.Matcher zm2 = java.util.regex.Pattern.compile("(?i)\\b(?:hitsound|guardsound|sound)\\s*:\\s*(?:S\\s*)?(\\d+)\\s*,\\s*(\\d+)").matcher(rewrittenCns);
+                                        while (zm2.find()) {
+                                            int sg = Integer.parseInt(zm2.group(1)), si = Integer.parseInt(zm2.group(2));
+                                            foundSnds.put(sg + "," + si, new int[]{sg, si});
+                                        }
+                                    } else {
+                                        String[] cLines = rewrittenCns.split("\n", -1);
+                                        boolean inPlaySnd = false;
+                                        java.util.regex.Pattern sndPairPat = java.util.regex.Pattern.compile("(?i)^\\s*(value|hitsound|guardsound|sound)\\s*=\\s*(?:S\\s*)?(\\d+)\\s*,\\s*(\\d+)");
+                                        for (String cl : cLines) {
+                                            int ci = cl.indexOf(';');
+                                            String cClean = (ci >= 0 ? cl.substring(0, ci) : cl).trim();
+                                            String cLow = cClean.toLowerCase();
+                                            if (cLow.startsWith("[state ")) inPlaySnd = false;
+                                            else if (cLow.matches("^type\\s*=\\s*playsnd$")) inPlaySnd = true;
+                                            else {
+                                                java.util.regex.Matcher m = sndPairPat.matcher(cClean);
+                                                if (m.find()) {
+                                                    String kName = m.group(1).toLowerCase();
+                                                    if (!kName.equals("value") || inPlaySnd) {
+                                                        int sg = Integer.parseInt(m.group(2));
+                                                        int si = Integer.parseInt(m.group(3));
+                                                        foundSnds.put(sg + "," + si, new int[]{sg, si});
+                                                    }
                                                 }
                                             }
                                         }
@@ -8093,51 +8121,109 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     }
                                 }
 
-                                // ③ 同步改写 CNS 状态号 / 动作号 / 音效调用并追加写入目标 .cns
+                                // ③ 同步改写状态号 / 动作号 / 音效调用；严格隔离 CNS 与 ZSS 语法防闪退！
                                 StringBuilder cnsOut = new StringBuilder();
-                                String[] cnsLines = rewrittenCns.split("\n", -1);
-                                boolean inPs = false, inCa = false, inHead = false;
-                                java.util.regex.Pattern sndRepPat = java.util.regex.Pattern.compile("(?i)^(\\s*(?:value|hitsound|guardsound|sound)\\s*=\\s*(?:S)?)(\\d+)(\\s*,\\s*)(\\d+)(.*)$");
-                                for (String line : cnsLines) {
-                                    int ci = line.indexOf(';');
-                                    String codePart = (ci >= 0 ? line.substring(0, ci) : line);
-                                    String cmtPart = (ci >= 0 ? line.substring(ci) : "");
-                                    String trimmed = codePart.trim();
-                                    String low = trimmed.toLowerCase();
-                                    if (low.matches("^\\[\\s*statedef\\s+-?\\d+.*")) {
-                                        codePart = "[Statedef " + newStateNo + "]";
-                                        inHead = true; inPs = false; inCa = false;
-                                    } else if (low.startsWith("[state ")) {
-                                        inHead = false; inPs = false; inCa = false;
-                                    } else if (low.matches("^type\\s*=\\s*playsnd$")) {
-                                        inPs = true;
-                                    } else if (low.matches("^type\\s*=\\s*changeanim2?$")) {
-                                        inCa = true;
-                                    } else if (inHead && low.matches("^anim\\s*=\\s*-?\\d+$")) {
-                                        codePart = "anim = " + newAnimNo;
-                                    } else if (inCa && low.matches("^value\\s*=\\s*-?\\d+$") && finalResolvedAnim >= 0) {
-                                        try {
-                                            int vOld = Integer.parseInt(trimmed.substring(trimmed.indexOf('=') + 1).trim());
-                                            if (vOld == finalResolvedAnim) codePart = "value = " + newAnimNo;
-                                        } catch (Exception ignored) {}
-                                    } else if (!sndRemap.isEmpty()) {
-                                        java.util.regex.Matcher m = sndRepPat.matcher(codePart);
-                                        if (m.find()) {
-                                            boolean isVal = m.group(1).trim().toLowerCase().startsWith("value");
-                                            if (!isVal || inPs) {
-                                                int[] mapped = sndRemap.get(m.group(2) + "," + m.group(4));
-                                                if (mapped != null) {
-                                                    codePart = m.group(1) + mapped[0] + m.group(3) + mapped[1] + m.group(5);
-                                                }
+                                if (srcIsZss) {
+                                    String zBody = rewrittenCns.replaceFirst("(?i)(\\[\\s*statedef\\s+)-?\\d+", "$1" + newStateNo);
+                                    if (finalResolvedAnim >= 0) {
+                                        zBody = zBody.replaceAll("(?i)(\\banim\\s*:\\s*)" + finalResolvedAnim + "\\b", "$1" + newAnimNo);
+                                        zBody = zBody.replaceAll("(?i)(changeanim2?\\s*\\{[^}]*?value\\s*:\\s*)" + finalResolvedAnim + "\\b", "$1" + newAnimNo);
+                                    }
+                                    if (!sndRemap.isEmpty()) {
+                                        for (java.util.Map.Entry<String, int[]> rm : sndRemap.entrySet()) {
+                                            String[] op = rm.getKey().split(",");
+                                            int ng = rm.getValue()[0], ni = rm.getValue()[1];
+                                            if (!op[0].equals(String.valueOf(ng)) || !op[1].equals(String.valueOf(ni))) {
+                                                zBody = zBody.replaceAll("(?i)(playsnd\\s*\\{[^}]*?value\\s*:\\s*(?:S\\s*)?)" + op[0] + "(\\s*,\\s*)" + op[1] + "\\b", "$1" + ng + "$2" + ni);
+                                                zBody = zBody.replaceAll("(?i)(\\b(?:hitsound|guardsound|sound)\\s*:\\s*(?:S\\s*)?)" + op[0] + "(\\s*,\\s*)" + op[1] + "\\b", "$1" + ng + "$2" + ni);
                                             }
                                         }
                                     }
-                                    cnsOut.append(codePart).append(cmtPart).append("\n");
+                                    cnsOut.append(zBody);
+                                } else {
+                                    String[] cnsLines = rewrittenCns.split("\n", -1);
+                                    boolean inPs = false, inCa = false, inHead = false;
+                                    java.util.regex.Pattern sndRepPat = java.util.regex.Pattern.compile("(?i)^(\\s*(?:value|hitsound|guardsound|sound)\\s*=\\s*(?:S\\s*)?)(\\d+)(\\s*,\\s*)(\\d+)(.*)$");
+                                    for (String line : cnsLines) {
+                                        int ci = line.indexOf(';');
+                                        String codePart = (ci >= 0 ? line.substring(0, ci) : line);
+                                        String cmtPart = (ci >= 0 ? line.substring(ci) : "");
+                                        String trimmed = codePart.trim();
+                                        String low = trimmed.toLowerCase();
+                                        if (low.matches("^\\[\\s*statedef\\s+-?\\d+.*")) {
+                                            codePart = "[Statedef " + newStateNo + "]";
+                                            inHead = true; inPs = false; inCa = false;
+                                        } else if (low.startsWith("[state ")) {
+                                            inHead = false; inPs = false; inCa = false;
+                                        } else if (low.matches("^type\\s*=\\s*playsnd$")) {
+                                            inPs = true;
+                                        } else if (low.matches("^type\\s*=\\s*changeanim2?$")) {
+                                            inCa = true;
+                                        } else if (inHead && low.matches("^anim\\s*=\\s*-?\\d+$")) {
+                                            codePart = "anim = " + newAnimNo;
+                                        } else if (inCa && low.matches("^value\\s*=\\s*-?\\d+$") && finalResolvedAnim >= 0) {
+                                            try {
+                                                int vOld = Integer.parseInt(trimmed.substring(trimmed.indexOf('=') + 1).trim());
+                                                if (vOld == finalResolvedAnim) codePart = "value = " + newAnimNo;
+                                            } catch (Exception ignored) {}
+                                        } else if (!sndRemap.isEmpty()) {
+                                            java.util.regex.Matcher m = sndRepPat.matcher(codePart);
+                                            if (m.find()) {
+                                                boolean isVal = m.group(1).trim().toLowerCase().startsWith("value");
+                                                if (!isVal || inPs) {
+                                                    int[] mapped = sndRemap.get(m.group(2) + "," + m.group(4));
+                                                    if (mapped != null) {
+                                                        codePart = m.group(1) + mapped[0] + m.group(3) + mapped[1] + m.group(5);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        cnsOut.append(codePart).append(cmtPart).append("\n");
+                                    }
                                 }
-                                String finalCnsBlock = "\n\n; === [自动移植技能] " + cmdName + " (State " + newStateNo + ") ===\n" + cnsOut.toString().trim() + "\n";
-                                File cnsBak = new File(tCns.getAbsolutePath() + ".bak");
-                                if (!cnsBak.exists()) copyFileToSandbox(tCns, cnsBak);
-                                try (FileOutputStream fos = new FileOutputStream(tCns, true)) { fos.write(finalCnsBlock.getBytes("UTF-8")); }
+
+                                // 决定安全写入目标文件：若目标主状态为 ZSS 而源为 CNS（或反之），自动创建独立侧挂文件并注册到目标 .def 的 [Files] stN！
+                                boolean targetMainIsZss = tCns.getName().toLowerCase().endsWith(".zss");
+                                File writeStateFile = tCns;
+                                String defMountNote = "";
+                                if (srcIsZss != targetMainIsZss) {
+                                    String sidecarName = srcIsZss ? "ik_cloned_skills.zss" : "ik_cloned_skills.cns";
+                                    writeStateFile = new File(tBaseDir, sidecarName);
+                                    boolean alreadyMounted = false;
+                                    int maxStIdx = 0;
+                                    for (java.util.Map.Entry<String, String> tEn : tFiles.entrySet()) {
+                                        String tk = tEn.getKey();
+                                        if (tEn.getValue().equalsIgnoreCase(sidecarName)) alreadyMounted = true;
+                                        if (tk.matches("^st\\d+$")) {
+                                            try { int idx = Integer.parseInt(tk.substring(2)); if (idx > maxStIdx) maxStIdx = idx; } catch (Exception ignored) {}
+                                        }
+                                    }
+                                    if (!alreadyMounted) {
+                                        int nextStIdx = Math.max(1, maxStIdx + 1);
+                                        while (tFiles.containsKey("st" + nextStIdx)) nextStIdx++;
+                                        String stKey = "st" + nextStIdx;
+                                        File defBak = new File(targetDef.getAbsolutePath() + ".bak");
+                                        if (!defBak.exists()) copyFileToSandbox(targetDef, defBak);
+                                        String curDefTxt = readTextAutoCharset(targetDef);
+                                        java.util.regex.Matcher fm = java.util.regex.Pattern.compile("(?i)(\\[\\s*files\\s*\\][^\n]*\n?)").matcher(curDefTxt);
+                                        String newDefTxt;
+                                        if (fm.find()) {
+                                            newDefTxt = curDefTxt.substring(0, fm.end()) + stKey + " = " + sidecarName + " ; [IK自动挂载移植技能]\n" + curDefTxt.substring(fm.end());
+                                        } else {
+                                            newDefTxt = curDefTxt + "\n[Files]\n" + stKey + " = " + sidecarName + "\n";
+                                        }
+                                        try (FileOutputStream fos = new FileOutputStream(targetDef)) { fos.write(newDefTxt.getBytes("UTF-8")); }
+                                        defMountNote = " (已防冲突独立隔离并在 " + targetDef.getName() + " 自动挂载 " + stKey + " = " + sidecarName + ")";
+                                    } else {
+                                        defMountNote = " (已写入独立隔离文件，避免污染目标 ZSS/CNS)";
+                                    }
+                                } else {
+                                    File cnsBak = new File(writeStateFile.getAbsolutePath() + ".bak");
+                                    if (!cnsBak.exists()) copyFileToSandbox(writeStateFile, cnsBak);
+                                }
+                                String cmtPrefix = srcIsZss ? "# " : "; ";
+                                String finalCnsBlock = "\n\n" + cmtPrefix + "=== [自动移植技能] " + cmdName + " (State " + newStateNo + ") ===\n" + cnsOut.toString().trim() + "\n";
+                                try (FileOutputStream fos = new FileOutputStream(writeStateFile, true)) { fos.write(finalCnsBlock.getBytes("UTF-8")); }
 
                                 // ④ 同步改写 AIR 动作号与 SFF 帧编号，并追加写入目标 .air
                                 boolean airWritten = false;
@@ -8164,12 +8250,44 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     airWritten = true;
                                 }
 
-                                // ⑤ 自动同步注入 [Command] 与 [State -1] 触发器到目标 .cmd
+                                // ⑤ 检测目标 .cmd 按键重复 -> 自动升级为双击触发，并同步注入 [Command] 与 [State -1]
                                 File cmdBak = new File(tCmd.getAbsolutePath() + ".bak");
                                 if (!cmdBak.exists()) copyFileToSandbox(tCmd, cmdBak);
                                 String cmdOrig = readTextAutoCharset(tCmd);
-                                String cmdDefBlock = "\n; [自动移植指令] " + cmdName + "\n[Command]\nname = \"" + cmdName + "\"\ncommand = " + cmdSeq + "\ntime = 18\n";
-                                String stateNeg1Block = "\n; [自动移植触发器] " + cmdName + "\n[State -1, " + cmdName + "]\ntype = ChangeState\nvalue = " + newStateNo + "\ntriggerall = command = \"" + cmdName + "\"\ntrigger1 = statetype != A && ctrl\n";
+                                java.util.HashSet<String> existingCmdSeqs = new java.util.HashSet<>();
+                                java.util.regex.Matcher exCmdM = java.util.regex.Pattern.compile("(?im)^\\s*command\\s*=\\s*([^;\\r\\n]+)").matcher(cmdOrig);
+                                while (exCmdM.find()) {
+                                    existingCmdSeqs.add(exCmdM.group(1).replaceAll("\\s+", "").toLowerCase());
+                                }
+                                String finalCmdSeq = rawInputSeq;
+                                int cmdTime = 18;
+                                String cmdConflictNote = "";
+                                String normSeq = finalCmdSeq.replaceAll("\\s+", "").toLowerCase();
+                                if (existingCmdSeqs.contains(normSeq)) {
+                                    String dblSeq = finalCmdSeq + ", " + finalCmdSeq;
+                                    if (!existingCmdSeqs.contains(dblSeq.replaceAll("\\s+", "").toLowerCase())) {
+                                        finalCmdSeq = dblSeq;
+                                        cmdTime = 25;
+                                        cmdConflictNote = "⚠️ 检测到目标 .cmd 已占用按键 [" + rawInputSeq + "]，已自动升级为双击触发: " + finalCmdSeq + " (time=25)";
+                                    } else {
+                                        String triSeq = finalCmdSeq + ", " + finalCmdSeq + ", " + finalCmdSeq;
+                                        if (!existingCmdSeqs.contains(triSeq.replaceAll("\\s+", "").toLowerCase())) {
+                                            finalCmdSeq = triSeq;
+                                            cmdTime = 32;
+                                            cmdConflictNote = "⚠️ 按键 [" + rawInputSeq + "] 与双击均被占用，已自动升级为三击触发: " + finalCmdSeq;
+                                        } else {
+                                            finalCmdSeq = "~D, D, " + finalCmdSeq;
+                                            cmdTime = 25;
+                                            cmdConflictNote = "⚠️ 按键 [" + rawInputSeq + "] 已被占用，已自动改配组合触发: " + finalCmdSeq;
+                                        }
+                                    }
+                                }
+
+                                String cmdDefBlock = "\n; [自动移植指令] " + cmdName + "\n[Command]\nname = \"" + cmdName + "\"\ncommand = " + finalCmdSeq + "\ntime = " + cmdTime + "\n";
+                                boolean cmdIsZss = tCmd.getName().toLowerCase().endsWith(".zss");
+                                String stateNeg1Block = cmdIsZss
+                                        ? ("\n# [自动移植触发器] " + cmdName + "\nif command = \"" + cmdName + "\" && stateType != A && ctrl {\n\tchangeState{value: " + newStateNo + "}\n}\n")
+                                        : ("\n; [自动移植触发器] " + cmdName + "\n[State -1, " + cmdName + "]\ntype = ChangeState\nvalue = " + newStateNo + "\ntriggerall = command = \"" + cmdName + "\"\ntrigger1 = statetype != A && ctrl\n");
 
                                 java.util.regex.Matcher neg1M = java.util.regex.Pattern.compile("(?i)(\\[\\s*statedef\\s+-1[^\\]]*\\][^\n]*\n?)").matcher(cmdOrig);
                                 String newCmdText;
@@ -8184,13 +8302,15 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
                                 StringBuilder report = new StringBuilder();
                                 report.append("🎉 全自动移植已完成，进游戏可直接搓招触发！\n");
-                                report.append("🎮 游戏内触发方式: ").append(prettifyCmdSequence(cmdSeq)).append("  (").append(cmdSeq).append(")\n\n");
-                                report.append("• 目标角色: ").append(targetDef.getName()).append(" (已自动创建 .bak 备份)\n");
-                                report.append("• CNS 写入: ").append(tCns.getName()).append(" → [Statedef ").append(newStateNo).append("]\n");
+                                report.append("🎮 游戏内触发方式: ").append(prettifyCmdSequence(finalCmdSeq)).append("  (").append(finalCmdSeq).append(")\n");
+                                if (!cmdConflictNote.isEmpty()) report.append(cmdConflictNote).append("\n");
+                                report.append("\n• 目标角色: ").append(targetDef.getName()).append(" (已自动创建 .bak 备份)\n");
+                                report.append("• 状态写入: ").append(writeStateFile.getName()).append(" → [Statedef ").append(newStateNo).append("]").append(defMountNote).append("\n");
                                 report.append("• CMD 写入: ").append(tCmd.getName()).append(" → [Command] + [State -1, ").append(cmdName).append("]\n");
                                 report.append("• AIR 写入: ").append(airWritten ? (tAir.getName() + " → [Begin Action " + newAnimNo + "]") : "无独立动作").append("\n");
                                 report.append("• SFF 注入: ").append(sffOk).append(" 帧 (冲突自动改号 ").append(sffRemapped).append(" 帧)\n");
                                 report.append("• SND 注入: ").append(sndOk).append(" 条绑定音效 (冲突自动改号 ").append(sndRemapped).append(" 条)\n");
+
                                 if (sffRemapped > 0) {
                                     report.append("\n--- SFF 精灵改号对照 ---\n");
                                     for (java.util.Map.Entry<String, int[]> rm : sffRemap.entrySet()) {
@@ -8308,7 +8428,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             uiHandler.post(() -> showSndViewerWindow(rf.getAbsolutePath(), rf.getName(), ns));
                         }).start());
                         row.addView(bSnd);
-                    } else if (low.endsWith(".def") || low.endsWith(".cns") || low.endsWith(".cmd") || low.endsWith(".st") || low.endsWith(".zss") || low.endsWith(".air") || low.endsWith(".txt") || low.endsWith(".dat")) {
+                    } else if (low.endsWith(".def") || low.endsWith(".cns") || low.endsWith(".const") || low.endsWith(".cmd") || low.endsWith(".st") || low.endsWith(".zss") || low.endsWith(".air") || low.endsWith(".lua") || low.endsWith(".json") || low.endsWith(".txt") || low.endsWith(".dat")) {
                         if (low.endsWith(".air")) {
                             Button bClsn = createButton(L("⚔️ 判定框"), "#DB2777");
                             bClsn.setPadding((int)(7*density), (int)(4*density), (int)(7*density), (int)(4*density));
@@ -8568,9 +8688,46 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     if (curAct >= 0 && curAirBlock.length() > 0) airActionRawText.put(curAct, curAirBlock.toString().trim());
                 }
 
-                // 解析全部状态文件中的 [Statedef N] 与 HitDef/Projectile 伤害节点
-                java.util.regex.Pattern patSd = java.util.regex.Pattern.compile("^\\[\\s*statedef\\s+(-?\\d+)([^\\]]*)\\]", java.util.regex.Pattern.CASE_INSENSITIVE);
+                 // 额外扫描 ZSS 文件（如 command.zss）中的 [StateDef -1] 出招映射：command = "..." -> changeState{value: N}
+                java.util.regex.Pattern zCmdPat = java.util.regex.Pattern.compile("(?i)command\\s*=\\s*\"([^\"]+)\"");
+                java.util.regex.Pattern zCsPat = java.util.regex.Pattern.compile("(?i)changestate\\s*\\{[^}]*?value\\s*:\\s*(\\d+)");
                 for (File sf : allStateFiles) {
+                    if (!sf.getName().toLowerCase().endsWith(".zss")) continue;
+                    String zTxt = readTextAutoCharset(sf);
+                    String[] zLines = zTxt.split("\n");
+                    boolean inZNeg1 = false;
+                    String recentCmd = "";
+                    for (String zl : zLines) {
+                        int hi = zl.indexOf('#');
+                        String zc = (hi >= 0 ? zl.substring(0, hi) : zl).trim();
+                        if (zc.isEmpty()) continue;
+                        String zLow = zc.toLowerCase();
+                        if (zLow.matches("^\\[\\s*statedef\\s+-1\\b.*")) { inZNeg1 = true; recentCmd = ""; continue; }
+                        else if (zLow.matches("^\\[\\s*statedef\\s+.*") || zLow.startsWith("[function ")) { inZNeg1 = false; recentCmd = ""; continue; }
+                        if (inZNeg1) {
+                            java.util.regex.Matcher cm = zCmdPat.matcher(zc);
+                            if (cm.find()) {
+                                String cn = cm.group(1);
+                                if (!cn.toLowerCase().startsWith("hold")) recentCmd = cn;
+                            }
+                            java.util.regex.Matcher csm = zCsPat.matcher(zc);
+                            if (csm.find() && !recentCmd.isEmpty()) {
+                                try {
+                                    int tgt = Integer.parseInt(csm.group(1));
+                                    if (!stateToCmdName.containsKey(tgt)) stateToCmdName.put(tgt, recentCmd);
+                                    for (CharCmdItem item : cmdItems) { if (item.name.equalsIgnoreCase(recentCmd) && item.targetState < 0) item.targetState = tgt; }
+                                } catch (Exception ignored) {}
+                            }
+                        }
+                    }
+                }
+
+                // 解析全部状态文件（原生双引擎：CNS 分号注释语法 + Ikemen GO ZSS 井号/花括号语法）
+                java.util.regex.Pattern patSd = java.util.regex.Pattern.compile("^\\[\\s*statedef\\s+(-?\\d+)(.*)", java.util.regex.Pattern.CASE_INSENSITIVE);
+                java.util.regex.Pattern patZssKv = java.util.regex.Pattern.compile("(?i)\\b(type|movetype|physics|anim|poweradd)\\s*:\\s*([A-Za-z0-9_\\-]+)");
+                java.util.regex.Pattern patZssCa = java.util.regex.Pattern.compile("(?i)changeanim2?\\s*\\{[^}]*?value\\s*:\\s*(-?\\d+)");
+                for (File sf : allStateFiles) {
+                    boolean isZssFile = sf.getName().toLowerCase().endsWith(".zss");
                     String txt = readTextAutoCharset(sf);
                     String[] lines = txt.split("\n");
                     CharStateItem curSt = null;
@@ -8578,9 +8735,109 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     String curCtrlType = "";
                     CharHitItem curHit = null;
                     String lastComment = "";
+                    boolean inZssHeader = false;
+                    int zssHitBraceDepth = 0;
                     for (int li = 0; li < lines.length; li++) {
                         String raw = lines[li];
                         String trimmed = raw.trim();
+                        if (isZssFile) {
+                            if (trimmed.startsWith("#")) {
+                                String cm = trimmed.replaceAll("^#+", "").trim();
+                                if (cm.length() >= 2 && cm.length() <= 44 && !cm.startsWith("=") && !cm.startsWith("-")) lastComment = cm;
+                                if (curSt != null) curCode.append(raw).append("\n");
+                                continue;
+                            }
+                            int hi = raw.indexOf('#');
+                            String clean = (hi >= 0 ? raw.substring(0, hi) : raw).trim();
+                            if (clean.isEmpty()) { if (curSt != null) curCode.append(raw).append("\n"); continue; }
+                            String low = clean.toLowerCase();
+                            if (low.startsWith("[function ")) {
+                                if (curSt != null) { curSt.codePreview = curCode.toString().trim(); stateItems.add(curSt); curSt = null; }
+                                inZssHeader = false; curHit = null; zssHitBraceDepth = 0;
+                                continue;
+                            }
+                            java.util.regex.Matcher sm = patSd.matcher(clean);
+                            if (sm.find()) {
+                                if (curSt != null) { curSt.codePreview = curCode.toString().trim(); stateItems.add(curSt); }
+                                curSt = new CharStateItem();
+                                curSt.stateNo = Integer.parseInt(sm.group(1));
+                                curSt.sourceFile = sf;
+                                String tailComment = (hi >= 0) ? raw.substring(hi + 1).trim() : "";
+                                curSt.title = !tailComment.isEmpty() ? tailComment : lastComment;
+                                if (stateToCmdName.containsKey(curSt.stateNo)) curSt.linkedCmd = stateToCmdName.get(curSt.stateNo);
+                                curCode.setLength(0);
+                                curCode.append(raw).append("\n");
+                                curHit = null; zssHitBraceDepth = 0; lastComment = "";
+                                inZssHeader = !clean.contains("]");
+                                java.util.regex.Matcher kvm = patZssKv.matcher(clean);
+                                while (kvm.find()) {
+                                    String kk = kvm.group(1).toLowerCase(), vv = kvm.group(2);
+                                    if ("type".equals(kk)) curSt.type = vv.toUpperCase();
+                                    else if ("movetype".equals(kk)) curSt.moveType = vv.toUpperCase();
+                                    else if ("physics".equals(kk)) curSt.physics = vv.toUpperCase();
+                                    else if ("anim".equals(kk)) { try { curSt.anim = Integer.parseInt(vv); } catch (Exception ignored) {} }
+                                    else if ("poweradd".equals(kk)) { try { curSt.powerAdd = Integer.parseInt(vv); } catch (Exception ignored) {} }
+                                }
+                                continue;
+                            }
+                            if (curSt != null) {
+                                curCode.append(raw).append("\n");
+                                if (inZssHeader) {
+                                    java.util.regex.Matcher kvm = patZssKv.matcher(clean);
+                                    while (kvm.find()) {
+                                        String kk = kvm.group(1).toLowerCase(), vv = kvm.group(2);
+                                        if ("type".equals(kk)) curSt.type = vv.toUpperCase();
+                                        else if ("movetype".equals(kk)) curSt.moveType = vv.toUpperCase();
+                                        else if ("physics".equals(kk)) curSt.physics = vv.toUpperCase();
+                                        else if ("anim".equals(kk)) { try { curSt.anim = Integer.parseInt(vv); } catch (Exception ignored) {} }
+                                        else if ("poweradd".equals(kk)) { try { curSt.powerAdd = Integer.parseInt(vv); } catch (Exception ignored) {} }
+                                    }
+                                    if (clean.contains("]")) inZssHeader = false;
+                                    continue;
+                                }
+                                if (low.contains("nothitby{") || low.matches(".*\\bnothitby\\s*\\{.*")) curSt.hasInvul = true;
+                                java.util.regex.Matcher cam = patZssCa.matcher(clean);
+                                while (cam.find()) {
+                                    try {
+                                        int caVal = Integer.parseInt(cam.group(1));
+                                        if (!curSt.changeAnimTargets.contains(caVal)) curSt.changeAnimTargets.add(caVal);
+                                    } catch (Exception ignored) {}
+                                }
+                                if (low.matches(".*\\b(hitdef|projectile)\\s*\\{.*")) {
+                                    curHit = new CharHitItem();
+                                    curHit.sourceFile = sf;
+                                    curHit.controllerType = low.contains("projectile") ? "Projectile" : "HitDef";
+                                    zssHitBraceDepth = 0;
+                                }
+                                if (curHit != null) {
+                                    for (int ci2 = 0; ci2 < clean.length(); ci2++) {
+                                        char ch2 = clean.charAt(ci2);
+                                        if (ch2 == '{') zssHitBraceDepth++;
+                                        else if (ch2 == '}') zssHitBraceDepth--;
+                                    }
+                                    java.util.regex.Matcher am = java.util.regex.Pattern.compile("(?i)\\battr\\s*:\\s*([^;}\\n]+)").matcher(clean);
+                                    if (am.find()) curHit.attr = am.group(1).trim();
+                                    java.util.regex.Matcher gm = java.util.regex.Pattern.compile("(?i)\\bguardflag\\s*:\\s*([^;}\\n]+)").matcher(clean);
+                                    if (gm.find()) curHit.guardFlag = gm.group(1).trim();
+                                    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("(?i)\\bpausetime\\s*:\\s*([^;}\\n]+)").matcher(clean);
+                                    if (pm.find()) curHit.pauseTime = pm.group(1).trim();
+                                    java.util.regex.Matcher dm = java.util.regex.Pattern.compile("(?i)\\bdamage\\s*:\\s*(\\d+)(?:\\s*,\\s*(\\d+))?").matcher(clean);
+                                    if (dm.find()) {
+                                        try {
+                                            curHit.hitDamage = Integer.parseInt(dm.group(1).trim());
+                                            curHit.guardDamage = dm.group(2) != null ? Integer.parseInt(dm.group(2).trim()) : 0;
+                                            curHit.origHitDamage = curHit.hitDamage;
+                                            curHit.origGuardDamage = curHit.guardDamage;
+                                            curHit.lineIndex = li;
+                                            curSt.hits.add(curHit);
+                                        } catch (Exception ignored) {}
+                                    }
+                                    if (zssHitBraceDepth <= 0) curHit = null;
+                                }
+                            }
+                            continue;
+                        }
+                        // --- 标准 CNS/CMD 语法解析 ---
                         if (trimmed.startsWith(";")) {
                             String cm = trimmed.replaceAll("^;+", "").trim();
                             if (cm.length() >= 2 && cm.length() <= 40 && !cm.startsWith("=")) lastComment = cm;
@@ -8658,6 +8915,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     }
                     if (curSt != null) { curSt.codePreview = curCode.toString().trim(); stateItems.add(curSt); }
                 }
+
                 java.util.Collections.sort(stateItems, (a, b) -> Integer.compare(a.stateNo, b.stateNo));
 
                 Bitmap portrait = null;
@@ -8750,18 +9008,32 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         if (!bak.exists()) copyFileToSandbox(f, bak);
                         String raw = readTextAutoCharset(f);
                         String[] lines = raw.split("\n", -1);
+                        boolean isZssSave = f.getName().toLowerCase().endsWith(".zss");
                         for (CharHitItem h : en.getValue()) {
                             if (h.lineIndex >= 0 && h.lineIndex < lines.length) {
                                 String line = lines[h.lineIndex];
-                                int ci = line.indexOf(';');
-                                String codePart = ci >= 0 ? line.substring(0, ci) : line;
-                                String commentPart = ci >= 0 ? line.substring(ci) : "";
-                                int eq = codePart.indexOf('=');
-                                if (eq > 0 && codePart.substring(0, eq).trim().equalsIgnoreCase("damage")) {
-                                    lines[h.lineIndex] = codePart.substring(0, eq + 1) + " " + h.hitDamage + ", " + h.guardDamage + (commentPart.isEmpty() ? "" : " " + commentPart);
-                                    h.origHitDamage = h.hitDamage;
-                                    h.origGuardDamage = h.guardDamage;
-                                    h.dirty = false;
+                                if (isZssSave) {
+                                    int hi = line.indexOf('#');
+                                    String codePart = hi >= 0 ? line.substring(0, hi) : line;
+                                    String commentPart = hi >= 0 ? line.substring(hi) : "";
+                                    String replaced = codePart.replaceFirst("(?i)(\\bdamage\\s*:\\s*)\\d+(?:\\s*,\\s*\\d+)?", "$1" + h.hitDamage + ", " + h.guardDamage);
+                                    if (!replaced.equals(codePart)) {
+                                        lines[h.lineIndex] = replaced + commentPart;
+                                        h.origHitDamage = h.hitDamage;
+                                        h.origGuardDamage = h.guardDamage;
+                                        h.dirty = false;
+                                    }
+                                } else {
+                                    int ci = line.indexOf(';');
+                                    String codePart = ci >= 0 ? line.substring(0, ci) : line;
+                                    String commentPart = ci >= 0 ? line.substring(ci) : "";
+                                    int eq = codePart.indexOf('=');
+                                    if (eq > 0 && codePart.substring(0, eq).trim().equalsIgnoreCase("damage")) {
+                                        lines[h.lineIndex] = codePart.substring(0, eq + 1) + " " + h.hitDamage + ", " + h.guardDamage + (commentPart.isEmpty() ? "" : " " + commentPart);
+                                        h.origHitDamage = h.hitDamage;
+                                        h.origGuardDamage = h.guardDamage;
+                                        h.dirty = false;
+                                    }
                                 }
                             }
                         }
