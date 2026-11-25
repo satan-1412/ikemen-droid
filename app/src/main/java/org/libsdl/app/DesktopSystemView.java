@@ -9254,8 +9254,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     cmdOrig = stripClonedSkillBlocks(cmdOrig, activeSkillKey, existOldCmd);
                                 }
 
-                                // 5.1 仅从真正的 [Command] 区块收集已有指令名与按键序列
+                                // 5.1 仅从真正的 [Command] 区块收集已有指令名（区分大小写+小写索引）与按键序列
                                 java.util.HashSet<String> existingCmdNames = new java.util.HashSet<>();
+                                java.util.HashSet<String> existingCmdNamesExact = new java.util.HashSet<>();
                                 java.util.HashSet<String> existingCmdSeqs = new java.util.HashSet<>();
                                 boolean scanInCmdSec = false;
                                 for (String cl : cmdOrig.split("\n")) {
@@ -9270,8 +9271,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                         if (eq > 0) {
                                             String ck = clean.substring(0, eq).trim().toLowerCase();
                                             String cv = clean.substring(eq + 1).trim();
-                                            if (ck.equals("name") && !cv.replace("\"", "").trim().isEmpty()) existingCmdNames.add(cv.replace("\"", "").trim().toLowerCase());
-                                            else if (ck.equals("command") && !cv.isEmpty()) existingCmdSeqs.add(cv.replaceAll("\\s+", "").toLowerCase());
+                                            if (ck.equals("name") && !cv.replace("\"", "").trim().isEmpty()) {
+                                                String rawN = cv.replace("\"", "").trim();
+                                                existingCmdNamesExact.add(rawN);
+                                                existingCmdNames.add(rawN.toLowerCase());
+                                            } else if (ck.equals("command") && !cv.isEmpty()) existingCmdSeqs.add(cv.replaceAll("\\s+", "").toLowerCase());
                                         }
                                     }
                                 }
@@ -9289,6 +9293,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                         int endBlock = li + 1;
                                         boolean hasName = false, hasNonEmptyCmd = false;
                                         String blockName = "";
+                                        String blockNameExact = "";
                                         while (endBlock < origLines.length) {
                                             String nt = origLines[endBlock].trim();
                                             if (nt.startsWith("[")) break;
@@ -9297,13 +9302,17 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             if (eq2 > 0) {
                                                 String bk = nc.substring(0, eq2).trim().toLowerCase();
                                                 String bv = nc.substring(eq2 + 1).trim();
-                                                if (bk.equals("name") && !bv.replace("\"", "").trim().isEmpty()) { hasName = true; blockName = bv.replace("\"", "").trim().toLowerCase(); }
-                                                else if (bk.equals("command") && !bv.isEmpty()) hasNonEmptyCmd = true;
+                                                if (bk.equals("name") && !bv.replace("\"", "").trim().isEmpty()) {
+                                                    hasName = true;
+                                                    blockNameExact = bv.replace("\"", "").trim();
+                                                    blockName = blockNameExact.toLowerCase();
+                                                } else if (bk.equals("command") && !bv.isEmpty()) hasNonEmptyCmd = true;
                                             }
                                             endBlock++;
                                         }
                                         if (!hasName || !hasNonEmptyCmd) {
                                             if (!blockName.isEmpty()) existingCmdNames.remove(blockName);
+                                            if (!blockNameExact.isEmpty()) existingCmdNamesExact.remove(blockNameExact);
                                             healedBadCmds++;
                                             li = endBlock - 1;
                                             inHealCmdBlock = false;
@@ -9380,7 +9389,70 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     }
                                 }
 
-                                String cmdDefBlock = "\n; [IK_CLONE_BEGIN:" + activeSkillKey + "]" + buildIkCommandBlocks(finalCmdName, finalCmdSeq, cmdTime) + "; [IK_CLONE_END:" + activeSkillKey + "]\n";
+                                // 5.4 自动扫描状态文件内部引用的全部 command = "..." / command != "..." 依赖指令并补全到目标 .cmd，彻底根治 Command doesn't exist 闪退
+                                StringBuilder depCmdBlocks = new StringBuilder();
+                                java.util.ArrayList<String> syncedDepCmdList = new java.util.ArrayList<>();
+                                try {
+                                    String fullStateScanText = writeStateFile.exists() ? readTextAutoCharset(writeStateFile) : allStatesBlock.toString();
+                                    boolean scanIsZss = writeStateFile.getName().toLowerCase().endsWith(".zss");
+                                    java.util.LinkedHashSet<String> referencedCmds = new java.util.LinkedHashSet<>();
+                                    java.util.regex.Pattern depCmdPat = java.util.regex.Pattern.compile("(?i)\\bcommand\\s*(?:=|!=)\\s*\"([^\"]+)\"");
+                                    for (String sLine : fullStateScanText.replace("\r\n", "\n").split("\n")) {
+                                        int cIdx = sLine.indexOf(scanIsZss ? '#' : ';');
+                                        String codeOnly = (cIdx >= 0 ? sLine.substring(0, cIdx) : sLine);
+                                        java.util.regex.Matcher dm = depCmdPat.matcher(codeOnly);
+                                        while (dm.find()) {
+                                            String dc = dm.group(1).trim();
+                                            if (!dc.isEmpty()) referencedCmds.add(dc);
+                                        }
+                                    }
+                                    for (String depCmd : referencedCmds) {
+                                        if (depCmd.equals(finalCmdName) || existingCmdNamesExact.contains(depCmd)) continue;
+                                        // 优先从源角色 CMD 列表中精确查找（先区分大小写，再忽略大小写）
+                                        String depSeq = "";
+                                        for (CharCmdItem ci : cmdItems) {
+                                            if (ci.name != null && ci.name.equals(depCmd) && ci.rawCommand != null && !ci.rawCommand.trim().isEmpty()) {
+                                                depSeq = sanitizeIkCommandSeq(ci.rawCommand);
+                                                break;
+                                            }
+                                        }
+                                        if (depSeq.isEmpty()) {
+                                            for (CharCmdItem ci : cmdItems) {
+                                                if (ci.name != null && ci.name.equalsIgnoreCase(depCmd) && ci.rawCommand != null && !ci.rawCommand.trim().isEmpty()) {
+                                                    depSeq = sanitizeIkCommandSeq(ci.rawCommand);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        // 源角色未找到时按常见指令名自动推断安全按键，绝不留空导致闪退
+                                        if (depSeq.isEmpty()) {
+                                            String dl = depCmd.toLowerCase();
+                                            if (dl.equals("holdfwd")) depSeq = "/$F";
+                                            else if (dl.equals("holdback")) depSeq = "/$B";
+                                            else if (dl.equals("holdup")) depSeq = "/$U";
+                                            else if (dl.equals("holddown")) depSeq = "/$D";
+                                            else if (dl.equals("holda") || dl.equals("hold_a")) depSeq = "/a";
+                                            else if (dl.equals("holdb") || dl.equals("hold_b")) depSeq = "/b";
+                                            else if (dl.equals("holdc") || dl.equals("hold_c")) depSeq = "/c";
+                                            else if (dl.equals("holdx") || dl.equals("hold_x")) depSeq = "/x";
+                                            else if (dl.equals("holdy") || dl.equals("hold_y")) depSeq = "/y";
+                                            else if (dl.equals("holdz") || dl.equals("hold_z")) depSeq = "/z";
+                                            else if (dl.equals("holds") || dl.equals("hold_s") || dl.equals("holdstart")) depSeq = "/s";
+                                            else if (dl.equals("ff")) depSeq = "F, F";
+                                            else if (dl.equals("bb")) depSeq = "B, B";
+                                            else if (dl.matches("^[abcxyzs]$")) depSeq = dl;
+                                            else depSeq = "~D, DF, F, z";
+                                        }
+                                        depCmdBlocks.append("\n; [IK自动补全技能内部依赖指令] ").append(depCmd)
+                                                .append("\n[Command]\nname = \"").append(depCmd).append("\"\ncommand = ").append(depSeq)
+                                                .append("\ntime = 15\nbuffer.time = 4\n");
+                                        existingCmdNamesExact.add(depCmd);
+                                        existingCmdNames.add(depCmd.toLowerCase());
+                                        syncedDepCmdList.add(depCmd);
+                                    }
+                                } catch (Exception ignored) {}
+
+                                String cmdDefBlock = depCmdBlocks.toString() + "\n; [IK_CLONE_BEGIN:" + activeSkillKey + "]" + buildIkCommandBlocks(finalCmdName, finalCmdSeq, cmdTime) + "; [IK_CLONE_END:" + activeSkillKey + "]\n";
                                 boolean cmdIsZss = tCmd.getName().toLowerCase().endsWith(".zss");
                                 String condCns1 = entryIsAirOrHelper ? "ctrl" : "statetype != A && ctrl";
                                 String condCns2 = entryIsAirOrHelper ? "stateno = [200, 499] && time <= 3" : "statetype != A && stateno = [200, 499] && time <= 3";
@@ -9407,6 +9479,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 report.append("🎮 游戏内触发方式: ").append(prettifyCmdSequence(finalCmdSeq)).append("  (").append(finalCmdSeq).append(")\n");
                                 report.append("🎨 精灵色彩模式: ").append(useForcedAct ? "强制 pal1.act" : "原生内置色表 (防偏色)").append("\n");
                                 if (!cmdConflictNote.isEmpty()) report.append(cmdConflictNote).append("\n");
+                                if (!syncedDepCmdList.isEmpty()) report.append("🔗 已自动补全 ").append(syncedDepCmdList.size()).append(" 条技能内部依赖指令（防止 Command doesn't exist 闪退）: ").append(android.text.TextUtils.join(", ", syncedDepCmdList)).append("\n");
                                 if (healedOrphans > 0) report.append("🛠️ 已自动清理目标 .cmd 中 ").append(healedOrphans).append(" 处缺失指令的孤儿触发器（防止闪退）\n");
                                 if (healedBadCmds > 0) report.append("🛠️ 已自动修复目标 .cmd 中 ").append(healedBadCmds).append(" 处非法大小写/符号指令（防止 Invalid symbol 闪退）\n");
                                 if (fixedMissingTargets > 0) report.append("🛡️ 已自动兜底修复 ").append(fixedMissingTargets).append(" 处未捆绑的跳转子状态（防止触发后卡死）\n");
