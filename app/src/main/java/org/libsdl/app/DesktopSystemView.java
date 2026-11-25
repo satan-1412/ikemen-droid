@@ -1819,13 +1819,14 @@ public class DesktopSystemView extends Dialog {
             showWin10FilePicker(L("选择替换用的图像或所在目录"), 7, null, null, selectedFile -> {
                 FileCallback doReplace = finalFile -> {
                     new Thread(() -> {
+                        boolean upgraded = ensureSffV2(sffPath);
                         boolean success = Api.replaceSffFrame(sffPath, f.group, f.item, (short)f.x, (short)f.y, finalFile.getAbsolutePath());
                         uiHandler.post(() -> {
                             if (success) {
-                                Toast.makeText(getContext(), L("✅ ") + f.group + "-" + f.item + L(" 帧已替换！"), Toast.LENGTH_SHORT).show();
+                                Toast.makeText(getContext(), L("✅ ") + f.group + "-" + f.item + (upgraded ? L(" 帧已替换（已自动升级为 SFFv2.01）！") : L(" 帧已替换！")), Toast.LENGTH_SHORT).show();
                                 reloadFromDisk.run();
                             } else {
-                                Toast.makeText(getContext(), L("❌ 替换失败：格式不兼容！SFFv1 只能使用 PCX，SFFv2 禁止使用 PCX！"), Toast.LENGTH_LONG).show();
+                                Toast.makeText(getContext(), L("❌ 替换失败：已统一保存为 SFFv2.01，请使用 PNG/JPG/GIF（不支持 PCX）！"), Toast.LENGTH_LONG).show();
                             }
                         });
                     }).start();
@@ -1859,10 +1860,11 @@ public class DesktopSystemView extends Dialog {
                         try { ay = Integer.parseInt(yIn.getText().toString().trim()); } catch (Exception ignored) {}
                         final int fg = g, fi = it; final short fax = (short)ax, fay = (short)ay;
                         new Thread(() -> {
+                            boolean upgraded = ensureSffV2(sffPath);
                             boolean ok = Api.addSffFrame(sffPath, fg, fi, fax, fay, finalFile.getAbsolutePath());
                             uiHandler.post(() -> {
-                                if (ok) { Toast.makeText(getContext(), L("✅ 新增帧成功！"), Toast.LENGTH_SHORT).show(); d.dismiss(); reloadFromDisk.run(); }
-                                else { Toast.makeText(getContext(), L("❌ 新增失败：可能编号重复或图像格式不兼容"), Toast.LENGTH_LONG).show(); }
+                                if (ok) { Toast.makeText(getContext(), upgraded ? L("✅ 新增帧成功（已自动升级为 SFFv2.01）！") : L("✅ 新增帧成功！"), Toast.LENGTH_SHORT).show(); d.dismiss(); reloadFromDisk.run(); }
+                                else { Toast.makeText(getContext(), L("❌ 新增失败：可能编号重复或图像格式不兼容（SFFv2 请使用 PNG/JPG/GIF）"), Toast.LENGTH_LONG).show(); }
                             });
                         }).start();
                     });
@@ -1891,9 +1893,10 @@ public class DesktopSystemView extends Dialog {
                 final short sdx = (short)dx, sdy = (short)dy;
                 final boolean singleOnly = (ev == bSingle);
                 new Thread(() -> {
+                    boolean upgraded = ensureSffV2(sffPath);
                     boolean ok = Api.offsetSffCoords(sffPath, f.group, f.item, sdx, sdy, singleOnly);
                     uiHandler.post(() -> {
-                        if (ok) { Toast.makeText(getContext(), L("✅ 轴心坐标已更新！"), Toast.LENGTH_SHORT).show(); d.dismiss(); reloadFromDisk.run(); }
+                        if (ok) { Toast.makeText(getContext(), upgraded ? L("✅ 轴心坐标已更新（已自动升级为 SFFv2.01）！") : L("✅ 轴心坐标已更新！"), Toast.LENGTH_SHORT).show(); d.dismiss(); reloadFromDisk.run(); }
                         else { Toast.makeText(getContext(), L("❌ 轴心修改失败"), Toast.LENGTH_SHORT).show(); }
                     });
                 }).start();
@@ -1916,9 +1919,10 @@ public class DesktopSystemView extends Dialog {
             bDel.setOnClickListener(dv -> {
                 d.dismiss();
                 new Thread(() -> {
+                    boolean upgraded = ensureSffV2(sffPath);
                     boolean ok = Api.deleteSffFrame(sffPath, f.group, f.item);
                     uiHandler.post(() -> {
-                        if (ok) { Toast.makeText(getContext(), L("✅ 帧已永久删除！"), Toast.LENGTH_SHORT).show(); reloadFromDisk.run(); }
+                        if (ok) { Toast.makeText(getContext(), upgraded ? L("✅ 帧已永久删除（已自动升级为 SFFv2.01）！") : L("✅ 帧已永久删除！"), Toast.LENGTH_SHORT).show(); reloadFromDisk.run(); }
                         else { Toast.makeText(getContext(), L("❌ 删除失败"), Toast.LENGTH_SHORT).show(); }
                     });
                 }).start();
@@ -3988,6 +3992,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         File finalSffFile = new File(finalExportDir, baseName + ".sff"); 
                         if (!globalSffPath.isEmpty()) { 
                             copyFileToSandbox(new File(globalSffPath), finalSffFile); 
+                            ensureSffV2(finalSffFile.getAbsolutePath());
                             if (finalSffFile.length() > 0) {
                                 List<GoEngineBridge.SffFrame> origFrames = GoEngineBridge.getAllFrames(finalSffFile.getAbsolutePath());
                                 for (GoEngineBridge.SffFrame f : origFrames) {
@@ -4006,6 +4011,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             }
                         } else { 
                             finalSffFile.createNewFile(); 
+                            ensureSffV2(finalSffFile.getAbsolutePath());
                         } 
                         
                         for (StageLayerInfo layer : layerList) { 
@@ -4294,6 +4300,235 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             byte[] buf = new byte[8192]; int len;
             while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
         }
+    }
+
+    private void writeLe16(java.io.OutputStream out, int v) throws Exception {
+        out.write(v & 0xFF);
+        out.write((v >>> 8) & 0xFF);
+    }
+
+    private void writeLe32(java.io.OutputStream out, int v) throws Exception {
+        out.write(v & 0xFF);
+        out.write((v >>> 8) & 0xFF);
+        out.write((v >>> 16) & 0xFF);
+        out.write((v >>> 24) & 0xFF);
+    }
+
+    private void putLe32(byte[] buf, int off, int v) {
+        buf[off]     = (byte)(v & 0xFF);
+        buf[off + 1] = (byte)((v >>> 8) & 0xFF);
+        buf[off + 2] = (byte)((v >>> 16) & 0xFF);
+        buf[off + 3] = (byte)((v >>> 24) & 0xFF);
+    }
+
+    // 统一升级任意格式 SFF（空文件 / SFFv1 / SFFv2.00）为标准 MUGEN 1.1 SFFv2.01（已是 v2.01 则零改动直接跳过）
+    private boolean ensureSffV2(String sffPath) {
+        if (sffPath == null || sffPath.trim().isEmpty()) return false;
+        File f = new File(sffPath);
+        try {
+            // 1. 空文件或新建文件：初始化标准空 SFFv2.01 容器
+            if (!f.exists() || f.length() == 0) {
+                byte[] header = new byte[512];
+                byte[] sig = "ElecbyteSpr\0".getBytes("US-ASCII");
+                System.arraycopy(sig, 0, header, 0, sig.length);
+                header[12] = 0; header[13] = 1; header[14] = 0; header[15] = 2; // v2.010
+                header[24] = 0; header[25] = 1; header[26] = 0; header[27] = 2; // compat v2.010
+                putLe32(header, 36, 512);  // spriteOffset
+                putLe32(header, 40, 0);    // numSprites
+                putLe32(header, 44, 512);  // palOffset
+                putLe32(header, 48, 1);    // numPals
+                putLe32(header, 52, 528);  // ldataOffset
+                putLe32(header, 56, 1024); // ldataLength
+                putLe32(header, 60, 1552); // tdataOffset
+                putLe32(header, 64, 0);    // tdataLength
+                try (java.io.BufferedOutputStream bos = new java.io.BufferedOutputStream(new FileOutputStream(f))) {
+                    bos.write(header);
+                    writeLe16(bos, 1); writeLe16(bos, 1); writeLe16(bos, 256); writeLe16(bos, 0);
+                    writeLe32(bos, 0); writeLe32(bos, 1024);
+                    byte[] pal = new byte[1024];
+                    for (int i = 1; i < 256; i++) {
+                        pal[i * 4] = (byte)i; pal[i * 4 + 1] = (byte)i; pal[i * 4 + 2] = (byte)i; pal[i * 4 + 3] = (byte)255;
+                    }
+                    bos.write(pal);
+                }
+                return true;
+            }
+
+            if (f.length() < 32) return false;
+            byte[] hdr = new byte[32];
+            try (FileInputStream fis = new FileInputStream(f)) {
+                if (fis.read(hdr) < 28) return false;
+            }
+            String sigStr = new String(hdr, 0, 11, "US-ASCII");
+            if (!"ElecbyteSpr".equals(sigStr)) return false;
+
+            int verLo2 = hdr[13] & 0xFF;
+            int verLo1 = hdr[14] & 0xFF;
+            int verHi  = hdr[15] & 0xFF;
+
+            // 2. 已是 SFFv2.01 及以上：直接跳过，零改动
+            if (verHi == 2 && (verLo1 > 0 || verLo2 >= 1)) return false;
+
+            // 备份原文件（若尚未备份）
+            File bak1 = new File(sffPath + ".bak");
+            File bakV1 = new File(sffPath + ".v1.bak");
+            if (!bak1.exists() && !bakV1.exists()) {
+                try { copyFileToSandbox(f, bakV1); } catch (Exception ignored) {}
+            }
+
+            // 3. SFFv2.00 (MUGEN 1.0)：二进制结构与 v2.01 完全一致，无损升级头版本字节即可
+            if (verHi == 2) {
+                try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(f, "rw")) {
+                    raf.seek(13); raf.write(1); // verlo2 = 1 -> 2.010
+                    raf.seek(25); raf.write(1); // compatverlo2 = 1 -> 2.010
+                }
+                return true;
+            }
+
+            // 4. SFFv1 (WinMUGEN / Beta)：磁盘流式无损升级为标准 SFFv2.01 (PNG32)
+            if (verHi == 1) {
+                List<GoEngineBridge.SffFrame> frames = GoEngineBridge.getAllFrames(sffPath);
+                if (frames == null) return false;
+
+                // 寻找同目录备用 .act（仅在单帧无内嵌色表解码失败时兜底）
+                String fallbackAct = "";
+                File pDir = f.getParentFile();
+                if (pDir != null && pDir.isDirectory()) {
+                    File[] acts = pDir.listFiles((d, n) -> n.toLowerCase().endsWith(".act"));
+                    if (acts != null && acts.length > 0) fallbackAct = acts[0].getAbsolutePath();
+                }
+
+                // 提取默认 256 色 RGBA 调色板用于 SFFv2 ldata
+                byte[] palRgba = new byte[1024];
+                for (int i = 1; i < 256; i++) {
+                    palRgba[i * 4] = (byte)i; palRgba[i * 4 + 1] = (byte)i; palRgba[i * 4 + 2] = (byte)i; palRgba[i * 4 + 3] = (byte)255;
+                }
+                File tmpPal = new File(getContext().getCacheDir(), "sff_up_pal_" + System.currentTimeMillis() + ".act");
+                try {
+                    File actSrc = null;
+                    if (Api.extractSffPalette(sffPath, tmpPal.getAbsolutePath()) && tmpPal.exists() && tmpPal.length() >= 768) {
+                        actSrc = tmpPal;
+                    } else if (!fallbackAct.isEmpty()) {
+                        actSrc = new File(fallbackAct);
+                    }
+                    if (actSrc != null && actSrc.exists()) {
+                        byte[] rawAct = readFully(actSrc);
+                        if (rawAct.length >= 1024) {
+                            System.arraycopy(rawAct, 0, palRgba, 0, 1024);
+                        } else if (rawAct.length >= 768) {
+                            for (int i = 0; i < 256; i++) {
+                                palRgba[i * 4]     = rawAct[i * 3];
+                                palRgba[i * 4 + 1] = rawAct[i * 3 + 1];
+                                palRgba[i * 4 + 2] = rawAct[i * 3 + 2];
+                                palRgba[i * 4 + 3] = (byte)(i == 0 ? 0 : 255);
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    if (tmpPal.exists()) tmpPal.delete();
+                }
+
+                File tdataTmp = new File(sffPath + ".tdata.tmp");
+                File v2Tmp = new File(sffPath + ".v2.tmp");
+                List<int[]> nodes = new ArrayList<>();
+                java.util.HashSet<String> seen = new java.util.HashSet<>();
+                long tdataCursor = 0;
+
+                try (java.io.BufferedOutputStream tOut = new java.io.BufferedOutputStream(new FileOutputStream(tdataTmp))) {
+                    for (GoEngineBridge.SffFrame fr : frames) {
+                        String key = fr.group + "," + fr.item;
+                        if (!seen.add(key)) continue;
+                        byte[] png = Api.decodeSffFrame(sffPath, fr.group, fr.item, "");
+                        if ((png == null || png.length == 0) && !fallbackAct.isEmpty()) {
+                            png = Api.decodeSffFrame(sffPath, fr.group, fr.item, fallbackAct);
+                        }
+                        if (png == null || png.length < 24) continue;
+
+                        int w = fr.width, h = fr.height;
+                        if ((png[0] & 0xFF) == 0x89 && png[1] == 'P' && png[2] == 'N' && png[3] == 'G') {
+                            int pw = ((png[16] & 0xFF) << 24) | ((png[17] & 0xFF) << 16) | ((png[18] & 0xFF) << 8) | (png[19] & 0xFF);
+                            int ph = ((png[20] & 0xFF) << 24) | ((png[21] & 0xFF) << 16) | ((png[22] & 0xFF) << 8) | (png[23] & 0xFF);
+                            if (pw > 0 && ph > 0 && pw <= 65535 && ph <= 65535) { w = pw; h = ph; }
+                        }
+                        if (w <= 0 || h <= 0) continue;
+
+                        int dLen = 4 + png.length;
+                        writeLe32(tOut, w * h * 4);
+                        tOut.write(png);
+                        nodes.add(new int[]{ fr.group, fr.item, w, h, fr.x, fr.y, (int)tdataCursor, dLen });
+                        tdataCursor += dLen;
+                    }
+                }
+
+                // 安全保护：原 SFFv1 有帧但一帧都没解出来时，绝不覆盖原文件
+                if (!frames.isEmpty() && nodes.isEmpty()) {
+                    if (tdataTmp.exists()) tdataTmp.delete();
+                    return false;
+                }
+
+                int numSpr = nodes.size();
+                int sprOff = 512;
+                int palOff = sprOff + numSpr * 28;
+                int ldataOff = palOff + 16;
+                int ldataLen = 1024;
+                int tdataOff = ldataOff + ldataLen;
+                int tdataLen = (int)tdataCursor;
+
+                byte[] header = new byte[512];
+                byte[] sig = "ElecbyteSpr\0".getBytes("US-ASCII");
+                System.arraycopy(sig, 0, header, 0, sig.length);
+                header[12] = 0; header[13] = 1; header[14] = 0; header[15] = 2; // v2.010
+                header[24] = 0; header[25] = 1; header[26] = 0; header[27] = 2; // compat v2.010
+                putLe32(header, 36, sprOff);
+                putLe32(header, 40, numSpr);
+                putLe32(header, 44, palOff);
+                putLe32(header, 48, 1);
+                putLe32(header, 52, ldataOff);
+                putLe32(header, 56, ldataLen);
+                putLe32(header, 60, tdataOff);
+                putLe32(header, 64, tdataLen);
+
+                try (java.io.BufferedOutputStream out = new java.io.BufferedOutputStream(new FileOutputStream(v2Tmp))) {
+                    out.write(header);
+                    for (int[] n : nodes) {
+                        writeLe16(out, n[0]); // group
+                        writeLe16(out, n[1]); // item
+                        writeLe16(out, n[2]); // width
+                        writeLe16(out, n[3]); // height
+                        writeLe16(out, n[4]); // axisX
+                        writeLe16(out, n[5]); // axisY
+                        writeLe16(out, 0);    // linkIndex
+                        out.write(12);        // fmt = 12 (PNG32)
+                        out.write(32);        // coldepth = 32
+                        writeLe32(out, n[6]); // dataOffset (tdata)
+                        writeLe32(out, n[7]); // dataLength
+                        writeLe16(out, 0);    // palIndex
+                        writeLe16(out, 1);    // flags = 1 (tdata)
+                    }
+                    // 1 个标准调色板节点
+                    writeLe16(out, 1); writeLe16(out, 1); writeLe16(out, 256); writeLe16(out, 0);
+                    writeLe32(out, 0); writeLe32(out, 1024);
+                    // ldata (调色板)
+                    out.write(palRgba);
+                    // tdata (全部 PNG32 精灵流)
+                    try (FileInputStream tin = new FileInputStream(tdataTmp)) {
+                        byte[] buf = new byte[16384]; int r;
+                        while ((r = tin.read(buf)) > 0) out.write(buf, 0, r);
+                    }
+                }
+                if (tdataTmp.exists()) tdataTmp.delete();
+
+                if (f.delete()) {
+                    if (!v2Tmp.renameTo(f)) { copyFileToSandbox(v2Tmp, f); v2Tmp.delete(); }
+                } else {
+                    copyFileToSandbox(v2Tmp, f);
+                    v2Tmp.delete();
+                }
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     
@@ -7786,6 +8021,12 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 }
             }
 
+            final boolean[] animPlaying = {false};
+            final boolean[] showBoxes = {true};
+            final long[] animGen = {0};
+            final int[] curAnimIdx = {0};
+            final List<AirFrameSpec> framesToPlay = new ArrayList<>();
+
             if (!parentLinks.isEmpty() || !childLinks.isEmpty()) {
                 HorizontalScrollView relScroll = new HorizontalScrollView(getContext()); relScroll.setHorizontalScrollBarEnabled(false);
                 LinearLayout relRow = new LinearLayout(getContext()); relRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -7805,12 +8046,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 relScroll.addView(relRow);
                 dbox.addView(relScroll);
             }
-
-            final boolean[] animPlaying = {false};
-            final boolean[] showBoxes = {true};
-            final long[] animGen = {0};
-            final int[] curAnimIdx = {0};
-            final List<AirFrameSpec> framesToPlay = new ArrayList<>();
 
             // 多级兜底解析动作帧，确保全部状态都能预览动作与图片
             int resolvedAnim = -1;
@@ -8484,6 +8719,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     if (!uniqSff.isEmpty()) {
                                         File bak = new File(tSff.getAbsolutePath() + ".bak");
                                         if (!bak.exists()) copyFileToSandbox(tSff, bak);
+                                        ensureSffV2(tSff.getAbsolutePath());
                                         List<GoEngineBridge.SffFrame> targetFrames = GoEngineBridge.getAllFrames(tSff.getAbsolutePath());
                                         java.util.HashSet<String> occSff = new java.util.HashSet<>();
                                         int maxG = 0;
