@@ -7320,20 +7320,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         return outSteps.length() > 0 ? outSteps.toString() : "s, s";
     }
 
-    // 生成符合 Ikemen GO 规范的 [Command] 块：对双键同按(如 a+b / x+y)自动补齐 /a, b 与 /b, a 容错并加 buffer.time，彻底解决触屏与键盘双键按不出来的问题
+    // 生成符合 Ikemen GO 规范的 [Command] 块：直接使用标准组合键写法（去除 /a, b 延迟容错，适配改版内置组合键）
     private String buildIkCommandBlocks(String cmdName, String cleanSeq, int cmdTime) {
         StringBuilder sb = new StringBuilder();
         String compact = cleanSeq.replaceAll("\\s+", "");
         if (!compact.contains(",") && compact.contains("+")) {
-            String[] parts = compact.split("\\+");
-            sb.append("\n; [自动移植指令] ").append(cmdName).append(" (双键容错模式)\n");
-            sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = ").append(compact).append("\ntime = 1\nbuffer.time = 5\n");
-            if (parts.length == 2 && !parts[0].isEmpty() && !parts[1].isEmpty()
-                    && !parts[0].startsWith("/") && !parts[1].startsWith("/")
-                    && !parts[0].startsWith("~") && !parts[1].startsWith("~")) {
-                sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = /").append(parts[0]).append(", ").append(parts[1]).append("\ntime = 8\nbuffer.time = 5\n");
-                sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = /").append(parts[1]).append(", ").append(parts[0]).append("\ntime = 8\nbuffer.time = 5\n");
-            }
+            sb.append("\n; [自动移植指令] ").append(cmdName).append("\n");
+            sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = ").append(compact).append("\ntime = 6\nbuffer.time = 4\n");
         } else {
             sb.append("\n; [自动移植指令] ").append(cmdName).append("\n");
             sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = ").append(cleanSeq).append("\ntime = ").append(cmdTime).append("\nbuffer.time = 4\n");
@@ -7341,7 +7334,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         return sb.toString();
     }
 
-    // 静态分析单个状态调用的所有子状态号（同时兼容 CNS 与 Ikemen GO ZSS 语法）
+    // 静态分析单个状态调用的所有子状态号（同时兼容 CNS 与 Ikemen GO ZSS，并支持 ifelse/cond 分支表达式）
     private java.util.LinkedHashMap<Integer, String> extractSkillCallRefs(CharStateItem st) {
         java.util.LinkedHashMap<Integer, String> refs = new java.util.LinkedHashMap<>();
         if (st == null || st.codePreview == null || st.codePreview.isEmpty()) return refs;
@@ -7351,27 +7344,33 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
         if (isZss) {
             String[][] zPats = new String[][] {
-                {"(?i)helper\\s*\\{[^}]*?\\bstateno\\s*:\\s*(\\d+)", "Helper发射"},
-                {"(?i)(?:changestate|selfstate)\\s*\\{[^}]*?\\bvalue\\s*:\\s*(\\d+)", "ChangeState跳转"},
-                {"(?i)hitoverride\\s*\\{[^}]*?\\bstateno\\s*:\\s*(\\d+)", "HitOverride拦截"},
-                {"(?i)(?:hitdef|reversaldef)\\s*\\{[^}]*?\\bp1stateno\\s*:\\s*(\\d+)", "p1stateno命中派生"},
-                {"(?i)(?:hitdef|reversaldef)\\s*\\{[^}]*?\\bp2stateno\\s*:\\s*(\\d+)", "p2stateno受击状态"},
-                {"(?i)targetstate\\s*\\{[^}]*?\\bvalue\\s*:\\s*(\\d+)", "TargetState受击"}
+                {"(?i)helper\\s*\\{[^}]*?\\bstateno\\s*:\\s*([^;}\\n]+)", "Helper发射"},
+                {"(?i)(?:changestate|selfstate)\\s*\\{[^}]*?\\bvalue\\s*:\\s*([^;}\\n]+)", "ChangeState跳转"},
+                {"(?i)hitoverride\\s*\\{[^}]*?\\bstateno\\s*:\\s*([^;}\\n]+)", "HitOverride拦截"},
+                {"(?i)(?:hitdef|reversaldef)\\s*\\{[^}]*?\\bp1stateno\\s*:\\s*([^;}\\n]+)", "p1stateno命中派生"},
+                {"(?i)(?:hitdef|reversaldef)\\s*\\{[^}]*?\\bp2stateno\\s*:\\s*([^;}\\n]+)", "p2stateno受击状态"},
+                {"(?i)targetstate\\s*\\{[^}]*?\\bvalue\\s*:\\s*([^;}\\n]+)", "TargetState受击"}
             };
+            java.util.regex.Pattern numPat = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])(\\d+)(?![A-Za-z0-9_])");
             for (String[] zp : zPats) {
                 java.util.regex.Matcher m = java.util.regex.Pattern.compile(zp[0]).matcher(code);
                 while (m.find()) {
-                    try {
-                        int n = Integer.parseInt(m.group(1));
-                        if (n != st.stateNo && n >= 200 && !(n >= 5000 && n <= 5999) && !refs.containsKey(n)) {
-                            refs.put(n, zp[1]);
-                        }
-                    } catch (Exception ignored) {}
+                    String rhs = m.group(1).trim();
+                    java.util.regex.Matcher nm = numPat.matcher(rhs);
+                    while (nm.find()) {
+                        try {
+                            int n = Integer.parseInt(nm.group(1));
+                            if (n != st.stateNo && n >= 200 && !(n >= 5000 && n <= 5999) && !refs.containsKey(n)) {
+                                refs.put(n, zp[1]);
+                            }
+                        } catch (Exception ignored) {}
+                    }
                 }
             }
         } else {
             String curType = "";
-            java.util.regex.Pattern pKv = java.util.regex.Pattern.compile("(?i)^\\s*(stateno|value|p1stateno|p2stateno)\\s*=\\s*(\\d+)\\s*$");
+            java.util.regex.Pattern pKv = java.util.regex.Pattern.compile("(?i)^\\s*(stateno|value|p1stateno|p2stateno)\\s*=\\s*(.+)$");
+            java.util.regex.Pattern numPat = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])(\\d+)(?![A-Za-z0-9_])");
             for (String line : code.split("\n")) {
                 int ci = line.indexOf(';');
                 String clean = (ci >= 0 ? line.substring(0, ci) : line).trim();
@@ -7393,12 +7392,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         else if (k.equals("p2stateno") && (curType.equals("hitdef") || curType.equals("reversaldef"))) rel = "p2stateno受击状态";
                         else if (k.equals("value") && curType.equals("targetstate")) rel = "TargetState受击";
                         if (rel != null) {
-                            try {
-                                int n = Integer.parseInt(m.group(2));
-                                if (n != st.stateNo && n >= 200 && !(n >= 5000 && n <= 5999) && !refs.containsKey(n)) {
-                                    refs.put(n, rel);
-                                }
-                            } catch (Exception ignored) {}
+                            String rhs = m.group(2).trim();
+                            java.util.regex.Matcher nm = numPat.matcher(rhs);
+                            while (nm.find()) {
+                                try {
+                                    int n = Integer.parseInt(nm.group(1));
+                                    if (n != st.stateNo && n >= 200 && !(n >= 5000 && n <= 5999) && !refs.containsKey(n)) {
+                                        refs.put(n, rel);
+                                    }
+                                } catch (Exception ignored) {}
+                            }
                         }
                     }
                 }
@@ -7407,24 +7410,36 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         return refs;
     }
 
-    // 捆绑多状态移植时，同步改写状态内部跨状态调用号（Helper/ChangeState/p1stateno/p2stateno/HitOverride/TargetState）
-    private String rewriteSkillCrossStateRefs(String code, boolean isZss, java.util.Map<Integer, Integer> stateRemap) {
-        if (code == null || stateRemap == null || stateRemap.isEmpty()) return code;
+    // 捆绑多状态移植时，同步改写状态内部跨状态调用号及触发器中的 StateNo/PrevStateNo/P2StateNo/Anim 引用，彻底避免重映射后放一半中断
+    private String rewriteSkillCrossStateRefs(String code, boolean isZss, java.util.Map<Integer, Integer> stateRemap, java.util.Map<Integer, Integer> animRemap) {
+        if (code == null) return "";
+        if ((stateRemap == null || stateRemap.isEmpty()) && (animRemap == null || animRemap.isEmpty())) return code;
         if (isZss) {
             String out = code;
-            for (java.util.Map.Entry<Integer, Integer> en : stateRemap.entrySet()) {
-                int os = en.getKey(), ns = en.getValue();
-                if (os == ns) continue;
-                out = out.replaceAll("(?i)(helper\\s*\\{[^}]*?\\bstateno\\s*:\\s*)" + os + "\\b", "$1" + ns);
-                out = out.replaceAll("(?i)((?:changestate|selfstate|targetstate)\\s*\\{[^}]*?\\bvalue\\s*:\\s*)" + os + "\\b", "$1" + ns);
-                out = out.replaceAll("(?i)(hitoverride\\s*\\{[^}]*?\\bstateno\\s*:\\s*)" + os + "\\b", "$1" + ns);
-                out = out.replaceAll("(?i)(\\b(?:p1stateno|p2stateno)\\s*:\\s*)" + os + "\\b", "$1" + ns);
+            if (stateRemap != null) {
+                for (java.util.Map.Entry<Integer, Integer> en : stateRemap.entrySet()) {
+                    int os = en.getKey(), ns = en.getValue();
+                    if (os == ns) continue;
+                    out = out.replaceAll("(?i)(helper\\s*\\{[^}]*?\\bstateno\\s*:\\s*)" + os + "\\b", "$1" + ns);
+                    out = out.replaceAll("(?i)((?:changestate|selfstate|targetstate)\\s*\\{[^}]*?\\bvalue\\s*:\\s*)" + os + "\\b", "$1" + ns);
+                    out = out.replaceAll("(?i)(hitoverride\\s*\\{[^}]*?\\bstateno\\s*:\\s*)" + os + "\\b", "$1" + ns);
+                    out = out.replaceAll("(?i)(\\b(?:p1stateno|p2stateno)\\s*:\\s*)" + os + "\\b", "$1" + ns);
+                    out = out.replaceAll("(?i)(\\b(?:stateno|prevstateno|p2stateno)\\s*(?:=|!=)\\s*)" + os + "\\b", "$1" + ns);
+                }
+            }
+            if (animRemap != null) {
+                for (java.util.Map.Entry<Integer, Integer> en : animRemap.entrySet()) {
+                    int oa = en.getKey(), na = en.getValue();
+                    if (oa == na) continue;
+                    out = out.replaceAll("(?i)(\\banim\\s*(?:=|!=)\\s*)" + oa + "\\b", "$1" + na);
+                    out = out.replaceAll("(?i)(\\b(?:selfanimexist|animexist)\\s*\\(\\s*)" + oa + "(\\s*\\))", "$1" + na + "$2");
+                }
             }
             return out;
         } else {
             StringBuilder sb = new StringBuilder();
             String curType = "";
-            java.util.regex.Pattern pKv = java.util.regex.Pattern.compile("(?i)^(\\s*(?:stateno|value|p1stateno|p2stateno)\\s*=\\s*)(\\d+)(.*)$");
+            java.util.regex.Pattern pKv = java.util.regex.Pattern.compile("(?i)^(\\s*(?:stateno|value|p1stateno|p2stateno)\\s*=\\s*)(.+)$");
             for (String line : code.split("\n", -1)) {
                 int ci = line.indexOf(';');
                 String cp = (ci >= 0 ? line.substring(0, ci) : line);
@@ -7435,7 +7450,23 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     curType = "";
                 } else if (low.matches("^type\\s*=\\s*[a-z0-9_]+$")) {
                     curType = low.substring(low.indexOf('=') + 1).trim();
-                } else {
+                } else if (low.startsWith("trigger")) {
+                    if (stateRemap != null) {
+                        for (java.util.Map.Entry<Integer, Integer> en : stateRemap.entrySet()) {
+                            int os = en.getKey(), ns = en.getValue();
+                            if (os == ns) continue;
+                            cp = cp.replaceAll("(?i)(\\b(?:stateno|prevstateno|p2stateno)\\s*(?:=|!=)\\s*)" + os + "\\b", "$1" + ns);
+                        }
+                    }
+                    if (animRemap != null) {
+                        for (java.util.Map.Entry<Integer, Integer> en : animRemap.entrySet()) {
+                            int oa = en.getKey(), na = en.getValue();
+                            if (oa == na) continue;
+                            cp = cp.replaceAll("(?i)(\\banim\\s*(?:=|!=)\\s*)" + oa + "\\b", "$1" + na);
+                            cp = cp.replaceAll("(?i)(\\b(?:selfanimexist|animexist)\\s*\\(\\s*)" + oa + "(\\s*\\))", "$1" + na + "$2");
+                        }
+                    }
+                } else if (stateRemap != null && !stateRemap.isEmpty()) {
                     java.util.regex.Matcher m = pKv.matcher(cp);
                     if (m.find()) {
                         String kl = m.group(1).trim().toLowerCase();
@@ -7443,12 +7474,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 || (kl.startsWith("value") && (curType.equals("changestate") || curType.equals("selfstate") || curType.equals("targetstate")))
                                 || kl.startsWith("p1stateno") || kl.startsWith("p2stateno");
                         if (isRefKey) {
-                            try {
-                                int os = Integer.parseInt(m.group(2));
-                                if (stateRemap.containsKey(os)) {
-                                    cp = m.group(1) + stateRemap.get(os) + m.group(3);
-                                }
-                            } catch (Exception ignored) {}
+                            String rhs = m.group(2);
+                            for (java.util.Map.Entry<Integer, Integer> en : stateRemap.entrySet()) {
+                                int os = en.getKey(), ns = en.getValue();
+                                if (os == ns) continue;
+                                rhs = rhs.replaceAll("(?<![A-Za-z0-9_])" + os + "(?![A-Za-z0-9_])", String.valueOf(ns));
+                            }
+                            cp = m.group(1) + rhs;
                         }
                     }
                 }
@@ -7457,6 +7489,26 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             return sb.toString().trim();
         }
     }
+
+    // 覆盖旧移植技能时，精准清除目标文件（CNS/ZSS/AIR/CMD）中属于同一旧移植的区块（兼容新边界标记与旧版注释标记）
+    private String stripClonedSkillBlocks(String text, String skillKey, String legacyCmdName) {
+        if (text == null || text.isEmpty()) return "";
+        String out = text.replace("\r\n", "\n");
+        if (skillKey != null && !skillKey.isEmpty()) {
+            String qKey = java.util.regex.Pattern.quote(skillKey);
+            out = out.replaceAll("(?s)\n*[;#]\\s*\\[IK_CLONE_BEGIN:" + qKey + "\\].*?[;#]\\s*\\[IK_CLONE_END:" + qKey + "\\]\n*", "\n");
+        }
+        if (legacyCmdName != null && !legacyCmdName.isEmpty()) {
+            String qCmd = java.util.regex.Pattern.quote(legacyCmdName);
+            // 清除旧版 CNS/ZSS 与 AIR 块
+            out = out.replaceAll("(?s)\n*[;#]\\s*===\\s*\\[自动移植(?:技能|动作)\\]\\s*" + qCmd + "\\b.*?(?=\n[;#]\\s*===\\s*\\[自动移植|\n\\[\\s*(?:statedef|begin\\s+action)\\s+|$)", "\n");
+            // 清除旧版 CMD [Command] 块与 [State -1] 块
+            out = out.replaceAll("(?s)\n*;\\s*\\[自动移植指令\\]\\s*" + qCmd + "\\b.*?(?=\n;\\s*\\[自动移植|\n\\[\\s*statedef\\s+-1|$)", "\n");
+            out = out.replaceAll("(?s)\n*[;#]\\s*\\[自动移植触发器\\]\\s*" + qCmd + "\\b.*?(?=\n[;#]\\s*\\[自动移植|\n\\[\\s*state\\s+-1|$)", "\n");
+        }
+        return out.replaceAll("\n{4,}", "\n\n\n");
+    }
+
 
     private void openCharacterEditorWindow() {
         final String winTitle = L("🥷 角色编辑器");
@@ -8004,19 +8056,26 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 }
             }
             final java.util.LinkedHashMap<CharStateItem, String> childLinks = new java.util.LinkedHashMap<>();
-            java.util.LinkedHashMap<Integer, String> directChildRefs = extractSkillCallRefs(st);
-            for (java.util.Map.Entry<Integer, String> en : directChildRefs.entrySet()) {
-                CharStateItem ch = stateByNoMap.get(en.getKey());
-                if (ch != null && ch.stateNo != st.stateNo) childLinks.put(ch, en.getValue());
-            }
-            // 顺带探测直接子技能调用的二级子状态（如飞行道具的命中/消散状态）
-            List<CharStateItem> firstHopList = new ArrayList<>(childLinks.keySet());
-            for (CharStateItem fh : firstHopList) {
-                java.util.LinkedHashMap<Integer, String> grandRefs = extractSkillCallRefs(fh);
-                for (java.util.Map.Entry<Integer, String> gen : grandRefs.entrySet()) {
-                    CharStateItem gch = stateByNoMap.get(gen.getKey());
-                    if (gch != null && gch.stateNo != st.stateNo && !childLinks.containsKey(gch) && !parentLinks.containsKey(gch)) {
-                        childLinks.put(gch, "二级·" + gen.getValue());
+            // 广度优先多级递归探测（最多 5 层、40 个状态），把超杀/飞行道具的全部后继子状态完整找出来，避免漏选导致放一半中断
+            java.util.ArrayDeque<CharStateItem> bfsQ = new java.util.ArrayDeque<>();
+            java.util.HashMap<Integer, Integer> bfsDepth = new java.util.HashMap<>();
+            bfsQ.add(st);
+            bfsDepth.put(st.stateNo, 0);
+            String[] depthTags = {"", "", "二级·", "三级·", "四级·", "五级·"};
+            while (!bfsQ.isEmpty() && childLinks.size() < 40) {
+                CharStateItem curNode = bfsQ.poll();
+                int d = bfsDepth.get(curNode.stateNo);
+                if (d >= 5) continue;
+                java.util.LinkedHashMap<Integer, String> subRefs = extractSkillCallRefs(curNode);
+                for (java.util.Map.Entry<Integer, String> en : subRefs.entrySet()) {
+                    CharStateItem ch = stateByNoMap.get(en.getKey());
+                    if (ch != null && ch.stateNo != st.stateNo && !childLinks.containsKey(ch) && !parentLinks.containsKey(ch)) {
+                        int nd = d + 1;
+                        String prefix = (nd < depthTags.length) ? depthTags[nd] : (nd + "级·");
+                        childLinks.put(ch, prefix + en.getValue());
+                        bfsDepth.put(ch.stateNo, nd);
+                        bfsQ.add(ch);
+                        if (childLinks.size() >= 40) break;
                     }
                 }
             }
@@ -8392,7 +8451,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     final boolean srcIsZss = (st.sourceFile != null && st.sourceFile.getName().toLowerCase().endsWith(".zss"))
                             || java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+-?\\d+\\s*;").matcher(st.codePreview).find();
 
-                    // 扫描目标角色全部状态文件 (st / st0..stN / cns，含 .zss 与 .cns) 已占用的 StateNo
+                    // 扫描目标角色全部状态文件 (st / st0..stN / cns，含 .zss 与 .cns) 已占用的 StateNo，并检测是否已移植过同一技能
+                    final String srcCharTag = (defFileRef[0] != null ? defFileRef[0].getName().replaceAll("(?i)\\.def$", "") : "src").replaceAll("[^A-Za-z0-9_\u4e00-\u9fa5]", "_");
+                    final String baseSkillKey = srcCharTag + "_S" + st.stateNo;
                     java.util.HashSet<Integer> usedStates = new java.util.HashSet<>();
                     java.util.LinkedHashSet<File> tAllStFiles = new java.util.LinkedHashSet<>();
                     tAllStFiles.add(tCns);
@@ -8403,11 +8464,43 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             if (tsf != null && tsf.exists()) tAllStFiles.add(tsf);
                         }
                     }
+                    File sidecarCnsCheck = new File(tBaseDir, "ik_cloned_skills.cns");
+                    File sidecarZssCheck = new File(tBaseDir, "ik_cloned_skills.zss");
+                    if (sidecarCnsCheck.exists()) tAllStFiles.add(sidecarCnsCheck);
+                    if (sidecarZssCheck.exists()) tAllStFiles.add(sidecarZssCheck);
+
+                    String detectedOldCmdName = "";
+                    int detectedOldEntryState = -1;
+                    String detectedOldKey = "";
                     java.util.regex.Pattern tSdPat = java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+(-?\\d+)");
+                    java.util.regex.Pattern oldMarkerPat = java.util.regex.Pattern.compile("(?m)[;#]\\s*\\[IK_CLONE_BEGIN:([^\\]]+)\\](?:\\s*cmd=([^\\s]+))?(?:\\s*entry=(\\d+))?");
+                    java.util.regex.Pattern legacyPat = java.util.regex.Pattern.compile("(?m)[;#]\\s*===\\s*\\[自动移植技能\\]\\s*([^\\s(]+)\\s*\\(原State\\s*" + st.stateNo + "\\s*→\\s*新State\\s*(\\d+)\\)");
                     for (File tsf : tAllStFiles) {
-                        java.util.regex.Matcher smt = tSdPat.matcher(readTextAutoCharset(tsf));
+                        String stTxt = readTextAutoCharset(tsf);
+                        java.util.regex.Matcher smt = tSdPat.matcher(stTxt);
                         while (smt.find()) { try { usedStates.add(Integer.parseInt(smt.group(1))); } catch (Exception ignored) {} }
+                        java.util.regex.Matcher om = oldMarkerPat.matcher(stTxt);
+                        while (om.find()) {
+                            String mk = om.group(1).trim();
+                            if (mk.equals(baseSkillKey) || mk.endsWith("_S" + st.stateNo)) {
+                                detectedOldKey = mk;
+                                if (om.group(2) != null) detectedOldCmdName = om.group(2).trim();
+                                if (om.group(3) != null) { try { detectedOldEntryState = Integer.parseInt(om.group(3).trim()); } catch (Exception ignored) {} }
+                            }
+                        }
+                        if (detectedOldKey.isEmpty()) {
+                            java.util.regex.Matcher lm = legacyPat.matcher(stTxt);
+                            if (lm.find()) {
+                                detectedOldCmdName = lm.group(1).trim();
+                                try { detectedOldEntryState = Integer.parseInt(lm.group(2).trim()); } catch (Exception ignored) {}
+                            }
+                        }
                     }
+                    final boolean hasExistingClone = (!detectedOldKey.isEmpty() || !detectedOldCmdName.isEmpty());
+                    final String existOldKey = detectedOldKey;
+                    final String existOldCmd = detectedOldCmdName;
+                    final int existOldState = detectedOldEntryState;
+
                     String tAirRaw = (tAir != null && tAir.exists()) ? readTextAutoCharset(tAir) : "";
                     java.util.HashSet<Integer> usedAnims = new java.util.HashSet<>();
                     java.util.regex.Matcher amt = java.util.regex.Pattern.compile("(?i)\\[\\s*begin\\s+action\\s+(-?\\d+)").matcher(tAirRaw);
@@ -8423,6 +8516,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         recAnim = recState;
                         while (usedAnims.contains(recAnim)) recAnim++;
                     }
+                    final int freshRecState = recState;
+                    final int freshRecAnim = recAnim;
 
                     String defaultRawCmd = "~D, DF, F, x";
                     if (!st.linkedCmd.isEmpty()) {
@@ -8433,7 +8528,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         }
                     }
 
-                    // 弹窗让用户手动选择捆绑父/子技能、色彩还原模式与触发按键
+                    // 弹窗让用户手动选择：覆盖/新建策略、捆绑父/子技能、色彩还原模式与触发按键
                     final Dialog cfgD = new Dialog(getContext());
                     if (cfgD.getWindow() != null) cfgD.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
                     ScrollView csv = new ScrollView(getContext());
@@ -8442,12 +8537,51 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     GradientDrawable cbg = new GradientDrawable(); cbg.setColor(Color.parseColor("#F8141A24")); cbg.setCornerRadius(12f*density); cbg.setStroke(2, Color.parseColor("#7C3AED")); cbox.setBackground(cbg);
                     cbox.addView(createSubTitle(L("🚀 一键移植到: ") + targetDef.getName() + (srcIsZss ? " [ZSS]" : " [CNS]")));
 
-                    final EditText eCmdName = createInput(L("CMD 指令名"), "CloneSkill_" + recState);
+                    final boolean[] overwriteExisting = { hasExistingClone };
+                    int initStateVal = (hasExistingClone && existOldState >= 200) ? existOldState : freshRecState;
+                    String initCmdVal = (hasExistingClone && !existOldCmd.isEmpty()) ? existOldCmd : ("CloneSkill_" + freshRecState);
+
+                    final EditText eCmdName = createInput(L("CMD 指令名"), initCmdVal);
                     final EditText eCmdKeys = createInput(L("搓招按键 (冲突将自动升级为双击触发)"), defaultRawCmd);
-                    final EditText eNewState = createInput(L("入口 State 编号"), String.valueOf(recState));
+                    final EditText eNewState = createInput(L("入口 State 编号"), String.valueOf(initStateVal));
                     eNewState.setInputType(InputType.TYPE_CLASS_NUMBER);
-                    final EditText eNewAnim = createInput(L("主动作 AIR 编号"), String.valueOf(recAnim));
+                    final EditText eNewAnim = createInput(L("主动作 AIR 编号"), String.valueOf(freshRecAnim));
                     eNewAnim.setInputType(InputType.TYPE_CLASS_NUMBER);
+
+                    if (hasExistingClone) {
+                        LinearLayout dupCard = new LinearLayout(getContext()); dupCard.setOrientation(LinearLayout.VERTICAL);
+                        dupCard.setPadding((int)(9*density), (int)(7*density), (int)(9*density), (int)(7*density));
+                        GradientDrawable dBg = new GradientDrawable(); dBg.setColor(Color.parseColor("#2A1B3D")); dBg.setCornerRadius(8f*density); dBg.setStroke(1, Color.parseColor("#F59E0B"));
+                        dupCard.setBackground(dBg);
+                        LinearLayout.LayoutParams dLp = new LinearLayout.LayoutParams(-1, -2); dLp.setMargins(0, (int)(4*density), 0, (int)(6*density));
+
+                        TextView dTip = new TextView(getContext());
+                        dTip.setText(L("⚠️ 检测到目标角色已移植过该技能 (") + (existOldCmd.isEmpty() ? existOldKey : existOldCmd) + (existOldState >= 0 ? " / State " + existOldState : "") + L(")，请选择处理方式："));
+                        applyGlobalFontSettings(dTip, 0.82f, true); dTip.setTextColor(Color.parseColor("#FCD34D"));
+                        dupCard.addView(dTip);
+
+                        LinearLayout dupRow = new LinearLayout(getContext()); dupRow.setOrientation(LinearLayout.HORIZONTAL);
+                        final Button bOver = createButton(L("🔄 覆盖并融合更新 (推荐)"), "#D97706");
+                        final Button bAsNew = createButton(L("➕ 当作新技能重新创建"), "#334155");
+                        LinearLayout.LayoutParams drp = new LinearLayout.LayoutParams(0, -2, 1f); drp.setMargins((int)(2*density), (int)(5*density), (int)(2*density), 0);
+                        bOver.setOnClickListener(ov -> {
+                            overwriteExisting[0] = true;
+                            bOver.setBackgroundColor(Color.parseColor("#D97706"));
+                            bAsNew.setBackgroundColor(Color.parseColor("#334155"));
+                            if (existOldState >= 200) eNewState.setText(String.valueOf(existOldState));
+                            if (!existOldCmd.isEmpty()) eCmdName.setText(existOldCmd);
+                        });
+                        bAsNew.setOnClickListener(nv -> {
+                            overwriteExisting[0] = false;
+                            bOver.setBackgroundColor(Color.parseColor("#334155"));
+                            bAsNew.setBackgroundColor(Color.parseColor("#0284C7"));
+                            eNewState.setText(String.valueOf(freshRecState));
+                            eCmdName.setText("CloneSkill_" + freshRecState);
+                        });
+                        dupRow.addView(bOver, drp); dupRow.addView(bAsNew, drp);
+                        dupCard.addView(dupRow);
+                        cbox.addView(dupCard, dLp);
+                    }
 
                     // 关联父/子技能手动勾选区（默认仅移植当前技能，避免一次性拷入过多无用状态）
                     final java.util.LinkedHashMap<CharStateItem, android.widget.CheckBox> parentChecks = new java.util.LinkedHashMap<>();
@@ -8514,7 +8648,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             relCard.addView(cSub);
                             int cCap = 0;
                             for (java.util.Map.Entry<CharStateItem, String> ce : childLinks.entrySet()) {
-                                if (++cCap > 20) break;
+                                if (++cCap > 40) break;
                                 final CharStateItem cs = ce.getKey();
                                 android.widget.CheckBox cb = new android.widget.CheckBox(getContext());
                                 String cLbl = "State " + cs.stateNo + (cs.title.isEmpty() ? "" : " · " + cs.title) + " [" + ce.getValue() + "]";
@@ -8536,10 +8670,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             }
                         });
                         bPickAllC.setOnClickListener(bv -> {
-                            for (java.util.Map.Entry<CharStateItem, android.widget.CheckBox> en : childChecks.entrySet()) {
-                                String rel = childLinks.get(en.getKey());
-                                if (rel != null && !rel.startsWith("二级·")) en.getValue().setChecked(true);
-                            }
+                            for (android.widget.CheckBox cb : childChecks.values()) cb.setChecked(true);
                         });
                         cbox.addView(relCard, rclp);
                     }
@@ -8950,8 +9081,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                         }
                                     }
 
-                                    // 同步改写所有捆绑父子状态间的交叉调用号
-                                    String cnsBodyStr = rewriteSkillCrossStateRefs(cnsOut.toString().trim(), bsIsZss, stateRemap);
+                                    // 同步改写所有捆绑父子状态间的交叉调用号以及触发器中的 StateNo/Anim 引用
+                                    String cnsBodyStr = rewriteSkillCrossStateRefs(cnsOut.toString().trim(), bsIsZss, stateRemap, animRemap);
 
                                     // 仅对未一起捆绑且目标角色不存在的跳转状态做防卡死保护（已捆绑进来的父/子状态全部保留！）
                                     if (!bsIsZss) {
@@ -9004,13 +9135,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             || java.util.regex.Pattern.compile("(?im)^\\s*type\\s*=\\s*A\\b").matcher(cnsBodyStr).find();
                                     if (bs.stateNo == entryStateItem.stateNo) {
                                         entryIsAirOrHelper = bsIsAir || bsHasDestroy;
-                                        // 仅当入口状态本身是单独移植的 Helper/无收招状态时，才追加自动回站立兜底（若捆绑了父技能发射Helper，则保留Helper原样飞行！）
-                                        boolean hasSafeReturn = java.util.regex.Pattern.compile("(?im)^\\s*value\\s*[:=]\\s*(?:0|50)\\b").matcher(cnsBodyStr).find();
-                                        if ((bsHasDestroy && !hasBundledParent) || (!bsHasDestroy && !hasSafeReturn)) {
+                                        // 仅当入口状态本身没有任何 ChangeState/SelfState 退出路径（或未勾父技能直接触发的 Helper）时才追加兜底，绝不强插 Time>=90 斩断正常多段技能！
+                                        boolean hasAnyStateExit = java.util.regex.Pattern.compile("(?i)(?:type\\s*=\\s*(?:changestate|selfstate)|(?:changestate|selfstate)\\s*\\{)").matcher(cnsBodyStr).find();
+                                        if ((bsHasDestroy && !hasBundledParent) || (!bsHasDestroy && !hasAnyStateExit)) {
                                             if (bsIsZss) {
-                                                cnsBodyStr += "\n# [IK防卡死兜底] 玩家直接触发时自动收招/落地\nif !isHelper && (animTime = 0 || time >= 90 || frontEdgeDist <= -50) {\n\tchangeState{value: ifelse(pos y < 0, 50, 0); ctrl: 1}\n}";
+                                                cnsBodyStr += "\n# [IK防卡死兜底] 仅在动画结束时回站立\nif !isHelper && animTime = 0 {\n\tchangeState{value: ifelse(pos y < 0, 50, 0); ctrl: 1}\n}";
                                             } else {
-                                                cnsBodyStr += "\n[State " + mappedStNo + ", AutoReturnIdle]\ntype = ChangeState\ntrigger1 = !IsHelper && (AnimTime = 0 || Time >= 90 || FrontEdgeDist <= -50)\nvalue = ifelse(Pos Y < 0, 50, 0)\nctrl = 1";
+                                                cnsBodyStr += "\n[State " + mappedStNo + ", AutoReturnIdle]\ntype = ChangeState\ntrigger1 = !IsHelper && AnimTime = 0\nvalue = ifelse(Pos Y < 0, 50, 0)\nctrl = 1";
                                             }
                                         }
                                     }
@@ -9019,6 +9150,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             .append(" (原State ").append(bs.stateNo).append(" → 新State ").append(mappedStNo).append(") ===\n")
                                             .append(cnsBodyStr).append("\n");
                                 }
+
+                                // 生成本次移植的唯一归属标识（覆盖模式沿用旧 Key，新建模式生成独立 Key）
+                                final boolean doOverwrite = overwriteExisting[0] && hasExistingClone;
+                                final String activeSkillKey = doOverwrite
+                                        ? (!existOldKey.isEmpty() ? existOldKey : baseSkillKey)
+                                        : (hasExistingClone ? (baseSkillKey + "_" + entryNewStateNo) : baseSkillKey);
+                                final String stateCmtPfx = srcIsZss ? "# " : "; ";
+                                String wrappedStatesBlock = "\n" + stateCmtPfx + "[IK_CLONE_BEGIN:" + activeSkillKey + "] cmd=" + cmdName + " entry=" + entryNewStateNo
+                                        + allStatesBlock.toString()
+                                        + stateCmtPfx + "[IK_CLONE_END:" + activeSkillKey + "]\n";
 
                                 // 决定安全写入目标文件：若目标主状态为 ZSS 而源为 CNS（或反之），自动创建独立侧挂文件并注册到目标 .def 的 [Files] stN！
                                 boolean targetMainIsZss = tCns.getName().toLowerCase().endsWith(".zss");
@@ -9059,9 +9200,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     File cnsBak = new File(writeStateFile.getAbsolutePath() + ".bak");
                                     if (!cnsBak.exists()) copyFileToSandbox(writeStateFile, cnsBak);
                                 }
-                                try (FileOutputStream fos = new FileOutputStream(writeStateFile, true)) { fos.write(allStatesBlock.toString().getBytes("UTF-8")); }
+                                if (doOverwrite && writeStateFile.exists()) {
+                                    String cleanedSt = stripClonedSkillBlocks(readTextAutoCharset(writeStateFile), activeSkillKey, existOldCmd);
+                                    try (FileOutputStream fos = new FileOutputStream(writeStateFile, false)) { fos.write((cleanedSt + wrappedStatesBlock).getBytes("UTF-8")); }
+                                } else {
+                                    try (FileOutputStream fos = new FileOutputStream(writeStateFile, true)) { fos.write(wrappedStatesBlock.getBytes("UTF-8")); }
+                                }
 
-                                // ④ 同步改写全部 AIR 动作块（主动作 + 全部 Explod/火花/飞道子动作）并追加写入目标 .air
+                                // ④ 同步改写全部 AIR 动作块（主动作 + 全部 Explod/火花/飞道子动作）并写入目标 .air（覆盖模式先清理旧块）
                                 int airWrittenCnt = 0;
                                 if (!animRemap.isEmpty() && tAir != null && tAir.exists()) {
                                     StringBuilder allAirAppend = new StringBuilder();
@@ -9090,14 +9236,23 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     if (airWrittenCnt > 0) {
                                         File airBak = new File(tAir.getAbsolutePath() + ".bak");
                                         if (!airBak.exists()) copyFileToSandbox(tAir, airBak);
-                                        try (FileOutputStream fos = new FileOutputStream(tAir, true)) { fos.write(allAirAppend.toString().getBytes("UTF-8")); }
+                                        String wrappedAir = "\n; [IK_CLONE_BEGIN:" + activeSkillKey + "]" + allAirAppend.toString() + "; [IK_CLONE_END:" + activeSkillKey + "]\n";
+                                        if (doOverwrite) {
+                                            String cleanedAir = stripClonedSkillBlocks(readTextAutoCharset(tAir), activeSkillKey, existOldCmd);
+                                            try (FileOutputStream fos = new FileOutputStream(tAir, false)) { fos.write((cleanedAir + wrappedAir).getBytes("UTF-8")); }
+                                        } else {
+                                            try (FileOutputStream fos = new FileOutputStream(tAir, true)) { fos.write(wrappedAir.getBytes("UTF-8")); }
+                                        }
                                     }
                                 }
 
-                                // ⑤ 目标 .cmd 自动体检自愈（清除空 [Command] 与缺指令孤儿触发器）+ 按键重复自动升级双击 + 同步注入
+                                // ⑤ 目标 .cmd 自动体检自愈（清除空 [Command] / 空 command= 与缺指令孤儿触发器）+ 覆盖融合清理 + 组合键直出注入
                                 File cmdBak = new File(tCmd.getAbsolutePath() + ".bak");
                                 if (!cmdBak.exists()) copyFileToSandbox(tCmd, cmdBak);
                                 String cmdOrig = readTextAutoCharset(tCmd).replace("\r\n", "\n");
+                                if (doOverwrite) {
+                                    cmdOrig = stripClonedSkillBlocks(cmdOrig, activeSkillKey, existOldCmd);
+                                }
 
                                 // 5.1 仅从真正的 [Command] 区块收集已有指令名与按键序列
                                 java.util.HashSet<String> existingCmdNames = new java.util.HashSet<>();
@@ -9115,13 +9270,13 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                         if (eq > 0) {
                                             String ck = clean.substring(0, eq).trim().toLowerCase();
                                             String cv = clean.substring(eq + 1).trim();
-                                            if (ck.equals("name")) existingCmdNames.add(cv.replace("\"", "").trim().toLowerCase());
-                                            else if (ck.equals("command")) existingCmdSeqs.add(cv.replaceAll("\\s+", "").toLowerCase());
+                                            if (ck.equals("name") && !cv.replace("\"", "").trim().isEmpty()) existingCmdNames.add(cv.replace("\"", "").trim().toLowerCase());
+                                            else if (ck.equals("command") && !cv.isEmpty()) existingCmdSeqs.add(cv.replaceAll("\\s+", "").toLowerCase());
                                         }
                                     }
                                 }
 
-                                // 5.2 自愈清理：移除无对应 [Command] 的孤儿 [State -1]、空 [Command] 块，并自动修复已有非法大小写 command（如 A,B -> a, b 根治 Invalid symbol 闪退）
+                                // 5.2 自愈清理：移除无对应 [Command] 的孤儿 [State -1]、空 [Command] 或空 command= 块，并修复非法大小写符号
                                 int healedOrphans = 0;
                                 int healedBadCmds = 0;
                                 StringBuilder healedCmd = new StringBuilder();
@@ -9132,15 +9287,28 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     String curTrim = curL.trim().toLowerCase();
                                     if (curTrim.equals("[command]")) {
                                         int endBlock = li + 1;
-                                        boolean hasName = false;
+                                        boolean hasName = false, hasNonEmptyCmd = false;
+                                        String blockName = "";
                                         while (endBlock < origLines.length) {
                                             String nt = origLines[endBlock].trim();
                                             if (nt.startsWith("[")) break;
-                                            String nc = (nt.indexOf(';') >= 0 ? nt.substring(0, nt.indexOf(';')) : nt).trim().toLowerCase();
-                                            if (nc.startsWith("name") && nc.contains("=")) hasName = true;
+                                            String nc = (nt.indexOf(';') >= 0 ? nt.substring(0, nt.indexOf(';')) : nt).trim();
+                                            int eq2 = nc.indexOf('=');
+                                            if (eq2 > 0) {
+                                                String bk = nc.substring(0, eq2).trim().toLowerCase();
+                                                String bv = nc.substring(eq2 + 1).trim();
+                                                if (bk.equals("name") && !bv.replace("\"", "").trim().isEmpty()) { hasName = true; blockName = bv.replace("\"", "").trim().toLowerCase(); }
+                                                else if (bk.equals("command") && !bv.isEmpty()) hasNonEmptyCmd = true;
+                                            }
                                             endBlock++;
                                         }
-                                        if (!hasName) { li = endBlock - 1; inHealCmdBlock = false; continue; }
+                                        if (!hasName || !hasNonEmptyCmd) {
+                                            if (!blockName.isEmpty()) existingCmdNames.remove(blockName);
+                                            healedBadCmds++;
+                                            li = endBlock - 1;
+                                            inHealCmdBlock = false;
+                                            continue;
+                                        }
                                         inHealCmdBlock = true;
                                     } else if (curTrim.startsWith("[state -1")) {
                                         inHealCmdBlock = false;
@@ -9167,7 +9335,6 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                         java.util.regex.Matcher cmLine = java.util.regex.Pattern.compile("(?i)^(\\s*command\\s*=\\s*)(.+)$").matcher(codeP);
                                         if (cmLine.find()) {
                                             String oldVal = cmLine.group(2).trim();
-                                            // 仅当存在明确非法符号（如大写 A/C/X/Y/Z/S/W/M 或全角字符）时才自动修复，避免误伤原角色正常指令
                                             if (java.util.regex.Pattern.compile("(?<![A-Za-z])[ACXYZSWM](?![A-Za-z])|[，＋～／Ａ-Ｚａ-ｚ]").matcher(oldVal).find()) {
                                                 String fixedVal = sanitizeIkCommandSeq(oldVal);
                                                 curL = cmLine.group(1) + fixedVal + (cmtP.isEmpty() ? " ; [IK自愈修复非法按键符号]" : cmtP);
@@ -9213,13 +9380,14 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     }
                                 }
 
-                                String cmdDefBlock = buildIkCommandBlocks(finalCmdName, finalCmdSeq, cmdTime);
+                                String cmdDefBlock = "\n; [IK_CLONE_BEGIN:" + activeSkillKey + "]" + buildIkCommandBlocks(finalCmdName, finalCmdSeq, cmdTime) + "; [IK_CLONE_END:" + activeSkillKey + "]\n";
                                 boolean cmdIsZss = tCmd.getName().toLowerCase().endsWith(".zss");
-                                String condCns = entryIsAirOrHelper ? "ctrl" : "statetype != A && ctrl";
-                                String condZss = entryIsAirOrHelper ? "ctrl" : "stateType != A && ctrl";
+                                String condCns1 = entryIsAirOrHelper ? "ctrl" : "statetype != A && ctrl";
+                                String condCns2 = entryIsAirOrHelper ? "stateno = [200, 499] && time <= 3" : "statetype != A && stateno = [200, 499] && time <= 3";
+                                String condZss = entryIsAirOrHelper ? "(ctrl || (stateNo = [200, 499] && time <= 3))" : "stateType != A && (ctrl || (stateNo = [200, 499] && time <= 3))";
                                 String stateNeg1Block = cmdIsZss
-                                        ? ("\n# [自动移植触发器] " + finalCmdName + "\nif command = \"" + finalCmdName + "\" && " + condZss + " {\n\tchangeState{value: " + entryNewStateNo + "}\n}\n")
-                                        : ("\n; [自动移植触发器] " + finalCmdName + "\n[State -1, " + finalCmdName + "]\ntype = ChangeState\nvalue = " + entryNewStateNo + "\ntriggerall = command = \"" + finalCmdName + "\"\ntrigger1 = " + condCns + "\n");
+                                        ? ("\n# [IK_CLONE_BEGIN:" + activeSkillKey + "]\n# [自动移植触发器] " + finalCmdName + "\nif command = \"" + finalCmdName + "\" && " + condZss + " {\n\tchangeState{value: " + entryNewStateNo + "}\n}\n# [IK_CLONE_END:" + activeSkillKey + "]\n")
+                                        : ("\n; [IK_CLONE_BEGIN:" + activeSkillKey + "]\n; [自动移植触发器] " + finalCmdName + "\n[State -1, " + finalCmdName + "]\ntype = ChangeState\nvalue = " + entryNewStateNo + "\ntriggerall = command = \"" + finalCmdName + "\"\ntrigger1 = " + condCns1 + "\ntrigger2 = " + condCns2 + "\n; [IK_CLONE_END:" + activeSkillKey + "]\n");
 
                                 // 严格行首锚定，绝不误匹配注释中的 ; [Statedef -1]
                                 java.util.regex.Matcher neg1M = java.util.regex.Pattern.compile("(?im)^\\s*(\\[\\s*statedef\\s+-1[^\\]]*\\][^\\r\\n]*\\r?\\n?)").matcher(cmdOrig);
@@ -9232,6 +9400,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     newCmdText = cmdOrig + "\n" + cmdDefBlock + "\n[Statedef -1]\n" + stateNeg1Block;
                                 }
                                 try (FileOutputStream fos = new FileOutputStream(tCmd)) { fos.write(newCmdText.getBytes("UTF-8")); }
+
 
                                 StringBuilder report = new StringBuilder();
                                 report.append("🎉 全自动移植已完成，进游戏可直接搓招触发！\n");
