@@ -7106,6 +7106,123 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         return sb.toString();
     }
 
+    // 静态分析单个状态调用的所有子状态号（同时兼容 CNS 与 Ikemen GO ZSS 语法）
+    private java.util.LinkedHashMap<Integer, String> extractSkillCallRefs(CharStateItem st) {
+        java.util.LinkedHashMap<Integer, String> refs = new java.util.LinkedHashMap<>();
+        if (st == null || st.codePreview == null || st.codePreview.isEmpty()) return refs;
+        String code = st.codePreview.replace("\r\n", "\n");
+        boolean isZss = (st.sourceFile != null && st.sourceFile.getName().toLowerCase().endsWith(".zss"))
+                || java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+-?\\d+\\s*;").matcher(code).find();
+
+        if (isZss) {
+            String[][] zPats = new String[][] {
+                {"(?i)helper\\s*\\{[^}]*?\\bstateno\\s*:\\s*(\\d+)", "Helper发射"},
+                {"(?i)(?:changestate|selfstate)\\s*\\{[^}]*?\\bvalue\\s*:\\s*(\\d+)", "ChangeState跳转"},
+                {"(?i)hitoverride\\s*\\{[^}]*?\\bstateno\\s*:\\s*(\\d+)", "HitOverride拦截"},
+                {"(?i)(?:hitdef|reversaldef)\\s*\\{[^}]*?\\bp1stateno\\s*:\\s*(\\d+)", "p1stateno命中派生"},
+                {"(?i)(?:hitdef|reversaldef)\\s*\\{[^}]*?\\bp2stateno\\s*:\\s*(\\d+)", "p2stateno受击状态"},
+                {"(?i)targetstate\\s*\\{[^}]*?\\bvalue\\s*:\\s*(\\d+)", "TargetState受击"}
+            };
+            for (String[] zp : zPats) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile(zp[0]).matcher(code);
+                while (m.find()) {
+                    try {
+                        int n = Integer.parseInt(m.group(1));
+                        if (n != st.stateNo && n >= 200 && !(n >= 5000 && n <= 5999) && !refs.containsKey(n)) {
+                            refs.put(n, zp[1]);
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+        } else {
+            String curType = "";
+            java.util.regex.Pattern pKv = java.util.regex.Pattern.compile("(?i)^\\s*(stateno|value|p1stateno|p2stateno)\\s*=\\s*(\\d+)\\s*$");
+            for (String line : code.split("\n")) {
+                int ci = line.indexOf(';');
+                String clean = (ci >= 0 ? line.substring(0, ci) : line).trim();
+                if (clean.isEmpty()) continue;
+                String low = clean.toLowerCase();
+                if (low.startsWith("[state ") || low.startsWith("[statedef ")) {
+                    curType = "";
+                } else if (low.matches("^type\\s*=\\s*[a-z0-9_]+$")) {
+                    curType = low.substring(low.indexOf('=') + 1).trim();
+                } else {
+                    java.util.regex.Matcher m = pKv.matcher(clean);
+                    if (m.find()) {
+                        String k = m.group(1).toLowerCase();
+                        String rel = null;
+                        if (k.equals("stateno") && curType.equals("helper")) rel = "Helper发射";
+                        else if (k.equals("value") && (curType.equals("changestate") || curType.equals("selfstate"))) rel = "ChangeState跳转";
+                        else if (k.equals("stateno") && curType.equals("hitoverride")) rel = "HitOverride拦截";
+                        else if (k.equals("p1stateno") && (curType.equals("hitdef") || curType.equals("reversaldef"))) rel = "p1stateno命中派生";
+                        else if (k.equals("p2stateno") && (curType.equals("hitdef") || curType.equals("reversaldef"))) rel = "p2stateno受击状态";
+                        else if (k.equals("value") && curType.equals("targetstate")) rel = "TargetState受击";
+                        if (rel != null) {
+                            try {
+                                int n = Integer.parseInt(m.group(2));
+                                if (n != st.stateNo && n >= 200 && !(n >= 5000 && n <= 5999) && !refs.containsKey(n)) {
+                                    refs.put(n, rel);
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                }
+            }
+        }
+        return refs;
+    }
+
+    // 捆绑多状态移植时，同步改写状态内部跨状态调用号（Helper/ChangeState/p1stateno/p2stateno/HitOverride/TargetState）
+    private String rewriteSkillCrossStateRefs(String code, boolean isZss, java.util.Map<Integer, Integer> stateRemap) {
+        if (code == null || stateRemap == null || stateRemap.isEmpty()) return code;
+        if (isZss) {
+            String out = code;
+            for (java.util.Map.Entry<Integer, Integer> en : stateRemap.entrySet()) {
+                int os = en.getKey(), ns = en.getValue();
+                if (os == ns) continue;
+                out = out.replaceAll("(?i)(helper\\s*\\{[^}]*?\\bstateno\\s*:\\s*)" + os + "\\b", "$1" + ns);
+                out = out.replaceAll("(?i)((?:changestate|selfstate|targetstate)\\s*\\{[^}]*?\\bvalue\\s*:\\s*)" + os + "\\b", "$1" + ns);
+                out = out.replaceAll("(?i)(hitoverride\\s*\\{[^}]*?\\bstateno\\s*:\\s*)" + os + "\\b", "$1" + ns);
+                out = out.replaceAll("(?i)(\\b(?:p1stateno|p2stateno)\\s*:\\s*)" + os + "\\b", "$1" + ns);
+            }
+            return out;
+        } else {
+            StringBuilder sb = new StringBuilder();
+            String curType = "";
+            java.util.regex.Pattern pKv = java.util.regex.Pattern.compile("(?i)^(\\s*(?:stateno|value|p1stateno|p2stateno)\\s*=\\s*)(\\d+)(.*)$");
+            for (String line : code.split("\n", -1)) {
+                int ci = line.indexOf(';');
+                String cp = (ci >= 0 ? line.substring(0, ci) : line);
+                String cm = (ci >= 0 ? line.substring(ci) : "");
+                String tr = cp.trim();
+                String low = tr.toLowerCase();
+                if (low.startsWith("[state ") || low.startsWith("[statedef ")) {
+                    curType = "";
+                } else if (low.matches("^type\\s*=\\s*[a-z0-9_]+$")) {
+                    curType = low.substring(low.indexOf('=') + 1).trim();
+                } else {
+                    java.util.regex.Matcher m = pKv.matcher(cp);
+                    if (m.find()) {
+                        String kl = m.group(1).trim().toLowerCase();
+                        boolean isRefKey = (kl.startsWith("stateno") && (curType.equals("helper") || curType.equals("hitoverride")))
+                                || (kl.startsWith("value") && (curType.equals("changestate") || curType.equals("selfstate") || curType.equals("targetstate")))
+                                || kl.startsWith("p1stateno") || kl.startsWith("p2stateno");
+                        if (isRefKey) {
+                            try {
+                                int os = Integer.parseInt(m.group(2));
+                                if (stateRemap.containsKey(os)) {
+                                    cp = m.group(1) + stateRemap.get(os) + m.group(3);
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                }
+                sb.append(cp).append(cm).append("\n");
+            }
+            return sb.toString().trim();
+        }
+    }
+
     private void openCharacterEditorWindow() {
         final String winTitle = L("🥷 角色编辑器");
         final boolean[] isDirty = {false};
@@ -7635,8 +7752,59 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
             TextView dMeta = new TextView(getContext());
             dMeta.setText("Type=" + st.type + " | MoveType=" + st.moveType + " | Anim=" + st.anim + (st.hasInvul ? " | 🛡️NotHitBy" : "") + (st.linkedCmd.isEmpty() ? "" : " | 🎯 " + st.linkedCmd) + (st.sourceFile != null ? "\n📄 " + st.sourceFile.getName() : ""));
-            applyGlobalFontSettings(dMeta, 0.8f, false); dMeta.setTextColor(Color.parseColor("#38BDF8")); dMeta.setPadding(0, (int)(3*density), 0, (int)(8*density));
+            applyGlobalFontSettings(dMeta, 0.8f, false); dMeta.setTextColor(Color.parseColor("#38BDF8")); dMeta.setPadding(0, (int)(3*density), 0, (int)(6*density));
             dbox.addView(dMeta);
+
+            // 自动扫描当前技能的父技能（谁调用了我）与子技能（我调用了谁）
+            final java.util.LinkedHashMap<Integer, CharStateItem> stateByNoMap = new java.util.LinkedHashMap<>();
+            for (CharStateItem sIt : stateItems) {
+                if (!stateByNoMap.containsKey(sIt.stateNo)) stateByNoMap.put(sIt.stateNo, sIt);
+            }
+            final java.util.LinkedHashMap<CharStateItem, String> parentLinks = new java.util.LinkedHashMap<>();
+            for (CharStateItem cand : stateItems) {
+                if (cand.stateNo < 0 || cand.stateNo == st.stateNo) continue;
+                java.util.LinkedHashMap<Integer, String> cRefs = extractSkillCallRefs(cand);
+                if (cRefs.containsKey(st.stateNo)) {
+                    parentLinks.put(cand, cRefs.get(st.stateNo));
+                }
+            }
+            final java.util.LinkedHashMap<CharStateItem, String> childLinks = new java.util.LinkedHashMap<>();
+            java.util.LinkedHashMap<Integer, String> directChildRefs = extractSkillCallRefs(st);
+            for (java.util.Map.Entry<Integer, String> en : directChildRefs.entrySet()) {
+                CharStateItem ch = stateByNoMap.get(en.getKey());
+                if (ch != null && ch.stateNo != st.stateNo) childLinks.put(ch, en.getValue());
+            }
+            // 顺带探测直接子技能调用的二级子状态（如飞行道具的命中/消散状态）
+            List<CharStateItem> firstHopList = new ArrayList<>(childLinks.keySet());
+            for (CharStateItem fh : firstHopList) {
+                java.util.LinkedHashMap<Integer, String> grandRefs = extractSkillCallRefs(fh);
+                for (java.util.Map.Entry<Integer, String> gen : grandRefs.entrySet()) {
+                    CharStateItem gch = stateByNoMap.get(gen.getKey());
+                    if (gch != null && gch.stateNo != st.stateNo && !childLinks.containsKey(gch) && !parentLinks.containsKey(gch)) {
+                        childLinks.put(gch, "二级·" + gen.getValue());
+                    }
+                }
+            }
+
+            if (!parentLinks.isEmpty() || !childLinks.isEmpty()) {
+                HorizontalScrollView relScroll = new HorizontalScrollView(getContext()); relScroll.setHorizontalScrollBarEnabled(false);
+                LinearLayout relRow = new LinearLayout(getContext()); relRow.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rbp = new LinearLayout.LayoutParams(-2, -2); rbp.setMargins(0, 0, (int)(4*density), (int)(6*density));
+                for (final java.util.Map.Entry<CharStateItem, String> pe : parentLinks.entrySet()) {
+                    Button pb = createButton("⬆️ " + L("父") + " " + pe.getKey().stateNo + "(" + pe.getValue() + ")", "#7C3AED");
+                    pb.setPadding((int)(7*density), (int)(3*density), (int)(7*density), (int)(3*density));
+                    pb.setOnClickListener(pv -> { animPlaying[0] = false; animGen[0]++; sd.dismiss(); openStateDetailRef[0].onClick(pe.getKey()); });
+                    relRow.addView(pb, rbp);
+                }
+                for (final java.util.Map.Entry<CharStateItem, String> ce : childLinks.entrySet()) {
+                    Button cb = createButton("⬇️ " + L("子") + " " + ce.getKey().stateNo + "(" + ce.getValue() + ")", "#0F766E");
+                    cb.setPadding((int)(7*density), (int)(3*density), (int)(7*density), (int)(3*density));
+                    cb.setOnClickListener(cv -> { animPlaying[0] = false; animGen[0]++; sd.dismiss(); openStateDetailRef[0].onClick(ce.getKey()); });
+                    relRow.addView(cb, rbp);
+                }
+                relScroll.addView(relRow);
+                dbox.addView(relScroll);
+            }
 
             final boolean[] animPlaying = {false};
             final boolean[] showBoxes = {true};
@@ -8030,7 +8198,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         }
                     }
 
-                    // 弹窗让用户确认触发按键与目标编号
+                    // 弹窗让用户手动选择捆绑父/子技能、色彩还原模式与触发按键
                     final Dialog cfgD = new Dialog(getContext());
                     if (cfgD.getWindow() != null) cfgD.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
                     ScrollView csv = new ScrollView(getContext());
@@ -8041,12 +8209,120 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
                     final EditText eCmdName = createInput(L("CMD 指令名"), "CloneSkill_" + recState);
                     final EditText eCmdKeys = createInput(L("搓招按键 (冲突将自动升级为双击触发)"), defaultRawCmd);
-                    final EditText eNewState = createInput(L("写入目标 State 编号"), String.valueOf(recState));
+                    final EditText eNewState = createInput(L("入口 State 编号"), String.valueOf(recState));
                     eNewState.setInputType(InputType.TYPE_CLASS_NUMBER);
-                    final EditText eNewAnim = createInput(L("写入目标 AIR 动作号"), String.valueOf(recAnim));
+                    final EditText eNewAnim = createInput(L("主动作 AIR 编号"), String.valueOf(recAnim));
                     eNewAnim.setInputType(InputType.TYPE_CLASS_NUMBER);
 
-                    cbox.addView(createSubTitle(L("1. 游戏内触发按键 (若按键重复自动转双击触发):")));
+                    // 关联父/子技能手动勾选区（默认仅移植当前技能，避免一次性拷入过多无用状态）
+                    final java.util.LinkedHashMap<CharStateItem, android.widget.CheckBox> parentChecks = new java.util.LinkedHashMap<>();
+                    final java.util.LinkedHashMap<CharStateItem, android.widget.CheckBox> childChecks = new java.util.LinkedHashMap<>();
+                    if (!parentLinks.isEmpty() || !childLinks.isEmpty()) {
+                        LinearLayout relCard = new LinearLayout(getContext()); relCard.setOrientation(LinearLayout.VERTICAL);
+                        relCard.setPadding((int)(9*density), (int)(7*density), (int)(9*density), (int)(7*density));
+                        GradientDrawable rcBg = new GradientDrawable(); rcBg.setColor(Color.parseColor("#1A2234")); rcBg.setCornerRadius(8f*density); rcBg.setStroke(1, Color.parseColor("#3B82F6"));
+                        relCard.setBackground(rcBg);
+                        LinearLayout.LayoutParams rclp = new LinearLayout.LayoutParams(-1, -2); rclp.setMargins(0, (int)(6*density), 0, (int)(6*density));
+
+                        TextView rHead = new TextView(getContext());
+                        rHead.setText(L("🔗 检测到关联父/子技能（可手动勾选一起打包移植，默认仅移植当前 State ") + st.stateNo + "）");
+                        applyGlobalFontSettings(rHead, 0.84f, true); rHead.setTextColor(Color.parseColor("#93C5FD"));
+                        relCard.addView(rHead);
+
+                        HorizontalScrollView qRelSc = new HorizontalScrollView(getContext()); qRelSc.setHorizontalScrollBarEnabled(false);
+                        LinearLayout qRelRow = new LinearLayout(getContext()); qRelRow.setOrientation(LinearLayout.HORIZONTAL);
+                        Button bOnlySelf = createButton(L("仅当前技能"), "#334155");
+                        Button bPickFirstP = createButton(L("勾选首个父技能"), "#7C3AED");
+                        Button bPickAllC = createButton(L("勾选全部直接子技能"), "#0F766E");
+                        LinearLayout.LayoutParams qrp = new LinearLayout.LayoutParams(-2, -2); qrp.setMargins(0, (int)(5*density), (int)(5*density), (int)(5*density));
+                        bOnlySelf.setPadding((int)(7*density), (int)(3*density), (int)(7*density), (int)(3*density));
+                        bPickFirstP.setPadding((int)(7*density), (int)(3*density), (int)(7*density), (int)(3*density));
+                        bPickAllC.setPadding((int)(7*density), (int)(3*density), (int)(7*density), (int)(3*density));
+                        qRelRow.addView(bOnlySelf, qrp);
+                        if (!parentLinks.isEmpty()) qRelRow.addView(bPickFirstP, qrp);
+                        if (!childLinks.isEmpty()) qRelRow.addView(bPickAllC, qrp);
+                        qRelSc.addView(qRelRow);
+                        relCard.addView(qRelSc);
+
+                        if (!parentLinks.isEmpty()) {
+                            TextView pSub = new TextView(getContext());
+                            pSub.setText(L("⬆️ 父技能（调用当前技能的状态；勾选后自动作为游戏内搓招入口，确保飞行物/派生正常发射）："));
+                            applyGlobalFontSettings(pSub, 0.78f, false); pSub.setTextColor(Color.parseColor("#C4B5FD"));
+                            relCard.addView(pSub);
+                            int pCap = 0;
+                            for (java.util.Map.Entry<CharStateItem, String> pe : parentLinks.entrySet()) {
+                                if (++pCap > 15) break;
+                                final CharStateItem ps = pe.getKey();
+                                android.widget.CheckBox cb = new android.widget.CheckBox(getContext());
+                                String pLbl = "State " + ps.stateNo + (ps.title.isEmpty() ? "" : " · " + ps.title)
+                                        + " [" + pe.getValue() + "]" + (ps.linkedCmd.isEmpty() ? "" : " 🎯" + ps.linkedCmd);
+                                cb.setText(pLbl); cb.setTextColor(Color.WHITE); cb.setTextSize(11.5f);
+                                cb.setOnCheckedChangeListener((bv, isChk) -> {
+                                    if (isChk && !ps.linkedCmd.isEmpty()) {
+                                        for (CharCmdItem ci : cmdItems) {
+                                            if (ci.name.equalsIgnoreCase(ps.linkedCmd) && !ci.rawCommand.isEmpty()) {
+                                                eCmdKeys.setText(ci.rawCommand); break;
+                                            }
+                                        }
+                                    }
+                                });
+                                parentChecks.put(ps, cb);
+                                relCard.addView(cb);
+                            }
+                        }
+
+                        if (!childLinks.isEmpty()) {
+                            TextView cSub = new TextView(getContext());
+                            cSub.setText(L("⬇️ 子技能（当前技能调用的飞行体/命中派生/收尾状态）："));
+                            applyGlobalFontSettings(cSub, 0.78f, false); cSub.setTextColor(Color.parseColor("#5EEAD4"));
+                            cSub.setPadding(0, (int)(4*density), 0, 0);
+                            relCard.addView(cSub);
+                            int cCap = 0;
+                            for (java.util.Map.Entry<CharStateItem, String> ce : childLinks.entrySet()) {
+                                if (++cCap > 20) break;
+                                final CharStateItem cs = ce.getKey();
+                                android.widget.CheckBox cb = new android.widget.CheckBox(getContext());
+                                String cLbl = "State " + cs.stateNo + (cs.title.isEmpty() ? "" : " · " + cs.title) + " [" + ce.getValue() + "]";
+                                cb.setText(cLbl); cb.setTextColor(Color.WHITE); cb.setTextSize(11.5f);
+                                childChecks.put(cs, cb);
+                                relCard.addView(cb);
+                            }
+                        }
+
+                        bOnlySelf.setOnClickListener(bv -> {
+                            for (android.widget.CheckBox cb : parentChecks.values()) cb.setChecked(false);
+                            for (android.widget.CheckBox cb : childChecks.values()) cb.setChecked(false);
+                        });
+                        bPickFirstP.setOnClickListener(bv -> {
+                            boolean firstDone = false;
+                            for (android.widget.CheckBox cb : parentChecks.values()) {
+                                cb.setChecked(!firstDone);
+                                firstDone = true;
+                            }
+                        });
+                        bPickAllC.setOnClickListener(bv -> {
+                            for (java.util.Map.Entry<CharStateItem, android.widget.CheckBox> en : childChecks.entrySet()) {
+                                String rel = childLinks.get(en.getKey());
+                                if (rel != null && !rel.startsWith("二级·")) en.getValue().setChecked(true);
+                            }
+                        });
+                        cbox.addView(relCard, rclp);
+                    }
+
+                    // SFF 色彩模式开关：默认使用源 SFF 每帧自带的原生内置色表（彻底根治特效/飞行道具被 pal1.act 覆盖变成荧光绿的问题！）
+                    final boolean[] forceSrcAct = {false};
+                    final Button bColorMode = createButton(L("🎨 色彩模式: 原生内置色表 (防特效偏色，推荐)"), "#0F766E");
+                    bColorMode.setOnClickListener(cv -> {
+                        forceSrcAct[0] = !forceSrcAct[0];
+                        bColorMode.setText(forceSrcAct[0]
+                                ? L("🎨 色彩模式: 强制套用源角色 pal1.act (仅旧版SFFv1缺色表时用)")
+                                : L("🎨 色彩模式: 原生内置色表 (防特效偏色，推荐)"));
+                        bColorMode.setBackgroundColor(Color.parseColor(forceSrcAct[0] ? "#B45309" : "#0F766E"));
+                    });
+                    LinearLayout.LayoutParams cmLp = new LinearLayout.LayoutParams(-1, -2); cmLp.setMargins(0, (int)(4*density), 0, (int)(6*density));
+                    cbox.addView(bColorMode, cmLp);
+
+                    cbox.addView(createSubTitle(L("1. 游戏内触发按键 (支持 a+b 双键容错，重复自动转双击):")));
                     cbox.addView(eCmdKeys);
                     HorizontalScrollView psc = new HorizontalScrollView(getContext()); psc.setHorizontalScrollBarEnabled(false);
                     LinearLayout prow = new LinearLayout(getContext()); prow.setOrientation(LinearLayout.HORIZONTAL);
@@ -8064,14 +8340,34 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     psc.addView(prow); cbox.addView(psc);
 
                     cbox.addView(createSubTitle(L("2. 指令名称 (自动写入目标 .cmd):"))); cbox.addView(eCmdName);
-                    cbox.addView(createSubTitle(L("3. 目标 State 编号 (已全文件防撞号):"))); cbox.addView(eNewState);
-                    cbox.addView(createSubTitle(L("4. 目标 AIR 动作号 (冲突已自动避让):"))); cbox.addView(eNewAnim);
+                    cbox.addView(createSubTitle(L("3. 入口 State 编号 (已全文件防撞号):"))); cbox.addView(eNewState);
+                    cbox.addView(createSubTitle(L("4. 主动作 AIR 编号 (冲突已自动避让):"))); cbox.addView(eNewAnim);
 
-                    Button bExecClone = createButton(L("✅ 开始全自动移植 (IK/ZSS 防闪退模式)"), "#16A34A");
+                    Button bExecClone = createButton(L("✅ 开始全自动移植 (IK/ZSS 防闪退+防偏色模式)"), "#16A34A");
                     LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(-1, -2); ep.setMargins(0, (int)(10*density), 0, 0);
                     final int fDefState = recState, fDefAnim = recAnim;
                     bExecClone.setOnClickListener(ev -> {
                         cfgD.dismiss();
+                        // 收集最终要打包移植的全部状态（先放勾选的父技能，再放当前技能，最后放勾选的子技能）
+                        final List<CharStateItem> bundleStates = new ArrayList<>();
+                        final java.util.HashSet<Integer> bundleSeen = new java.util.HashSet<>();
+                        CharStateItem firstCheckedParent = null;
+                        for (java.util.Map.Entry<CharStateItem, android.widget.CheckBox> pe : parentChecks.entrySet()) {
+                            if (pe.getValue().isChecked() && bundleSeen.add(pe.getKey().stateNo)) {
+                                if (firstCheckedParent == null) firstCheckedParent = pe.getKey();
+                                bundleStates.add(pe.getKey());
+                            }
+                        }
+                        if (bundleSeen.add(st.stateNo)) bundleStates.add(st);
+                        for (java.util.Map.Entry<CharStateItem, android.widget.CheckBox> ce : childChecks.entrySet()) {
+                            if (ce.getValue().isChecked() && bundleSeen.add(ce.getKey().stateNo)) {
+                                bundleStates.add(ce.getKey());
+                            }
+                        }
+                        final CharStateItem entryStateItem = (firstCheckedParent != null) ? firstCheckedParent : st;
+                        final boolean hasBundledParent = (firstCheckedParent != null);
+                        final boolean useForcedAct = forceSrcAct[0];
+
                         final String cmdName = eCmdName.getText().toString().trim().isEmpty() ? ("CloneSkill_" + fDefState) : eCmdName.getText().toString().trim();
                         final String rawInputSeq = eCmdKeys.getText().toString().trim().isEmpty() ? "~D, DF, F, x" : eCmdKeys.getText().toString().trim();
                         int tmpSt = fDefState, tmpAn = fDefAnim;
@@ -8079,14 +8375,31 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         try { tmpAn = Integer.parseInt(eNewAnim.getText().toString().trim()); } catch (Exception ignored) {}
                         final int newStateNo = tmpSt, newAnimNo = tmpAn;
 
-                        Toast.makeText(getContext(), L("⏳ 正在全自动移植精灵、音效与全部代码..."), Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getContext(), L("⏳ 正在全自动移植 ") + bundleStates.size() + L(" 个状态及全部精灵/音效..."), Toast.LENGTH_SHORT).show();
                         new Thread(() -> {
                             try {
                                 File tmpDir = new File(getContext().getCacheDir(), "skill_clone_tmp");
                                 if (!tmpDir.exists()) tmpDir.mkdirs();
 
-                                        // ① 全量收集关联动作（主动作 + Explod特效 + HitDef自制火花S + Projectile飞道 + ChangeAnim）并分配不冲突编号
-                                String rewrittenCns = st.codePreview.replace("\r\n", "\n");
+                                // 0. 为捆绑包里的全部状态统一分配不冲突的新 StateNo，确保父子跨状态引用 100% 同步改号
+                                java.util.LinkedHashMap<Integer, Integer> stateRemap = new java.util.LinkedHashMap<>();
+                                java.util.HashSet<Integer> allocUsedStates = new java.util.HashSet<>(usedStates);
+                                stateRemap.put(entryStateItem.stateNo, newStateNo);
+                                allocUsedStates.add(newStateNo);
+                                int nextStateCursor = Math.max(newStateNo + 1, 3501);
+                                for (CharStateItem bs : bundleStates) {
+                                    if (stateRemap.containsKey(bs.stateNo)) continue;
+                                    int mappedSt = bs.stateNo;
+                                    if (mappedSt < 200 || allocUsedStates.contains(mappedSt)) {
+                                        while (allocUsedStates.contains(nextStateCursor)) nextStateCursor++;
+                                        mappedSt = nextStateCursor++;
+                                    }
+                                    allocUsedStates.add(mappedSt);
+                                    stateRemap.put(bs.stateNo, mappedSt);
+                                }
+                                final int entryNewStateNo = stateRemap.get(entryStateItem.stateNo);
+
+                                // ① 全量收集全部捆绑状态的关联动作（主动作 + Explod特效 + HitDef自制火花S + Projectile飞道 + ChangeAnim）并分配不冲突编号
                                 java.util.LinkedHashMap<Integer, Integer> animRemap = new java.util.LinkedHashMap<>();
                                 java.util.HashSet<Integer> allocUsedAnims = new java.util.HashSet<>(usedAnims);
                                 if (finalResolvedAnim >= 0) {
@@ -8094,34 +8407,42 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     allocUsedAnims.add(newAnimNo);
                                 }
                                 java.util.LinkedHashSet<Integer> extraAnims = new java.util.LinkedHashSet<>();
-                                if (srcIsZss) {
-                                    java.util.regex.Matcher em1 = java.util.regex.Pattern.compile("(?i)(?:explod|changeanim2?)\\s*\\{[^}]*?(?:anim|value)\\s*:\\s*(\\d+)").matcher(rewrittenCns);
-                                    while (em1.find()) { try { extraAnims.add(Integer.parseInt(em1.group(1))); } catch (Exception ignored) {} }
-                                    java.util.regex.Matcher em2 = java.util.regex.Pattern.compile("(?i)\\b(?:projanim|projhitanim|projremanim|projcancelanim)\\s*:\\s*(\\d+)").matcher(rewrittenCns);
-                                    while (em2.find()) { try { extraAnims.add(Integer.parseInt(em2.group(1))); } catch (Exception ignored) {} }
-                                    java.util.regex.Matcher em3 = java.util.regex.Pattern.compile("(?i)\\b(?:sparkno|guard\\.sparkno)\\s*:\\s*S\\s*(\\d+)").matcher(rewrittenCns);
-                                    while (em3.find()) { try { extraAnims.add(Integer.parseInt(em3.group(1))); } catch (Exception ignored) {} }
-                                } else {
-                                    String[] scanL = rewrittenCns.split("\n", -1);
-                                    String scType = "";
-                                    java.util.regex.Pattern pAnimNum = java.util.regex.Pattern.compile("(?i)^\\s*(anim|value|projanim|projhitanim|projremanim|projcancelanim)\\s*=\\s*(\\d+)\\s*$");
-                                    java.util.regex.Pattern pSparkS = java.util.regex.Pattern.compile("(?i)^\\s*(?:sparkno|guard\\.sparkno)\\s*=\\s*S\\s*(\\d+)");
-                                    for (String sl : scanL) {
-                                        int ci = sl.indexOf(';');
-                                        String sc = (ci >= 0 ? sl.substring(0, ci) : sl).trim();
-                                        String slow = sc.toLowerCase();
-                                        if (slow.startsWith("[state ")) scType = "";
-                                        else if (slow.matches("^type\\s*=\\s*[a-z0-9_]+$")) scType = slow.substring(slow.indexOf('=') + 1).trim();
-                                        else {
-                                            java.util.regex.Matcher ms = pSparkS.matcher(sc);
-                                            if (ms.find()) { try { extraAnims.add(Integer.parseInt(ms.group(1))); } catch (Exception ignored) {} }
-                                            java.util.regex.Matcher ma = pAnimNum.matcher(sc);
-                                            if (ma.find()) {
-                                                String kn = ma.group(1).toLowerCase();
-                                                boolean okAnim = kn.startsWith("proj")
-                                                        || (kn.equals("anim") && (scType.equals("explod") || scType.equals("modifyexplod")))
-                                                        || (kn.equals("value") && (scType.equals("changeanim") || scType.equals("changeanim2")));
-                                                if (okAnim) { try { extraAnims.add(Integer.parseInt(ma.group(2))); } catch (Exception ignored) {} }
+                                for (CharStateItem bs : bundleStates) {
+                                    if (bs.anim >= 0) extraAnims.add(bs.anim);
+                                    for (int ca : bs.changeAnimTargets) if (ca >= 0) extraAnims.add(ca);
+                                    if (airActionRawText.containsKey(bs.stateNo)) extraAnims.add(bs.stateNo);
+                                    String bsCode = bs.codePreview.replace("\r\n", "\n");
+                                    boolean bsIsZss = (bs.sourceFile != null && bs.sourceFile.getName().toLowerCase().endsWith(".zss"))
+                                            || java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+-?\\d+\\s*;").matcher(bsCode).find();
+                                    if (bsIsZss) {
+                                        java.util.regex.Matcher em1 = java.util.regex.Pattern.compile("(?i)(?:explod|changeanim2?)\\s*\\{[^}]*?(?:anim|value)\\s*:\\s*(\\d+)").matcher(bsCode);
+                                        while (em1.find()) { try { extraAnims.add(Integer.parseInt(em1.group(1))); } catch (Exception ignored) {} }
+                                        java.util.regex.Matcher em2 = java.util.regex.Pattern.compile("(?i)\\b(?:projanim|projhitanim|projremanim|projcancelanim)\\s*:\\s*(\\d+)").matcher(bsCode);
+                                        while (em2.find()) { try { extraAnims.add(Integer.parseInt(em2.group(1))); } catch (Exception ignored) {} }
+                                        java.util.regex.Matcher em3 = java.util.regex.Pattern.compile("(?i)\\b(?:sparkno|guard\\.sparkno)\\s*:\\s*S\\s*(\\d+)").matcher(bsCode);
+                                        while (em3.find()) { try { extraAnims.add(Integer.parseInt(em3.group(1))); } catch (Exception ignored) {} }
+                                    } else {
+                                        String[] scanL = bsCode.split("\n", -1);
+                                        String scType = "";
+                                        java.util.regex.Pattern pAnimNum = java.util.regex.Pattern.compile("(?i)^\\s*(anim|value|projanim|projhitanim|projremanim|projcancelanim)\\s*=\\s*(\\d+)\\s*$");
+                                        java.util.regex.Pattern pSparkS = java.util.regex.Pattern.compile("(?i)^\\s*(?:sparkno|guard\\.sparkno)\\s*=\\s*S\\s*(\\d+)");
+                                        for (String sl : scanL) {
+                                            int ci = sl.indexOf(';');
+                                            String sc = (ci >= 0 ? sl.substring(0, ci) : sl).trim();
+                                            String slow = sc.toLowerCase();
+                                            if (slow.startsWith("[state ")) scType = "";
+                                            else if (slow.matches("^type\\s*=\\s*[a-z0-9_]+$")) scType = slow.substring(slow.indexOf('=') + 1).trim();
+                                            else {
+                                                java.util.regex.Matcher ms = pSparkS.matcher(sc);
+                                                if (ms.find()) { try { extraAnims.add(Integer.parseInt(ms.group(1))); } catch (Exception ignored) {} }
+                                                java.util.regex.Matcher ma = pAnimNum.matcher(sc);
+                                                if (ma.find()) {
+                                                    String kn = ma.group(1).toLowerCase();
+                                                    boolean okAnim = kn.startsWith("proj")
+                                                            || (kn.equals("anim") && (scType.equals("explod") || scType.equals("modifyexplod")))
+                                                            || (kn.equals("value") && (scType.equals("changeanim") || scType.equals("changeanim2")));
+                                                    if (okAnim) { try { extraAnims.add(Integer.parseInt(ma.group(2))); } catch (Exception ignored) {} }
+                                                }
                                             }
                                         }
                                     }
@@ -8137,6 +8458,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                         animRemap.put(ea, na);
                                     }
                                 }
+
 
                                 // ①-B SFF 全量精灵帧注入（主动作 + 全部 Explod/火花/飞道子动作）+ 冲突自动改号 + 源色表兼容
                                 java.util.LinkedHashMap<String, int[]> sffRemap = new java.util.LinkedHashMap<>();
@@ -8186,9 +8508,12 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             }
                                             occSff.add(ng + "," + ni);
                                             sffRemap.put(og + "," + oi, new int[]{ng, ni});
-                                            byte[] pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, srcActPath);
-                                            if ((pngBytes == null || pngBytes.length == 0) && !srcActPath.isEmpty()) {
-                                                pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, "");
+                                            // 默认传 "" 使用每帧自身的原生内置色表（SFFv2 palIdx / SFFv1 内嵌色表），绝不强套 pal1.act 破坏特效颜色！
+                                            String primaryAct = useForcedAct ? srcActPath : "";
+                                            String fallbackAct = useForcedAct ? "" : srcActPath;
+                                            byte[] pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, primaryAct);
+                                            if ((pngBytes == null || pngBytes.length == 0) && !fallbackAct.equals(primaryAct)) {
+                                                pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, fallbackAct);
                                             }
                                             if (pngBytes != null && pngBytes.length > 0) {
                                                 File tmpPng = new File(tmpDir, "f_" + og + "_" + oi + ".png");
@@ -8211,35 +8536,40 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 int sndOk = 0, sndRemapped = 0;
                                 if (sndFileRef[0] != null && sndFileRef[0].exists() && tSnd != null && tSnd.exists()) {
                                     java.util.LinkedHashMap<String, int[]> foundSnds = new java.util.LinkedHashMap<>();
-                                    if (srcIsZss) {
-                                        java.util.regex.Matcher zm1 = java.util.regex.Pattern.compile("(?i)playsnd\\s*\\{[^}]*?value\\s*:\\s*(?:S\\s*)?(\\d+)\\s*,\\s*(\\d+)").matcher(rewrittenCns);
-                                        while (zm1.find()) {
-                                            int sg = Integer.parseInt(zm1.group(1)), si = Integer.parseInt(zm1.group(2));
-                                            foundSnds.put(sg + "," + si, new int[]{sg, si});
-                                        }
-                                        java.util.regex.Matcher zm2 = java.util.regex.Pattern.compile("(?i)\\b(?:hitsound|guardsound|sound)\\s*:\\s*(?:S\\s*)?(\\d+)\\s*,\\s*(\\d+)").matcher(rewrittenCns);
-                                        while (zm2.find()) {
-                                            int sg = Integer.parseInt(zm2.group(1)), si = Integer.parseInt(zm2.group(2));
-                                            foundSnds.put(sg + "," + si, new int[]{sg, si});
-                                        }
-                                    } else {
-                                        String[] cLines = rewrittenCns.split("\n", -1);
-                                        boolean inPlaySnd = false;
-                                        java.util.regex.Pattern sndPairPat = java.util.regex.Pattern.compile("(?i)^\\s*(value|hitsound|guardsound|sound)\\s*=\\s*(?:S\\s*)?(\\d+)\\s*,\\s*(\\d+)");
-                                        for (String cl : cLines) {
-                                            int ci = cl.indexOf(';');
-                                            String cClean = (ci >= 0 ? cl.substring(0, ci) : cl).trim();
-                                            String cLow = cClean.toLowerCase();
-                                            if (cLow.startsWith("[state ")) inPlaySnd = false;
-                                            else if (cLow.matches("^type\\s*=\\s*playsnd$")) inPlaySnd = true;
-                                            else {
-                                                java.util.regex.Matcher m = sndPairPat.matcher(cClean);
-                                                if (m.find()) {
-                                                    String kName = m.group(1).toLowerCase();
-                                                    if (!kName.equals("value") || inPlaySnd) {
-                                                        int sg = Integer.parseInt(m.group(2));
-                                                        int si = Integer.parseInt(m.group(3));
-                                                        foundSnds.put(sg + "," + si, new int[]{sg, si});
+                                    for (CharStateItem bs : bundleStates) {
+                                        String bsCode = bs.codePreview.replace("\r\n", "\n");
+                                        boolean bsIsZss = (bs.sourceFile != null && bs.sourceFile.getName().toLowerCase().endsWith(".zss"))
+                                                || java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+-?\\d+\\s*;").matcher(bsCode).find();
+                                        if (bsIsZss) {
+                                            java.util.regex.Matcher zm1 = java.util.regex.Pattern.compile("(?i)playsnd\\s*\\{[^}]*?value\\s*:\\s*(?:S\\s*)?(\\d+)\\s*,\\s*(\\d+)").matcher(bsCode);
+                                            while (zm1.find()) {
+                                                int sg = Integer.parseInt(zm1.group(1)), si = Integer.parseInt(zm1.group(2));
+                                                foundSnds.put(sg + "," + si, new int[]{sg, si});
+                                            }
+                                            java.util.regex.Matcher zm2 = java.util.regex.Pattern.compile("(?i)\\b(?:hitsound|guardsound|sound)\\s*:\\s*(?:S\\s*)?(\\d+)\\s*,\\s*(\\d+)").matcher(bsCode);
+                                            while (zm2.find()) {
+                                                int sg = Integer.parseInt(zm2.group(1)), si = Integer.parseInt(zm2.group(2));
+                                                foundSnds.put(sg + "," + si, new int[]{sg, si});
+                                            }
+                                        } else {
+                                            String[] cLines = bsCode.split("\n", -1);
+                                            boolean inPlaySnd = false;
+                                            java.util.regex.Pattern sndPairPat = java.util.regex.Pattern.compile("(?i)^\\s*(value|hitsound|guardsound|sound)\\s*=\\s*(?:S\\s*)?(\\d+)\\s*,\\s*(\\d+)");
+                                            for (String cl : cLines) {
+                                                int ci = cl.indexOf(';');
+                                                String cClean = (ci >= 0 ? cl.substring(0, ci) : cl).trim();
+                                                String cLow = cClean.toLowerCase();
+                                                if (cLow.startsWith("[state ")) inPlaySnd = false;
+                                                else if (cLow.matches("^type\\s*=\\s*playsnd$")) inPlaySnd = true;
+                                                else {
+                                                    java.util.regex.Matcher m = sndPairPat.matcher(cClean);
+                                                    if (m.find()) {
+                                                        String kName = m.group(1).toLowerCase();
+                                                        if (!kName.equals("value") || inPlaySnd) {
+                                                            int sg = Integer.parseInt(m.group(2));
+                                                            int si = Integer.parseInt(m.group(3));
+                                                            foundSnds.put(sg + "," + si, new int[]{sg, si});
+                                                        }
                                                     }
                                                 }
                                             }
@@ -8283,155 +8613,175 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     }
                                 }
 
-                                // ③ 同步改写状态号 / 全部动作号 (含 Explod/火花/飞道) / 音效调用；严格隔离 CNS 与 ZSS 语法防闪退！
-                                StringBuilder cnsOut = new StringBuilder();
-                                if (srcIsZss) {
-                                    String zBody = rewrittenCns.replaceFirst("(?i)(\\[\\s*statedef\\s+)-?\\d+", "$1" + newStateNo);
-                                    for (java.util.Map.Entry<Integer, Integer> am : animRemap.entrySet()) {
-                                        int oa = am.getKey(), na = am.getValue();
-                                        if (oa != na) {
-                                            zBody = zBody.replaceAll("(?i)(\\b(?:anim|projanim|projhitanim|projremanim|projcancelanim)\\s*:\\s*)" + oa + "\\b", "$1" + na);
-                                            zBody = zBody.replaceAll("(?i)(changeanim2?\\s*\\{[^}]*?value\\s*:\\s*)" + oa + "\\b", "$1" + na);
-                                            zBody = zBody.replaceAll("(?i)(\\b(?:sparkno|guard\\.sparkno)\\s*:\\s*S\\s*)" + oa + "\\b", "$1" + na);
-                                        }
-                                    }
-                                    if (!sndRemap.isEmpty()) {
-                                        for (java.util.Map.Entry<String, int[]> rm : sndRemap.entrySet()) {
-                                            String[] op = rm.getKey().split(",");
-                                            int ng = rm.getValue()[0], ni = rm.getValue()[1];
-                                            if (!op[0].equals(String.valueOf(ng)) || !op[1].equals(String.valueOf(ni))) {
-                                                zBody = zBody.replaceAll("(?i)(playsnd\\s*\\{[^}]*?value\\s*:\\s*(?:S\\s*)?)" + op[0] + "(\\s*,\\s*)" + op[1] + "\\b", "$1" + ng + "$2" + ni);
-                                                zBody = zBody.replaceAll("(?i)(\\b(?:hitsound|guardsound|sound)\\s*:\\s*(?:S\\s*)?)" + op[0] + "(\\s*,\\s*)" + op[1] + "\\b", "$1" + ng + "$2" + ni);
+                                // ③ 逐一改写全部捆绑状态的状态号 / 父子跨状态引用 / 动作号 / 音效调用 + 仅拦截未捆绑的不存在子状态
+                                StringBuilder allStatesBlock = new StringBuilder();
+                                int fixedMissingTargets = 0;
+                                boolean entryIsAirOrHelper = false;
+                                for (CharStateItem bs : bundleStates) {
+                                    int mappedStNo = stateRemap.get(bs.stateNo);
+                                    String bsRaw = bs.codePreview.replace("\r\n", "\n");
+                                    boolean bsIsZss = (bs.sourceFile != null && bs.sourceFile.getName().toLowerCase().endsWith(".zss"))
+                                            || java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+-?\\d+\\s*;").matcher(bsRaw).find();
+                                    StringBuilder cnsOut = new StringBuilder();
+                                    if (bsIsZss) {
+                                        String zBody = bsRaw.replaceFirst("(?i)(\\[\\s*statedef\\s+)-?\\d+", "$1" + mappedStNo);
+                                        for (java.util.Map.Entry<Integer, Integer> am : animRemap.entrySet()) {
+                                            int oa = am.getKey(), na = am.getValue();
+                                            if (oa != na) {
+                                                zBody = zBody.replaceAll("(?i)(\\b(?:anim|projanim|projhitanim|projremanim|projcancelanim)\\s*:\\s*)" + oa + "\\b", "$1" + na);
+                                                zBody = zBody.replaceAll("(?i)(changeanim2?\\s*\\{[^}]*?value\\s*:\\s*)" + oa + "\\b", "$1" + na);
+                                                zBody = zBody.replaceAll("(?i)(\\b(?:sparkno|guard\\.sparkno)\\s*:\\s*S\\s*)" + oa + "\\b", "$1" + na);
                                             }
                                         }
-                                    }
-                                    cnsOut.append(zBody);
-                                } else {
-                                    String[] cnsLines = rewrittenCns.split("\n", -1);
-                                    boolean inPs = false, inCa = false, inExp = false, inHead = false;
-                                    java.util.regex.Pattern sndRepPat = java.util.regex.Pattern.compile("(?i)^(\\s*(?:value|hitsound|guardsound|sound)\\s*=\\s*(?:S\\s*)?)(\\d+)(\\s*,\\s*)(\\d+)(.*)$");
-                                    java.util.regex.Pattern sparkRepPat = java.util.regex.Pattern.compile("(?i)^(\\s*(?:sparkno|guard\\.sparkno)\\s*=\\s*S\\s*)(\\d+)(.*)$");
-                                    java.util.regex.Pattern projAnimRepPat = java.util.regex.Pattern.compile("(?i)^(\\s*(?:projanim|projhitanim|projremanim|projcancelanim)\\s*=\\s*)(\\d+)(.*)$");
-                                    for (String line : cnsLines) {
-                                        int ci = line.indexOf(';');
-                                        String codePart = (ci >= 0 ? line.substring(0, ci) : line);
-                                        String cmtPart = (ci >= 0 ? line.substring(ci) : "");
-                                        String trimmed = codePart.trim();
-                                        String low = trimmed.toLowerCase();
-                                        if (low.matches("^\\[\\s*statedef\\s+-?\\d+.*")) {
-                                            codePart = "[Statedef " + newStateNo + "]";
-                                            inHead = true; inPs = false; inCa = false; inExp = false;
-                                        } else if (low.startsWith("[state ")) {
-                                            inHead = false; inPs = false; inCa = false; inExp = false;
-                                        } else if (low.matches("^type\\s*=\\s*playsnd$")) {
-                                            inPs = true;
-                                        } else if (low.matches("^type\\s*=\\s*changeanim2?$")) {
-                                            inCa = true;
-                                        } else if (low.matches("^type\\s*=\\s*(?:explod|modifyexplod)$")) {
-                                            inExp = true;
-                                        } else if (inHead && low.matches("^anim\\s*=\\s*-?\\d+$")) {
-                                            codePart = "anim = " + newAnimNo;
-                                        } else if (inExp && low.matches("^anim\\s*=\\s*\\d+$")) {
-                                            try {
-                                                int oldA = Integer.parseInt(trimmed.substring(trimmed.indexOf('=') + 1).trim());
-                                                if (animRemap.containsKey(oldA)) codePart = "anim = " + animRemap.get(oldA);
-                                            } catch (Exception ignored) {}
-                                        } else if (inCa && low.matches("^value\\s*=\\s*-?\\d+$")) {
-                                            try {
-                                                int vOld = Integer.parseInt(trimmed.substring(trimmed.indexOf('=') + 1).trim());
-                                                if (animRemap.containsKey(vOld)) codePart = "value = " + animRemap.get(vOld);
-                                            } catch (Exception ignored) {}
-                                        } else {
-                                            java.util.regex.Matcher smSpark = sparkRepPat.matcher(codePart);
-                                            if (smSpark.find()) {
-                                                try {
-                                                    int oldSp = Integer.parseInt(smSpark.group(2));
-                                                    if (animRemap.containsKey(oldSp)) codePart = smSpark.group(1) + animRemap.get(oldSp) + smSpark.group(3);
-                                                } catch (Exception ignored) {}
+                                        if (!sndRemap.isEmpty()) {
+                                            for (java.util.Map.Entry<String, int[]> rm : sndRemap.entrySet()) {
+                                                String[] op = rm.getKey().split(",");
+                                                int ng = rm.getValue()[0], ni = rm.getValue()[1];
+                                                if (!op[0].equals(String.valueOf(ng)) || !op[1].equals(String.valueOf(ni))) {
+                                                    zBody = zBody.replaceAll("(?i)(playsnd\\s*\\{[^}]*?value\\s*:\\s*(?:S\\s*)?)" + op[0] + "(\\s*,\\s*)" + op[1] + "\\b", "$1" + ng + "$2" + ni);
+                                                    zBody = zBody.replaceAll("(?i)(\\b(?:hitsound|guardsound|sound)\\s*:\\s*(?:S\\s*)?)" + op[0] + "(\\s*,\\s*)" + op[1] + "\\b", "$1" + ng + "$2" + ni);
+                                                }
                                             }
-                                            java.util.regex.Matcher pmAnim = projAnimRepPat.matcher(codePart);
-                                            if (pmAnim.find()) {
+                                        }
+                                        cnsOut.append(zBody);
+                                    } else {
+                                        String[] cnsLines = bsRaw.split("\n", -1);
+                                        boolean inPs = false, inCa = false, inExp = false, inHead = false;
+                                        java.util.regex.Pattern sndRepPat = java.util.regex.Pattern.compile("(?i)^(\\s*(?:value|hitsound|guardsound|sound)\\s*=\\s*(?:S\\s*)?)(\\d+)(\\s*,\\s*)(\\d+)(.*)$");
+                                        java.util.regex.Pattern sparkRepPat = java.util.regex.Pattern.compile("(?i)^(\\s*(?:sparkno|guard\\.sparkno)\\s*=\\s*S\\s*)(\\d+)(.*)$");
+                                        java.util.regex.Pattern projAnimRepPat = java.util.regex.Pattern.compile("(?i)^(\\s*(?:projanim|projhitanim|projremanim|projcancelanim)\\s*=\\s*)(\\d+)(.*)$");
+                                        for (String line : cnsLines) {
+                                            int ci = line.indexOf(';');
+                                            String codePart = (ci >= 0 ? line.substring(0, ci) : line);
+                                            String cmtPart = (ci >= 0 ? line.substring(ci) : "");
+                                            String trimmed = codePart.trim();
+                                            String low = trimmed.toLowerCase();
+                                            if (low.matches("^\\[\\s*statedef\\s+-?\\d+.*")) {
+                                                codePart = "[Statedef " + mappedStNo + "]";
+                                                inHead = true; inPs = false; inCa = false; inExp = false;
+                                            } else if (low.startsWith("[state ")) {
+                                                inHead = false; inPs = false; inCa = false; inExp = false;
+                                            } else if (low.matches("^type\\s*=\\s*playsnd$")) {
+                                                inPs = true;
+                                            } else if (low.matches("^type\\s*=\\s*changeanim2?$")) {
+                                                inCa = true;
+                                            } else if (low.matches("^type\\s*=\\s*(?:explod|modifyexplod)$")) {
+                                                inExp = true;
+                                            } else if (inHead && low.matches("^anim\\s*=\\s*-?\\d+$")) {
                                                 try {
-                                                    int oldPa = Integer.parseInt(pmAnim.group(2));
-                                                    if (animRemap.containsKey(oldPa)) codePart = pmAnim.group(1) + animRemap.get(oldPa) + pmAnim.group(3);
+                                                    int oldA = Integer.parseInt(trimmed.substring(trimmed.indexOf('=') + 1).trim());
+                                                    if (animRemap.containsKey(oldA)) codePart = "anim = " + animRemap.get(oldA);
                                                 } catch (Exception ignored) {}
-                                            }
-                                            if (!sndRemap.isEmpty()) {
-                                                java.util.regex.Matcher m = sndRepPat.matcher(codePart);
-                                                if (m.find()) {
-                                                    boolean isVal = m.group(1).trim().toLowerCase().startsWith("value");
-                                                    if (!isVal || inPs) {
-                                                        int[] mapped = sndRemap.get(m.group(2) + "," + m.group(4));
-                                                        if (mapped != null) {
-                                                            codePart = m.group(1) + mapped[0] + m.group(3) + mapped[1] + m.group(5);
+                                            } else if (inExp && low.matches("^anim\\s*=\\s*\\d+$")) {
+                                                try {
+                                                    int oldA = Integer.parseInt(trimmed.substring(trimmed.indexOf('=') + 1).trim());
+                                                    if (animRemap.containsKey(oldA)) codePart = "anim = " + animRemap.get(oldA);
+                                                } catch (Exception ignored) {}
+                                            } else if (inCa && low.matches("^value\\s*=\\s*-?\\d+$")) {
+                                                try {
+                                                    int vOld = Integer.parseInt(trimmed.substring(trimmed.indexOf('=') + 1).trim());
+                                                    if (animRemap.containsKey(vOld)) codePart = "value = " + animRemap.get(vOld);
+                                                } catch (Exception ignored) {}
+                                            } else {
+                                                java.util.regex.Matcher smSpark = sparkRepPat.matcher(codePart);
+                                                if (smSpark.find()) {
+                                                    try {
+                                                        int oldSp = Integer.parseInt(smSpark.group(2));
+                                                        if (animRemap.containsKey(oldSp)) codePart = smSpark.group(1) + animRemap.get(oldSp) + smSpark.group(3);
+                                                    } catch (Exception ignored) {}
+                                                }
+                                                java.util.regex.Matcher pmAnim = projAnimRepPat.matcher(codePart);
+                                                if (pmAnim.find()) {
+                                                    try {
+                                                        int oldPa = Integer.parseInt(pmAnim.group(2));
+                                                        if (animRemap.containsKey(oldPa)) codePart = pmAnim.group(1) + animRemap.get(oldPa) + pmAnim.group(3);
+                                                    } catch (Exception ignored) {}
+                                                }
+                                                if (!sndRemap.isEmpty()) {
+                                                    java.util.regex.Matcher m = sndRepPat.matcher(codePart);
+                                                    if (m.find()) {
+                                                        boolean isVal = m.group(1).trim().toLowerCase().startsWith("value");
+                                                        if (!isVal || inPs) {
+                                                            int[] mapped = sndRemap.get(m.group(2) + "," + m.group(4));
+                                                            if (mapped != null) {
+                                                                codePart = m.group(1) + mapped[0] + m.group(3) + mapped[1] + m.group(5);
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
+                                            cnsOut.append(codePart).append(cmtPart).append("\n");
                                         }
-                                        cnsOut.append(codePart).append(cmtPart).append("\n");
                                     }
-                                }
 
-                                // 飞行/Helper/子状态防跳空与防卡死保护：检查 ChangeState/HitOverride/p1stateno 是否指向目标角色不存在的状态
-                                String cnsBodyStr = cnsOut.toString().trim();
-                                int fixedMissingTargets = 0;
-                                if (!srcIsZss) {
-                                    StringBuilder safeCns = new StringBuilder();
-                                    String[] sLines = cnsBodyStr.split("\n", -1);
-                                    String curScType = "";
-                                    java.util.regex.Pattern pValNum = java.util.regex.Pattern.compile("(?i)^(\\s*(?:value|stateno)\\s*=\\s*)(\\d+)(.*)$");
-                                    java.util.regex.Pattern pP1St = java.util.regex.Pattern.compile("(?i)^(\\s*p1stateno\\s*=\\s*)(\\d+)(.*)$");
-                                    for (String sl : sLines) {
-                                        int ci = sl.indexOf(';');
-                                        String cp = (ci >= 0 ? sl.substring(0, ci) : sl);
-                                        String cm = (ci >= 0 ? sl.substring(ci) : "");
-                                        String tr = cp.trim();
-                                        String lw = tr.toLowerCase();
-                                        if (lw.startsWith("[state ") || lw.startsWith("[statedef ")) curScType = "";
-                                        else if (lw.matches("^type\\s*=\\s*[a-z0-9_]+$")) curScType = lw.substring(lw.indexOf('=') + 1).trim();
-                                        else {
-                                            java.util.regex.Matcher mp1 = pP1St.matcher(cp);
-                                            if (mp1.find()) {
-                                                try {
-                                                    int tgt = Integer.parseInt(mp1.group(2));
-                                                    boolean okTgt = (tgt == newStateNo || usedStates.contains(tgt) || (tgt >= 0 && tgt <= 199) || (tgt >= 5000 && tgt <= 5999));
-                                                    if (!okTgt) {
-                                                        cp = "; [IK防卡死: 原 p1stateno=" + tgt + " 目标角色不存在已屏蔽] " + tr;
-                                                        fixedMissingTargets++;
-                                                    }
-                                                } catch (Exception ignored) {}
-                                            } else if (curScType.equals("changestate") || curScType.equals("hitoverride")) {
-                                                java.util.regex.Matcher mvn = pValNum.matcher(cp);
-                                                if (mvn.find()) {
+                                    // 同步改写所有捆绑父子状态间的交叉调用号
+                                    String cnsBodyStr = rewriteSkillCrossStateRefs(cnsOut.toString().trim(), bsIsZss, stateRemap);
+
+                                    // 仅对未一起捆绑且目标角色不存在的跳转状态做防卡死保护（已捆绑进来的父/子状态全部保留！）
+                                    if (!bsIsZss) {
+                                        StringBuilder safeCns = new StringBuilder();
+                                        String[] sLines = cnsBodyStr.split("\n", -1);
+                                        String curScType = "";
+                                        java.util.regex.Pattern pValNum = java.util.regex.Pattern.compile("(?i)^(\\s*(?:value|stateno)\\s*=\\s*)(\\d+)(.*)$");
+                                        java.util.regex.Pattern pP1St = java.util.regex.Pattern.compile("(?i)^(\\s*p1stateno\\s*=\\s*)(\\d+)(.*)$");
+                                        for (String sl : sLines) {
+                                            int ci = sl.indexOf(';');
+                                            String cp = (ci >= 0 ? sl.substring(0, ci) : sl);
+                                            String cm = (ci >= 0 ? sl.substring(ci) : "");
+                                            String tr = cp.trim();
+                                            String lw = tr.toLowerCase();
+                                            if (lw.startsWith("[state ") || lw.startsWith("[statedef ")) curScType = "";
+                                            else if (lw.matches("^type\\s*=\\s*[a-z0-9_]+$")) curScType = lw.substring(lw.indexOf('=') + 1).trim();
+                                            else {
+                                                java.util.regex.Matcher mp1 = pP1St.matcher(cp);
+                                                if (mp1.find()) {
                                                     try {
-                                                        int tgt = Integer.parseInt(mvn.group(2));
-                                                        boolean okTgt = (tgt == newStateNo || usedStates.contains(tgt) || (tgt >= 0 && tgt <= 199) || (tgt >= 5000 && tgt <= 5999));
+                                                        int tgt = Integer.parseInt(mp1.group(2));
+                                                        boolean okTgt = (allocUsedStates.contains(tgt) || (tgt >= 0 && tgt <= 199) || (tgt >= 5000 && tgt <= 5999));
                                                         if (!okTgt) {
-                                                            cp = mvn.group(1) + "0 ; [IK防卡死: 原目标状态 " + tgt + " 不存在，已安全回站立]";
-                                                            if (curScType.equals("changestate")) cp += "\nctrl = 1";
+                                                            cp = "; [IK防卡死: 原 p1stateno=" + tgt + " 目标角色不存在已屏蔽] " + tr;
                                                             fixedMissingTargets++;
                                                         }
                                                     } catch (Exception ignored) {}
+                                                } else if (curScType.equals("changestate") || curScType.equals("hitoverride")) {
+                                                    java.util.regex.Matcher mvn = pValNum.matcher(cp);
+                                                    if (mvn.find()) {
+                                                        try {
+                                                            int tgt = Integer.parseInt(mvn.group(2));
+                                                            boolean okTgt = (allocUsedStates.contains(tgt) || (tgt >= 0 && tgt <= 199) || (tgt >= 5000 && tgt <= 5999));
+                                                            if (!okTgt) {
+                                                                cp = mvn.group(1) + "0 ; [IK防卡死: 原目标状态 " + tgt + " 不存在，已安全回站立]";
+                                                                if (curScType.equals("changestate")) cp += "\nctrl = 1";
+                                                                fixedMissingTargets++;
+                                                            }
+                                                        } catch (Exception ignored) {}
+                                                    }
                                                 }
                                             }
+                                            safeCns.append(cp).append(cm).append("\n");
                                         }
-                                        safeCns.append(cp).append(cm).append("\n");
+                                        cnsBodyStr = safeCns.toString().trim();
                                     }
-                                    cnsBodyStr = safeCns.toString().trim();
-                                }
 
-                                // 若源技能是 Helper/飞行道具状态（有 DestroySelf 或无回 0/50 站立/落地 ChangeState），自动补收招兜底防卡死
-                                boolean hasDestroySelf = cnsBodyStr.toLowerCase().contains("destroyself");
-                                boolean isAirState = "A".equalsIgnoreCase(st.type)
-                                        || java.util.regex.Pattern.compile("(?im)^\\s*type\\s*=\\s*A\\b").matcher(cnsBodyStr).find();
-                                boolean hasSafeReturn = java.util.regex.Pattern.compile("(?im)^\\s*value\\s*[:=]\\s*(?:0|50)\\b").matcher(cnsBodyStr).find();
-                                if (hasDestroySelf || !hasSafeReturn) {
-                                    if (srcIsZss) {
-                                        cnsBodyStr += "\n# [IK防卡死兜底] 玩家直接触发时自动收招/落地\nif !isHelper && (animTime = 0 || time >= 90 || frontEdgeDist <= -50) {\n\tchangeState{value: ifelse(pos y < 0, 50, 0); ctrl: 1}\n}";
-                                    } else {
-                                        cnsBodyStr += "\n[State " + newStateNo + ", AutoReturnIdle]\ntype = ChangeState\ntrigger1 = !IsHelper && (AnimTime = 0 || Time >= 90 || FrontEdgeDist <= -50)\nvalue = ifelse(Pos Y < 0, 50, 0)\nctrl = 1";
+                                    boolean bsHasDestroy = cnsBodyStr.toLowerCase().contains("destroyself");
+                                    boolean bsIsAir = "A".equalsIgnoreCase(bs.type)
+                                            || java.util.regex.Pattern.compile("(?im)^\\s*type\\s*=\\s*A\\b").matcher(cnsBodyStr).find();
+                                    if (bs.stateNo == entryStateItem.stateNo) {
+                                        entryIsAirOrHelper = bsIsAir || bsHasDestroy;
+                                        // 仅当入口状态本身是单独移植的 Helper/无收招状态时，才追加自动回站立兜底（若捆绑了父技能发射Helper，则保留Helper原样飞行！）
+                                        boolean hasSafeReturn = java.util.regex.Pattern.compile("(?im)^\\s*value\\s*[:=]\\s*(?:0|50)\\b").matcher(cnsBodyStr).find();
+                                        if ((bsHasDestroy && !hasBundledParent) || (!bsHasDestroy && !hasSafeReturn)) {
+                                            if (bsIsZss) {
+                                                cnsBodyStr += "\n# [IK防卡死兜底] 玩家直接触发时自动收招/落地\nif !isHelper && (animTime = 0 || time >= 90 || frontEdgeDist <= -50) {\n\tchangeState{value: ifelse(pos y < 0, 50, 0); ctrl: 1}\n}";
+                                            } else {
+                                                cnsBodyStr += "\n[State " + mappedStNo + ", AutoReturnIdle]\ntype = ChangeState\ntrigger1 = !IsHelper && (AnimTime = 0 || Time >= 90 || FrontEdgeDist <= -50)\nvalue = ifelse(Pos Y < 0, 50, 0)\nctrl = 1";
+                                            }
+                                        }
                                     }
+                                    String cmtPrefix = bsIsZss ? "# " : "; ";
+                                    allStatesBlock.append("\n\n").append(cmtPrefix).append("=== [自动移植技能] ").append(cmdName)
+                                            .append(" (原State ").append(bs.stateNo).append(" → 新State ").append(mappedStNo).append(") ===\n")
+                                            .append(cnsBodyStr).append("\n");
                                 }
 
                                 // 决定安全写入目标文件：若目标主状态为 ZSS 而源为 CNS（或反之），自动创建独立侧挂文件并注册到目标 .def 的 [Files] stN！
@@ -8473,9 +8823,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     File cnsBak = new File(writeStateFile.getAbsolutePath() + ".bak");
                                     if (!cnsBak.exists()) copyFileToSandbox(writeStateFile, cnsBak);
                                 }
-                                String cmtPrefix = srcIsZss ? "# " : "; ";
-                                String finalCnsBlock = "\n\n" + cmtPrefix + "=== [自动移植技能] " + cmdName + " (State " + newStateNo + ") ===\n" + cnsBodyStr + "\n";
-                                try (FileOutputStream fos = new FileOutputStream(writeStateFile, true)) { fos.write(finalCnsBlock.getBytes("UTF-8")); }
+                                try (FileOutputStream fos = new FileOutputStream(writeStateFile, true)) { fos.write(allStatesBlock.toString().getBytes("UTF-8")); }
 
                                 // ④ 同步改写全部 AIR 动作块（主动作 + 全部 Explod/火花/飞道子动作）并追加写入目标 .air
                                 int airWrittenCnt = 0;
@@ -8631,13 +8979,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
                                 String cmdDefBlock = buildIkCommandBlocks(finalCmdName, finalCmdSeq, cmdTime);
                                 boolean cmdIsZss = tCmd.getName().toLowerCase().endsWith(".zss");
-                                // 若为飞行/空中/Helper技能，放宽空中触发限制(ctrl即可)，否则地面触发(statetype != A && ctrl)
-                                String condCns = (isAirState || hasDestroySelf) ? "ctrl" : "statetype != A && ctrl";
-                                String condZss = (isAirState || hasDestroySelf) ? "ctrl" : "stateType != A && ctrl";
+                                String condCns = entryIsAirOrHelper ? "ctrl" : "statetype != A && ctrl";
+                                String condZss = entryIsAirOrHelper ? "ctrl" : "stateType != A && ctrl";
                                 String stateNeg1Block = cmdIsZss
-                                        ? ("\n# [自动移植触发器] " + finalCmdName + "\nif command = \"" + finalCmdName + "\" && " + condZss + " {\n\tchangeState{value: " + newStateNo + "}\n}\n")
-                                        : ("\n; [自动移植触发器] " + finalCmdName + "\n[State -1, " + finalCmdName + "]\ntype = ChangeState\nvalue = " + newStateNo + "\ntriggerall = command = \"" + finalCmdName + "\"\ntrigger1 = " + condCns + "\n");
-
+                                        ? ("\n# [自动移植触发器] " + finalCmdName + "\nif command = \"" + finalCmdName + "\" && " + condZss + " {\n\tchangeState{value: " + entryNewStateNo + "}\n}\n")
+                                        : ("\n; [自动移植触发器] " + finalCmdName + "\n[State -1, " + finalCmdName + "]\ntype = ChangeState\nvalue = " + entryNewStateNo + "\ntriggerall = command = \"" + finalCmdName + "\"\ntrigger1 = " + condCns + "\n");
 
                                 // 严格行首锚定，绝不误匹配注释中的 ; [Statedef -1]
                                 java.util.regex.Matcher neg1M = java.util.regex.Pattern.compile("(?im)^\\s*(\\[\\s*statedef\\s+-1[^\\]]*\\][^\\r\\n]*\\r?\\n?)").matcher(cmdOrig);
@@ -8654,12 +9000,22 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 StringBuilder report = new StringBuilder();
                                 report.append("🎉 全自动移植已完成，进游戏可直接搓招触发！\n");
                                 report.append("🎮 游戏内触发方式: ").append(prettifyCmdSequence(finalCmdSeq)).append("  (").append(finalCmdSeq).append(")\n");
+                                report.append("🎨 精灵色彩模式: ").append(useForcedAct ? "强制 pal1.act" : "原生内置色表 (防偏色)").append("\n");
                                 if (!cmdConflictNote.isEmpty()) report.append(cmdConflictNote).append("\n");
                                 if (healedOrphans > 0) report.append("🛠️ 已自动清理目标 .cmd 中 ").append(healedOrphans).append(" 处缺失指令的孤儿触发器（防止闪退）\n");
                                 if (healedBadCmds > 0) report.append("🛠️ 已自动修复目标 .cmd 中 ").append(healedBadCmds).append(" 处非法大小写/符号指令（防止 Invalid symbol 闪退）\n");
-                                if (fixedMissingTargets > 0) report.append("🛡️ 已自动兜底修复 ").append(fixedMissingTargets).append(" 处不存在的跳转子状态（防止触发后卡死）\n");
+                                if (fixedMissingTargets > 0) report.append("🛡️ 已自动兜底修复 ").append(fixedMissingTargets).append(" 处未捆绑的跳转子状态（防止触发后卡死）\n");
                                 report.append("\n• 目标角色: ").append(targetDef.getName()).append(" (已自动创建 .bak 备份)\n");
-                                report.append("• 状态写入: ").append(writeStateFile.getName()).append(" → [Statedef ").append(newStateNo).append("]").append(defMountNote).append("\n");
+                                report.append("• 打包状态数: 共 ").append(bundleStates.size()).append(" 个 (触发入口 → State ").append(entryNewStateNo).append(")").append(defMountNote).append("\n");
+                                if (stateRemap.size() > 1) {
+                                    report.append("  ↳ 状态映射: ");
+                                    int si2 = 0;
+                                    for (java.util.Map.Entry<Integer, Integer> se : stateRemap.entrySet()) {
+                                        if (si2++ > 0) report.append(", ");
+                                        report.append(se.getKey()).append("→").append(se.getValue());
+                                    }
+                                    report.append("\n");
+                                }
                                 report.append("• CMD 写入: ").append(tCmd.getName()).append(" → [Command] + [State -1, ").append(finalCmdName).append("]\n");
                                 report.append("• AIR 写入: ").append(airWrittenCnt > 0 ? (tAir.getName() + " → 共写入 " + airWrittenCnt + " 个动作块 (含主动作与关联特效/火花)") : "无独立动作").append("\n");
                                 report.append("• SFF 注入: 成功 ").append(sffOk).append(" 帧").append(sffFail > 0 ? (" / 失败 " + sffFail + " 帧(请确认目标SFF为v2格式)") : "").append(" (冲突自动改号 ").append(sffRemapped).append(" 帧)\n");
