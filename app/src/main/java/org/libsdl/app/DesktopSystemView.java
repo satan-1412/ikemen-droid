@@ -550,6 +550,9 @@ public class DesktopSystemView extends Dialog {
         createDesktopIcon("char_editor", "🥷", L("角色编辑器"));
         createDesktopIcon("ikemen_dict", "📚", L("引擎词典"));
         createDesktopIcon("ai_chat", "🤖", L("AI对话工坊"));
+        createDesktopIcon("web_browser", "🌐", L("桌面浏览器"));
+        createDesktopIcon("keymap_fixer", "⌨️", L("按键映射修复"));
+        createDesktopIcon("shide_ik_pro", "🔪", L("十德ik汉化加强版"));
     }
 
     private void createDesktopIcon(final String id, String iconStr, String name) {
@@ -599,6 +602,9 @@ public class DesktopSystemView extends Dialog {
                             else if (id.equals("char_editor")) openCharacterEditorWindow();
                             else if (id.equals("ikemen_dict")) openAppWindow(L("📚 MUGEN/IK 全能词典"), buildDictionaryContent(), null);
                             else if (id.equals("ai_chat")) openAppWindow(L("🤖 AI对话工坊"), buildAiChatContent(), null);
+                            else if (id.equals("web_browser")) openAppWindow(L("🌐 桌面浏览器"), buildWebBrowserContent(), null);
+                            else if (id.equals("keymap_fixer")) runAutoKeymapFixer();
+                            else if (id.equals("shide_ik_pro")) openAppWindow(L("🔪 十德ik汉化加强版"), buildShideIkToolContent(), null);
                             lastClickTime = 0; 
                         } else lastClickTime = clickTime;
                     }
@@ -632,6 +638,8 @@ public class DesktopSystemView extends Dialog {
         if (windowTitle.contains(L("词典")) || windowTitle.contains("MUGEN/IK")) return "ikemen_dict";
         if (windowTitle.contains(L("角色编辑器")) || windowTitle.contains("CharEditor")) return "char_editor";
         if (windowTitle.contains(L("AI对话工坊")) || windowTitle.contains("AI")) return "ai_chat";
+        if (windowTitle.contains(L("桌面浏览器")) || windowTitle.contains("Browser")) return "web_browser";
+        if (windowTitle.contains(L("十德ik汉化加强版")) || windowTitle.contains("SAKnife")) return "shide_ik_pro";
         if (windowTitle.contains("GIF")) return "gif_viewer";
         return "win_" + Math.abs(windowTitle.hashCode());
     }
@@ -7320,16 +7328,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         return outSteps.length() > 0 ? outSteps.toString() : "s, s";
     }
 
-    // 生成符合 Ikemen GO 规范的 [Command] 块：直接使用标准组合键写法（去除 /a, b 延迟容错，适配改版内置组合键）
+    // 生成符合 Ikemen GO 规范的 [Command] 块：纯同时组合键采用标准 time = 1 + buffer.time = 6，适配单键组合按钮瞬发
     private String buildIkCommandBlocks(String cmdName, String cleanSeq, int cmdTime) {
         StringBuilder sb = new StringBuilder();
         String compact = cleanSeq.replaceAll("\\s+", "");
         if (!compact.contains(",") && compact.contains("+")) {
             sb.append("\n; [自动移植指令] ").append(cmdName).append("\n");
-            sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = ").append(compact).append("\ntime = 6\nbuffer.time = 4\n");
+            sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = ").append(compact).append("\ntime = 1\nbuffer.time = 6\n");
         } else {
             sb.append("\n; [自动移植指令] ").append(cmdName).append("\n");
-            sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = ").append(cleanSeq).append("\ntime = ").append(cmdTime).append("\nbuffer.time = 4\n");
+            sb.append("[Command]\nname = \"").append(cmdName).append("\"\ncommand = ").append(cleanSeq).append("\ntime = ").append(cmdTime).append("\nbuffer.time = 6\n");
         }
         return sb.toString();
     }
@@ -8688,7 +8696,23 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     LinearLayout.LayoutParams cmLp = new LinearLayout.LayoutParams(-1, -2); cmLp.setMargins(0, (int)(4*density), 0, (int)(6*density));
                     cbox.addView(bColorMode, cmLp);
 
-                    cbox.addView(createSubTitle(L("1. 游戏内触发按键 (支持 a+b 双键容错，重复自动转双击):")));
+                    // 体型比例自动对齐开关：自动比对源/目标角色的 localcoord 与 [Size] xscale/yscale，按比例缩放 SFF 精灵与 AIR 判定框
+                    final boolean[] autoScaleSprite = {true};
+                    final Button bScaleMode = createButton(L("📐 体型比例: 自动对齐目标角色 (防素材过大，推荐)"), "#0369A1");
+                    bScaleMode.setOnClickListener(sv2 -> {
+                        autoScaleSprite[0] = !autoScaleSprite[0];
+                        bScaleMode.setText(autoScaleSprite[0]
+                                ? L("📐 体型比例: 自动对齐目标角色 (防素材过大，推荐)")
+                                : L("📐 体型比例: 保持源素材原始尺寸 (不缩放)"));
+                        bScaleMode.setBackgroundColor(Color.parseColor(autoScaleSprite[0] ? "#0369A1" : "#475569"));
+                    });
+                    cbox.addView(bScaleMode, cmLp);
+
+                    // 可选技能收招后摇帧数（默认 0 = 无后摇，不调整则完全保持原技能节奏）
+                    final EditText eRecoveryFrames = createInput(L("0 = 无后摇，可填如 8~18 帧"), "0");
+                    eRecoveryFrames.setInputType(InputType.TYPE_CLASS_NUMBER);
+
+                    cbox.addView(createSubTitle(L("1. 游戏内触发按键 (支持 a+b 单键组合直发，重复自动转双击):")));
                     cbox.addView(eCmdKeys);
                     HorizontalScrollView psc = new HorizontalScrollView(getContext()); psc.setHorizontalScrollBarEnabled(false);
                     LinearLayout prow = new LinearLayout(getContext()); prow.setOrientation(LinearLayout.HORIZONTAL);
@@ -8708,6 +8732,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     cbox.addView(createSubTitle(L("2. 指令名称 (自动写入目标 .cmd):"))); cbox.addView(eCmdName);
                     cbox.addView(createSubTitle(L("3. 入口 State 编号 (已全文件防撞号):"))); cbox.addView(eNewState);
                     cbox.addView(createSubTitle(L("4. 主动作 AIR 编号 (冲突已自动避让):"))); cbox.addView(eNewAnim);
+                    cbox.addView(createSubTitle(L("5. 收招后摇帧数 (默认 0 = 无后摇，填正整数则末尾追加收招硬直帧):"))); cbox.addView(eRecoveryFrames);
 
                     Button bExecClone = createButton(L("✅ 开始全自动移植 (IK/ZSS 防闪退+防偏色模式)"), "#16A34A");
                     LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(-1, -2); ep.setMargins(0, (int)(10*density), 0, 0);
@@ -8733,6 +8758,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         final CharStateItem entryStateItem = (firstCheckedParent != null) ? firstCheckedParent : st;
                         final boolean hasBundledParent = (firstCheckedParent != null);
                         final boolean useForcedAct = forceSrcAct[0];
+                        final boolean useAutoScale = autoScaleSprite[0];
+                        int tmpRecov = 0;
+                        try { tmpRecov = Math.max(0, Integer.parseInt(eRecoveryFrames.getText().toString().trim())); } catch (Exception ignored) {}
+                        final int recoveryFrames = tmpRecov;
 
                         final String cmdName = eCmdName.getText().toString().trim().isEmpty() ? ("CloneSkill_" + fDefState) : eCmdName.getText().toString().trim();
                         final String rawInputSeq = eCmdKeys.getText().toString().trim().isEmpty() ? "~D, DF, F, x" : eCmdKeys.getText().toString().trim();
@@ -8826,7 +8855,20 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 }
 
 
-                                // ①-B SFF 全量精灵帧注入（主动作 + 全部 Explod/火花/飞道子动作）+ 冲突自动改号 + 源色表兼容
+                                // ①-A 计算源角色与目标角色的屏幕渲染倍率比（综合 localcoord 与 [Size] xscale/yscale）
+                                float scaleRatioX = 1.0f, scaleRatioY = 1.0f;
+                                if (useAutoScale) {
+                                    float[] srcM = readCharScaleMetrics(defFileRef[0], defFilesMap);
+                                    float[] tgtM = readCharScaleMetrics(targetDef, tFiles);
+                                    if (srcM[0] > 0.01f && tgtM[0] > 0.01f) scaleRatioX = srcM[0] / tgtM[0];
+                                    if (srcM[1] > 0.01f && tgtM[1] > 0.01f) scaleRatioY = srcM[1] / tgtM[1];
+                                    scaleRatioX = Math.max(0.25f, Math.min(4.0f, scaleRatioX));
+                                    scaleRatioY = Math.max(0.25f, Math.min(4.0f, scaleRatioY));
+                                }
+                                final boolean scaleActive = useAutoScale && (Math.abs(scaleRatioX - 1.0f) > 0.03f || Math.abs(scaleRatioY - 1.0f) > 0.03f);
+                                final float fScaleX = scaleRatioX, fScaleY = scaleRatioY;
+
+                                // ①-B SFF 全量精灵帧注入（主动作 + 全部 Explod/火花/飞道子动作）+ 冲突自动改号 + 自动体型缩放 + 源色表兼容
                                 java.util.LinkedHashMap<String, int[]> sffRemap = new java.util.LinkedHashMap<>();
                                 int sffOk = 0, sffFail = 0, sffRemapped = 0;
                                 if (sffFileRef[0] != null && sffFileRef[0].exists() && tSff != null && tSff.exists()) {
@@ -8884,10 +8926,31 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             }
                                             if (pngBytes != null && pngBytes.length > 0) {
                                                 File tmpPng = new File(tmpDir, "f_" + og + "_" + oi + ".png");
-                                                try (FileOutputStream fos = new FileOutputStream(tmpPng)) { fos.write(pngBytes); }
                                                 GoEngineBridge.SffFrame srcMeta = sffFrameLookup.get(og + "," + oi);
                                                 short ax = (srcMeta != null) ? (short) srcMeta.x : 0;
                                                 short ay = (srcMeta != null) ? (short) srcMeta.y : 0;
+                                                boolean wroteScaled = false;
+                                                if (scaleActive) {
+                                                    try {
+                                                        Bitmap origBmp = BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.length);
+                                                        if (origBmp != null && origBmp.getWidth() > 0 && origBmp.getHeight() > 0) {
+                                                            int nw = Math.max(1, Math.round(origBmp.getWidth() * fScaleX));
+                                                            int nh = Math.max(1, Math.round(origBmp.getHeight() * fScaleY));
+                                                            Bitmap scaledBmp = Bitmap.createScaledBitmap(origBmp, nw, nh, true);
+                                                            try (FileOutputStream fos = new FileOutputStream(tmpPng)) {
+                                                                scaledBmp.compress(Bitmap.CompressFormat.PNG, 100, fos);
+                                                            }
+                                                            ax = (short) Math.round(ax * fScaleX);
+                                                            ay = (short) Math.round(ay * fScaleY);
+                                                            if (scaledBmp != origBmp) scaledBmp.recycle();
+                                                            origBmp.recycle();
+                                                            wroteScaled = true;
+                                                        }
+                                                    } catch (Exception ignored) {}
+                                                }
+                                                if (!wroteScaled) {
+                                                    try (FileOutputStream fos = new FileOutputStream(tmpPng)) { fos.write(pngBytes); }
+                                                }
                                                 if (Api.addSffFrame(tSff.getAbsolutePath(), ng, ni, ax, ay, tmpPng.getAbsolutePath())) sffOk++;
                                                 else sffFail++;
                                                 tmpPng.delete();
@@ -8997,7 +9060,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             if (oa != na) {
                                                 zBody = zBody.replaceAll("(?i)(\\b(?:anim|projanim|projhitanim|projremanim|projcancelanim)\\s*:\\s*)" + oa + "\\b", "$1" + na);
                                                 zBody = zBody.replaceAll("(?i)(changeanim2?\\s*\\{[^}]*?value\\s*:\\s*)" + oa + "\\b", "$1" + na);
-                                                zBody = zBody.replaceAll("(?i)(\\b(?:sparkno|guard\\.sparkno)\\s*:\\s*S\\s*)" + oa + "\\b", "$1" + na);
+                                                zBody = zBody.replaceAll("(?i)(\\b(?:sparkno|guard\\.sparkno)\\s*:\\s*S\\s*)" + oa + "(?:\\s*[+-]\\s*(?:\\([^\\r\\n;,}]*\\)|\\d+))?(?![0-9])", "$1" + na);
                                             }
                                         }
                                         if (!sndRemap.isEmpty()) {
@@ -9054,7 +9117,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                                 if (smSpark.find()) {
                                                     try {
                                                         int oldSp = Integer.parseInt(smSpark.group(2));
-                                                        if (animRemap.containsKey(oldSp)) codePart = smSpark.group(1) + animRemap.get(oldSp) + smSpark.group(3);
+                                                        if (animRemap.containsKey(oldSp)) {
+                                                            // 清除尾部 +(random%N) 等偏移表达式，防止命中火花漂移到目标角色其它动画造成永久残影
+                                                            String tail = smSpark.group(3).replaceFirst("^\\s*[+-]\\s*(?:\\([^\\r\\n;]*\\)|\\d+)", "");
+                                                            codePart = smSpark.group(1) + animRemap.get(oldSp) + tail;
+                                                        }
                                                     } catch (Exception ignored) {}
                                                 }
                                                 java.util.regex.Matcher pmAnim = projAnimRepPat.matcher(codePart);
@@ -9135,6 +9202,21 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             || java.util.regex.Pattern.compile("(?im)^\\s*type\\s*=\\s*A\\b").matcher(cnsBodyStr).find();
                                     if (bs.stateNo == entryStateItem.stateNo) {
                                         entryIsAirOrHelper = bsIsAir || bsHasDestroy;
+                                        if (recoveryFrames > 0 && !bsIsZss) {
+                                            // 仅当用户手动设置了后摇帧数时，屏蔽入口状态内提前恢复操控的 CtrlSet value=1，确保后摇硬直生效
+                                            StringBuilder recovSb = new StringBuilder();
+                                            boolean inCtrlSetBlk = false;
+                                            for (String rl : cnsBodyStr.split("\n", -1)) {
+                                                String rLow = rl.trim().toLowerCase();
+                                                if (rLow.startsWith("[state ") || rLow.startsWith("[statedef ")) inCtrlSetBlk = false;
+                                                else if (rLow.matches("^type\\s*=\\s*ctrlset$")) inCtrlSetBlk = true;
+                                                else if (inCtrlSetBlk && rLow.matches("^value\\s*=\\s*1\\b.*")) {
+                                                    rl = "; [IK后摇控制: 已延迟至动作结束恢复操控] " + rl;
+                                                }
+                                                recovSb.append(rl).append("\n");
+                                            }
+                                            cnsBodyStr = recovSb.toString().trim();
+                                        }
                                         // 仅当入口状态本身没有任何 ChangeState/SelfState 退出路径（或未勾父技能直接触发的 Helper）时才追加兜底，绝不强插 Time>=90 斩断正常多段技能！
                                         boolean hasAnyStateExit = java.util.regex.Pattern.compile("(?i)(?:type\\s*=\\s*(?:changestate|selfstate)|(?:changestate|selfstate)\\s*\\{)").matcher(cnsBodyStr).find();
                                         if ((bsHasDestroy && !hasBundledParent) || (!bsHasDestroy && !hasAnyStateExit)) {
@@ -9216,18 +9298,43 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                         String airRaw = airActionRawText.containsKey(oa) ? airActionRawText.get(oa).replace("\r\n", "\n") : "";
                                         if (airRaw.isEmpty()) continue;
                                         StringBuilder rewrittenAir = new StringBuilder();
+                                        String lastSpriteFrameForRecov = null;
+                                        java.util.regex.Pattern clsnLinePat = java.util.regex.Pattern.compile("(?i)^(\\s*clsn[12](?:default)?\\[\\d+\\]\\s*=\\s*)(-?\\d+)(\\s*,\\s*)(-?\\d+)(\\s*,\\s*)(-?\\d+)(\\s*,\\s*)(-?\\d+)(.*)$");
                                         for (String line : airRaw.split("\n", -1)) {
                                             String trimmed = line.trim();
                                             if (trimmed.toLowerCase().startsWith("[begin action")) {
                                                 line = "[Begin Action " + na + "]";
+                                            } else if (scaleActive && trimmed.toLowerCase().startsWith("clsn")) {
+                                                java.util.regex.Matcher cm = clsnLinePat.matcher(line);
+                                                if (cm.find()) {
+                                                    try {
+                                                        int x1 = Math.round(Integer.parseInt(cm.group(2)) * fScaleX);
+                                                        int y1 = Math.round(Integer.parseInt(cm.group(4)) * fScaleY);
+                                                        int x2 = Math.round(Integer.parseInt(cm.group(6)) * fScaleX);
+                                                        int y2 = Math.round(Integer.parseInt(cm.group(8)) * fScaleY);
+                                                        line = cm.group(1) + x1 + cm.group(3) + y1 + cm.group(5) + x2 + cm.group(7) + y2 + cm.group(9);
+                                                    } catch (Exception ignored) {}
+                                                }
                                             } else if (trimmed.matches("^-?\\d+\\s*,\\s*-?\\d+\\s*,.*")) {
-                                                String[] ps = trimmed.split(",", 3);
-                                                if (ps.length >= 3) {
-                                                    int[] mapped = sffRemap.get(ps[0].trim() + "," + ps[1].trim());
-                                                    if (mapped != null) line = mapped[0] + ", " + mapped[1] + "," + ps[2];
+                                                String[] ps = trimmed.split(",", 6);
+                                                if (ps.length >= 5) {
+                                                    String gStr = ps[0].trim(), iStr = ps[1].trim();
+                                                    int[] mapped = sffRemap.get(gStr + "," + iStr);
+                                                    if (mapped != null) { gStr = String.valueOf(mapped[0]); iStr = String.valueOf(mapped[1]); }
+                                                    String oxStr = ps[2].trim(), oyStr = ps[3].trim();
+                                                    if (scaleActive) {
+                                                        try { oxStr = String.valueOf(Math.round(Integer.parseInt(oxStr) * fScaleX)); } catch (Exception ignored) {}
+                                                        try { oyStr = String.valueOf(Math.round(Integer.parseInt(oyStr) * fScaleY)); } catch (Exception ignored) {}
+                                                    }
+                                                    line = gStr + ", " + iStr + ", " + oxStr + ", " + oyStr + ", " + ps[4].trim() + (ps.length > 5 ? "," + ps[5] : "");
+                                                    if (!gStr.equals("-1")) lastSpriteFrameForRecov = gStr + ", " + iStr + ", " + oxStr + ", " + oyStr;
                                                 }
                                             }
                                             rewrittenAir.append(line).append("\n");
+                                        }
+                                        if (recoveryFrames > 0 && na == newAnimNo && lastSpriteFrameForRecov != null) {
+                                            rewrittenAir.append("Clsn1: 0\n")
+                                                    .append(lastSpriteFrameForRecov).append(", ").append(recoveryFrames).append(" ; [IK收招后摇帧]\n");
                                         }
                                         allAirAppend.append("\n\n; === [自动移植动作] ").append(cmdName).append(" (Action ").append(na).append(") ===\n")
                                                     .append(rewrittenAir.toString().trim()).append("\n");
@@ -9259,6 +9366,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 java.util.HashSet<String> existingCmdNamesExact = new java.util.HashSet<>();
                                 java.util.HashSet<String> existingCmdSeqs = new java.util.HashSet<>();
                                 boolean scanInCmdSec = false;
+                                String scanCurCmdName = "";
                                 for (String cl : cmdOrig.split("\n")) {
                                     int ci = cl.indexOf(';');
                                     String clean = (ci >= 0 ? cl.substring(0, ci) : cl).trim();
@@ -9266,6 +9374,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     String low = clean.toLowerCase();
                                     if (low.startsWith("[")) {
                                         scanInCmdSec = low.equals("[command]");
+                                        scanCurCmdName = "";
                                     } else if (scanInCmdSec) {
                                         int eq = clean.indexOf('=');
                                         if (eq > 0) {
@@ -9273,9 +9382,15 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             String cv = clean.substring(eq + 1).trim();
                                             if (ck.equals("name") && !cv.replace("\"", "").trim().isEmpty()) {
                                                 String rawN = cv.replace("\"", "").trim();
+                                                scanCurCmdName = rawN.toLowerCase();
                                                 existingCmdNamesExact.add(rawN);
-                                                existingCmdNames.add(rawN.toLowerCase());
-                                            } else if (ck.equals("command") && !cv.isEmpty()) existingCmdSeqs.add(cv.replaceAll("\\s+", "").toLowerCase());
+                                                existingCmdNames.add(scanCurCmdName);
+                                            } else if (ck.equals("command") && !cv.isEmpty()) {
+                                                // 跳过受身专用 recovery，避免占用 a+b / x+y 等常用组合键导致被误转成双击
+                                                if (!scanCurCmdName.equals("recovery")) {
+                                                    existingCmdSeqs.add(cv.replaceAll("\\s+", "").toLowerCase());
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -9452,22 +9567,56 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     }
                                 } catch (Exception ignored) {}
 
+                                // 纯多键同时组合键（如 a+b / x+y）生成双重判定：同时支持专属组合指令名与原生单键并列触发（同原生闪避/爆气机制，100% 兼容自定义组合按钮）
+                                String compactSeqForTrig = finalCmdSeq.replaceAll("\\s+", "").toLowerCase();
+                                boolean isPureBtnChord = !compactSeqForTrig.contains(",") && compactSeqForTrig.contains("+");
+                                String cmdTriggerExpr = "command = \"" + finalCmdName + "\"";
+                                if (isPureBtnChord) {
+                                    String[] chordParts = compactSeqForTrig.split("\\+");
+                                    boolean allValidBtns = chordParts.length >= 2;
+                                    for (String cp : chordParts) {
+                                        if (!cp.matches("^[abcxyzs]$") || !existingCmdNamesExact.contains(cp)) {
+                                            allValidBtns = false;
+                                            break;
+                                        }
+                                    }
+                                    if (allValidBtns) {
+                                        StringBuilder chordAnd = new StringBuilder();
+                                        for (int ci2 = 0; ci2 < chordParts.length; ci2++) {
+                                            if (ci2 > 0) chordAnd.append(" && ");
+                                            chordAnd.append("command = \"").append(chordParts[ci2]).append("\"");
+                                        }
+                                        cmdTriggerExpr = "(command = \"" + finalCmdName + "\" || (" + chordAnd.toString() + "))";
+                                    }
+                                }
+
                                 String cmdDefBlock = depCmdBlocks.toString() + "\n; [IK_CLONE_BEGIN:" + activeSkillKey + "]" + buildIkCommandBlocks(finalCmdName, finalCmdSeq, cmdTime) + "; [IK_CLONE_END:" + activeSkillKey + "]\n";
                                 boolean cmdIsZss = tCmd.getName().toLowerCase().endsWith(".zss");
                                 String condCns1 = entryIsAirOrHelper ? "ctrl" : "statetype != A && ctrl";
                                 String condCns2 = entryIsAirOrHelper ? "stateno = [200, 499] && time <= 3" : "statetype != A && stateno = [200, 499] && time <= 3";
                                 String condZss = entryIsAirOrHelper ? "(ctrl || (stateNo = [200, 499] && time <= 3))" : "stateType != A && (ctrl || (stateNo = [200, 499] && time <= 3))";
                                 String stateNeg1Block = cmdIsZss
-                                        ? ("\n# [IK_CLONE_BEGIN:" + activeSkillKey + "]\n# [自动移植触发器] " + finalCmdName + "\nif command = \"" + finalCmdName + "\" && " + condZss + " {\n\tchangeState{value: " + entryNewStateNo + "}\n}\n# [IK_CLONE_END:" + activeSkillKey + "]\n")
-                                        : ("\n; [IK_CLONE_BEGIN:" + activeSkillKey + "]\n; [自动移植触发器] " + finalCmdName + "\n[State -1, " + finalCmdName + "]\ntype = ChangeState\nvalue = " + entryNewStateNo + "\ntriggerall = command = \"" + finalCmdName + "\"\ntrigger1 = " + condCns1 + "\ntrigger2 = " + condCns2 + "\n; [IK_CLONE_END:" + activeSkillKey + "]\n");
+                                        ? ("\n# [IK_CLONE_BEGIN:" + activeSkillKey + "]\n# [自动移植触发器] " + finalCmdName + "\nif " + cmdTriggerExpr + " && " + condZss + " {\n\tchangeState{value: " + entryNewStateNo + "}\n}\n# [IK_CLONE_END:" + activeSkillKey + "]\n")
+                                        : ("\n; [IK_CLONE_BEGIN:" + activeSkillKey + "]\n; [自动移植触发器] " + finalCmdName + "\n[State -1, " + finalCmdName + "]\ntype = ChangeState\nvalue = " + entryNewStateNo + "\ntriggerall = " + cmdTriggerExpr + "\ntrigger1 = " + condCns1 + "\ntrigger2 = " + condCns2 + "\n; [IK_CLONE_END:" + activeSkillKey + "]\n");
 
-                                // 严格行首锚定，绝不误匹配注释中的 ; [Statedef -1]
+                                // 严格行首锚定；纯组合键的 [Command] 优先插到首个 [Command] 之前，确保最高优先级响应
                                 java.util.regex.Matcher neg1M = java.util.regex.Pattern.compile("(?im)^\\s*(\\[\\s*statedef\\s+-1[^\\]]*\\][^\\r\\n]*\\r?\\n?)").matcher(cmdOrig);
                                 String newCmdText;
                                 if (neg1M.find()) {
                                     int idxStart = neg1M.start();
                                     int idxEnd = neg1M.end();
-                                    newCmdText = cmdOrig.substring(0, idxStart) + cmdDefBlock + "\n" + cmdOrig.substring(idxStart, idxEnd) + stateNeg1Block + cmdOrig.substring(idxEnd);
+                                    String headerPart = cmdOrig.substring(0, idxStart);
+                                    if (isPureBtnChord) {
+                                        java.util.regex.Matcher firstCmdM = java.util.regex.Pattern.compile("(?im)^\\s*\\[\\s*command\\s*\\]").matcher(headerPart);
+                                        if (firstCmdM.find()) {
+                                            headerPart = headerPart.substring(0, firstCmdM.start()) + cmdDefBlock + "\n" + headerPart.substring(firstCmdM.start());
+                                        } else {
+                                            headerPart = headerPart + cmdDefBlock + "\n";
+                                        }
+                                    } else {
+                                        headerPart = headerPart + cmdDefBlock + "\n";
+                                    }
+                                    newCmdText = headerPart + cmdOrig.substring(idxStart, idxEnd) + stateNeg1Block + cmdOrig.substring(idxEnd);
                                 } else {
                                     newCmdText = cmdOrig + "\n" + cmdDefBlock + "\n[Statedef -1]\n" + stateNeg1Block;
                                 }
@@ -11529,6 +11678,1509 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
             md.show();
         };
         btnManagePools.setOnClickListener(v -> openPoolManagerRef[0].run());
+
+        return root;
+    }
+
+    // ================= 【新增】角色体型缩放倍率计算 (localcoord + [Size] xscale/yscale) =================
+    private float[] readCharScaleMetrics(File defFile, java.util.Map<String, String> filesMap) {
+        float lx = 320f, ly = 240f, sx = 1.0f, sy = 1.0f;
+        try {
+            if (defFile != null && defFile.exists()) {
+                String defTxt = readTextAutoCharset(defFile).replace("\r\n", "\n");
+                java.util.regex.Matcher lm = java.util.regex.Pattern.compile("(?im)^\\s*localcoord\\s*=\\s*(\\d+(?:\\.\\d+)?)\\s*,\\s*(\\d+(?:\\.\\d+)?)").matcher(defTxt);
+                if (lm.find()) {
+                    lx = Float.parseFloat(lm.group(1));
+                    ly = Float.parseFloat(lm.group(2));
+                }
+                if (filesMap != null && filesMap.containsKey("cns")) {
+                    File cnsF = resolveCharSubFile(defFile.getParentFile(), filesMap.get("cns"));
+                    if (cnsF != null && cnsF.exists()) {
+                        String cnsTxt = readTextAutoCharset(cnsF).replace("\r\n", "\n");
+                        boolean inSize = false;
+                        for (String line : cnsTxt.split("\n")) {
+                            int ci = line.indexOf(';');
+                            String clean = (ci >= 0 ? line.substring(0, ci) : line).trim();
+                            if (clean.isEmpty()) continue;
+                            String low = clean.toLowerCase();
+                            if (low.startsWith("[")) { inSize = low.equals("[size]"); continue; }
+                            if (inSize) {
+                                int eq = clean.indexOf('=');
+                                if (eq > 0) {
+                                    String k = clean.substring(0, eq).trim().toLowerCase();
+                                    String v = clean.substring(eq + 1).trim();
+                                    if (k.equals("xscale")) { try { sx = Float.parseFloat(v); } catch (Exception ignored) {} }
+                                    else if (k.equals("yscale")) { try { sy = Float.parseFloat(v); } catch (Exception ignored) {} }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return new float[] { (320f / Math.max(1f, lx)) * sx, (240f / Math.max(1f, ly)) * sy };
+    }
+
+    // ================= 【新增】桌面模式简易全功能浏览器 (网页 / 全屏视频 / H5网页游戏) =================
+    @android.annotation.SuppressLint("SetJavaScriptEnabled")
+    private View buildWebBrowserContent() {
+        LinearLayout root = new LinearLayout(getContext());
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.parseColor("#0F172A"));
+
+        LinearLayout navBar = new LinearLayout(getContext());
+        navBar.setOrientation(LinearLayout.HORIZONTAL);
+        navBar.setGravity(Gravity.CENTER_VERTICAL);
+        navBar.setBackgroundColor(Color.parseColor("#1E293B"));
+        navBar.setPadding((int)(6*density), (int)(5*density), (int)(6*density), (int)(5*density));
+
+        Button bBack = createButton("◀", "#334155");
+        Button bFwd = createButton("▶", "#334155");
+        Button bReload = createButton("↻", "#334155");
+        Button bHome = createButton("🏠", "#334155");
+        final boolean[] desktopUa = {false};
+        Button bUa = createButton("📱", "#0369A1");
+        Button bGo = createButton(L("访问"), "#16A34A");
+
+        final EditText urlInput = createInput(L("输入网址或搜索词"), "https://www.bing.com");
+        urlInput.setSingleLine(true);
+        urlInput.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
+
+        int btnPadH = (int)(8*density), btnPadV = (int)(4*density);
+        for (Button b : new Button[]{bBack, bFwd, bReload, bHome, bUa, bGo}) {
+            b.setPadding(btnPadH, btnPadV, btnPadH, btnPadV);
+        }
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2);
+        bp.setMargins(0, 0, (int)(4*density), 0);
+        LinearLayout.LayoutParams up = new LinearLayout.LayoutParams(0, -2, 1f);
+        up.setMargins((int)(2*density), 0, (int)(4*density), 0);
+
+        navBar.addView(bBack, bp);
+        navBar.addView(bFwd, bp);
+        navBar.addView(bReload, bp);
+        navBar.addView(bHome, bp);
+        navBar.addView(urlInput, up);
+        navBar.addView(bGo, bp);
+        navBar.addView(bUa, new LinearLayout.LayoutParams(-2, -2));
+        root.addView(navBar, new LinearLayout.LayoutParams(-1, -2));
+
+        final android.widget.ProgressBar progressBar = new android.widget.ProgressBar(getContext(), null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setMax(100);
+        progressBar.setVisibility(View.GONE);
+        root.addView(progressBar, new LinearLayout.LayoutParams(-1, (int)(3*density)));
+
+        final FrameLayout webContainer = new FrameLayout(getContext());
+        final android.webkit.WebView webView = new android.webkit.WebView(getContext());
+        final FrameLayout fullscreenOverlay = new FrameLayout(getContext());
+        fullscreenOverlay.setBackgroundColor(Color.BLACK);
+        fullscreenOverlay.setVisibility(View.GONE);
+
+        android.webkit.WebSettings ws = webView.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setDatabaseEnabled(true);
+        ws.setMediaPlaybackRequiresUserGesture(false);
+        ws.setUseWideViewPort(true);
+        ws.setLoadWithOverviewMode(true);
+        ws.setBuiltInZoomControls(true);
+        ws.setDisplayZoomControls(false);
+        ws.setSupportZoom(true);
+        ws.setAllowFileAccess(true);
+        ws.setAllowContentAccess(true);
+        ws.setJavaScriptCanOpenWindowsAutomatically(true);
+        ws.setSupportMultipleWindows(false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            ws.setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        }
+        try {
+            android.webkit.CookieManager.getInstance().setAcceptCookie(true);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+            }
+        } catch (Exception ignored) {}
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        final String defaultUa = ws.getUserAgentString();
+        final String pcUa = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+        final View[] customVideoView = {null};
+        final android.webkit.WebChromeClient.CustomViewCallback[] customCallback = {null};
+
+        webView.setWebViewClient(new android.webkit.WebViewClient() {
+            @Override public boolean shouldOverrideUrlLoading(android.webkit.WebView view, android.webkit.WebResourceRequest request) {
+                String u = request.getUrl().toString();
+                if (u.startsWith("http://") || u.startsWith("https://")) {
+                    view.loadUrl(u);
+                    return true;
+                }
+                return true;
+            }
+            @Override public void onPageFinished(android.webkit.WebView view, String url) {
+                if (url != null) urlInput.setText(url);
+                progressBar.setVisibility(View.GONE);
+            }
+        });
+
+        webView.setWebChromeClient(new android.webkit.WebChromeClient() {
+            @Override public void onProgressChanged(android.webkit.WebView view, int newProgress) {
+                if (newProgress < 100) {
+                    progressBar.setVisibility(View.VISIBLE);
+                    progressBar.setProgress(newProgress);
+                } else {
+                    progressBar.setVisibility(View.GONE);
+                }
+            }
+            @Override public void onShowCustomView(View view, CustomViewCallback callback) {
+                if (customVideoView[0] != null) {
+                    callback.onCustomViewHidden();
+                    return;
+                }
+                customVideoView[0] = view;
+                customCallback[0] = callback;
+                fullscreenOverlay.removeAllViews();
+                fullscreenOverlay.addView(view, new FrameLayout.LayoutParams(-1, -1));
+                fullscreenOverlay.setVisibility(View.VISIBLE);
+                webView.setVisibility(View.GONE);
+            }
+            @Override public void onHideCustomView() {
+                if (customVideoView[0] != null) {
+                    fullscreenOverlay.removeAllViews();
+                    fullscreenOverlay.setVisibility(View.GONE);
+                    customVideoView[0] = null;
+                }
+                if (customCallback[0] != null) {
+                    try { customCallback[0].onCustomViewHidden(); } catch (Exception ignored) {}
+                    customCallback[0] = null;
+                }
+                webView.setVisibility(View.VISIBLE);
+            }
+        });
+
+        final Runnable loadTypedUrl = () -> {
+            String raw = urlInput.getText().toString().trim();
+            if (raw.isEmpty()) return;
+            if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
+                if (raw.contains(".") && !raw.contains(" ")) raw = "https://" + raw;
+                else raw = "https://www.bing.com/search?q=" + Uri.encode(raw);
+            }
+            webView.loadUrl(raw);
+        };
+
+        bGo.setOnClickListener(v -> loadTypedUrl.run());
+        urlInput.setOnEditorActionListener((tv, actionId, event) -> {
+            loadTypedUrl.run();
+            return true;
+        });
+        bBack.setOnClickListener(v -> { if (webView.canGoBack()) webView.goBack(); });
+        bFwd.setOnClickListener(v -> { if (webView.canGoForward()) webView.goForward(); });
+        bReload.setOnClickListener(v -> webView.reload());
+        bHome.setOnClickListener(v -> webView.loadUrl("https://www.bing.com"));
+        bUa.setOnClickListener(v -> {
+            desktopUa[0] = !desktopUa[0];
+            ws.setUserAgentString(desktopUa[0] ? pcUa : defaultUa);
+            bUa.setText(desktopUa[0] ? "💻" : "📱");
+            Toast.makeText(getContext(), desktopUa[0] ? L("💻 已切换桌面版 UA") : L("📱 已切换移动版 UA"), Toast.LENGTH_SHORT).show();
+            webView.reload();
+        });
+
+        webContainer.addView(webView, new FrameLayout.LayoutParams(-1, -1));
+        webContainer.addView(fullscreenOverlay, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(webContainer, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        webView.loadUrl("https://www.bing.com");
+        return root;
+    }
+
+    // ================= 【新增】一键按键映射修复（自动识别当前游戏路径 save/config.ini） =================
+    private void runAutoKeymapFixer() {
+        String basePath = SDLActivity.getCurrentGamePath();
+        if (basePath == null || basePath.trim().isEmpty()) {
+            File ext = getContext().getExternalFilesDir(null);
+            if (ext != null) basePath = ext.getAbsolutePath();
+        }
+        File cfgFile = null;
+        if (basePath != null && !basePath.isEmpty()) {
+            File c1 = new File(basePath, "save/config.ini");
+            File c2 = new File(basePath, "config.ini");
+            if (c1.exists() && c1.isFile()) cfgFile = c1;
+            else if (c2.exists() && c2.isFile()) cfgFile = c2;
+        }
+        if (cfgFile == null) {
+            Toast.makeText(getContext(), L("❌ 未在当前加载路径下找到 save/config.ini\n当前路径: ") + basePath, Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            File bak = new File(cfgFile.getAbsolutePath() + ".keymap.bak");
+            if (!bak.exists()) copyFileToSandbox(cfgFile, bak);
+
+            String raw = readTextAutoCharset(cfgFile);
+            String lineSep = raw.contains("\r\n") ? "\r\n" : "\n";
+            String[] lines = raw.replace("\r\n", "\n").split("\n", -1);
+            StringBuilder out = new StringBuilder();
+
+            String curSec = "";
+            int p1Fixed = 0, otherCleared = 0;
+            java.util.HashSet<String> p1AlignKeys = new java.util.HashSet<>(java.util.Arrays.asList("a", "b", "c", "x", "y", "z", "d", "w"));
+            java.util.HashSet<String> allKeyFields = new java.util.HashSet<>(java.util.Arrays.asList(
+                    "up", "down", "left", "right", "a", "b", "c", "x", "y", "z", "start", "d", "w", "menu"));
+
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i];
+                String trimmed = line.trim();
+                if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                    curSec = trimmed.substring(1, trimmed.length() - 1).trim();
+                } else if (!trimmed.isEmpty() && !trimmed.startsWith(";") && curSec.matches("(?i)^Keys_P\\d+$")) {
+                    int eq = line.indexOf('=');
+                    if (eq > 0) {
+                        String leftRaw = line.substring(0, eq);
+                        String keyName = leftRaw.trim().toLowerCase();
+                        if (curSec.equalsIgnoreCase("Keys_P1")) {
+                            // P1 保持 up/down/left/right/start/menu 原样不变，仅对齐 a/b/c/x/y/z/d/w
+                            if (p1AlignKeys.contains(keyName)) {
+                                line = leftRaw + "= " + keyName;
+                                p1Fixed++;
+                            }
+                        } else {
+                            // P2 及其他 P 键盘映射全部清空为 Not used（Joystick_P* 完全不动）
+                            if (allKeyFields.contains(keyName)) {
+                                line = leftRaw + "= Not used";
+                                otherCleared++;
+                            }
+                        }
+                    }
+                }
+                if (i > 0) out.append(lineSep);
+                out.append(line);
+            }
+
+            try (FileOutputStream fos = new FileOutputStream(cfgFile, false)) {
+                fos.write(out.toString().getBytes("UTF-8"));
+            }
+
+            final Dialog d = new Dialog(getContext());
+            if (d.getWindow() != null) d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            LinearLayout box = new LinearLayout(getContext());
+            box.setOrientation(LinearLayout.VERTICAL);
+            box.setPadding((int)(14*density), (int)(12*density), (int)(14*density), (int)(12*density));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(Color.parseColor("#F8141A24"));
+            bg.setCornerRadius(12f*density);
+            bg.setStroke(2, Color.parseColor("#16A34A"));
+            box.setBackground(bg);
+
+            box.addView(createSubTitle(L("⌨️ 按键映射修复完成")));
+            TextView tv = new TextView(getContext());
+            tv.setText(L("✅ 已自动检测并修复当前游戏按键映射！\n\n")
+                    + L("📂 配置文件：") + cfgFile.getAbsolutePath() + "\n"
+                    + L("💾 原文件备份：") + bak.getName() + "\n\n"
+                    + L("• [Keys_P1]：方向键 / start / menu 保持不变，a/b/c/x/y/z/d/w 已对齐为同名键盘键（共 ") + p1Fixed + L(" 项）\n")
+                    + L("• [Keys_P2~P4]：其他玩家键盘映射已全部清空为 Not used（共 ") + otherCleared + L(" 项）\n")
+                    + L("• [Joystick_P*]：手柄映射区完全保留未改动\n\n")
+                    + L("💡 重启游戏或重新加载配置后即可生效！"));
+            applyGlobalFontSettings(tv, 0.92f, false);
+            tv.setTextColor(Color.WHITE);
+            box.addView(tv);
+            Button bOk = createButton(L("确定"), "#16A34A");
+            bOk.setOnClickListener(v -> d.dismiss());
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.topMargin = (int)(10*density);
+            box.addView(bOk, lp);
+            d.setContentView(box);
+            d.show();
+        } catch (Exception e) {
+            Toast.makeText(getContext(), L("❌ 按键映射修复失败: ") + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    // ================= 【十德ik汉化加强版 (SAKnifeWM 100%复刻 + Ikemen GO 增强)】 =================
+    private static class ShideProfile {
+        String name = "";
+        String gameDir = "";
+        String selectDef = "data/select.def";
+        String cliOptions = "";
+        int launchMode = 0; // 0=正常启动, 1=快速VS, 2=连续对战
+        boolean optDebug = false;
+        boolean optFast = false;
+        boolean optSkipDraw = false;
+    }
+
+    private java.util.List<ShideProfile> loadShideProfiles() {
+        java.util.List<ShideProfile> list = new java.util.ArrayList<>();
+        String defDir = SDLActivity.getCurrentGamePath();
+        if (defDir == null) defDir = "";
+        for (int i = 0; i < 8; i++) {
+            ShideProfile p = new ShideProfile();
+            p.name = "配置 " + (i + 1);
+            p.gameDir = defDir;
+            list.add(p);
+        }
+        try {
+            String raw = prefs.getString("shide_profiles_json", "");
+            if (raw != null && !raw.isEmpty()) {
+                org.json.JSONArray arr = new org.json.JSONArray(raw);
+                for (int i = 0; i < Math.min(8, arr.length()); i++) {
+                    org.json.JSONObject o = arr.optJSONObject(i);
+                    if (o == null) continue;
+                    ShideProfile p = list.get(i);
+                    p.name = o.optString("name", "配置 " + (i + 1));
+                    p.gameDir = o.optString("gameDir", defDir);
+                    p.selectDef = o.optString("selectDef", "data/select.def");
+                    p.cliOptions = o.optString("cliOptions", "");
+                    p.launchMode = o.optInt("launchMode", 0);
+                    p.optDebug = o.optBoolean("optDebug", false);
+                    p.optFast = o.optBoolean("optFast", false);
+                    p.optSkipDraw = o.optBoolean("optSkipDraw", false);
+                }
+            }
+        } catch (Exception ignored) {}
+        return list;
+    }
+
+    private void saveShideProfiles(java.util.List<ShideProfile> list) {
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray();
+            for (int i = 0; i < Math.min(8, list.size()); i++) {
+                ShideProfile p = list.get(i);
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("name", p.name);
+                o.put("gameDir", p.gameDir);
+                o.put("selectDef", p.selectDef);
+                o.put("cliOptions", p.cliOptions);
+                o.put("launchMode", p.launchMode);
+                o.put("optDebug", p.optDebug);
+                o.put("optFast", p.optFast);
+                o.put("optSkipDraw", p.optSkipDraw);
+                arr.put(o);
+            }
+            prefs.edit().putString("shide_profiles_json", arr.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    private String getShideGameDir() {
+        String p = SDLActivity.getCurrentGamePath();
+        if (p == null || p.trim().isEmpty()) {
+            File ext = getContext().getExternalFilesDir(null);
+            if (ext != null) p = ext.getAbsolutePath();
+        }
+        return p == null ? "" : p;
+    }
+
+    private File getShideLogDir() {
+        File dir = new File(getShideGameDir(), "save/shide_logs");
+        if (!dir.exists()) dir.mkdirs();
+        return dir;
+    }
+
+    private File getOrCreateShideLogFile(boolean forceNew) {
+        File dir = getShideLogDir();
+        String curName = prefs.getString("shide_current_log_file", "");
+        if (!forceNew && curName != null && !curName.isEmpty()) {
+            File existing = new File(dir, curName);
+            if (existing.exists()) return existing;
+        }
+        String ts = new java.text.SimpleDateFormat("MM月dd日-HH时mm分ss秒", java.util.Locale.getDefault()).format(new java.util.Date());
+        String name = "log-" + ts + ".txt";
+        File f = new File(dir, name);
+        try {
+            if (!f.exists()) f.createNewFile();
+        } catch (Exception ignored) {}
+        prefs.edit().putString("shide_current_log_file", name).apply();
+        return f;
+    }
+
+    private void appendShideLog(String line) {
+        try {
+            File f = getOrCreateShideLogFile(false);
+            String ts = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date());
+            String entry = "[" + ts + "] " + line + "\n";
+            try (FileOutputStream fos = new FileOutputStream(f, true)) {
+                fos.write(entry.getBytes("UTF-8"));
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void sendShideBridgeCmd(String jsonCmd) {
+        try {
+            File cf = new File(getShideGameDir(), "save/shide_cmd.json");
+            if (cf.getParentFile() != null) cf.getParentFile().mkdirs();
+            try (FileOutputStream fos = new FileOutputStream(cf, false)) {
+                fos.write(jsonCmd.getBytes("UTF-8"));
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void sendShideKeyCombo(final int keyCode, final boolean withCtrl) {
+        new Thread(() -> {
+            try {
+                if (withCtrl) SDLActivity.onNativeKeyDown(android.view.KeyEvent.KEYCODE_CTRL_LEFT);
+                Thread.sleep(25);
+                SDLActivity.onNativeKeyDown(keyCode);
+                Thread.sleep(45);
+                SDLActivity.onNativeKeyUp(keyCode);
+                if (withCtrl) {
+                    Thread.sleep(20);
+                    SDLActivity.onNativeKeyUp(android.view.KeyEvent.KEYCODE_CTRL_LEFT);
+                }
+            } catch (Exception ignored) {}
+        }).start();
+    }
+
+    private boolean installShideIkBridgeLua(String gameDir) {
+        try {
+            if (gameDir == null || gameDir.trim().isEmpty()) gameDir = getShideGameDir();
+            File modsDir = new File(gameDir, "external/mods");
+            if (!modsDir.exists()) modsDir.mkdirs();
+            File luaFile = new File(modsDir, "shide_ik_bridge.lua");
+            String lua = ""
+                + "-- 十德ik汉化加强版 实时桥接插件 (SAKnifeWM Bridge for Ikemen GO)\n"
+                + "local shideTick = 0\n"
+                + "local shideMonitor = { active = false, player = 1, trigger = '', val = '0', frozen = false }\n"
+                + "local function shideEsc(s)\n"
+                + "  s = tostring(s or '')\n"
+                + "  s = s:gsub('\\\\', '\\\\\\\\'):gsub('\"', '\\\\\"'):gsub('\\n', ' '):gsub('\\r', '')\n"
+                + "  return s\n"
+                + "end\n"
+                + "local function shideReadCmd()\n"
+                + "  local f = io.open('save/shide_cmd.json', 'r')\n"
+                + "  if not f then return end\n"
+                + "  local txt = f:read('*a') or ''\n"
+                + "  f:close()\n"
+                + "  if txt == '' then return end\n"
+                + "  local act = txt:match('\"action\"%s*:%s*\"([^\"]+)\"')\n"
+                + "  if act == 'start_monitor' then\n"
+                + "    shideMonitor.active = true\n"
+                + "    shideMonitor.frozen = false\n"
+                + "    shideMonitor.player = tonumber(txt:match('\"player\"%s*:%s*(%d+)')) or 1\n"
+                + "    shideMonitor.trigger = txt:match('\"trigger\"%s*:%s*\"([^\"]*)\"') or ''\n"
+                + "    shideMonitor.val = txt:match('\"val\"%s*:%s*\"([^\"]*)\"') or ''\n"
+                + "  elseif act == 'stop_monitor' then\n"
+                + "    shideMonitor.active = false\n"
+                + "    shideMonitor.frozen = false\n"
+                + "  elseif act == 'unfreeze' then\n"
+                + "    shideMonitor.frozen = false\n"
+                + "  end\n"
+                + "  os.remove('save/shide_cmd.json')\n"
+                + "end\n"
+                + "local function shideDumpLive()\n"
+                + "  if type(player) ~= 'function' then return end\n"
+                + "  local playersOut = {}\n"
+                + "  for pn = 1, 8 do\n"
+                + "    local ok = pcall(function() return player(pn) end)\n"
+                + "    if ok and exist() ~= 0 then\n"
+                + "      local vars = {}\n"
+                + "      for i = 0, 59 do vars[#vars + 1] = tostring(var(i) or 0) end\n"
+                + "      local fvars = {}\n"
+                + "      for i = 0, 39 do fvars[#fvars + 1] = string.format('%.4f', tonumber(fvar(i)) or 0) end\n"
+                + "      local svars = {}\n"
+                + "      for i = 0, 4 do svars[#svars + 1] = tostring(sysvar(i) or 0) end\n"
+                + "      local sfvars = {}\n"
+                + "      for i = 0, 4 do sfvars[#sfvars + 1] = string.format('%.4f', tonumber(sysfvar(i)) or 0) end\n"
+                + "      playersOut[#playersOut + 1] = string.format(\n"
+                + "        '{\"pn\":%d,\"id\":%d,\"helperid\":%d,\"parentid\":%d,\"name\":\"%s\",\"stateno\":%d,\"anim\":%d,\"time\":%d,\"life\":%d,\"lifemax\":%d,\"power\":%d,\"posX\":%.2f,\"posY\":%.2f,\"velX\":%.2f,\"velY\":%.2f,\"ctrl\":%d,\"alive\":%d,\"movetype\":\"%s\",\"statetype\":\"%s\",\"vars\":[%s],\"fvars\":[%s],\"sysvars\":[%s],\"sysfvars\":[%s]}',\n"
+                + "        pn, tonumber(id()) or 0, 0, 0, shideEsc(name()), tonumber(stateno()) or 0, tonumber(anim()) or 0, tonumber(time()) or 0,\n"
+                + "        tonumber(life()) or 0, tonumber(lifemax()) or 0, tonumber(power()) or 0,\n"
+                + "        tonumber(posX()) or 0, tonumber(posY()) or 0, tonumber(velX()) or 0, tonumber(velY()) or 0,\n"
+                + "        tonumber(ctrl()) or 0, tonumber(alive()) or 0, shideEsc(movetype()), shideEsc(statetype()),\n"
+                + "        table.concat(vars, ','), table.concat(fvars, ','), table.concat(svars, ','), table.concat(sfvars, ',')\n"
+                + "      )\n"
+                + "    end\n"
+                + "  end\n"
+                + "  local json = '{\"tick\":' .. tostring(shideTick) .. ',\"monitorActive\":' .. tostring(shideMonitor.active) .. ',\"players\":[' .. table.concat(playersOut, ',') .. '],\"explods\":[],\"projs\":[]}'\n"
+                + "  local f = io.open('save/shide_live.json', 'w')\n"
+                + "  if f then f:write(json); f:close() end\n"
+                + "end\n"
+                + "if hook and hook.add then\n"
+                + "  hook.add('loop', 'shide_ik_bridge_loop', function()\n"
+                + "    shideTick = shideTick + 1\n"
+                + "    if shideTick % 12 == 0 then\n"
+                + "      pcall(shideReadCmd)\n"
+                + "      pcall(shideDumpLive)\n"
+                + "    end\n"
+                + "  end)\n"
+                + "end\n";
+            try (FileOutputStream fos = new FileOutputStream(luaFile, false)) {
+                fos.write(lua.getBytes("UTF-8"));
+            }
+            appendShideLog("已安装/更新 IK 实时桥接插件: " + luaFile.getAbsolutePath());
+            return true;
+        } catch (Exception e) {
+            appendShideLog("安装桥接插件失败: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private void launchIkemenWithShideArgs(java.util.List<String> args, String desc) {
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray();
+            for (String a : args) {
+                if (a != null && !a.trim().isEmpty()) arr.put(a.trim());
+            }
+            prefs.edit().putString("shide_pending_args", arr.toString()).apply();
+            appendShideLog("启动对战 [" + desc + "] 参数: " + arr.toString());
+            Toast.makeText(getContext(), L("🚀 正在使用十德参数重启并启动引擎..."), Toast.LENGTH_SHORT).show();
+            if (SDLActivity.mSingleton != null) {
+                android.content.Intent intent = SDLActivity.mSingleton.getPackageManager()
+                        .getLaunchIntentForPackage(SDLActivity.mSingleton.getPackageName());
+                if (intent != null) {
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                    SDLActivity.mSingleton.startActivity(intent);
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 220);
+                }
+            }
+        } catch (Exception e) {
+            Toast.makeText(getContext(), L("❌ 启动失败: ") + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private EditText makeShideInput(String hint, String defVal, boolean multiLine) {
+        EditText et = new EditText(getContext());
+        et.setHint(hint);
+        et.setHintTextColor(0xFF7A869A);
+        et.setText(defVal == null ? "" : defVal);
+        et.setTextColor(0xFFFFFFFF);
+        et.setTextSize(12);
+        et.setSingleLine(!multiLine);
+        if (multiLine) {
+            et.setGravity(Gravity.TOP | Gravity.START);
+            et.setMinLines(4);
+        }
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFF161B26);
+        bg.setCornerRadius(6 * density);
+        bg.setStroke((int) Math.max(1, density), 0xFF334155);
+        et.setBackground(bg);
+        int pad = (int) (7 * density);
+        et.setPadding(pad, pad, pad, pad);
+        return et;
+    }
+
+    private Button makeShideBtn(String text, int bgColor) {
+        Button b = new Button(getContext());
+        b.setText(text);
+        b.setTextColor(0xFFFFFFFF);
+        b.setTextSize(11);
+        b.setAllCaps(false);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(bgColor);
+        bg.setCornerRadius(6 * density);
+        b.setBackground(bg);
+        int ph = (int) (10 * density);
+        int pv = (int) (5 * density);
+        b.setPadding(ph, pv, ph, pv);
+        b.setMinimumHeight((int) (32 * density));
+        b.setMinHeight((int) (32 * density));
+        return b;
+    }
+
+    private TextView makeShideLabel(String text, int color) {
+        TextView tv = new TextView(getContext());
+        tv.setText(text);
+        tv.setTextColor(color);
+        tv.setTextSize(12);
+        return tv;
+    }
+
+    private String toShideCharArg(String rawPath) {
+        if (rawPath == null) return "";
+        String p = rawPath.trim().replace("\\", "/");
+        int idx = p.toLowerCase().indexOf("/chars/");
+        if (idx >= 0) return p.substring(idx + 7);
+        return p;
+    }
+
+    private String toShideStageArg(String rawPath) {
+        if (rawPath == null) return "";
+        String p = rawPath.trim().replace("\\", "/");
+        int idx = p.toLowerCase().indexOf("/stages/");
+        if (idx >= 0) return "stages/" + p.substring(idx + 8);
+        return p;
+    }
+
+    private View buildShideIkToolContent() {
+        LinearLayout root = new LinearLayout(getContext());
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(0xFF0E131D);
+
+        HorizontalScrollView tabScroll = new HorizontalScrollView(getContext());
+        tabScroll.setHorizontalScrollBarEnabled(false);
+        tabScroll.setBackgroundColor(0xFF151C2C);
+        LinearLayout tabBar = new LinearLayout(getContext());
+        tabBar.setOrientation(LinearLayout.HORIZONTAL);
+        int tp = (int) (6 * density);
+        tabBar.setPadding(tp, tp, tp, tp);
+        tabScroll.addView(tabBar);
+        root.addView(tabScroll, new LinearLayout.LayoutParams(-1, -2));
+
+        final FrameLayout contentHost = new FrameLayout(getContext());
+        root.addView(contentHost, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        final String[] tabNames = new String[]{
+            L("⚙️ 配置(8槽)"), L("⚔️ 快速VS"), L("🔁 连续对战"), L("🛠️ Debug与变量"), L("📜 对战履历")
+        };
+        final Button[] tabBtns = new Button[tabNames.length];
+        final View[] tabPages = new View[tabNames.length];
+
+        // ==================== TAB 0: 8槽配置管理 ====================
+        final java.util.List<ShideProfile> profiles = loadShideProfiles();
+        final int[] curSlot = new int[]{0};
+
+        ScrollView svCfg = new ScrollView(getContext());
+        LinearLayout cfgBox = new LinearLayout(getContext());
+        cfgBox.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (10 * density);
+        cfgBox.setPadding(pad, pad, pad, pad);
+        svCfg.addView(cfgBox);
+
+        cfgBox.addView(makeShideLabel(L("🔪 十德ik汉化加强版 — 8槽配置管理 (复刻 SAKnifeWM + Ikemen GO 增强)"), 0xFF7DD3FC));
+
+        LinearLayout slotRow = new LinearLayout(getContext());
+        slotRow.setOrientation(LinearLayout.HORIZONTAL);
+        slotRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+        rowLp.topMargin = (int) (6 * density);
+        final Spinner spSlot = new Spinner(getContext());
+        final String[] slotLabels = new String[8];
+        for (int i = 0; i < 8; i++) slotLabels[i] = (i + 1) + ". " + profiles.get(i).name;
+        final ArrayAdapter<String> slotAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_item, slotLabels);
+        slotAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spSlot.setAdapter(slotAdapter);
+        spSlot.setBackgroundColor(0xFF1E293B);
+        slotRow.addView(makeShideLabel(L("配置槽位: "), 0xFFE2E8F0));
+        slotRow.addView(spSlot, new LinearLayout.LayoutParams(0, (int) (36 * density), 1f));
+        cfgBox.addView(slotRow, rowLp);
+
+        final EditText etCfgName = makeShideInput(L("配置名称"), profiles.get(0).name, false);
+        final EditText etCfgDir = makeShideInput(L("游戏根目录（默认自动识别当前路径）"), profiles.get(0).gameDir, false);
+        final EditText etCfgSelect = makeShideInput(L("select.def 路径，例如 data/select.def"), profiles.get(0).selectDef, false);
+        final EditText etCfgCli = makeShideInput(L("附加启动参数，例如 -r motif.def -m"), profiles.get(0).cliOptions, false);
+
+        cfgBox.addView(makeShideLabel(L("配置名称:"), 0xFFCBD5E1), rowLp);
+        cfgBox.addView(etCfgName);
+        cfgBox.addView(makeShideLabel(L("游戏目录:"), 0xFFCBD5E1), rowLp);
+        cfgBox.addView(etCfgDir);
+
+        cfgBox.addView(makeShideLabel(L("select.def 路径:"), 0xFFCBD5E1), rowLp);
+        LinearLayout selRow = new LinearLayout(getContext());
+        selRow.setOrientation(LinearLayout.HORIZONTAL);
+        selRow.addView(etCfgSelect, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button bPickSel = makeShideBtn(L("浏览"), 0xFF334155);
+        bPickSel.setOnClickListener(v -> showWin10FilePicker(L("选择 select.def"), 12, null, null, f -> etCfgSelect.setText(f.getAbsolutePath())));
+        LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(-2, -2);
+        bLp.leftMargin = (int) (6 * density);
+        selRow.addView(bPickSel, bLp);
+        cfgBox.addView(selRow);
+
+        cfgBox.addView(makeShideLabel(L("附加命令行参数 (-r / -m 等):"), 0xFFCBD5E1), rowLp);
+        cfgBox.addView(etCfgCli);
+
+        LinearLayout modeRow = new LinearLayout(getContext());
+        modeRow.setOrientation(LinearLayout.HORIZONTAL);
+        modeRow.setGravity(Gravity.CENTER_VERTICAL);
+        modeRow.addView(makeShideLabel(L("默认启动模式: "), 0xFFCBD5E1));
+        final Spinner spLaunchMode = new Spinner(getContext());
+        ArrayAdapter<String> lmAd = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_item,
+                new String[]{L("正常启动"), L("快速VS"), L("连续对战")});
+        lmAd.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spLaunchMode.setAdapter(lmAd);
+        spLaunchMode.setBackgroundColor(0xFF1E293B);
+        modeRow.addView(spLaunchMode, new LinearLayout.LayoutParams(0, (int) (36 * density), 1f));
+        cfgBox.addView(modeRow, rowLp);
+
+        LinearLayout chkRow = new LinearLayout(getContext());
+        chkRow.setOrientation(LinearLayout.HORIZONTAL);
+        final android.widget.CheckBox cbDbg = new android.widget.CheckBox(getContext());
+        cbDbg.setText(L("Debug显示")); cbDbg.setTextColor(0xFFE2E8F0); cbDbg.setTextSize(11);
+        final android.widget.CheckBox cbFast = new android.widget.CheckBox(getContext());
+        cbFast.setText(L("高速模式")); cbFast.setTextColor(0xFFE2E8F0); cbFast.setTextSize(11);
+        final android.widget.CheckBox cbSkip = new android.widget.CheckBox(getContext());
+        cbSkip.setText(L("绘图跳帧")); cbSkip.setTextColor(0xFFE2E8F0); cbSkip.setTextSize(11);
+        chkRow.addView(cbDbg); chkRow.addView(cbFast); chkRow.addView(cbSkip);
+        cfgBox.addView(chkRow, rowLp);
+
+        final Runnable bindSlotUi = () -> {
+            ShideProfile p = profiles.get(curSlot[0]);
+            etCfgName.setText(p.name);
+            etCfgDir.setText(p.gameDir);
+            etCfgSelect.setText(p.selectDef);
+            etCfgCli.setText(p.cliOptions);
+            spLaunchMode.setSelection(Math.max(0, Math.min(2, p.launchMode)));
+            cbDbg.setChecked(p.optDebug);
+            cbFast.setChecked(p.optFast);
+            cbSkip.setChecked(p.optSkipDraw);
+        };
+        spSlot.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int pos, long id) {
+                curSlot[0] = pos;
+                bindSlotUi.run();
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
+
+        LinearLayout cfgAct1 = new LinearLayout(getContext());
+        cfgAct1.setOrientation(LinearLayout.HORIZONTAL);
+        Button bSaveCfg = makeShideBtn(L("💾 保存配置"), 0xFF1D4ED8);
+        Button bRunCfg = makeShideBtn(L("🚀 启动此配置"), 0xFF059669);
+        Button bCopyCfg = makeShideBtn(L("📋 复制到空槽"), 0xFF475569);
+        Button bClearCfg = makeShideBtn(L("🗑️ 清空"), 0xFF991B1B);
+        cfgAct1.addView(bSaveCfg); cfgAct1.addView(bRunCfg, bLp); cfgAct1.addView(bCopyCfg, bLp); cfgAct1.addView(bClearCfg, bLp);
+        cfgBox.addView(cfgAct1, rowLp);
+
+        LinearLayout cfgAct2 = new LinearLayout(getContext());
+        cfgAct2.setOrientation(LinearLayout.HORIZONTAL);
+        Button bEditSelect = makeShideBtn(L("📄 编辑 select.def"), 0xFF0F766E);
+        Button bInstallBridge = makeShideBtn(L("🔌 安装/更新 IK实时桥接插件"), 0xFF7C3AED);
+        cfgAct2.addView(bEditSelect); cfgAct2.addView(bInstallBridge, bLp);
+        cfgBox.addView(cfgAct2, rowLp);
+
+        bSaveCfg.setOnClickListener(v -> {
+            ShideProfile p = profiles.get(curSlot[0]);
+            p.name = etCfgName.getText().toString().trim();
+            if (p.name.isEmpty()) p.name = "配置 " + (curSlot[0] + 1);
+            p.gameDir = etCfgDir.getText().toString().trim();
+            p.selectDef = etCfgSelect.getText().toString().trim();
+            p.cliOptions = etCfgCli.getText().toString().trim();
+            p.launchMode = spLaunchMode.getSelectedItemPosition();
+            p.optDebug = cbDbg.isChecked();
+            p.optFast = cbFast.isChecked();
+            p.optSkipDraw = cbSkip.isChecked();
+            slotLabels[curSlot[0]] = (curSlot[0] + 1) + ". " + p.name;
+            slotAdapter.notifyDataSetChanged();
+            saveShideProfiles(profiles);
+            Toast.makeText(getContext(), L("✅ 已保存配置槽 ") + (curSlot[0] + 1), Toast.LENGTH_SHORT).show();
+        });
+
+        bCopyCfg.setOnClickListener(v -> {
+            int empty = -1;
+            for (int i = 0; i < 8; i++) {
+                if (i != curSlot[0] && profiles.get(i).cliOptions.isEmpty() && profiles.get(i).name.equals("配置 " + (i + 1))) {
+                    empty = i; break;
+                }
+            }
+            if (empty < 0) empty = (curSlot[0] + 1) % 8;
+            ShideProfile src = profiles.get(curSlot[0]);
+            ShideProfile dst = profiles.get(empty);
+            dst.name = src.name + " (副本)";
+            dst.gameDir = src.gameDir;
+            dst.selectDef = src.selectDef;
+            dst.cliOptions = src.cliOptions;
+            dst.launchMode = src.launchMode;
+            dst.optDebug = src.optDebug;
+            dst.optFast = src.optFast;
+            dst.optSkipDraw = src.optSkipDraw;
+            slotLabels[empty] = (empty + 1) + ". " + dst.name;
+            slotAdapter.notifyDataSetChanged();
+            saveShideProfiles(profiles);
+            Toast.makeText(getContext(), L("📋 已复制到配置槽 ") + (empty + 1), Toast.LENGTH_SHORT).show();
+        });
+
+        bClearCfg.setOnClickListener(v -> {
+            ShideProfile p = profiles.get(curSlot[0]);
+            p.name = "配置 " + (curSlot[0] + 1);
+            p.gameDir = getShideGameDir();
+            p.selectDef = "data/select.def";
+            p.cliOptions = "";
+            p.launchMode = 0;
+            p.optDebug = false; p.optFast = false; p.optSkipDraw = false;
+            slotLabels[curSlot[0]] = (curSlot[0] + 1) + ". " + p.name;
+            slotAdapter.notifyDataSetChanged();
+            bindSlotUi.run();
+            saveShideProfiles(profiles);
+            Toast.makeText(getContext(), L("🗑️ 已清空配置槽 ") + (curSlot[0] + 1), Toast.LENGTH_SHORT).show();
+        });
+
+        bRunCfg.setOnClickListener(v -> {
+            java.util.List<String> args = new java.util.ArrayList<>();
+            String cli = etCfgCli.getText().toString().trim();
+            if (!cli.isEmpty()) {
+                for (String tk : cli.split("\\s+")) args.add(tk);
+            }
+            if (cbDbg.isChecked()) args.add("-debug");
+            launchIkemenWithShideArgs(args, "配置槽" + (curSlot[0] + 1) + ":" + etCfgName.getText().toString().trim());
+        });
+
+        bEditSelect.setOnClickListener(v -> {
+            String selPath = etCfgSelect.getText().toString().trim();
+            File sf = new File(selPath);
+            if (!sf.isAbsolute()) sf = new File(etCfgDir.getText().toString().trim().isEmpty() ? getShideGameDir() : etCfgDir.getText().toString().trim(), selPath);
+            if (!sf.exists()) {
+                Toast.makeText(getContext(), L("❌ 找不到文件: ") + sf.getAbsolutePath(), Toast.LENGTH_LONG).show();
+                return;
+            }
+            final File targetSel = sf;
+            String content = readTextAutoCharset(targetSel);
+            Dialog d = new Dialog(getContext());
+            d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            LinearLayout box = new LinearLayout(getContext());
+            box.setOrientation(LinearLayout.VERTICAL);
+            box.setBackgroundColor(0xFF111827);
+            box.setPadding(pad, pad, pad, pad);
+            box.addView(makeShideLabel(L("📄 编辑 ") + targetSel.getName(), 0xFF7DD3FC));
+            final EditText etEdit = makeShideInput("", content, true);
+            etEdit.setMinLines(14);
+            etEdit.setMaxLines(20);
+            box.addView(etEdit, new LinearLayout.LayoutParams((int) (320 * density), (int) (300 * density)));
+            LinearLayout br = new LinearLayout(getContext());
+            br.setOrientation(LinearLayout.HORIZONTAL);
+            Button bSave = makeShideBtn(L("💾 保存"), 0xFF059669);
+            Button bClose = makeShideBtn(L("关闭"), 0xFF475569);
+            bSave.setOnClickListener(sv -> {
+                try (FileOutputStream fos = new FileOutputStream(targetSel, false)) {
+                    fos.write(etEdit.getText().toString().getBytes("UTF-8"));
+                    Toast.makeText(getContext(), L("✅ select.def 已保存"), Toast.LENGTH_SHORT).show();
+                    d.dismiss();
+                } catch (Exception ex) {
+                    Toast.makeText(getContext(), L("❌ 保存失败: ") + ex.getMessage(), Toast.LENGTH_LONG).show();
+                }
+            });
+            bClose.setOnClickListener(cv -> d.dismiss());
+            br.addView(bSave); br.addView(bClose, bLp);
+            box.addView(br, rowLp);
+            d.setContentView(box);
+            d.show();
+        });
+
+        bInstallBridge.setOnClickListener(v -> {
+            boolean ok = installShideIkBridgeLua(etCfgDir.getText().toString().trim());
+            Toast.makeText(getContext(), ok
+                    ? L("✅ 已安装 external/mods/shide_ik_bridge.lua\n重启游戏后 Debug与变量 页即可实时读取角色/变量！")
+                    : L("❌ 安装失败，请检查游戏目录权限"), Toast.LENGTH_LONG).show();
+        });
+
+        tabPages[0] = svCfg;
+
+        // ==================== TAB 1: 快速VS ====================
+        ScrollView svVs = new ScrollView(getContext());
+        LinearLayout vsBox = new LinearLayout(getContext());
+        vsBox.setOrientation(LinearLayout.VERTICAL);
+        vsBox.setPadding(pad, pad, pad, pad);
+        svVs.addView(vsBox);
+
+        vsBox.addView(makeShideLabel(L("⚔️ 快速VS 模式 (直传 Ikemen GO -p1/-p2/-s/-rounds 参数)"), 0xFFFCA5A5));
+
+        final EditText etP1 = makeShideInput(L("1P 角色 .def（如 kfm/kfm.def）"), prefs.getString("shide_vs_p1", "kfm"), false);
+        final EditText etP1Pal = makeShideInput("1P P数(1-12)", "1", false);
+        final EditText etP1Life = makeShideInput("1P 血量(留空默认)", "", false);
+        final EditText etP1Pow = makeShideInput("1P 气量(留空默认)", "", false);
+        final android.widget.CheckBox cbP1Ai = new android.widget.CheckBox(getContext());
+        cbP1Ai.setText("1P AI"); cbP1Ai.setTextColor(0xFFE2E8F0); cbP1Ai.setTextSize(11);
+
+        final EditText etP2 = makeShideInput(L("2P 角色 .def（如 kfm/kfm.def）"), prefs.getString("shide_vs_p2", "kfm"), false);
+        final EditText etP2Pal = makeShideInput("2P P数(1-12)", "2", false);
+        final EditText etP2Life = makeShideInput("2P 血量(留空默认)", "", false);
+        final EditText etP2Pow = makeShideInput("2P 气量(留空默认)", "", false);
+        final android.widget.CheckBox cbP2Ai = new android.widget.CheckBox(getContext());
+        cbP2Ai.setText("2P AI"); cbP2Ai.setTextColor(0xFFE2E8F0); cbP2Ai.setTextSize(11);
+        cbP2Ai.setChecked(true);
+
+        vsBox.addView(makeShideLabel(L("1P 角色:"), 0xFF93C5FD), rowLp);
+        LinearLayout p1Row = new LinearLayout(getContext());
+        p1Row.setOrientation(LinearLayout.HORIZONTAL);
+        p1Row.addView(etP1, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button bPickP1 = makeShideBtn(L("浏览"), 0xFF334155);
+        bPickP1.setOnClickListener(v -> showWin10FilePicker(L("选择 1P 角色 .def"), 15, null, null, f -> etP1.setText(toShideCharArg(f.getAbsolutePath()))));
+        p1Row.addView(bPickP1, bLp);
+        vsBox.addView(p1Row);
+
+        LinearLayout p1Opt = new LinearLayout(getContext());
+        p1Opt.setOrientation(LinearLayout.HORIZONTAL);
+        p1Opt.addView(etP1Pal, new LinearLayout.LayoutParams(0, -2, 1f));
+        p1Opt.addView(etP1Life, new LinearLayout.LayoutParams(0, -2, 1f));
+        p1Opt.addView(etP1Pow, new LinearLayout.LayoutParams(0, -2, 1f));
+        p1Opt.addView(cbP1Ai);
+        vsBox.addView(p1Opt, rowLp);
+
+        vsBox.addView(makeShideLabel(L("2P 角色:"), 0xFFFCA5A5), rowLp);
+        LinearLayout p2Row = new LinearLayout(getContext());
+        p2Row.setOrientation(LinearLayout.HORIZONTAL);
+        p2Row.addView(etP2, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button bPickP2 = makeShideBtn(L("浏览"), 0xFF334155);
+        bPickP2.setOnClickListener(v -> showWin10FilePicker(L("选择 2P 角色 .def"), 15, null, null, f -> etP2.setText(toShideCharArg(f.getAbsolutePath()))));
+        p2Row.addView(bPickP2, bLp);
+        vsBox.addView(p2Row);
+
+        LinearLayout p2Opt = new LinearLayout(getContext());
+        p2Opt.setOrientation(LinearLayout.HORIZONTAL);
+        p2Opt.addView(etP2Pal, new LinearLayout.LayoutParams(0, -2, 1f));
+        p2Opt.addView(etP2Life, new LinearLayout.LayoutParams(0, -2, 1f));
+        p2Opt.addView(etP2Pow, new LinearLayout.LayoutParams(0, -2, 1f));
+        p2Opt.addView(cbP2Ai);
+        vsBox.addView(p2Opt, rowLp);
+
+        final EditText etStage = makeShideInput(L("场景 .def（留空随机，例如 stages/stage0.def）"), "", false);
+        vsBox.addView(makeShideLabel(L("对战场景:"), 0xFFCBD5E1), rowLp);
+        LinearLayout stgRow = new LinearLayout(getContext());
+        stgRow.setOrientation(LinearLayout.HORIZONTAL);
+        stgRow.addView(etStage, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button bPickStg = makeShideBtn(L("浏览"), 0xFF334155);
+        bPickStg.setOnClickListener(v -> showWin10FilePicker(L("选择场景 .def"), 12, null, null, f -> etStage.setText(toShideStageArg(f.getAbsolutePath()))));
+        stgRow.addView(bPickStg, bLp);
+        vsBox.addView(stgRow);
+
+        LinearLayout vsMisc = new LinearLayout(getContext());
+        vsMisc.setOrientation(LinearLayout.HORIZONTAL);
+        vsMisc.setGravity(Gravity.CENTER_VERTICAL);
+        final EditText etRounds = makeShideInput("回合数", "2", false);
+        final android.widget.CheckBox cbNoBgm = new android.widget.CheckBox(getContext());
+        cbNoBgm.setText(L("关闭BGM")); cbNoBgm.setTextColor(0xFFE2E8F0); cbNoBgm.setTextSize(11);
+        final android.widget.CheckBox cbNoSnd = new android.widget.CheckBox(getContext());
+        cbNoSnd.setText(L("关闭音效")); cbNoSnd.setTextColor(0xFFE2E8F0); cbNoSnd.setTextSize(11);
+        vsMisc.addView(makeShideLabel(L("回合:"), 0xFFCBD5E1));
+        vsMisc.addView(etRounds, new LinearLayout.LayoutParams((int) (60 * density), -2));
+        vsMisc.addView(cbNoBgm); vsMisc.addView(cbNoSnd);
+        vsBox.addView(vsMisc, rowLp);
+
+        LinearLayout vsActs = new LinearLayout(getContext());
+        vsActs.setOrientation(LinearLayout.HORIZONTAL);
+        Button bSwap = makeShideBtn(L("⇄ 1P/2P互换"), 0xFF475569);
+        Button bStartVs = makeShideBtn(L("⚔️ 开始快速VS"), 0xFFDC2626);
+        vsActs.addView(bSwap); vsActs.addView(bStartVs, bLp);
+        vsBox.addView(vsActs, rowLp);
+
+        bSwap.setOnClickListener(v -> {
+            String t1 = etP1.getText().toString(); etP1.setText(etP2.getText().toString()); etP2.setText(t1);
+            String p1 = etP1Pal.getText().toString(); etP1Pal.setText(etP2Pal.getText().toString()); etP2Pal.setText(p1);
+            String l1 = etP1Life.getText().toString(); etP1Life.setText(etP2Life.getText().toString()); etP2Life.setText(l1);
+            String w1 = etP1Pow.getText().toString(); etP1Pow.setText(etP2Pow.getText().toString()); etP2Pow.setText(w1);
+            boolean a1 = cbP1Ai.isChecked(); cbP1Ai.setChecked(cbP2Ai.isChecked()); cbP2Ai.setChecked(a1);
+        });
+
+        bStartVs.setOnClickListener(v -> {
+            String c1 = etP1.getText().toString().trim();
+            String c2 = etP2.getText().toString().trim();
+            if (c1.isEmpty() || c2.isEmpty()) {
+                Toast.makeText(getContext(), L("请先填写 1P 和 2P 角色路径"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            prefs.edit().putString("shide_vs_p1", c1).putString("shide_vs_p2", c2).apply();
+            java.util.List<String> args = new java.util.ArrayList<>();
+            args.add("-p1"); args.add(c1);
+            if (!etP1Pal.getText().toString().trim().isEmpty()) { args.add("-p1.color"); args.add(etP1Pal.getText().toString().trim()); }
+            if (cbP1Ai.isChecked()) { args.add("-p1.ai"); args.add("8"); }
+            if (!etP1Life.getText().toString().trim().isEmpty()) { args.add("-p1.life"); args.add(etP1Life.getText().toString().trim()); }
+            if (!etP1Pow.getText().toString().trim().isEmpty()) { args.add("-p1.power"); args.add(etP1Pow.getText().toString().trim()); }
+
+            args.add("-p2"); args.add(c2);
+            if (!etP2Pal.getText().toString().trim().isEmpty()) { args.add("-p2.color"); args.add(etP2Pal.getText().toString().trim()); }
+            if (cbP2Ai.isChecked()) { args.add("-p2.ai"); args.add("8"); }
+            if (!etP2Life.getText().toString().trim().isEmpty()) { args.add("-p2.life"); args.add(etP2Life.getText().toString().trim()); }
+            if (!etP2Pow.getText().toString().trim().isEmpty()) { args.add("-p2.power"); args.add(etP2Pow.getText().toString().trim()); }
+
+            String stg = etStage.getText().toString().trim();
+            if (!stg.isEmpty()) { args.add("-s"); args.add(stg); }
+            String rnd = etRounds.getText().toString().trim();
+            if (!rnd.isEmpty()) { args.add("-rounds"); args.add(rnd); }
+            if (cbNoBgm.isChecked()) args.add("-nobgm");
+            if (cbNoSnd.isChecked()) args.add("-nosound");
+            launchIkemenWithShideArgs(args, "快速VS " + c1 + " vs " + c2);
+        });
+
+        tabPages[1] = svVs;
+
+        // ==================== TAB 2: 连续对战 ====================
+        ScrollView svCont = new ScrollView(getContext());
+        LinearLayout contBox = new LinearLayout(getContext());
+        contBox.setOrientation(LinearLayout.VERTICAL);
+        contBox.setPadding(pad, pad, pad, pad);
+        svCont.addView(contBox);
+
+        contBox.addView(makeShideLabel(L("🔁 连续对战模式 (支持 角色,P数 / Tag双打 charA,1&&charB,2 / ;注释)"), 0xFFFDE68A));
+
+        final EditText etRoster = makeShideInput(L("每行一个角色，例如:\nkfm, 1\nkfm720, 2\n; 注释行\ncharA,1&&charB,2"),
+                prefs.getString("shide_cont_roster", "kfm, 1\nkfm, 2"), true);
+        etRoster.setMinLines(5);
+        contBox.addView(etRoster, rowLp);
+
+        LinearLayout contOpt1 = new LinearLayout(getContext());
+        contOpt1.setOrientation(LinearLayout.HORIZONTAL);
+        final Spinner spMatchMode = new Spinner(getContext());
+        ArrayAdapter<String> mmAd = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_item,
+                new String[]{L("1P VS 其他"), L("循环赛 (全员互打)")});
+        mmAd.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spMatchMode.setAdapter(mmAd); spMatchMode.setBackgroundColor(0xFF1E293B);
+
+        final Spinner spSideMode = new Spinner(getContext());
+        ArrayAdapter<String> smAd = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_item,
+                new String[]{L("1P固定"), L("2P固定"), L("P1/P2交替")});
+        smAd.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spSideMode.setAdapter(smAd); spSideMode.setBackgroundColor(0xFF1E293B);
+
+        contOpt1.addView(spMatchMode, new LinearLayout.LayoutParams(0, (int) (36 * density), 1f));
+        contOpt1.addView(spSideMode, new LinearLayout.LayoutParams(0, (int) (36 * density), 1f));
+        contBox.addView(contOpt1, rowLp);
+
+        LinearLayout contOpt2 = new LinearLayout(getContext());
+        contOpt2.setOrientation(LinearLayout.HORIZONTAL);
+        final EditText etContRnd = makeShideInput("回合", "2", false);
+        final EditText etContMin = makeShideInput("限时(分)", "5", false);
+        final EditText etContRetry = makeShideInput("错误重试", "1", false);
+        final EditText etContPal = makeShideInput("默认P数", "1", false);
+        contOpt2.addView(etContRnd, new LinearLayout.LayoutParams(0, -2, 1f));
+        contOpt2.addView(etContMin, new LinearLayout.LayoutParams(0, -2, 1f));
+        contOpt2.addView(etContRetry, new LinearLayout.LayoutParams(0, -2, 1f));
+        contOpt2.addView(etContPal, new LinearLayout.LayoutParams(0, -2, 1f));
+        contBox.addView(contOpt2, rowLp);
+
+        final android.widget.CheckBox cbEndAtRnd = new android.widget.CheckBox(getContext());
+        cbEndAtRnd.setText(L("达到指定回合数即结束本场")); cbEndAtRnd.setTextColor(0xFFE2E8F0); cbEndAtRnd.setTextSize(11);
+        cbEndAtRnd.setChecked(true);
+        contBox.addView(cbEndAtRnd);
+
+        final TextView tvQueueInfo = makeShideLabel(L("当前队列状态: 未生成"), 0xFF94A3B8);
+        contBox.addView(tvQueueInfo, rowLp);
+
+        LinearLayout contBtns = new LinearLayout(getContext());
+        contBtns.setOrientation(LinearLayout.HORIZONTAL);
+        Button bImportSel = makeShideBtn(L("📥 从select导入"), 0xFF334155);
+        Button bGenQueue = makeShideBtn(L("▶️ 生成队列并开打"), 0xFF059669);
+        Button bNextMatch = makeShideBtn(L("⏭️ 下一场"), 0xFF2563EB);
+        Button bStopCont = makeShideBtn(L("⏹️ 停止"), 0xFF991B1B);
+        contBtns.addView(bImportSel); contBtns.addView(bGenQueue, bLp); contBtns.addView(bNextMatch, bLp); contBtns.addView(bStopCont, bLp);
+        contBox.addView(contBtns, rowLp);
+
+        bImportSel.setOnClickListener(v -> {
+            File sf = new File(getShideGameDir(), "data/select.def");
+            if (!sf.exists()) {
+                Toast.makeText(getContext(), L("❌ 未找到 data/select.def"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String txt = readTextAutoCharset(sf);
+            StringBuilder sb = new StringBuilder();
+            boolean inChars = false;
+            int cnt = 0;
+            for (String rawLine : txt.split("\n")) {
+                String l = rawLine.trim();
+                if (l.isEmpty() || l.startsWith(";")) continue;
+                if (l.startsWith("[")) {
+                    inChars = l.toLowerCase().startsWith("[characters]");
+                    continue;
+                }
+                if (inChars) {
+                    String ch = l.split(",")[0].trim();
+                    if (!ch.isEmpty() && !ch.equalsIgnoreCase("randomselect") && !ch.equalsIgnoreCase("blank")) {
+                        sb.append(ch).append(", 1\n");
+                        cnt++;
+                        if (cnt >= 40) break;
+                    }
+                }
+            }
+            etRoster.setText(sb.toString().trim());
+            Toast.makeText(getContext(), L("📥 已导入 ") + cnt + L(" 名角色"), Toast.LENGTH_SHORT).show();
+        });
+
+        final Runnable launchQueueHead = () -> {
+            try {
+                String qRaw = prefs.getString("shide_cont_queue", "[]");
+                int idx = prefs.getInt("shide_cont_index", 0);
+                org.json.JSONArray q = new org.json.JSONArray(qRaw);
+                if (idx >= q.length()) {
+                    tvQueueInfo.setText(L("✅ 连续对战队列已全部打完！共 ") + q.length() + L(" 场"));
+                    Toast.makeText(getContext(), L("✅ 连续对战已全部完成"), Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                org.json.JSONObject m = q.getJSONObject(idx);
+                prefs.edit().putInt("shide_cont_index", idx + 1).apply();
+                tvQueueInfo.setText(L("队列进度: ") + (idx + 1) + " / " + q.length() + " (" + m.optString("p1") + " vs " + m.optString("p2") + ")");
+                java.util.List<String> args = new java.util.ArrayList<>();
+                args.add("-p1"); args.add(m.optString("p1"));
+                args.add("-p1.color"); args.add(m.optString("p1pal", "1"));
+                args.add("-p1.ai"); args.add("8");
+                args.add("-p2"); args.add(m.optString("p2"));
+                args.add("-p2.color"); args.add(m.optString("p2pal", "1"));
+                args.add("-p2.ai"); args.add("8");
+                args.add("-rounds"); args.add(m.optString("rounds", "2"));
+                launchIkemenWithShideArgs(args, "连续对战 #" + (idx + 1) + "/" + q.length() + " " + m.optString("p1") + " vs " + m.optString("p2"));
+            } catch (Exception e) {
+                Toast.makeText(getContext(), L("❌ 队列启动失败: ") + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        };
+
+        bGenQueue.setOnClickListener(v -> {
+            String raw = etRoster.getText().toString();
+            prefs.edit().putString("shide_cont_roster", raw).apply();
+            String defPal = etContPal.getText().toString().trim();
+            if (defPal.isEmpty()) defPal = "1";
+            java.util.List<String[]> entries = new java.util.ArrayList<>();
+            for (String line : raw.split("\n")) {
+                String l = line.trim();
+                if (l.isEmpty() || l.startsWith(";")) continue;
+                String first = l.contains("&&") ? l.split("&&")[0].trim() : l;
+                String[] parts = first.split(",");
+                String ch = parts[0].trim();
+                String pal = parts.length > 1 && !parts[1].trim().isEmpty() ? parts[1].trim() : defPal;
+                if (!ch.isEmpty()) entries.add(new String[]{ch, pal});
+            }
+            if (entries.size() < 2) {
+                Toast.makeText(getContext(), L("至少需要 2 名角色才能生成连续对战队列"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            org.json.JSONArray q = new org.json.JSONArray();
+            int mm = spMatchMode.getSelectedItemPosition();
+            int sm = spSideMode.getSelectedItemPosition();
+            String rnd = etContRnd.getText().toString().trim();
+            if (rnd.isEmpty()) rnd = "2";
+            try {
+                if (mm == 0) {
+                    String[] pA = entries.get(0);
+                    for (int i = 1; i < entries.size(); i++) {
+                        String[] pB = entries.get(i);
+                        boolean swap = (sm == 1) || (sm == 2 && (i % 2 == 0));
+                        org.json.JSONObject o = new org.json.JSONObject();
+                        o.put("p1", swap ? pB[0] : pA[0]); o.put("p1pal", swap ? pB[1] : pA[1]);
+                        o.put("p2", swap ? pA[0] : pB[0]); o.put("p2pal", swap ? pA[1] : pB[1]);
+                        o.put("rounds", rnd);
+                        q.put(o);
+                    }
+                } else {
+                    int idxCnt = 0;
+                    for (int i = 0; i < entries.size(); i++) {
+                        for (int j = i + 1; j < entries.size(); j++) {
+                            String[] pA = entries.get(i), pB = entries.get(j);
+                            boolean swap = (sm == 1) || (sm == 2 && (++idxCnt % 2 == 0));
+                            org.json.JSONObject o = new org.json.JSONObject();
+                            o.put("p1", swap ? pB[0] : pA[0]); o.put("p1pal", swap ? pB[1] : pA[1]);
+                            o.put("p2", swap ? pA[0] : pB[0]); o.put("p2pal", swap ? pA[1] : pB[1]);
+                            o.put("rounds", rnd);
+                            q.put(o);
+                        }
+                    }
+                }
+                prefs.edit().putString("shide_cont_queue", q.toString()).putInt("shide_cont_index", 0).apply();
+                launchQueueHead.run();
+            } catch (Exception ignored) {}
+        });
+        bNextMatch.setOnClickListener(v -> launchQueueHead.run());
+        bStopCont.setOnClickListener(v -> {
+            prefs.edit().putString("shide_cont_queue", "[]").putInt("shide_cont_index", 0).apply();
+            tvQueueInfo.setText(L("⏹️ 已停止并清空连续对战队列"));
+        });
+
+        tabPages[2] = svCont;
+
+        // ==================== TAB 3: Debug与变量 ====================
+        ScrollView svDbg = new ScrollView(getContext());
+        LinearLayout dbgBox = new LinearLayout(getContext());
+        dbgBox.setOrientation(LinearLayout.VERTICAL);
+        dbgBox.setPadding(pad, pad, pad, pad);
+        svDbg.addView(dbgBox);
+
+        dbgBox.addView(makeShideLabel(L("🛠️ Debug 辅助 + 实体一览 + Trigger监控 + 变量查看器"), 0xFF86EFAC));
+
+        HorizontalScrollView dbgKeyScroll = new HorizontalScrollView(getContext());
+        LinearLayout dbgKeyRow = new LinearLayout(getContext());
+        dbgKeyRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button bKeyD = makeShideBtn("Debug(Ctrl+D)", 0xFF1E3A8A);
+        Button bKeyC = makeShideBtn("判定框(Ctrl+C)", 0xFF1E3A8A);
+        Button bKeyS = makeShideBtn("高速(Ctrl+S)", 0xFF0F766E);
+        Button bKeyP = makeShideBtn("暂停(Pause)", 0xFFB45309);
+        Button bKeyStep = makeShideBtn("步进1F", 0xFF6D28D9);
+        final Button bAutoStep = makeShideBtn("0.5s自动步进:关", 0xFF334155);
+        bKeyD.setOnClickListener(v -> sendShideKeyCombo(android.view.KeyEvent.KEYCODE_D, true));
+        bKeyC.setOnClickListener(v -> sendShideKeyCombo(android.view.KeyEvent.KEYCODE_C, true));
+        bKeyS.setOnClickListener(v -> sendShideKeyCombo(android.view.KeyEvent.KEYCODE_S, true));
+        bKeyP.setOnClickListener(v -> sendShideKeyCombo(android.view.KeyEvent.KEYCODE_BREAK, false));
+        bKeyStep.setOnClickListener(v -> sendShideKeyCombo(android.view.KeyEvent.KEYCODE_SCROLL_LOCK, false));
+
+        final Handler autoStepHandler = new Handler(Looper.getMainLooper());
+        final boolean[] autoStepOn = new boolean[]{false};
+        final Runnable autoStepTask = new Runnable() {
+            @Override public void run() {
+                if (!autoStepOn[0]) return;
+                sendShideKeyCombo(android.view.KeyEvent.KEYCODE_SCROLL_LOCK, false);
+                autoStepHandler.postDelayed(this, 500);
+            }
+        };
+        bAutoStep.setOnClickListener(v -> {
+            autoStepOn[0] = !autoStepOn[0];
+            bAutoStep.setText(autoStepOn[0] ? L("0.5s自动步进:开") : L("0.5s自动步进:关"));
+            if (autoStepOn[0]) autoStepHandler.post(autoStepTask);
+            else autoStepHandler.removeCallbacks(autoStepTask);
+        });
+        dbgKeyRow.addView(bKeyD); dbgKeyRow.addView(bKeyC, bLp); dbgKeyRow.addView(bKeyS, bLp);
+        dbgKeyRow.addView(bKeyP, bLp); dbgKeyRow.addView(bKeyStep, bLp); dbgKeyRow.addView(bAutoStep, bLp);
+        dbgKeyScroll.addView(dbgKeyRow);
+        dbgBox.addView(dbgKeyScroll, rowLp);
+
+        LinearLayout subTabRow = new LinearLayout(getContext());
+        subTabRow.setOrientation(LinearLayout.HORIZONTAL);
+        final Button bSubP = makeShideBtn(L("player一览"), 0xFF2563EB);
+        final Button bSubE = makeShideBtn(L("explod一览"), 0xFF334155);
+        final Button bSubJ = makeShideBtn(L("proj一览"), 0xFF334155);
+        final Button bSubT = makeShideBtn(L("trigger监控"), 0xFF334155);
+        subTabRow.addView(bSubP); subTabRow.addView(bSubE, bLp); subTabRow.addView(bSubJ, bLp); subTabRow.addView(bSubT, bLp);
+        dbgBox.addView(subTabRow, rowLp);
+
+        final int[] curSubTab = new int[]{0};
+        final int[] selectedPlayerIdx = new int[]{0};
+        final boolean[] isBinaryMode = new boolean[]{false};
+
+        final TextView tvEntityList = makeShideLabel(L("等待读取 save/shide_live.json ...（请先在配置页安装 IK实时桥接插件 并进入对战）"), 0xFFE2E8F0);
+        tvEntityList.setTypeface(Typeface.MONOSPACE);
+        tvEntityList.setTextSize(11);
+        tvEntityList.setBackgroundColor(0xFF161B26);
+        tvEntityList.setPadding(pad, pad, pad, pad);
+        dbgBox.addView(tvEntityList, rowLp);
+
+        final LinearLayout trigBox = new LinearLayout(getContext());
+        trigBox.setOrientation(LinearLayout.VERTICAL);
+        trigBox.setVisibility(View.GONE);
+        final EditText etTrigPlayer = makeShideInput("Player (1~8)", "1", false);
+        final EditText etTrigExpr = makeShideInput(L("Trigger（支持 & 位运算、Map(x)、stateno、var(0) 等）"), "stateno", false);
+        final EditText etTrigVal = makeShideInput(L("目标值（支持 =, !=, <, <=, >, >=, = [a,b], != [a,b]）"), "= 200", false);
+        final TextView tvTrigStatus = makeShideLabel(L("监控状态: 未启动"), 0xFFFDE68A);
+        LinearLayout trigBtnRow = new LinearLayout(getContext());
+        trigBtnRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button bTrigStart = makeShideBtn(L("▶ 开始监控"), 0xFF059669);
+        Button bTrigStop = makeShideBtn(L("⏹ 停止"), 0xFF991B1B);
+        Button bTrigUnfreeze = makeShideBtn(L("🔓 解除冻结"), 0xFF2563EB);
+        trigBtnRow.addView(bTrigStart); trigBtnRow.addView(bTrigStop, bLp); trigBtnRow.addView(bTrigUnfreeze, bLp);
+        trigBox.addView(etTrigPlayer, rowLp); trigBox.addView(etTrigExpr, rowLp); trigBox.addView(etTrigVal, rowLp);
+        trigBox.addView(trigBtnRow, rowLp); trigBox.addView(tvTrigStatus, rowLp);
+        dbgBox.addView(trigBox);
+
+        bTrigStart.setOnClickListener(v -> {
+            try {
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("action", "start_monitor");
+                o.put("player", Integer.parseInt(etTrigPlayer.getText().toString().trim()));
+                o.put("trigger", etTrigExpr.getText().toString().trim());
+                o.put("val", etTrigVal.getText().toString().trim());
+                sendShideBridgeCmd(o.toString());
+                tvTrigStatus.setText(L("🟢 监控中: P") + etTrigPlayer.getText().toString().trim() + " " + etTrigExpr.getText().toString().trim() + " " + etTrigVal.getText().toString().trim());
+            } catch (Exception ex) {
+                Toast.makeText(getContext(), L("Player 请填写数字 1~8"), Toast.LENGTH_SHORT).show();
+            }
+        });
+        bTrigStop.setOnClickListener(v -> {
+            sendShideBridgeCmd("{\"action\":\"stop_monitor\"}");
+            tvTrigStatus.setText(L("⏹️ 监控已停止"));
+        });
+        bTrigUnfreeze.setOnClickListener(v -> {
+            sendShideBridgeCmd("{\"action\":\"unfreeze\"}");
+            tvTrigStatus.setText(L("🔓 已发送解除冻结指令"));
+        });
+
+        LinearLayout varBar = new LinearLayout(getContext());
+        varBar.setOrientation(LinearLayout.HORIZONTAL);
+        varBar.setGravity(Gravity.CENTER_VERTICAL);
+        final Button bSwitchP = makeShideBtn("P1", 0xFF334155);
+        final Spinner spVarPage = new Spinner(getContext());
+        ArrayAdapter<String> vpAd = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_item,
+                new String[]{L("系统值"), "var(0~19)", "var(20~39)", "var(40~59)", "fvar(0~19)", "fvar(20~39)", "sysvar/sysfvar"});
+        vpAd.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spVarPage.setAdapter(vpAd); spVarPage.setBackgroundColor(0xFF1E293B);
+        final Button bBinToggle = makeShideBtn("10进制", 0xFF475569);
+        Button bVarRefresh = makeShideBtn(L("🔄 刷新"), 0xFF0284C7);
+        Button bVarCopy = makeShideBtn(L("📋 复制"), 0xFF059669);
+        varBar.addView(bSwitchP);
+        varBar.addView(spVarPage, new LinearLayout.LayoutParams(0, (int) (36 * density), 1f));
+        varBar.addView(bBinToggle, bLp); varBar.addView(bVarRefresh, bLp); varBar.addView(bVarCopy, bLp);
+        dbgBox.addView(varBar, rowLp);
+
+        final TextView tvVarDump = makeShideLabel(L("变量区等待刷新..."), 0xFFCBD5E1);
+        tvVarDump.setTypeface(Typeface.MONOSPACE);
+        tvVarDump.setTextSize(11);
+        tvVarDump.setBackgroundColor(0xFF161B26);
+        tvVarDump.setPadding(pad, pad, pad, pad);
+        dbgBox.addView(tvVarDump, rowLp);
+
+        final Runnable refreshLiveData = () -> {
+            File liveFile = new File(getShideGameDir(), "save/shide_live.json");
+            if (!liveFile.exists()) {
+                tvEntityList.setText(L("未检测到 save/shide_live.json。\n请先在「⚙️ 配置(8槽)」页点击「🔌 安装/更新 IK实时桥接插件」，然后进入对战即可实时读取。"));
+                return;
+            }
+            try {
+                org.json.JSONObject rootJson = new org.json.JSONObject(readTextAutoCharset(liveFile));
+                org.json.JSONArray players = rootJson.optJSONArray("players");
+                org.json.JSONArray explods = rootJson.optJSONArray("explods");
+                org.json.JSONArray projs = rootJson.optJSONArray("projs");
+
+                StringBuilder eb = new StringBuilder();
+                if (curSubTab[0] == 0) {
+                    eb.append("playerid | helperid | 亲id | name\n------------------------------------\n");
+                    if (players != null && players.length() > 0) {
+                        for (int i = 0; i < players.length(); i++) {
+                            org.json.JSONObject p = players.getJSONObject(i);
+                            eb.append(String.format(java.util.Locale.US, "%-8d | %-8d | %-4d | %s (P%d)\n",
+                                    p.optInt("id"), p.optInt("helperid"), p.optInt("parentid"), p.optString("name"), p.optInt("pn")));
+                        }
+                    } else eb.append("(当前无活动角色)\n");
+                } else if (curSubTab[0] == 1) {
+                    eb.append("id | anim | 所有者id\n----------------------\n");
+                    if (explods != null && explods.length() > 0) {
+                        for (int i = 0; i < explods.length(); i++) {
+                            org.json.JSONObject ex = explods.getJSONObject(i);
+                            eb.append(ex.optInt("id")).append(" | ").append(ex.optInt("anim")).append(" | ").append(ex.optInt("owner")).append("\n");
+                        }
+                    } else eb.append("(当前无活动 Explod)\n");
+                } else if (curSubTab[0] == 2) {
+                    eb.append("projid | X坐标 | Y坐标\n-----------------------\n");
+                    if (projs != null && projs.length() > 0) {
+                        for (int i = 0; i < projs.length(); i++) {
+                            org.json.JSONObject pr = projs.getJSONObject(i);
+                            eb.append(pr.optInt("id")).append(" | ").append(pr.optDouble("x")).append(" | ").append(pr.optDouble("y")).append("\n");
+                        }
+                    } else eb.append("(当前无活动 Projectile)\n");
+                }
+                tvEntityList.setText(eb.toString().trim());
+
+                if (players != null && players.length() > 0) {
+                    int idx = selectedPlayerIdx[0] % players.length();
+                    org.json.JSONObject p = players.getJSONObject(idx);
+                    bSwitchP.setText("P" + p.optInt("pn"));
+                    int page = spVarPage.getSelectedItemPosition();
+                    StringBuilder vb = new StringBuilder();
+                    vb.append("[").append(p.optString("name")).append(" / ID=").append(p.optInt("id")).append("]\n");
+                    if (page == 0) {
+                        vb.append("stateno=").append(p.optInt("stateno")).append("  anim=").append(p.optInt("anim")).append("  time=").append(p.optInt("time")).append("\n");
+                        vb.append("life=").append(p.optInt("life")).append("/").append(p.optInt("lifemax")).append("  power=").append(p.optInt("power")).append("\n");
+                        vb.append("pos=(").append(p.optDouble("posX")).append(", ").append(p.optDouble("posY")).append(")  vel=(").append(p.optDouble("velX")).append(", ").append(p.optDouble("velY")).append(")\n");
+                        vb.append("ctrl=").append(p.optInt("ctrl")).append("  alive=").append(p.optInt("alive")).append("  type=").append(p.optString("statetype")).append("/").append(p.optString("movetype"));
+                    } else if (page >= 1 && page <= 3) {
+                        org.json.JSONArray vars = p.optJSONArray("vars");
+                        int start = (page - 1) * 20;
+                        for (int k = 0; k < 20; k++) {
+                            int vIdx = start + k;
+                            int val = (vars != null && vIdx < vars.length()) ? vars.optInt(vIdx) : 0;
+                            String vs = isBinaryMode[0] ? ("0b" + Integer.toBinaryString(val)) : String.valueOf(val);
+                            vb.append(String.format(java.util.Locale.US, "var(%02d)=%-10s", vIdx, vs));
+                            if (k % 2 == 1) vb.append("\n"); else vb.append("  ");
+                        }
+                    } else if (page == 4 || page == 5) {
+                        org.json.JSONArray fvars = p.optJSONArray("fvars");
+                        int start = (page - 4) * 20;
+                        for (int k = 0; k < 20; k++) {
+                            int vIdx = start + k;
+                            double val = (fvars != null && vIdx < fvars.length()) ? fvars.optDouble(vIdx) : 0.0;
+                            vb.append(String.format(java.util.Locale.US, "fvar(%02d)=%-10.4f", vIdx, val));
+                            if (k % 2 == 1) vb.append("\n"); else vb.append("  ");
+                        }
+                    } else {
+                        org.json.JSONArray sv = p.optJSONArray("sysvars");
+                        org.json.JSONArray sfv = p.optJSONArray("sysfvars");
+                        for (int k = 0; k < 5; k++) {
+                            int val = (sv != null && k < sv.length()) ? sv.optInt(k) : 0;
+                            vb.append("sysvar(").append(k).append(")=").append(isBinaryMode[0] ? ("0b" + Integer.toBinaryString(val)) : val).append("  ");
+                        }
+                        vb.append("\n");
+                        for (int k = 0; k < 5; k++) {
+                            double val = (sfv != null && k < sfv.length()) ? sfv.optDouble(k) : 0.0;
+                            vb.append(String.format(java.util.Locale.US, "sysfvar(%d)=%.4f  ", k, val));
+                        }
+                    }
+                    tvVarDump.setText(vb.toString().trim());
+                }
+            } catch (Exception e) {
+                tvEntityList.setText(L("读取实时数据失败: ") + e.getMessage());
+            }
+        };
+
+        final Runnable updateSubTabUi = () -> {
+            Button[] sbs = new Button[]{bSubP, bSubE, bSubJ, bSubT};
+            for (int i = 0; i < sbs.length; i++) {
+                GradientDrawable gd = new GradientDrawable();
+                gd.setCornerRadius(6 * density);
+                gd.setColor(i == curSubTab[0] ? 0xFF2563EB : 0xFF334155);
+                sbs[i].setBackground(gd);
+            }
+            tvEntityList.setVisibility(curSubTab[0] == 3 ? View.GONE : View.VISIBLE);
+            trigBox.setVisibility(curSubTab[0] == 3 ? View.VISIBLE : View.GONE);
+            refreshLiveData.run();
+        };
+        bSubP.setOnClickListener(v -> { curSubTab[0] = 0; updateSubTabUi.run(); });
+        bSubE.setOnClickListener(v -> { curSubTab[0] = 1; updateSubTabUi.run(); });
+        bSubJ.setOnClickListener(v -> { curSubTab[0] = 2; updateSubTabUi.run(); });
+        bSubT.setOnClickListener(v -> { curSubTab[0] = 3; updateSubTabUi.run(); });
+        bSwitchP.setOnClickListener(v -> { selectedPlayerIdx[0]++; refreshLiveData.run(); });
+        spVarPage.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int pos, long id) { refreshLiveData.run(); }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
+        bBinToggle.setOnClickListener(v -> {
+            isBinaryMode[0] = !isBinaryMode[0];
+            bBinToggle.setText(isBinaryMode[0] ? "2进制" : "10进制");
+            refreshLiveData.run();
+        });
+        bVarRefresh.setOnClickListener(v -> refreshLiveData.run());
+        bVarCopy.setOnClickListener(v -> {
+            android.content.ClipboardManager cm = (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("ShideVars", tvVarDump.getText().toString()));
+            Toast.makeText(getContext(), L("📋 已复制变量数据到剪贴板"), Toast.LENGTH_SHORT).show();
+        });
+
+        tabPages[3] = svDbg;
+
+        // ==================== TAB 4: 对战履历 ====================
+        ScrollView svLog = new ScrollView(getContext());
+        LinearLayout logBox = new LinearLayout(getContext());
+        logBox.setOrientation(LinearLayout.VERTICAL);
+        logBox.setPadding(pad, pad, pad, pad);
+        svLog.addView(logBox);
+
+        logBox.addView(makeShideLabel(L("📜 对战履历 (save/shide_logs/log-MM月dd日-HH时mm分ss秒.txt)"), 0xFFC4B5FD));
+        LinearLayout logBtns = new LinearLayout(getContext());
+        logBtns.setOrientation(LinearLayout.HORIZONTAL);
+        Button bLogRef = makeShideBtn(L("🔄 刷新"), 0xFF0284C7);
+        Button bLogNew = makeShideBtn(L("📝 新建日志"), 0xFF059669);
+        Button bLogCopy = makeShideBtn(L("📋 复制全部"), 0xFF475569);
+        Button bLogClr = makeShideBtn(L("🗑️ 清空当前"), 0xFF991B1B);
+        logBtns.addView(bLogRef); logBtns.addView(bLogNew, bLp); logBtns.addView(bLogCopy, bLp); logBtns.addView(bLogClr, bLp);
+        logBox.addView(logBtns, rowLp);
+
+        final TextView tvLogContent = makeShideLabel("", 0xFFE2E8F0);
+        tvLogContent.setTypeface(Typeface.MONOSPACE);
+        tvLogContent.setTextSize(11);
+        tvLogContent.setBackgroundColor(0xFF161B26);
+        tvLogContent.setPadding(pad, pad, pad, pad);
+        logBox.addView(tvLogContent, rowLp);
+
+        final Runnable refreshLogUi = () -> {
+            File lf = getOrCreateShideLogFile(false);
+            String txt = readTextAutoCharset(lf);
+            tvLogContent.setText("[" + lf.getName() + "]\n" + (txt.isEmpty() ? L("(暂无记录)") : txt));
+        };
+        bLogRef.setOnClickListener(v -> refreshLogUi.run());
+        bLogNew.setOnClickListener(v -> {
+            getOrCreateShideLogFile(true);
+            appendShideLog("新建对战日志文件");
+            refreshLogUi.run();
+        });
+        bLogCopy.setOnClickListener(v -> {
+            android.content.ClipboardManager cm = (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("ShideLog", tvLogContent.getText().toString()));
+            Toast.makeText(getContext(), L("📋 已复制对战履历"), Toast.LENGTH_SHORT).show();
+        });
+        bLogClr.setOnClickListener(v -> {
+            try (FileOutputStream fos = new FileOutputStream(getOrCreateShideLogFile(false), false)) {
+                fos.write(new byte[0]);
+            } catch (Exception ignored) {}
+            refreshLogUi.run();
+        });
+        tabPages[4] = svLog;
+
+        // 挂载 5 个标签页并绑定切换事件
+        final Runnable[] selectTabRef = new Runnable[tabNames.length];
+        for (int i = 0; i < tabNames.length; i++) {
+            final int idx = i;
+            contentHost.addView(tabPages[i], new FrameLayout.LayoutParams(-1, -1));
+            tabPages[i].setVisibility(i == 0 ? View.VISIBLE : View.GONE);
+            Button tb = makeShideBtn(tabNames[i], i == 0 ? 0xFF2563EB : 0xFF1E293B);
+            tabBtns[i] = tb;
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-2, -2);
+            if (i > 0) tlp.leftMargin = (int) (6 * density);
+            tabBar.addView(tb, tlp);
+            selectTabRef[i] = () -> {
+                for (int j = 0; j < tabNames.length; j++) {
+                    tabPages[j].setVisibility(j == idx ? View.VISIBLE : View.GONE);
+                    GradientDrawable gd = new GradientDrawable();
+                    gd.setCornerRadius(6 * density);
+                    gd.setColor(j == idx ? 0xFF2563EB : 0xFF1E293B);
+                    tabBtns[j].setBackground(gd);
+                }
+                if (idx == 3) refreshLiveData.run();
+                if (idx == 4) refreshLogUi.run();
+            };
+            tb.setOnClickListener(v -> selectTabRef[idx].run());
+        }
 
         return root;
     }

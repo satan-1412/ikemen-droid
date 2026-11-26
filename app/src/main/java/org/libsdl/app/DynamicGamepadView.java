@@ -336,6 +336,7 @@ import java.util.List;
         public List<List<Integer>> macroSteps = new ArrayList<>(); 
                 
         public long pressTimestamp = 0; // 【新增】记录精准按下时间戳，用于防吃键
+        public Runnable pendingReleaseTask = null; // 【新增】组合键防过短吃帧延迟松开句柄
          public int boundGamepadKeyCode = 0; // 【新增】记录该虚拟键绑定的物理手柄键值 (0为无)
         public boolean isTurbo = false; // 【新增】是否开启连发
         public int turboInterval = 40; 
@@ -377,18 +378,19 @@ import java.util.List;
             macroSteps.clear();
             if (keyMapStr == null || keyMapStr.isEmpty()) return;
             
-            // 【修复 4】将宏的步骤分隔符从逗号改为斜杠 /
-            String[] steps = keyMapStr.toUpperCase().split("/");
+            // 【优化】统一归一化全角符号与多余空格，防止 a＋b / A + B 解析失败
+            String normalized = keyMapStr.replace('＋', '+').replace('／', '/').replace('，', ',').toUpperCase();
+            String[] steps = normalized.split("/");
             for (String step : steps) {
                 List<Integer> currentStepCodes = new ArrayList<>();
                 String[] parts = step.split("\\+");
                 for (String p : parts) {
                     int code = mapStringToKeyCode(p.trim());
-                    if (code != KeyEvent.KEYCODE_UNKNOWN) {
+                    if (code != KeyEvent.KEYCODE_UNKNOWN && !currentStepCodes.contains(code)) {
                         currentStepCodes.add(code);
                     }
                 }
-                macroSteps.add(currentStepCodes);
+                if (!currentStepCodes.isEmpty()) macroSteps.add(currentStepCodes);
             }
             if (!macroSteps.isEmpty()) keyCodes.addAll(macroSteps.get(0));
         }
@@ -533,7 +535,7 @@ import java.util.List;
         if (k.equals("DOWN")) return KeyEvent.KEYCODE_DPAD_DOWN;
         if (k.equals("LEFT")) return KeyEvent.KEYCODE_DPAD_LEFT;
         if (k.equals("RIGHT")) return KeyEvent.KEYCODE_DPAD_RIGHT;
-        if (k.equals("ENTER") || k.equals("RETURN")) return KeyEvent.KEYCODE_ENTER;
+        if (k.equals("ENTER") || k.equals("RETURN") || k.equals("START")) return KeyEvent.KEYCODE_ENTER;
         if (k.equals("SPACE")) return KeyEvent.KEYCODE_SPACE;
         if (k.equals("ESC") || k.equals("ESCAPE")) return KeyEvent.KEYCODE_ESCAPE;
         // 【新增】全面兼容 PC 游戏常用的控制键
@@ -1796,6 +1798,10 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
             }
             
             if (!btn.isPressed && isTouchedNow) {
+                if (btn.pendingReleaseTask != null) {
+                    removeCallbacks(btn.pendingReleaseTask);
+                    btn.pendingReleaseTask = null;
+                }
                 btn.isPressed = true;
                 btn.pressTimestamp = System.currentTimeMillis();
                 triggerVibrate(btn.useCustomVib ? btn.customVib : vibrationIntensity);
@@ -1813,8 +1819,22 @@ String localUriStr = saveImageToLocal(raw, "skin_" + System.currentTimeMillis() 
                 if (btn.isTurbo) {
                     btn.stopTurbo();
                 } else if (btn.macroSteps.size() <= 1 && !btn.macroSteps.isEmpty()) {
-                    // 立即派发释放信号，杜绝 50ms 延迟造成的 66 前冲连点粘连吞键
-                    for (int code : btn.macroSteps.get(0)) sendProxyKeyUp(code);
+                    final List<Integer> codesToRel = new ArrayList<>(btn.macroSteps.get(0));
+                    long heldMs = System.currentTimeMillis() - btn.pressTimestamp;
+                    // 单键仍 0 延迟立刻松开（保障 66 前冲）；多键同时组合键（如 A+B）保底维持 42ms，防止极短点按跨过引擎 60fps 采样帧被吃键
+                    if (codesToRel.size() > 1 && heldMs < 42) {
+                        final VirtualButton fBtn = btn;
+                        Runnable relTask = () -> {
+                            fBtn.pendingReleaseTask = null;
+                            if (!fBtn.isPressed) {
+                                for (int code : codesToRel) sendProxyKeyUp(code);
+                            }
+                        };
+                        btn.pendingReleaseTask = relTask;
+                        postDelayed(relTask, 42 - heldMs);
+                    } else {
+                        for (int code : codesToRel) sendProxyKeyUp(code);
+                    }
                 }
             }
         }

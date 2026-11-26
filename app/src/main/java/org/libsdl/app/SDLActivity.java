@@ -318,6 +318,26 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     protected String[] getArguments() {
+        // 【十德ik汉化加强版】：优先消费一次性外部启动参数（快速VS / 连续对战 / 配置启动）
+        try {
+            SharedPreferences desktopPrefs = getSharedPreferences("IkemenDesktopPrefs", Context.MODE_PRIVATE);
+            String pendingShide = desktopPrefs.getString("shide_pending_args", "");
+            if (pendingShide != null && !pendingShide.trim().isEmpty()) {
+                desktopPrefs.edit().remove("shide_pending_args").apply();
+                org.json.JSONArray arr = new org.json.JSONArray(pendingShide);
+                if (arr.length() > 0) {
+                    String[] customArgs = new String[arr.length()];
+                    for (int i = 0; i < arr.length(); i++) {
+                        customArgs[i] = arr.optString(i, "");
+                    }
+                    Log.i("SDL", "ShideIK launch args count=" + customArgs.length);
+                    return customArgs;
+                }
+            }
+        } catch (Exception e) {
+            Log.e("SDL", "ShideIK args parse error: " + e.getMessage());
+        }
+
         // 【王者归来】：全自动智能嗅探整合包的真实 UI 路径 
         SharedPreferences gamepadPrefs = getSharedPreferences("IkemenGamepad_Pro_V5", Context.MODE_PRIVATE);
         if (gamepadPrefs.getBoolean("IntegrationMode", false)) {
@@ -446,6 +466,22 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     public static final int FOLDER_PICKER_PRESET_CODE = 46; // 【新增】：预设文件夹专属的选择码
     private SharedPreferences mSharedPrefs;
     private static String mBasePath;
+
+    // 【新增】供桌面模式工具读取当前实际加载的游戏根目录
+    public static String getCurrentGamePath() {
+        if (mBasePath != null && !mBasePath.isEmpty()) return mBasePath;
+        if (mSingleton != null) {
+            try {
+                if (mSingleton.mSharedPrefs != null) {
+                    String saved = mSingleton.mSharedPrefs.getString(mSingleton.getString(R.string.game_folder_key), "");
+                    if (saved != null && !saved.isEmpty()) return saved;
+                }
+                File ext = mSingleton.getExternalFilesDir(null);
+                if (ext != null) return ext.getAbsolutePath();
+            } catch (Exception ignored) {}
+        }
+        return "";
+    }
     private Button mSDButton;
     private ControllerOverlay mControllerOverlay;
     private final Runnable hideRunnable = new Runnable() {
