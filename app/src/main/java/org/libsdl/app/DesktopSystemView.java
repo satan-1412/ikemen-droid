@@ -1928,7 +1928,7 @@ public class DesktopSystemView extends Dialog {
                 d.dismiss();
                 new Thread(() -> {
                     boolean upgraded = ensureSffV2(sffPath);
-                    boolean ok = Api.deleteSffFrame(sffPath, f.group, f.item);
+                    boolean ok = deleteSffFrameSafe(sffPath, f.group, f.item);
                     uiHandler.post(() -> {
                         if (ok) { Toast.makeText(getContext(), upgraded ? L("✅ 帧已永久删除（已自动升级为 SFFv2.01）！") : L("✅ 帧已永久删除！"), Toast.LENGTH_SHORT).show(); reloadFromDisk.run(); }
                         else { Toast.makeText(getContext(), L("❌ 删除失败"), Toast.LENGTH_SHORT).show(); }
@@ -2301,7 +2301,7 @@ public class DesktopSystemView extends Dialog {
                         cd.dismiss();
                         stopAudioSafely.run();
                         new Thread(() -> {
-                            boolean success = api.Api.deleteSndAudio(sndPath, n.group, n.item);
+                            boolean success = deleteSndAudioSafe(sndPath, n.group, n.item);
                             uiHandler.post(() -> {
                                 if (success) {
                                     Toast.makeText(getContext(), L("✅ 音频已永久删除！"), Toast.LENGTH_SHORT).show();
@@ -4014,7 +4014,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             }
                                         }
                                     }
-                                    if (!keepAsIs) { Api.deleteSffFrame(finalSffFile.getAbsolutePath(), f.group, f.item); }
+                                    if (!keepAsIs) { deleteSffFrameSafe(finalSffFile.getAbsolutePath(), f.group, f.item); }
                                 }
                             }
                         } else { 
@@ -4327,6 +4327,254 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         buf[off + 1] = (byte)((v >>> 8) & 0xFF);
         buf[off + 2] = (byte)((v >>> 16) & 0xFF);
         buf[off + 3] = (byte)((v >>> 24) & 0xFF);
+    }
+
+    private int readLe16Bytes(byte[] b, int off) {
+        return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8);
+    }
+
+    private int readLe32Bytes(byte[] b, int off) {
+        return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
+    }
+
+    private void putLe16Bytes(byte[] b, int off, int v) {
+        b[off] = (byte)(v & 0xFF);
+        b[off + 1] = (byte)((v >>> 8) & 0xFF);
+    }
+
+    // 读取 SFFv1 每帧子头的 samePalette 标志（1=共享角色1P色表，0=帧自带独立色表），用于精准还原移植技能颜色
+    private java.util.HashMap<String, Boolean> readSffV1SamePalMap(File sffFile) {
+        java.util.HashMap<String, Boolean> map = new java.util.HashMap<>();
+        if (sffFile == null || !sffFile.exists() || sffFile.length() < 512) return map;
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
+            byte[] hdr = new byte[32];
+            raf.readFully(hdr);
+            if (!"ElecbyteSpr".equals(new String(hdr, 0, 11, "US-ASCII"))) return map;
+            int verHi = hdr[15] & 0xFF;
+            if (verHi != 1) return map;
+            int numImages = readLe32Bytes(hdr, 20);
+            int nextOff = readLe32Bytes(hdr, 24);
+            long fileLen = raf.length();
+            byte[] sub = new byte[32];
+            int guard = Math.min(Math.max(numImages + 64, 4096), 200000);
+            for (int c = 0; c < guard && nextOff >= 32 && nextOff + 32 <= fileLen; c++) {
+                raf.seek(nextOff);
+                raf.readFully(sub);
+                int nNext = readLe32Bytes(sub, 0);
+                int g = readLe16Bytes(sub, 12);
+                int i = readLe16Bytes(sub, 14);
+                boolean samePal = (sub[18] != 0);
+                map.put(g + "," + i, samePal);
+                if (nNext <= nextOff) break;
+                nextOff = nNext;
+            }
+        } catch (Throwable ignored) {}
+        return map;
+    }
+
+    // 自动关闭当前游戏 save/config.ini 中的 PngSpriteFilter，防止 Ikemen GO 对 SFFv2 PNG32 精灵施加双线性模糊
+    private void ensureCrispPngSpriteFilter() {
+        try {
+            String basePath = (SDLActivity.mSingleton != null && SDLActivity.mSingleton.mBasePath != null)
+                    ? SDLActivity.mSingleton.mBasePath : "";
+            if (basePath.isEmpty()) return;
+            File cfg = new File(basePath, "save/config.ini");
+            if (!cfg.exists() || !cfg.isFile()) return;
+            String raw = readTextAutoCharset(cfg);
+            if (raw.isEmpty()) return;
+            String normalized = raw.replace("\r\n", "\n");
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("(?im)^(\\s*PngSpriteFilter\\s*=\\s*)(true|1)(\\s*(?:;.*)?)$");
+            if (p.matcher(normalized).find()) {
+                String updated = p.matcher(normalized).replaceAll("$1false$3");
+                try (FileOutputStream fos = new FileOutputStream(cfg, false)) {
+                    fos.write(updated.getBytes("UTF-8"));
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    // 安全删除 SFF 帧：优先调用底层 API，若对 SFFv2.01 失败则自动走纯 Java 无损二进制节点剔除兜底
+    private boolean deleteSffFrameSafe(String sffPath, int group, int item) {
+        if (sffPath == null || sffPath.trim().isEmpty()) return false;
+        try {
+            if (Api.deleteSffFrame(sffPath, group, item)) return true;
+        } catch (Throwable ignored) {}
+        File f = new File(sffPath);
+        if (!f.exists() || f.length() < 512) return false;
+        try {
+            byte[] header = new byte[512];
+            try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(f, "r")) {
+                raf.readFully(header);
+                if (!"ElecbyteSpr".equals(new String(header, 0, 11, "US-ASCII"))) return false;
+                int verHi = header[15] & 0xFF;
+                if (verHi != 2) return false;
+                int sprOff = readLe32Bytes(header, 36);
+                int numSpr = readLe32Bytes(header, 40);
+                int palOff = readLe32Bytes(header, 44);
+                int ldataOff = readLe32Bytes(header, 52);
+                int tdataOff = readLe32Bytes(header, 60);
+                if (numSpr <= 0 || sprOff < 512 || sprOff + (long) numSpr * 28 > raf.length()) return false;
+
+                byte[][] nodes = new byte[numSpr][28];
+                raf.seek(sprOff);
+                for (int i = 0; i < numSpr; i++) raf.readFully(nodes[i]);
+
+                boolean[] removeFlag = new boolean[numSpr];
+                int removeCnt = 0;
+                for (int i = 0; i < numSpr; i++) {
+                    int g = readLe16Bytes(nodes[i], 0);
+                    int it = readLe16Bytes(nodes[i], 2);
+                    if (g == group && it == item) {
+                        removeFlag[i] = true;
+                        removeCnt++;
+                    }
+                }
+                if (removeCnt == 0) return false;
+
+                // 若存在链接帧指向待删节点，先将像素元数据继承给该链接帧，避免删除后断链
+                for (int i = 0; i < numSpr; i++) {
+                    if (removeFlag[i]) continue;
+                    int dLen = readLe32Bytes(nodes[i], 20);
+                    if (dLen == 0) {
+                        int linkIdx = readLe16Bytes(nodes[i], 12);
+                        int hops = 0;
+                        while (linkIdx >= 0 && linkIdx < numSpr && readLe32Bytes(nodes[linkIdx], 20) == 0 && hops < 32) {
+                            linkIdx = readLe16Bytes(nodes[linkIdx], 12);
+                            hops++;
+                        }
+                        if (linkIdx >= 0 && linkIdx < numSpr && removeFlag[linkIdx]) {
+                            System.arraycopy(nodes[linkIdx], 4, nodes[i], 4, 4);
+                            putLe16Bytes(nodes[i], 12, 0);
+                            System.arraycopy(nodes[linkIdx], 14, nodes[i], 14, 14);
+                        }
+                    }
+                }
+
+                int[] oldToNew = new int[numSpr];
+                int newIdx = 0;
+                for (int i = 0; i < numSpr; i++) {
+                    if (removeFlag[i]) oldToNew[i] = -1;
+                    else oldToNew[i] = newIdx++;
+                }
+
+                for (int i = 0; i < numSpr; i++) {
+                    if (removeFlag[i]) continue;
+                    int dLen = readLe32Bytes(nodes[i], 20);
+                    if (dLen == 0) {
+                        int oldLink = readLe16Bytes(nodes[i], 12);
+                        int mapped = (oldLink >= 0 && oldLink < numSpr && oldToNew[oldLink] >= 0) ? oldToNew[oldLink] : 0;
+                        putLe16Bytes(nodes[i], 12, mapped);
+                    }
+                }
+
+                int deltaBytes = removeCnt * 28;
+                int tailStart = sprOff + numSpr * 28;
+                putLe32(header, 40, numSpr - removeCnt);
+                if (palOff >= tailStart) putLe32(header, 44, palOff - deltaBytes);
+                if (ldataOff >= tailStart) putLe32(header, 52, ldataOff - deltaBytes);
+                if (tdataOff >= tailStart) putLe32(header, 60, tdataOff - deltaBytes);
+
+                File tmpOut = new File(sffPath + ".del.tmp");
+                try (java.io.BufferedOutputStream bos = new java.io.BufferedOutputStream(new FileOutputStream(tmpOut))) {
+                    bos.write(header);
+                    if (sprOff > 512) {
+                        raf.seek(512);
+                        byte[] pad = new byte[sprOff - 512];
+                        raf.readFully(pad);
+                        bos.write(pad);
+                    }
+                    for (int i = 0; i < numSpr; i++) {
+                        if (!removeFlag[i]) bos.write(nodes[i]);
+                    }
+                    raf.seek(tailStart);
+                    byte[] buf = new byte[16384];
+                    int r;
+                    while ((r = raf.read(buf)) > 0) bos.write(buf, 0, r);
+                }
+                if (f.delete()) {
+                    if (!tmpOut.renameTo(f)) { copyFileToSandbox(tmpOut, f); tmpOut.delete(); }
+                } else {
+                    copyFileToSandbox(tmpOut, f);
+                    tmpOut.delete();
+                }
+                return true;
+            }
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    // 安全删除 SND 音频：优先调用底层 API，失败时走纯 Java 二进制链表剔除兜底
+    private boolean deleteSndAudioSafe(String sndPath, int group, int item) {
+        if (sndPath == null || sndPath.trim().isEmpty()) return false;
+        try {
+            if (api.Api.deleteSndAudio(sndPath, group, item)) return true;
+        } catch (Throwable ignored) {}
+        File f = new File(sndPath);
+        if (!f.exists() || f.length() < 512) return false;
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(f, "r")) {
+            byte[] header = new byte[512];
+            raf.readFully(header);
+            if (!"ElecbyteSnd".equals(new String(header, 0, 11, "US-ASCII"))) return false;
+            int numSounds = readLe32Bytes(header, 16);
+            int firstOff = readLe32Bytes(header, 20);
+            long fileLen = raf.length();
+            java.util.ArrayList<int[]> keptMeta = new java.util.ArrayList<>();
+            int curOff = firstOff;
+            boolean removedAny = false;
+            byte[] sub = new byte[16];
+            for (int c = 0; c < Math.max(numSounds + 16, 10000) && curOff >= 512 && curOff + 16 <= fileLen; c++) {
+                raf.seek(curOff);
+                raf.readFully(sub);
+                int nextOff = readLe32Bytes(sub, 0);
+                int dataLen = readLe32Bytes(sub, 4);
+                int g = readLe32Bytes(sub, 8);
+                int it = readLe32Bytes(sub, 12);
+                if (g == group && it == item) {
+                    removedAny = true;
+                } else if (dataLen >= 0 && curOff + 16L + dataLen <= fileLen) {
+                    keptMeta.add(new int[]{curOff + 16, dataLen, g, it});
+                }
+                if (nextOff <= curOff || nextOff >= fileLen) break;
+                curOff = nextOff;
+            }
+            if (!removedAny) return false;
+
+            putLe32(header, 16, keptMeta.size());
+            putLe32(header, 20, keptMeta.isEmpty() ? 0 : 512);
+            File tmpOut = new File(sndPath + ".del.tmp");
+            try (java.io.BufferedOutputStream bos = new java.io.BufferedOutputStream(new FileOutputStream(tmpOut))) {
+                bos.write(header);
+                int writeOff = 512;
+                byte[] buf = new byte[16384];
+                for (int idx = 0; idx < keptMeta.size(); idx++) {
+                    int[] m = keptMeta.get(idx);
+                    int nextWriteOff = (idx == keptMeta.size() - 1) ? 0 : (writeOff + 16 + m[1]);
+                    writeLe32(bos, nextWriteOff);
+                    writeLe32(bos, m[1]);
+                    writeLe32(bos, m[2]);
+                    writeLe32(bos, m[3]);
+                    raf.seek(m[0]);
+                    int rem = m[1];
+                    while (rem > 0) {
+                        int r = raf.read(buf, 0, Math.min(buf.length, rem));
+                        if (r <= 0) break;
+                        bos.write(buf, 0, r);
+                        rem -= r;
+                    }
+                    writeOff = nextWriteOff;
+                }
+            }
+            if (f.delete()) {
+                if (!tmpOut.renameTo(f)) { copyFileToSandbox(tmpOut, f); tmpOut.delete(); }
+            } else {
+                copyFileToSandbox(tmpOut, f);
+                tmpOut.delete();
+            }
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     // 统一升级任意格式 SFF（空文件 / SFFv1 / SFFv2.00）为标准 MUGEN 1.1 SFFv2.01（已是 v2.01 则零改动直接跳过）
@@ -7206,24 +7454,104 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         List<CharHitItem> hits = new ArrayList<>();
     }
 
+    private boolean isStrictUtf8(byte[] raw) {
+        if (raw == null || raw.length == 0) return true;
+        try {
+            java.nio.charset.CharsetDecoder dec = java.nio.charset.StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT);
+            dec.decode(java.nio.ByteBuffer.wrap(raw));
+            return true;
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
+    private int scoreDecodedText(String s, String csName) {
+        if (s == null || s.isEmpty()) return Integer.MIN_VALUE;
+        int score = 0;
+        int len = Math.min(s.length(), 12000);
+        int kana = 0, hangul = 0, cjk = 0, bad = 0;
+        for (int i = 0; i < len; i++) {
+            char c = s.charAt(i);
+            if (c == '\uFFFD') { bad += 10; continue; }
+            if (c < 0x20 && c != '\r' && c != '\n' && c != '\t') { bad += 5; continue; }
+            if (c >= 0x3040 && c <= 0x30FF) kana++;
+            else if (c >= 0xAC00 && c <= 0xD7AF) hangul++;
+            else if (c >= 0x4E00 && c <= 0x9FFF) cjk++;
+            else if (c >= 0xFF61 && c <= 0xFF9F) bad += 2;
+        }
+        score += kana * 8 + hangul * 8 + cjk * 3 - bad * 12;
+        if ("MS932".equalsIgnoreCase(csName) || "Shift_JIS".equalsIgnoreCase(csName)) score += kana * 4;
+        if ("x-windows-949".equalsIgnoreCase(csName) || "EUC-KR".equalsIgnoreCase(csName)) score += hangul * 4;
+        if ("GBK".equalsIgnoreCase(csName) || "GB18030".equalsIgnoreCase(csName)) score += cjk * 2;
+        return score;
+    }
+
     private String readTextAutoCharset(File f) {
         if (f == null || !f.exists() || !f.isFile()) return "";
         try {
             byte[] raw = readFully(f);
+            if (raw.length == 0) return "";
             if (raw.length >= 3 && (raw[0] & 0xFF) == 0xEF && (raw[1] & 0xFF) == 0xBB && (raw[2] & 0xFF) == 0xBF) {
-                return new String(raw, 3, raw.length - 3, "UTF-8");
+                return new String(raw, 3, raw.length - 3, java.nio.charset.StandardCharsets.UTF_8);
             }
-            String utf8 = new String(raw, "UTF-8");
-            if (!utf8.contains("\uFFFD")) return utf8;
-            try {
-                String sjis = new String(raw, "Shift_JIS");
-                if (!sjis.contains("\uFFFD")) return sjis;
-            } catch (Exception ignored) {}
-            try { return new String(raw, "GBK"); } catch (Exception ignored) {}
-            return utf8;
+            if (raw.length >= 2 && (raw[0] & 0xFF) == 0xFF && (raw[1] & 0xFF) == 0xFE) {
+                return new String(raw, 2, raw.length - 2, java.nio.charset.StandardCharsets.UTF_16LE);
+            }
+            if (raw.length >= 2 && (raw[0] & 0xFF) == 0xFE && (raw[1] & 0xFF) == 0xFF) {
+                return new String(raw, 2, raw.length - 2, java.nio.charset.StandardCharsets.UTF_16BE);
+            }
+            if (isStrictUtf8(raw)) {
+                return new String(raw, java.nio.charset.StandardCharsets.UTF_8);
+            }
+            String[] candidates = new String[]{"MS932", "Shift_JIS", "GB18030", "GBK", "x-windows-949", "EUC-KR", "Big5", "Windows-1252"};
+            String bestText = null;
+            int bestScore = Integer.MIN_VALUE;
+            for (String csName : candidates) {
+                try {
+                    if (!java.nio.charset.Charset.isSupported(csName)) continue;
+                    java.nio.charset.CharsetDecoder dec = java.nio.charset.Charset.forName(csName).newDecoder()
+                            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT);
+                    String decoded = dec.decode(java.nio.ByteBuffer.wrap(raw)).toString();
+                    int sc = scoreDecodedText(decoded, csName);
+                    if (sc > bestScore) {
+                        bestScore = sc;
+                        bestText = decoded;
+                    }
+                } catch (Throwable ignored) {}
+            }
+            if (bestText != null) return bestText;
+            for (String csName : new String[]{"MS932", "GBK", "x-windows-949", "Windows-1252"}) {
+                try {
+                    if (java.nio.charset.Charset.isSupported(csName)) return new String(raw, csName);
+                } catch (Throwable ignored) {}
+            }
+            return new String(raw, java.nio.charset.StandardCharsets.UTF_8);
         } catch (Exception e) {
             return "";
         }
+    }
+
+    // 若目标角色的 CNS/ST/CMD 含非 UTF-8 遗留编码字节，先自动备份再统一转为 UTF-8，彻底避免指令名乱码匹配失败闪退
+    private void ensureFileUtf8IfNeeded(File f) {
+        if (f == null || !f.exists() || !f.isFile()) return;
+        try {
+            byte[] raw = readFully(f);
+            if (raw.length == 0) return;
+            boolean hasNonAscii = false;
+            for (byte b : raw) { if ((b & 0x80) != 0) { hasNonAscii = true; break; } }
+            if (!hasNonAscii || isStrictUtf8(raw)) return;
+            File bak = new File(f.getAbsolutePath() + ".bak");
+            if (!bak.exists()) copyFileToSandbox(f, bak);
+            String decoded = readTextAutoCharset(f);
+            if (!decoded.isEmpty()) {
+                try (FileOutputStream fos = new FileOutputStream(f, false)) {
+                    fos.write(decoded.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     private File resolveCharSubFile(File baseDir, String relPath) {
@@ -7433,6 +7761,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     out = out.replaceAll("(?i)(hitoverride\\s*\\{[^}]*?\\bstateno\\s*:\\s*)" + os + "\\b", "$1" + ns);
                     out = out.replaceAll("(?i)(\\b(?:p1stateno|p2stateno)\\s*:\\s*)" + os + "\\b", "$1" + ns);
                     out = out.replaceAll("(?i)(\\b(?:stateno|prevstateno|p2stateno)\\s*(?:=|!=)\\s*)" + os + "\\b", "$1" + ns);
+                    out = out.replaceAll("(?i)(\\b(?:stateno|prevstateno|p2stateno)\\s*(?:=|!=)\\s*[\\[\\(]\\s*)" + os + "(\\s*,)", "$1" + ns + "$2");
+                    out = out.replaceAll("(?i)(\\b(?:stateno|prevstateno|p2stateno)\\s*(?:=|!=)\\s*[\\[\\(][^\\]\\)\\r\\n]*,\\s*)" + os + "(\\s*[\\]\\)])", "$1" + ns + "$2");
                 }
             }
             if (animRemap != null) {
@@ -7464,6 +7794,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                             int os = en.getKey(), ns = en.getValue();
                             if (os == ns) continue;
                             cp = cp.replaceAll("(?i)(\\b(?:stateno|prevstateno|p2stateno)\\s*(?:=|!=)\\s*)" + os + "\\b", "$1" + ns);
+                            cp = cp.replaceAll("(?i)(\\b(?:stateno|prevstateno|p2stateno)\\s*(?:=|!=)\\s*[\\[\\(]\\s*)" + os + "(\\s*,)", "$1" + ns + "$2");
+                            cp = cp.replaceAll("(?i)(\\b(?:stateno|prevstateno|p2stateno)\\s*(?:=|!=)\\s*[\\[\\(][^\\]\\)\\r\\n]*,\\s*)" + os + "(\\s*[\\]\\)])", "$1" + ns + "$2");
                         }
                     }
                     if (animRemap != null) {
@@ -8900,6 +9232,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             occSff.add(tf.group + "," + tf.item);
                                             if (tf.group > maxG && tf.group < 9000) maxG = tf.group;
                                         }
+                                        java.util.HashMap<String, Boolean> sffV1SamePalMap = readSffV1SamePalMap(sffFileRef[0]);
                                         for (java.util.Map.Entry<String, int[]> en : uniqSff.entrySet()) {
                                             int og = en.getValue()[0], oi = en.getValue()[1];
                                             int ng = og, ni = oi;
@@ -8917,9 +9250,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             }
                                             occSff.add(ng + "," + ni);
                                             sffRemap.put(og + "," + oi, new int[]{ng, ni});
-                                            // 默认传 "" 使用每帧自身的原生内置色表（SFFv2 palIdx / SFFv1 内嵌色表），绝不强套 pal1.act 破坏特效颜色！
-                                            String primaryAct = useForcedAct ? srcActPath : "";
-                                            String fallbackAct = useForcedAct ? "" : srcActPath;
+                                            // 精准色表分流：SFFv1 共享色表帧自动走源角色 1P 色表，独立色表帧/SFFv2 走原生内置色表，绝不偏色！
+                                            boolean frameNeedsCharAct = useForcedAct || Boolean.TRUE.equals(sffV1SamePalMap.get(og + "," + oi));
+                                            String primaryAct = frameNeedsCharAct ? srcActPath : "";
+                                            String fallbackAct = frameNeedsCharAct ? "" : srcActPath;
                                             byte[] pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, primaryAct);
                                             if ((pngBytes == null || pngBytes.length == 0) && !fallbackAct.equals(primaryAct)) {
                                                 pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, fallbackAct);
@@ -8936,7 +9270,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                                         if (origBmp != null && origBmp.getWidth() > 0 && origBmp.getHeight() > 0) {
                                                             int nw = Math.max(1, Math.round(origBmp.getWidth() * fScaleX));
                                                             int nh = Math.max(1, Math.round(origBmp.getHeight() * fScaleY));
-                                                            Bitmap scaledBmp = Bitmap.createScaledBitmap(origBmp, nw, nh, true);
+                                                            // 关闭双线性滤波（false = 最近邻采样），彻底保持像素画锐利不模糊！
+                                                            Bitmap scaledBmp = Bitmap.createScaledBitmap(origBmp, nw, nh, false);
                                                             try (FileOutputStream fos = new FileOutputStream(tmpPng)) {
                                                                 scaledBmp.compress(Bitmap.CompressFormat.PNG, 100, fos);
                                                             }
@@ -8958,6 +9293,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                                 sffFail++;
                                             }
                                         }
+                                        if (sffOk > 0) ensureCrispPngSpriteFilter();
                                     }
                                 }
 
@@ -9151,22 +9487,43 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     // 同步改写所有捆绑父子状态间的交叉调用号以及触发器中的 StateNo/Anim 引用
                                     String cnsBodyStr = rewriteSkillCrossStateRefs(cnsOut.toString().trim(), bsIsZss, stateRemap, animRemap);
 
-                                    // 仅对未一起捆绑且目标角色不存在的跳转状态做防卡死保护（已捆绑进来的父/子状态全部保留！）
+                                    // 全面防卡死 + 根治残影/分身/滞留飞刀/偏色保护（已捆绑的父子状态完整保留）
                                     if (!bsIsZss) {
+                                        java.util.ArrayList<String> rawBlocks = new java.util.ArrayList<>();
+                                        StringBuilder curBlk = new StringBuilder();
+                                        for (String sl : cnsBodyStr.split("\n", -1)) {
+                                            String lw = sl.trim().toLowerCase();
+                                            if ((lw.startsWith("[state ") || lw.startsWith("[statedef ")) && curBlk.length() > 0) {
+                                                rawBlocks.add(curBlk.toString());
+                                                curBlk.setLength(0);
+                                            }
+                                            curBlk.append(sl).append("\n");
+                                        }
+                                        if (curBlk.length() > 0) rawBlocks.add(curBlk.toString());
+
                                         StringBuilder safeCns = new StringBuilder();
-                                        String[] sLines = cnsBodyStr.split("\n", -1);
-                                        String curScType = "";
                                         java.util.regex.Pattern pValNum = java.util.regex.Pattern.compile("(?i)^(\\s*(?:value|stateno)\\s*=\\s*)(\\d+)(.*)$");
                                         java.util.regex.Pattern pP1St = java.util.regex.Pattern.compile("(?i)^(\\s*p1stateno\\s*=\\s*)(\\d+)(.*)$");
-                                        for (String sl : sLines) {
-                                            int ci = sl.indexOf(';');
-                                            String cp = (ci >= 0 ? sl.substring(0, ci) : sl);
-                                            String cm = (ci >= 0 ? sl.substring(ci) : "");
-                                            String tr = cp.trim();
-                                            String lw = tr.toLowerCase();
-                                            if (lw.startsWith("[state ") || lw.startsWith("[statedef ")) curScType = "";
-                                            else if (lw.matches("^type\\s*=\\s*[a-z0-9_]+$")) curScType = lw.substring(lw.indexOf('=') + 1).trim();
-                                            else {
+                                        for (String blk : rawBlocks) {
+                                            String curScType = "";
+                                            java.util.regex.Matcher tm = java.util.regex.Pattern.compile("(?im)^\\s*type\\s*=\\s*([a-z0-9_]+)").matcher(blk);
+                                            if (tm.find()) curScType = tm.group(1).toLowerCase();
+
+                                            boolean isHelperBlk = curScType.equals("helper");
+                                            boolean isExplodBlk = curScType.equals("explod");
+                                            boolean isAfterImgBlk = curScType.equals("afterimage");
+                                            boolean hasOwnPal = java.util.regex.Pattern.compile("(?im)^\\s*ownpal\\s*=").matcher(blk).find();
+                                            boolean hasRemOnHit = java.util.regex.Pattern.compile("(?im)^\\s*removeongethit\\s*=").matcher(blk).find();
+                                            boolean disableBrokenHelper = false;
+
+                                            StringBuilder blkOut = new StringBuilder();
+                                            for (String sl : blk.split("\n", -1)) {
+                                                int ci = sl.indexOf(';');
+                                                String cp = (ci >= 0 ? sl.substring(0, ci) : sl);
+                                                String cm = (ci >= 0 ? sl.substring(ci) : "");
+                                                String tr = cp.trim();
+                                                String lw = tr.toLowerCase();
+
                                                 java.util.regex.Matcher mp1 = pP1St.matcher(cp);
                                                 if (mp1.find()) {
                                                     try {
@@ -9184,16 +9541,61 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                                             int tgt = Integer.parseInt(mvn.group(2));
                                                             boolean okTgt = (allocUsedStates.contains(tgt) || (tgt >= 0 && tgt <= 199) || (tgt >= 5000 && tgt <= 5999));
                                                             if (!okTgt) {
-                                                                cp = mvn.group(1) + "0 ; [IK防卡死: 原目标状态 " + tgt + " 不存在，已安全回站立]";
-                                                                if (curScType.equals("changestate")) cp += "\nctrl = 1";
+                                                                if (curScType.equals("changestate")) {
+                                                                    // 绝不让 Helper 跳进 State 0 变成站立分身残影！
+                                                                    cp = mvn.group(1) + "ifelse(IsHelper, " + mappedStNo + ", ifelse(Pos Y < 0, 50, 0)) ; [IK防分身: 原目标状态 " + tgt + " 不存在]";
+                                                                } else {
+                                                                    cp = mvn.group(1) + "0 ; [IK防卡死: 原目标状态 " + tgt + " 不存在]";
+                                                                }
                                                                 fixedMissingTargets++;
                                                             }
                                                         } catch (Exception ignored) {}
                                                     }
+                                                } else if (isHelperBlk && lw.startsWith("stateno")) {
+                                                    java.util.regex.Matcher mvn = pValNum.matcher(cp);
+                                                    if (mvn.find()) {
+                                                        try {
+                                                            int tgt = Integer.parseInt(mvn.group(2));
+                                                            boolean okTgt = (allocUsedStates.contains(tgt) || (tgt >= 0 && tgt <= 199) || (tgt >= 5000 && tgt <= 5999));
+                                                            if (!okTgt) {
+                                                                disableBrokenHelper = true;
+                                                                cp = "; [IK防分身残影: 缺失子状态 Helper stateno=" + tgt + " 已屏蔽] " + tr;
+                                                                fixedMissingTargets++;
+                                                            }
+                                                        } catch (Exception ignored) {}
+                                                    }
+                                                } else if (isExplodBlk && lw.matches("^removetime\\s*=\\s*-1\\b.*")) {
+                                                    // 防止永久滞留型 Explod（如插在身上的刀/光效）在技能结束后永不消失
+                                                    cp = "removetime = -2 ; [IK防残影: 永久特效改为播完自动消失]";
+                                                } else if (isAfterImgBlk && lw.matches("^time\\s*=\\s*-1\\b.*")) {
+                                                    // 防止永久残影 AfterImage time=-1 永不清除
+                                                    cp = "time = 30 ; [IK防残影: 永久残影改为有限时长]";
                                                 }
+                                                blkOut.append(cp).append(cm).append("\n");
                                             }
-                                            safeCns.append(cp).append(cm).append("\n");
+                                            String finalBlk = blkOut.toString().trim();
+                                            if (disableBrokenHelper) {
+                                                finalBlk = finalBlk.replaceFirst("(?im)^(\\s*type\\s*=\\s*helper.*)", "$1\ntriggerall = 0 ; [IK防分身屏蔽]");
+                                            }
+                                            if ((isExplodBlk || isHelperBlk) && !hasOwnPal && !disableBrokenHelper) {
+                                                finalBlk += "\nownpal = 1 ; [IK防偏色: 保持技能独立色表]";
+                                            }
+                                            if (isExplodBlk && !hasRemOnHit) {
+                                                finalBlk += "\nremoveongethit = 1";
+                                            }
+                                            safeCns.append(finalBlk).append("\n\n");
                                         }
+                                        // 为所有移植状态追加 Helper 自动清场与自毁兜底（先清 Helper 自身 Explod，1帧后自毁，杜绝分身与滞留飞刀！）
+                                        safeCns.append("[State ").append(mappedStNo).append(", IK_HelperAutoCleanExplod]\n")
+                                               .append("type = RemoveExplod\n")
+                                               .append("trigger1 = IsHelper && ((Root, Ctrl = 1 && Time >= 45) || (Root, StateNo = 0 && Time >= 60) || Time >= 360)\n\n")
+                                               .append("[State ").append(mappedStNo).append(", IK_HelperAutoDestroy]\n")
+                                               .append("type = DestroySelf\n")
+                                               .append("trigger1 = IsHelper && ((Root, Ctrl = 1 && Time >= 46) || (Root, StateNo = 0 && Time >= 61) || Time >= 361)\n\n")
+                                               .append("[State ").append(mappedStNo).append(", IK_AfterImageSafeClear]\n")
+                                               .append("type = AfterImageTime\n")
+                                               .append("trigger1 = !IsHelper && (AnimTime = 0 || MoveType = H)\n")
+                                               .append("value = 0\n");
                                         cnsBodyStr = safeCns.toString().trim();
                                     }
 
@@ -9353,7 +9755,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     }
                                 }
 
-                                // ⑤ 目标 .cmd 自动体检自愈（清除空 [Command] / 空 command= 与缺指令孤儿触发器）+ 覆盖融合清理 + 组合键直出注入
+                                // ⑤ 统一目标角色所有非 UTF-8 的状态文件编码（自动备份 .bak），杜绝 .cmd 转 UTF-8 后与其他 .cns 编码错位导致指令名乱码闪退
+                                for (File tsfEnc : tAllStFiles) {
+                                    ensureFileUtf8IfNeeded(tsfEnc);
+                                }
+                                // 目标 .cmd 自动体检自愈（清除空 [Command] / 空 command= 与缺指令孤儿触发器）+ 覆盖融合清理 + 组合键直出注入
                                 File cmdBak = new File(tCmd.getAbsolutePath() + ".bak");
                                 if (!cmdBak.exists()) copyFileToSandbox(tCmd, cmdBak);
                                 String cmdOrig = readTextAutoCharset(tCmd).replace("\r\n", "\n");

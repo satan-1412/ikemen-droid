@@ -266,6 +266,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected static ViewGroup mLayout;
     private DesktopSystemView mDesktopSystemView; // 桌面模式的主视图
     private boolean isDesktopModeActive = false;
+    private boolean mPendingLandscapeResume = false;
+    private final android.os.Handler mDesktopResumeHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable mPendingResumeRunnable = null;
     protected static SDLClipboardHandler mClipboardHandler;
     protected static Hashtable<Integer, PointerIcon> mCursors;
     protected static int mLastCursorID;
@@ -542,6 +545,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         Log.v(TAG, "Model: " + Build.MODEL);
         Log.v(TAG, "onCreate()");
         super.onCreate(savedInstanceState);
+        // 防止竖屏桌面模式被系统杀后台重建后，游戏画面误以竖屏启动导致按键错位
+        try {
+            setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        } catch (Exception ignored) {}
 
         mSharedPrefs = this.getSharedPreferences(getString(R.string.prefs_key), MODE_PRIVATE);
 
@@ -1200,7 +1207,24 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         if (mHIDDeviceManager != null) {
             mHIDDeviceManager.setFrozen(false);
         }
-        if (!mHasMultiWindow) {
+        if (this.isDesktopModeActive) {
+            // 桌面模式激活期间（含切后台回来）：严禁恢复游戏线程，保持游戏严格暂停并维持桌面界面与竖/横屏状态
+            pauseNativeThread();
+            try {
+                if (SDLAudioManager.mAudioTrack != null &&
+                    SDLAudioManager.mAudioTrack.getState() == android.media.AudioTrack.STATE_INITIALIZED) {
+                    SDLAudioManager.mAudioTrack.pause();
+                }
+            } catch (Exception ignored) {}
+            if (org.libsdl.app.DesktopSystemView.mSingleton != null) {
+                if (!org.libsdl.app.DesktopSystemView.mSingleton.isShowing()) {
+                    org.libsdl.app.DesktopSystemView.mSingleton.show();
+                }
+                org.libsdl.app.DesktopSystemView.mSingleton.applySavedDesktopOrientation();
+            }
+            return;
+        }
+        if (!mHasMultiWindow && !mPendingLandscapeResume) {
             resumeNativeThread();
         }
     }
@@ -1218,7 +1242,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected void onStart() {
         Log.v(TAG, "onStart()");
         super.onStart();
-        if (mHasMultiWindow) {
+        if (this.isDesktopModeActive) {
+            pauseNativeThread();
+            return;
+        }
+        if (mHasMultiWindow && !mPendingLandscapeResume) {
             resumeNativeThread();
         }
     }
@@ -1259,8 +1287,19 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
            return;
         }
 
+        if (this.isDesktopModeActive) {
+            // 桌面模式中任何弹窗开关引起的焦点变化，绝不唤醒游戏引擎，保证进出桌面进度完全一致
+            mHasFocus = false;
+            nativeFocusChanged(false);
+            mNextNativeState = NativeState.PAUSED;
+            SDLActivity.handleNativeState();
+            return;
+        }
         mHasFocus = hasFocus;
         if (hasFocus) {
+           if (mPendingLandscapeResume) {
+               return;
+           }
            mNextNativeState = NativeState.RESUMED;
            SDLActivity.getMotionListener().reclaimRelativeMouseModeIfNeeded();
 
@@ -1305,6 +1344,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         // 【新增】：屏幕横竖屏切换时通知桌面系统重排窗口与任务栏
         if (this.isDesktopModeActive && org.libsdl.app.DesktopSystemView.mSingleton != null) {
             org.libsdl.app.DesktopSystemView.mSingleton.onScreenOrientationChanged();
+        } else if (!this.isDesktopModeActive && this.mPendingLandscapeResume
+                && newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            // 竖屏桌面退回横屏游戏：等系统真正完成横屏旋转并重建完 EGL Surface 后再唤醒引擎，彻底根治黑屏
+            scheduleSafeGameResume(160);
         }
     }
 
@@ -1446,7 +1489,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         }
 
         if (mNextNativeState == NativeState.RESUMED) {
-            if (mSurface.mIsSurfaceReady && mHasFocus && mIsResumedCalled) {
+            if (mSingleton != null && (mSingleton.isDesktopModeActive || mSingleton.mPendingLandscapeResume)) {
+                return;
+            }
+            if (mSurface != null && mSurface.mIsSurfaceReady && mHasFocus && mIsResumedCalled) {
                 if (mSDLThread == null) {
                     mSDLThread = new Thread(new SDLMain(), "SDLThread");
                     mSurface.enableSensor(Sensor.TYPE_ACCELEROMETER, true);
@@ -2349,14 +2395,62 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         });
     }
 
+    private void scheduleSafeGameResume(long delayMs) {
+        if (mPendingResumeRunnable != null) {
+            mDesktopResumeHandler.removeCallbacks(mPendingResumeRunnable);
+        }
+        mPendingResumeRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (isDesktopModeActive || isFinishing()) return;
+                mPendingLandscapeResume = false;
+                if (mSurface != null) {
+                    mSurface.setVisibility(View.VISIBLE);
+                    mSurface.requestFocus();
+                }
+                SDLActivity.mIsResumedCalled = true;
+                SDLActivity.mHasFocus = true;
+                SDLActivity.mNextNativeState = NativeState.RESUMED;
+                SDLActivity.handleNativeState();
+                try { nativeFocusChanged(true); } catch (Throwable ignored) {}
+                try {
+                    if (SDLAudioManager.mAudioTrack != null &&
+                        SDLAudioManager.mAudioTrack.getState() == android.media.AudioTrack.STATE_INITIALIZED) {
+                        SDLAudioManager.mAudioTrack.play();
+                    }
+                } catch (Exception ignored) {}
+                // 二次防黑屏保险：若 Surface 重建稍慢，260ms 后补触发一次状态同步
+                mDesktopResumeHandler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!isDesktopModeActive && !mPendingLandscapeResume && !isFinishing()) {
+                            SDLActivity.mIsResumedCalled = true;
+                            SDLActivity.mHasFocus = true;
+                            SDLActivity.mNextNativeState = NativeState.RESUMED;
+                            SDLActivity.handleNativeState();
+                            try { nativeFocusChanged(true); } catch (Throwable ignored) {}
+                        }
+                    }
+                }, 260);
+            }
+        };
+        mDesktopResumeHandler.postDelayed(mPendingResumeRunnable, delayMs);
+    }
+
     public void toggleDesktopMode(final boolean active) {
         this.isDesktopModeActive = active;
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
                 if (active) {
-                    // 1. 先暂停游戏与音频，避免桌面旋转触发引擎渲染冲突
+                    mPendingLandscapeResume = false;
+                    if (mPendingResumeRunnable != null) {
+                        mDesktopResumeHandler.removeCallbacks(mPendingResumeRunnable);
+                    }
+                    // 1. 彻底冻结游戏与音频，确保进出桌面进度完全一致
                     SDLActivity.mHasFocus = false;
+                    SDLActivity.mIsResumedCalled = false;
+                    try { nativeFocusChanged(false); } catch (Throwable ignored) {}
                     SDLActivity.mNextNativeState = NativeState.PAUSED;
                     SDLActivity.handleNativeState();
 
@@ -2375,35 +2469,26 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     org.libsdl.app.DesktopSystemView.mSingleton.applySavedDesktopOrientation();
 
                 } else {
+                    boolean wasPortrait = false;
+                    try {
+                        wasPortrait = (getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT);
+                    } catch (Exception ignored) {}
+
                     // 1. 隐身桌面弹窗，保留窗口和状态，不销毁实例
                     if (org.libsdl.app.DesktopSystemView.mSingleton != null) {
                         org.libsdl.app.DesktopSystemView.mSingleton.dismiss();
                     }
 
                     // 2. 【强制横屏】：无论桌面处于横屏还是竖屏，回到游戏内一律恢复横屏！
+                    mPendingLandscapeResume = true;
                     try {
                         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
                     } catch (Exception e) {
                         Log.e(TAG, "restore landscape error: " + e.getMessage());
                     }
 
-                    // 3. 把焦点还给游戏画布 (必须在唤醒引擎前执行)
-                    if (mSurface != null) {
-                        mSurface.requestFocus();
-                    }
-
-                    // 4. 唤醒引擎
-                    SDLActivity.mHasFocus = true;
-                    SDLActivity.mNextNativeState = NativeState.RESUMED;
-                    SDLActivity.handleNativeState();
-                    
-                    // 5. 恢复声音
-                    try {
-                        if (SDLAudioManager.mAudioTrack != null && 
-                            SDLAudioManager.mAudioTrack.getState() == android.media.AudioTrack.STATE_INITIALIZED) {
-                            SDLAudioManager.mAudioTrack.play();
-                        }
-                    } catch (Exception e) {}
+                    // 3. 若从竖屏切回横屏，等待 onConfigurationChanged 触发安全唤醒（并设 550ms 兜底防黑屏）；若本就是横屏，短暂稳定后唤醒
+                    scheduleSafeGameResume(wasPortrait ? 550 : 90);
                 }
             }
         });
