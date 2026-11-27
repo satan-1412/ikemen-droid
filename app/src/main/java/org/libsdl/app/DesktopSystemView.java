@@ -4375,8 +4375,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
     // 自动关闭当前游戏 save/config.ini 中的 PngSpriteFilter，防止 Ikemen GO 对 SFFv2 PNG32 精灵施加双线性模糊
     private void ensureCrispPngSpriteFilter() {
         try {
-            String basePath = (SDLActivity.mSingleton != null && SDLActivity.mSingleton.mBasePath != null)
-                    ? SDLActivity.mSingleton.mBasePath : "";
+            String basePath = SDLActivity.getCurrentGamePath();
+            if (basePath == null) basePath = "";
             if (basePath.isEmpty()) return;
             File cfg = new File(basePath, "save/config.ini");
             if (!cfg.exists() || !cfg.isFile()) return;
