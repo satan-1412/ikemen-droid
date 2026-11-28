@@ -4342,105 +4342,576 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         b[off + 1] = (byte)((v >>> 8) & 0xFF);
     }
 
-    // 按 MUGEN / Ikemen GO SFFv1 真实规范追踪色表继承链：
-    // samePalette=1 表示继承“上一帧的色表链”而非一律套 pal1.act！
-    // 只有与角色本体(Group 0)同链的帧才使用 pal1.act，特效/火焰/光束帧则直接从其色表链首帧 PCX 尾部提取原版 768 字节色表，100% 还原原色！
-    private java.util.HashMap<String, String> readSffV1PaletteActMap(File sffFile, File tmpDir, String srcCharActPath) {
-        java.util.HashMap<String, String> result = new java.util.HashMap<>();
-        if (sffFile == null || !sffFile.exists() || sffFile.length() < 512) return result;
-        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
-            byte[] hdr = new byte[32];
-            raf.readFully(hdr);
-            if (!"ElecbyteSpr".equals(new String(hdr, 0, 11, "US-ASCII"))) return result;
-            int verHi = hdr[15] & 0xFF;
-            if (verHi != 1) return result; // SFFv2 每帧自带 palIndex，走原生解码即可
+    // ==================== 全格式 SFF 色表兼容与无损转换引擎 (SFFv1 / SFFv2.00 / SFFv2.01) ====================
+    // 解析角色默认主色表编号 (pal.defaults 首位，默认 1)
+    private int resolveDefaultPalNo(java.util.Map<String, String> infoMap) {
+        if (infoMap != null && infoMap.containsKey("pal.defaults")) {
+            String raw = infoMap.get("pal.defaults");
+            if (raw != null) {
+                for (String tok : raw.split(",")) {
+                    try {
+                        int n = Integer.parseInt(tok.trim());
+                        if (n >= 1 && n <= 12) return n;
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+        return 1;
+    }
 
-            int numImages = readLe32Bytes(hdr, 20);
-            int nextOff = readLe32Bytes(hdr, 24);
-            long fileLen = raf.length();
-            byte[] sub = new byte[32];
-            int guard = Math.min(Math.max(numImages + 64, 4096), 200000);
+    // 按 pal.defaults 优先级自动定位角色默认 .act 路径（兼容 pal1~pal12 与缺失 pal1 的角色）
+    private String resolveDefaultCharActPath(File defFile, java.util.Map<String, String> filesMap, java.util.Map<String, String> infoMap) {
+        if (defFile == null || filesMap == null) return "";
+        File baseDir = defFile.getParentFile();
+        if (baseDir == null) return "";
+        java.util.LinkedHashSet<Integer> order = new java.util.LinkedHashSet<>();
+        if (infoMap != null && infoMap.containsKey("pal.defaults")) {
+            String raw = infoMap.get("pal.defaults");
+            if (raw != null) {
+                for (String tok : raw.split(",")) {
+                    try {
+                        int n = Integer.parseInt(tok.trim());
+                        if (n >= 1 && n <= 12) order.add(n);
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+        for (int n = 1; n <= 12; n++) order.add(n);
+        for (int n : order) {
+            String rel = filesMap.get("pal" + n);
+            if (rel != null && !rel.trim().isEmpty()) {
+                File pf = resolveCharSubFile(baseDir, rel);
+                if (pf != null && pf.exists() && pf.isFile()) return pf.getAbsolutePath();
+            }
+        }
+        return "";
+    }
 
-            java.util.ArrayList<int[]> sprMeta = new java.util.ArrayList<>(); // [g, i, chainId, subLen, linkIdx]
-            java.util.HashMap<Integer, byte[]> chainPalBytes = new java.util.HashMap<>();
-            int curChain = 0;
-            int bodyChainId = -1;
+    // 自动加载 .act 文件为标准正向 ARGB[256]（严格兼容 768 字节 MUGEN 倒序 ACT 与 1024 字节 RGBA ACT）
+    private int[] loadActArgbPalette(File actFile) {
+        if (actFile == null || !actFile.exists() || !actFile.isFile()) return null;
+        try {
+            byte[] raw = readFully(actFile);
+            if (raw == null || raw.length < 768) return null;
+            int[] pal = new int[256];
+            if (raw.length >= 1024) {
+                for (int i = 0; i < 256; i++) {
+                    int r = raw[i * 4] & 0xFF;
+                    int g = raw[i * 4 + 1] & 0xFF;
+                    int b = raw[i * 4 + 2] & 0xFF;
+                    pal[i] = (i == 0) ? 0x00000000 : (0xFF000000 | (r << 16) | (g << 8) | b);
+                }
+            } else {
+                // 标准 MUGEN / Photoshop 768 字节 .act 为倒序存储（0..2 为索引 255，765..767 为透明色索引 0）
+                for (int i = 0; i < 256; i++) {
+                    int palIdx = 255 - i;
+                    int r = raw[i * 3] & 0xFF;
+                    int g = raw[i * 3 + 1] & 0xFF;
+                    int b = raw[i * 3 + 2] & 0xFF;
+                    pal[palIdx] = (palIdx == 0) ? 0x00000000 : (0xFF000000 | (r << 16) | (g << 8) | b);
+                }
+            }
+            return pal;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
 
-            for (int c = 0; c < guard && nextOff >= 32 && nextOff + 32 <= fileLen; c++) {
-                raf.seek(nextOff);
-                raf.readFully(sub);
-                int nNext = readLe32Bytes(sub, 0);
-                int subLen = readLe32Bytes(sub, 4);
-                int g = readLe16Bytes(sub, 12);
-                int i = readLe16Bytes(sub, 14);
-                int linkIdx = readLe16Bytes(sub, 16);
-                boolean samePal = (sub[18] != 0);
+    // 将正向 ARGB[256] 转换为标准 MUGEN 倒序 768 字节 .act（供底层 Api.decodeSffFrame 正确读取）
+    private byte[] argbPalToReversedActBytes(int[] argbPal) {
+        byte[] out = new byte[768];
+        if (argbPal == null || argbPal.length < 256) return out;
+        for (int i = 0; i < 256; i++) {
+            int c = argbPal[255 - i];
+            out[i * 3]     = (byte) ((c >>> 16) & 0xFF);
+            out[i * 3 + 1] = (byte) ((c >>> 8) & 0xFF);
+            out[i * 3 + 2] = (byte) (c & 0xFF);
+        }
+        return out;
+    }
 
-                int assignedChain;
-                if (subLen == 0 && linkIdx >= 0 && linkIdx < sprMeta.size()) {
-                    // 链接帧继承被链接帧的色表链（若 samePal=1 则维持当前链）
-                    assignedChain = samePal ? curChain : sprMeta.get(linkIdx)[2];
-                } else {
-                    if (c == 0 || !samePal) {
-                        curChain++;
-                        // 尝试从当前 PCX 数据末尾读取 0x0C + 768 字节标准 256 色调色板
+    // 纯 Java 无损 PCX 解码器（支持 8-bit 索引 RLE/非压缩、跨行 RLE 与 24-bit 真彩 PCX，彻底规避 ACT 倒序偏色）
+    private byte[] decodePcxToPngBytes(byte[] pcxData, int[] argbPal) {
+        if (pcxData == null || pcxData.length < 128) return null;
+        if ((pcxData[0] & 0xFF) != 0x0A) return null;
+        int encoding = pcxData[2] & 0xFF;
+        int bpp = pcxData[3] & 0xFF;
+        int xmin = readLe16Bytes(pcxData, 4);
+        int ymin = readLe16Bytes(pcxData, 6);
+        int xmax = readLe16Bytes(pcxData, 8);
+        int ymax = readLe16Bytes(pcxData, 10);
+        int w = xmax - xmin + 1;
+        int h = ymax - ymin + 1;
+        int planes = pcxData[65] & 0xFF;
+        int bytesPerLine = readLe16Bytes(pcxData, 66);
+        if (w <= 0 || h <= 0 || w > 8192 || h > 8192 || bytesPerLine <= 0) return null;
+        if (bpp != 8 || (planes != 1 && planes != 3)) return null;
+
+        int dataEnd = pcxData.length;
+        if (planes == 1 && pcxData.length >= 128 + 769 && (pcxData[pcxData.length - 769] & 0xFF) == 0x0C) {
+            dataEnd = pcxData.length - 769;
+        }
+
+        int[] pixels = new int[w * h];
+        int pos = 128;
+        int runCount = 0;
+        int runVal = 0;
+
+        if (planes == 1) {
+            if (argbPal == null || argbPal.length < 256) return null;
+            byte[] scan = new byte[bytesPerLine];
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < bytesPerLine; x++) {
+                    int val;
+                    if (encoding == 1) {
+                        if (runCount > 0) {
+                            val = runVal;
+                            runCount--;
+                        } else if (pos < dataEnd) {
+                            int b = pcxData[pos++] & 0xFF;
+                            if ((b & 0xC0) == 0xC0) {
+                                int cnt = b & 0x3F;
+                                runVal = (pos < dataEnd) ? (pcxData[pos++] & 0xFF) : 0;
+                                if (cnt <= 0) {
+                                    val = 0;
+                                } else {
+                                    val = runVal;
+                                    runCount = cnt - 1;
+                                }
+                            } else {
+                                val = b;
+                            }
+                        } else {
+                            val = 0;
+                        }
+                    } else {
+                        val = (pos < dataEnd) ? (pcxData[pos++] & 0xFF) : 0;
+                    }
+                    scan[x] = (byte) val;
+                }
+                int rowOff = y * w;
+                int copyW = Math.min(w, bytesPerLine);
+                for (int x = 0; x < copyW; x++) {
+                    pixels[rowOff + x] = argbPal[scan[x] & 0xFF];
+                }
+            }
+        } else {
+            byte[] scan = new byte[bytesPerLine * 3];
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < scan.length; x++) {
+                    int val;
+                    if (encoding == 1) {
+                        if (runCount > 0) {
+                            val = runVal;
+                            runCount--;
+                        } else if (pos < dataEnd) {
+                            int b = pcxData[pos++] & 0xFF;
+                            if ((b & 0xC0) == 0xC0) {
+                                int cnt = b & 0x3F;
+                                runVal = (pos < dataEnd) ? (pcxData[pos++] & 0xFF) : 0;
+                                if (cnt <= 0) {
+                                    val = 0;
+                                } else {
+                                    val = runVal;
+                                    runCount = cnt - 1;
+                                }
+                            } else {
+                                val = b;
+                            }
+                        } else {
+                            val = 0;
+                        }
+                    } else {
+                        val = (pos < dataEnd) ? (pcxData[pos++] & 0xFF) : 0;
+                    }
+                    scan[x] = (byte) val;
+                }
+                int rowOff = y * w;
+                int copyW = Math.min(w, bytesPerLine);
+                for (int x = 0; x < copyW; x++) {
+                    int r = scan[x] & 0xFF;
+                    int g = scan[bytesPerLine + x] & 0xFF;
+                    int b = scan[bytesPerLine * 2 + x] & 0xFF;
+                    pixels[rowOff + x] = 0xFF000000 | (r << 16) | (g << 8) | b;
+                }
+            }
+        }
+
+        Bitmap bmp = null;
+        try {
+            bmp = Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888);
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, baos);
+            return baos.toByteArray();
+        } catch (Throwable ignored) {
+            return null;
+        } finally {
+            if (bmp != null && !bmp.isRecycled()) bmp.recycle();
+        }
+    }
+
+    // 统一兼容 SFFv1 / SFFv2.00 / SFFv2.01 全部色表格式的帧解码器（输出无损真彩 PNG32，确保跨版本移植色表 100% 正常转换）
+    private class UniversalSffDecoder {
+        final File sffFile;
+        final File tmpDir;
+        final String charActPath;
+        final int[] charActArgb;
+        final int defPalNo;
+        int verHi = 0;
+
+        // SFFv1 索引
+        final java.util.ArrayList<long[]> v1List = new java.util.ArrayList<>(); // [g, i, pcxOff, pcxLen, chainId, linkIdx]
+        final java.util.HashMap<String, Integer> v1KeyToIdx = new java.util.HashMap<>();
+        final java.util.HashMap<Integer, int[]> v1ChainPal = new java.util.HashMap<>();
+        int v1BodyChainId = -1;
+
+        // SFFv2 索引
+        long v2LdataOff = 0, v2TdataOff = 0;
+        final java.util.ArrayList<long[]> v2List = new java.util.ArrayList<>(); // [g, i, fmt, dataOff, dataLen, palIdx, flags, linkIdx]
+        final java.util.HashMap<String, Integer> v2KeyToIdx = new java.util.HashMap<>();
+        int v2BodyPalIdx = 0;
+        String v2BodyOverrideAct = "";
+
+        UniversalSffDecoder(File sffFile, File tmpDir, String charActPath, int defPalNo) {
+            this.sffFile = sffFile;
+            this.tmpDir = tmpDir;
+            this.charActPath = (charActPath != null) ? charActPath : "";
+            this.defPalNo = (defPalNo >= 1 && defPalNo <= 12) ? defPalNo : 1;
+            this.charActArgb = (!this.charActPath.isEmpty()) ? loadActArgbPalette(new File(this.charActPath)) : null;
+            buildIndex();
+        }
+
+        private boolean isPaletteBlankOrGray(int[] pal) {
+            if (pal == null || pal.length < 256) return true;
+            int nonBlack = 0, colorful = 0;
+            for (int i = 1; i < 256; i++) {
+                int r = (pal[i] >>> 16) & 0xFF;
+                int g = (pal[i] >>> 8) & 0xFF;
+                int b = pal[i] & 0xFF;
+                if (r > 0 || g > 0 || b > 0) nonBlack++;
+                if (Math.abs(r - g) > 4 || Math.abs(g - b) > 4 || Math.abs(r - b) > 4) colorful++;
+            }
+            return nonBlack < 3 || colorful == 0;
+        }
+
+        private void buildIndex() {
+            if (sffFile == null || !sffFile.exists() || sffFile.length() < 512) return;
+            try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
+                byte[] hdr = new byte[68];
+                raf.readFully(hdr);
+                if (!"ElecbyteSpr".equals(new String(hdr, 0, 11, "US-ASCII"))) return;
+                verHi = hdr[15] & 0xFF;
+                long fileLen = raf.length();
+
+                if (verHi == 1) {
+                    int numImages = readLe32Bytes(hdr, 20);
+                    int nextOff = readLe32Bytes(hdr, 24);
+                    byte[] sub = new byte[32];
+                    int guard = Math.min(Math.max(numImages + 64, 4096), 200000);
+                    int curChain = 0;
+                    int[] lastPal = null;
+                    int firstNonBigPortChain = -1;
+
+                    for (int c = 0; c < guard && nextOff >= 32 && nextOff + 32 <= fileLen; c++) {
+                        raf.seek(nextOff);
+                        raf.readFully(sub);
+                        int nNext = readLe32Bytes(sub, 0);
+                        int subLen = readLe32Bytes(sub, 4);
+                        int g = readLe16Bytes(sub, 12);
+                        int i = readLe16Bytes(sub, 14);
+                        int linkIdx = readLe16Bytes(sub, 16);
+                        boolean samePal = (sub[18] != 0);
+
                         long pcxStart = (long) nextOff + 32L;
-                        long pcxEnd = (subLen > 0) ? (pcxStart + subLen) : ((nNext > pcxStart) ? nNext : fileLen);
-                        if (pcxEnd > fileLen) pcxEnd = fileLen;
-                        if (pcxEnd - pcxStart >= 769) {
+                        long pcxLen = 0;
+                        int assignedChain;
+
+                        if (subLen == 0 && linkIdx >= 0 && linkIdx < v1List.size()) {
+                            assignedChain = samePal ? curChain : (int) v1List.get(linkIdx)[4];
+                        } else {
+                            long spanEnd = (nNext > pcxStart && nNext <= fileLen) ? (long) nNext : fileLen;
+                            pcxLen = (subLen > 0) ? Math.min((long) subLen, fileLen - pcxStart) : Math.max(0L, spanEnd - pcxStart);
+                            if (c == 0 || !samePal) {
+                                curChain++;
+                                int[] extractedPal = null;
+                                // 在 PCX 尾部优先查找 0x0C + 768 字节标准正向 VGA 调色板（兼容尾部填充字节）
+                                long[] probeEnds = new long[]{ pcxStart + pcxLen, spanEnd };
+                                for (long pEnd : probeEnds) {
+                                    if (extractedPal != null) break;
+                                    if (pEnd > fileLen) pEnd = fileLen;
+                                    if (pEnd - pcxStart < 769) continue;
+                                    for (int back = 0; back <= 16 && (pEnd - 769 - back) >= pcxStart; back++) {
+                                        raf.seek(pEnd - 769 - back);
+                                        if ((raf.read() & 0xFF) == 0x0C) {
+                                            byte[] p768 = new byte[768];
+                                            raf.readFully(p768);
+                                            int[] pal = new int[256];
+                                            for (int k = 0; k < 256; k++) {
+                                                int r = p768[k * 3] & 0xFF;
+                                                int gg = p768[k * 3 + 1] & 0xFF;
+                                                int bb = p768[k * 3 + 2] & 0xFF;
+                                                pal[k] = (k == 0) ? 0x00000000 : (0xFF000000 | (r << 16) | (gg << 8) | bb);
+                                            }
+                                            extractedPal = pal;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (extractedPal != null) {
+                                    v1ChainPal.put(curChain, extractedPal);
+                                    lastPal = extractedPal;
+                                } else if (lastPal != null) {
+                                    v1ChainPal.put(curChain, lastPal);
+                                }
+                            }
+                            assignedChain = curChain;
+                        }
+
+                        if (g == 0 && i == 0) v1BodyChainId = assignedChain;
+                        else if (v1BodyChainId < 0 && g == 0) v1BodyChainId = assignedChain;
+                        if (firstNonBigPortChain < 0 && !(g == 9000 && i == 1)) firstNonBigPortChain = assignedChain;
+
+                        int curIdx = v1List.size();
+                        v1List.add(new long[]{ g, i, pcxStart, pcxLen, assignedChain, linkIdx });
+                        String key = g + "," + i;
+                        if (!v1KeyToIdx.containsKey(key)) v1KeyToIdx.put(key, curIdx);
+
+                        if (nNext <= nextOff) break;
+                        nextOff = nNext;
+                    }
+                    if (v1BodyChainId < 0) v1BodyChainId = (firstNonBigPortChain >= 0) ? firstNonBigPortChain : (v1List.isEmpty() ? -1 : (int) v1List.get(0)[4]);
+                } else if (verHi == 2) {
+                    int sprOff = readLe32Bytes(hdr, 36);
+                    int numSpr = readLe32Bytes(hdr, 40);
+                    int palOff = readLe32Bytes(hdr, 44);
+                    int numPals = readLe32Bytes(hdr, 48);
+                    v2LdataOff = readLe32Bytes(hdr, 52) & 0xFFFFFFFFL;
+                    v2TdataOff = readLe32Bytes(hdr, 60) & 0xFFFFFFFFL;
+
+                    // 读取全部调色板节点（16 字节/个）并解析链接调色板
+                    int[][] palMeta = new int[Math.max(0, numPals)][6];
+                    if (numPals > 0 && palOff >= 512 && palOff + (long) numPals * 16 <= fileLen) {
+                        byte[] pNode = new byte[16];
+                        raf.seek(palOff);
+                        for (int p = 0; p < numPals; p++) {
+                            raf.readFully(pNode);
+                            palMeta[p][0] = readLe16Bytes(pNode, 0);  // palGroup
+                            palMeta[p][1] = readLe16Bytes(pNode, 2);  // palItem
+                            palMeta[p][2] = readLe16Bytes(pNode, 4);  // numCols
+                            palMeta[p][3] = readLe16Bytes(pNode, 6);  // linkIdx
+                            palMeta[p][4] = readLe32Bytes(pNode, 8);  // dataOff
+                            palMeta[p][5] = readLe32Bytes(pNode, 12); // dataLen
+                        }
+                    }
+
+                    int pal11Idx = -1, defPalNodeIdx = -1;
+                    for (int p = 0; p < palMeta.length; p++) {
+                        if (palMeta[p][0] == 1 && palMeta[p][1] == 1 && pal11Idx < 0) pal11Idx = p;
+                        if (palMeta[p][0] == 1 && palMeta[p][1] == defPalNo && defPalNodeIdx < 0) defPalNodeIdx = p;
+                    }
+
+                    // 读取全部精灵节点（28 字节/个）
+                    int body00PalIdx = -1;
+                    if (numSpr > 0 && sprOff >= 512 && sprOff + (long) numSpr * 28 <= fileLen) {
+                        byte[] sNode = new byte[28];
+                        raf.seek(sprOff);
+                        for (int s = 0; s < numSpr; s++) {
+                            raf.readFully(sNode);
+                            int g = readLe16Bytes(sNode, 0);
+                            int i = readLe16Bytes(sNode, 2);
+                            int linkIdx = readLe16Bytes(sNode, 12);
+                            int fmt = sNode[14] & 0xFF;
+                            long dOff = readLe32Bytes(sNode, 16) & 0xFFFFFFFFL;
+                            long dLen = readLe32Bytes(sNode, 20) & 0xFFFFFFFFL;
+                            int palIdx = readLe16Bytes(sNode, 24);
+                            int flags = readLe16Bytes(sNode, 26);
+                            v2List.add(new long[]{ g, i, fmt, dOff, dLen, palIdx, flags, linkIdx });
+                            String key = g + "," + i;
+                            if (!v2KeyToIdx.containsKey(key)) v2KeyToIdx.put(key, s);
+                            if (g == 0 && i == 0 && body00PalIdx < 0) body00PalIdx = palIdx;
+                        }
+                    }
+                    v2BodyPalIdx = (body00PalIdx >= 0) ? body00PalIdx : (pal11Idx >= 0 ? pal11Idx : 0);
+
+                    // 读取 SFFv2 内部指定调色板的 RGBA 数据
+                    int[] bodyPalArgb = readV2PaletteArgb(raf, palMeta, v2BodyPalIdx, fileLen);
+                    if (defPalNodeIdx >= 0 && defPalNodeIdx != v2BodyPalIdx && tmpDir != null) {
+                        int[] defPalArgb = readV2PaletteArgb(raf, palMeta, defPalNodeIdx, fileLen);
+                        if (defPalArgb != null && !isPaletteBlankOrGray(defPalArgb)) {
                             try {
-                                raf.seek(pcxEnd - 769);
-                                if ((raf.read() & 0xFF) == 0x0C) {
-                                    byte[] pal768 = new byte[768];
-                                    raf.readFully(pal768);
-                                    chainPalBytes.put(curChain, pal768);
+                                if (!tmpDir.exists()) tmpDir.mkdirs();
+                                File actF = new File(tmpDir, "sff2_defpal_" + defPalNo + ".act");
+                                try (FileOutputStream fos = new FileOutputStream(actF, false)) {
+                                    fos.write(argbPalToReversedActBytes(defPalArgb));
+                                }
+                                v2BodyOverrideAct = actF.getAbsolutePath();
+                            } catch (Throwable ignored) {}
+                        }
+                    } else if (!charActPath.isEmpty() && isPaletteBlankOrGray(bodyPalArgb)) {
+                        // 兼容 MUGEN 1.0 SFFv2.00 内部主色表为空/灰度、依赖外部 pal1.act 的角色
+                        v2BodyOverrideAct = charActPath;
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        private int[] readV2PaletteArgb(java.io.RandomAccessFile raf, int[][] palMeta, int palIdx, long fileLen) {
+            if (palMeta == null || palIdx < 0 || palIdx >= palMeta.length) return null;
+            int cur = palIdx;
+            for (int hop = 0; hop < 16 && cur >= 0 && cur < palMeta.length; hop++) {
+                if (palMeta[cur][5] > 0) break;
+                cur = palMeta[cur][3];
+            }
+            if (cur < 0 || cur >= palMeta.length || palMeta[cur][5] <= 0) return null;
+            long off = v2LdataOff + (palMeta[cur][4] & 0xFFFFFFFFL);
+            int len = palMeta[cur][5];
+            if (off < 512 || off + len > fileLen) return null;
+            try {
+                byte[] raw = new byte[Math.min(len, 1024)];
+                raf.seek(off);
+                raf.readFully(raw);
+                int[] pal = new int[256];
+                int cols = Math.min(256, raw.length / 4);
+                for (int i = 0; i < cols; i++) {
+                    int r = raw[i * 4] & 0xFF;
+                    int g = raw[i * 4 + 1] & 0xFF;
+                    int b = raw[i * 4 + 2] & 0xFF;
+                    pal[i] = (i == 0) ? 0x00000000 : (0xFF000000 | (r << 16) | (g << 8) | b);
+                }
+                return pal;
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+
+        // 获取 SFFv1 主体色表（供 ensureSffV2 写入标准 SFFv2.01 ldata）
+        byte[] getPreferredSffV2PaletteRgba() {
+            int[] src = (charActArgb != null) ? charActArgb : v1ChainPal.get(v1BodyChainId);
+            byte[] rgba = new byte[1024];
+            if (src != null && src.length >= 256) {
+                for (int i = 0; i < 256; i++) {
+                    rgba[i * 4]     = (byte) ((src[i] >>> 16) & 0xFF);
+                    rgba[i * 4 + 1] = (byte) ((src[i] >>> 8) & 0xFF);
+                    rgba[i * 4 + 2] = (byte) (src[i] & 0xFF);
+                    rgba[i * 4 + 3] = (byte) (i == 0 ? 0 : 255);
+                }
+            } else {
+                for (int i = 1; i < 256; i++) {
+                    rgba[i * 4] = (byte) i; rgba[i * 4 + 1] = (byte) i; rgba[i * 4 + 2] = (byte) i; rgba[i * 4 + 3] = (byte) 255;
+                }
+            }
+            return rgba;
+        }
+
+        // 统一解码任意 SFF 格式帧为无损真彩 PNG32 字节流
+        byte[] decodeFrameToPng(int group, int item, boolean forceCharAct) {
+            if (sffFile == null || !sffFile.exists()) return null;
+            String key = group + "," + item;
+
+            if (verHi == 1) {
+                Integer idxObj = v1KeyToIdx.get(key);
+                if (idxObj != null) {
+                    long[] meta = v1List.get(idxObj);
+                    int chainId = (int) meta[4];
+                    // 解析链接帧的真实 PCX 像素数据位置
+                    int pixIdx = idxObj;
+                    for (int hop = 0; hop < 16 && pixIdx >= 0 && pixIdx < v1List.size(); hop++) {
+                        if (v1List.get(pixIdx)[3] > 0) break;
+                        pixIdx = (int) v1List.get(pixIdx)[5];
+                    }
+                    int[] usePal;
+                    if (forceCharAct && charActArgb != null) {
+                        usePal = charActArgb;
+                    } else if (chainId == v1BodyChainId && charActArgb != null) {
+                        usePal = charActArgb;
+                    } else {
+                        usePal = v1ChainPal.get(chainId);
+                        if (usePal == null) usePal = charActArgb;
+                    }
+                    if (pixIdx >= 0 && pixIdx < v1List.size() && v1List.get(pixIdx)[3] >= 128) {
+                        long pcxOff = v1List.get(pixIdx)[2];
+                        int pcxLen = (int) Math.min(v1List.get(pixIdx)[3], 16L * 1024L * 1024L);
+                        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
+                            byte[] pcxBuf = new byte[pcxLen];
+                            raf.seek(pcxOff);
+                            raf.readFully(pcxBuf);
+                            byte[] png = decodePcxToPngBytes(pcxBuf, usePal);
+                            if (png != null && png.length >= 24) return png;
+                        } catch (Throwable ignored) {}
+                    }
+                    // 兜底回退底层解码：若使用链内 PCX 色表，先按 MUGEN 规范倒序写成标准 .act 再传给底层！
+                    String fallbackAct = "";
+                    if (usePal != null && usePal == charActArgb) {
+                        fallbackAct = charActPath;
+                    } else if (usePal != null && tmpDir != null) {
+                        try {
+                            if (!tmpDir.exists()) tmpDir.mkdirs();
+                            File actF = new File(tmpDir, "sff1_rev_chain_" + chainId + ".act");
+                            if (!actF.exists()) {
+                                try (FileOutputStream fos = new FileOutputStream(actF, false)) {
+                                    fos.write(argbPalToReversedActBytes(usePal));
+                                }
+                            }
+                            fallbackAct = actF.getAbsolutePath();
+                        } catch (Throwable ignored) {}
+                    }
+                    byte[] png = Api.decodeSffFrame(sffFile.getAbsolutePath(), group, item, fallbackAct);
+                    if (png != null && png.length > 0) return png;
+                }
+            } else if (verHi == 2) {
+                Integer idxObj = v2KeyToIdx.get(key);
+                if (idxObj != null) {
+                    long[] meta = v2List.get(idxObj);
+                    int palIdx = (int) meta[5];
+                    int pixIdx = idxObj;
+                    for (int hop = 0; hop < 16 && pixIdx >= 0 && pixIdx < v2List.size(); hop++) {
+                        if (v2List.get(pixIdx)[4] > 0) break;
+                        pixIdx = (int) v2List.get(pixIdx)[7];
+                    }
+                    if (pixIdx >= 0 && pixIdx < v2List.size()) {
+                        long[] pMeta = v2List.get(pixIdx);
+                        int fmt = (int) pMeta[2];
+                        long dOff = pMeta[3];
+                        long dLen = pMeta[4];
+                        int flags = (int) pMeta[6];
+                        // PNG24 (11) / PNG32 (12) 真彩图：直接无损提取原始 PNG 流，绝不受任何色表影响！
+                        if ((fmt == 11 || fmt == 12) && dLen > 12 && dLen <= 32L * 1024L * 1024L) {
+                            long baseOff = ((flags & 1) != 0) ? v2TdataOff : v2LdataOff;
+                            try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
+                                long pngStart = baseOff + dOff + 4L;
+                                int pngLen = (int) (dLen - 4L);
+                                if (pngStart >= 512 && pngStart + pngLen <= raf.length()) {
+                                    byte[] rawPng = new byte[pngLen];
+                                    raf.seek(pngStart);
+                                    raf.readFully(rawPng);
+                                    if (rawPng.length >= 24 && (rawPng[0] & 0xFF) == 0x89 && rawPng[1] == 'P' && rawPng[2] == 'N' && rawPng[3] == 'G') {
+                                        return rawPng;
+                                    }
                                 }
                             } catch (Throwable ignored) {}
                         }
-                    }
-                    assignedChain = curChain;
-                }
-
-                if ((g == 0 && i == 0) || (bodyChainId < 0 && g == 0)) {
-                    bodyChainId = assignedChain;
-                }
-                sprMeta.add(new int[]{g, i, assignedChain, subLen, linkIdx});
-                if (nNext <= nextOff) break;
-                nextOff = nNext;
-            }
-            if (bodyChainId < 0 && !sprMeta.isEmpty()) bodyChainId = sprMeta.get(0)[2];
-
-            // 为每个非本体色表链导出一次临时 .act 文件（复用于该链全部帧）
-            java.util.HashMap<Integer, String> chainActFile = new java.util.HashMap<>();
-            if (tmpDir != null && !tmpDir.exists()) tmpDir.mkdirs();
-            for (java.util.Map.Entry<Integer, byte[]> en : chainPalBytes.entrySet()) {
-                int cid = en.getKey();
-                if (cid == bodyChainId && srcCharActPath != null && !srcCharActPath.isEmpty()) {
-                    chainActFile.put(cid, srcCharActPath);
-                } else if (tmpDir != null) {
-                    try {
-                        File actF = new File(tmpDir, "sff1_chain_" + cid + ".act");
-                        try (FileOutputStream fos = new FileOutputStream(actF, false)) {
-                            fos.write(en.getValue());
+                        // 索引色 SFFv2 (Raw/RLE8/RLE5/LZ5/PNG8)：特效色表走原生 palIdx，主色表按需应用默认色表/pal1.act
+                        String actToUse = "";
+                        if (fmt != 11 && fmt != 12) {
+                            if (forceCharAct && !charActPath.isEmpty()) actToUse = charActPath;
+                            else if (palIdx == v2BodyPalIdx && !v2BodyOverrideAct.isEmpty()) actToUse = v2BodyOverrideAct;
                         }
-                        chainActFile.put(cid, actF.getAbsolutePath());
-                    } catch (Throwable ignored) {}
+                        byte[] png = Api.decodeSffFrame(sffFile.getAbsolutePath(), group, item, actToUse);
+                        if (png != null && png.length > 0) return png;
+                    }
                 }
-            }
-            if (bodyChainId >= 0 && srcCharActPath != null && !srcCharActPath.isEmpty() && !chainActFile.containsKey(bodyChainId)) {
-                chainActFile.put(bodyChainId, srcCharActPath);
             }
 
-            for (int[] m : sprMeta) {
-                String key = m[0] + "," + m[1];
-                String actPath = chainActFile.get(m[2]);
-                if (actPath != null && !actPath.isEmpty()) {
-                    result.put(key, actPath);
-                }
+            // 最终安全兜底
+            String primaryAct = forceCharAct ? charActPath : "";
+            byte[] png = Api.decodeSffFrame(sffFile.getAbsolutePath(), group, item, primaryAct);
+            if ((png == null || png.length == 0) && !charActPath.equals(primaryAct)) {
+                png = Api.decodeSffFrame(sffFile.getAbsolutePath(), group, item, charActPath);
             }
-        } catch (Throwable ignored) {}
-        return result;
+            return png;
+        }
     }
+
 
     // 自动关闭当前游戏 save/config.ini 中的 PngSpriteFilter，防止 Ikemen GO 对 SFFv2 PNG32 精灵施加双线性模糊
     private void ensureCrispPngSpriteFilter() {
@@ -4711,49 +5182,57 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 return true;
             }
 
-            // 4. SFFv1 (WinMUGEN / Beta)：磁盘流式无损升级为标准 SFFv2.01 (PNG32)
+            // 4. SFFv1 (WinMUGEN / Beta)：按全色表链无损升级为标准 SFFv2.01 (PNG32)
             if (verHi == 1) {
                 List<GoEngineBridge.SffFrame> frames = GoEngineBridge.getAllFrames(sffPath);
                 if (frames == null) return false;
 
-                // 寻找同目录备用 .act（仅在单帧无内嵌色表解码失败时兜底）
-                String fallbackAct = "";
+                // 自动定位同目录对应角色 .def 的默认 .act（按 pal.defaults 优先），确保目标角色自身本体与特效色表 100% 原色保留
+                String targetCharAct = "";
+                int targetDefPalNo = 1;
                 File pDir = f.getParentFile();
                 if (pDir != null && pDir.isDirectory()) {
-                    File[] acts = pDir.listFiles((d, n) -> n.toLowerCase().endsWith(".act"));
-                    if (acts != null && acts.length > 0) fallbackAct = acts[0].getAbsolutePath();
-                }
-
-                // 提取默认 256 色 RGBA 调色板用于 SFFv2 ldata
-                byte[] palRgba = new byte[1024];
-                for (int i = 1; i < 256; i++) {
-                    palRgba[i * 4] = (byte)i; palRgba[i * 4 + 1] = (byte)i; palRgba[i * 4 + 2] = (byte)i; palRgba[i * 4 + 3] = (byte)255;
-                }
-                File tmpPal = new File(getContext().getCacheDir(), "sff_up_pal_" + System.currentTimeMillis() + ".act");
-                try {
-                    File actSrc = null;
-                    if (Api.extractSffPalette(sffPath, tmpPal.getAbsolutePath()) && tmpPal.exists() && tmpPal.length() >= 768) {
-                        actSrc = tmpPal;
-                    } else if (!fallbackAct.isEmpty()) {
-                        actSrc = new File(fallbackAct);
-                    }
-                    if (actSrc != null && actSrc.exists()) {
-                        byte[] rawAct = readFully(actSrc);
-                        if (rawAct.length >= 1024) {
-                            System.arraycopy(rawAct, 0, palRgba, 0, 1024);
-                        } else if (rawAct.length >= 768) {
-                            for (int i = 0; i < 256; i++) {
-                                palRgba[i * 4]     = rawAct[i * 3];
-                                palRgba[i * 4 + 1] = rawAct[i * 3 + 1];
-                                palRgba[i * 4 + 2] = rawAct[i * 3 + 2];
-                                palRgba[i * 4 + 3] = (byte)(i == 0 ? 0 : 255);
+                    File[] defs = pDir.listFiles((d, n) -> n.toLowerCase().endsWith(".def"));
+                    if (defs != null) {
+                        for (File df : defs) {
+                            String dTxt = readTextAutoCharset(df);
+                            java.util.Map<String, String> dInfo = new java.util.LinkedHashMap<>();
+                            java.util.Map<String, String> dFiles = new java.util.LinkedHashMap<>();
+                            String dSec = "";
+                            for (String rl : dTxt.split("\n")) {
+                                int ci = rl.indexOf(';');
+                                String tl = (ci >= 0 ? rl.substring(0, ci) : rl).trim();
+                                if (tl.isEmpty()) continue;
+                                if (tl.startsWith("[") && tl.endsWith("]")) { dSec = tl.substring(1, tl.length() - 1).trim().toLowerCase(); continue; }
+                                int eq = tl.indexOf('=');
+                                if (eq > 0) {
+                                    String dk = tl.substring(0, eq).trim().toLowerCase();
+                                    String dv = tl.substring(eq + 1).trim().replace("\"", "");
+                                    if ("info".equals(dSec)) dInfo.put(dk, dv);
+                                    else if ("files".equals(dSec)) dFiles.put(dk, dv);
+                                }
+                            }
+                            String sprVal = dFiles.get("sprite");
+                            if (sprVal != null && new File(sprVal.replace("\\", "/")).getName().equalsIgnoreCase(f.getName())) {
+                                targetDefPalNo = resolveDefaultPalNo(dInfo);
+                                targetCharAct = resolveDefaultCharActPath(df, dFiles, dInfo);
+                                break;
                             }
                         }
                     }
-                } catch (Throwable ignored) {
-                } finally {
-                    if (tmpPal.exists()) tmpPal.delete();
+                    if (targetCharAct.isEmpty()) {
+                        File[] acts = pDir.listFiles((d, n) -> n.toLowerCase().endsWith(".act"));
+                        if (acts != null && acts.length > 0) {
+                            Arrays.sort(acts, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+                            targetCharAct = acts[0].getAbsolutePath();
+                        }
+                    }
                 }
+
+                File upTmpDir = new File(getContext().getCacheDir(), "sff_up_tmp");
+                if (!upTmpDir.exists()) upTmpDir.mkdirs();
+                UniversalSffDecoder v1Decoder = new UniversalSffDecoder(f, upTmpDir, targetCharAct, targetDefPalNo);
+                byte[] palRgba = v1Decoder.getPreferredSffV2PaletteRgba();
 
                 File tdataTmp = new File(sffPath + ".tdata.tmp");
                 File v2Tmp = new File(sffPath + ".v2.tmp");
@@ -4765,10 +5244,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                     for (GoEngineBridge.SffFrame fr : frames) {
                         String key = fr.group + "," + fr.item;
                         if (!seen.add(key)) continue;
-                        byte[] png = Api.decodeSffFrame(sffPath, fr.group, fr.item, "");
-                        if ((png == null || png.length == 0) && !fallbackAct.isEmpty()) {
-                            png = Api.decodeSffFrame(sffPath, fr.group, fr.item, fallbackAct);
-                        }
+                        byte[] png = v1Decoder.decodeFrameToPng(fr.group, fr.item, false);
                         if (png == null || png.length < 24) continue;
 
                         int w = fr.width, h = fr.height;
@@ -9370,11 +9846,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 java.util.LinkedHashMap<String, int[]> sffRemap = new java.util.LinkedHashMap<>();
                                 int sffOk = 0, sffFail = 0, sffRemapped = 0;
                                 if (sffFileRef[0] != null && sffFileRef[0].exists() && tSff != null && tSff.exists()) {
-                                    String srcActPath = "";
-                                    if (defFileRef[0] != null && defFilesMap.containsKey("pal1")) {
-                                        File pf = resolveCharSubFile(defFileRef[0].getParentFile(), defFilesMap.get("pal1"));
-                                        if (pf != null && pf.exists()) srcActPath = pf.getAbsolutePath();
-                                    }
+                                    int srcDefPalNo = resolveDefaultPalNo(defInfoMap);
+                                    String srcActPath = resolveDefaultCharActPath(defFileRef[0], defFilesMap, defInfoMap);
                                     java.util.LinkedHashMap<String, int[]> uniqSff = new java.util.LinkedHashMap<>();
                                     for (AirFrameSpec af : framesToPlay) {
                                         if (af.group >= 0 && af.item >= 0) uniqSff.put(af.group + "," + af.item, new int[]{af.group, af.item});
@@ -9398,7 +9871,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             occSff.add(tf.group + "," + tf.item);
                                             if (tf.group > maxG && tf.group < 9000) maxG = tf.group;
                                         }
-                                        java.util.HashMap<String, String> sffV1PalActMap = readSffV1PaletteActMap(sffFileRef[0], tmpDir, srcActPath);
+                                        UniversalSffDecoder srcSffDecoder = new UniversalSffDecoder(sffFileRef[0], tmpDir, srcActPath, srcDefPalNo);
                                         for (java.util.Map.Entry<String, int[]> en : uniqSff.entrySet()) {
                                             int og = en.getValue()[0], oi = en.getValue()[1];
                                             int ng = og, ni = oi;
@@ -9416,14 +9889,8 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             }
                                             occSff.add(ng + "," + ni);
                                             sffRemap.put(og + "," + oi, new int[]{ng, ni});
-                                            // 按真实 SFFv1 色表继承链精准匹配每帧原版色表（本体链走 pal1.act，火焰/光束等特效链走其原版 PCX 色表；SFFv2 走内置 palIndex）
-                                            String chainAct = sffV1PalActMap.get(og + "," + oi);
-                                            String primaryAct = useForcedAct ? srcActPath : (chainAct != null ? chainAct : "");
-                                            String fallbackAct = primaryAct.isEmpty() ? srcActPath : "";
-                                            byte[] pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, primaryAct);
-                                            if ((pngBytes == null || pngBytes.length == 0) && !fallbackAct.equals(primaryAct)) {
-                                                pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, fallbackAct);
-                                            }
+                                            // 统一全格式无损解码为真彩 PNG32（兼容 SFFv1 本体/独立PCX色表链、SFFv2.00/2.01 Raw/RLE8/RLE5/LZ5/PNG8/PNG24/PNG32）
+                                            byte[] pngBytes = srcSffDecoder.decodeFrameToPng(og, oi, useForcedAct);
                                             if (pngBytes != null && pngBytes.length > 0) {
                                                 File tmpPng = new File(tmpDir, "f_" + og + "_" + oi + ".png");
                                                 GoEngineBridge.SffFrame srcMeta = sffFrameLookup.get(og + "," + oi);
