@@ -4342,34 +4342,104 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
         b[off + 1] = (byte)((v >>> 8) & 0xFF);
     }
 
-    // 读取 SFFv1 每帧子头的 samePalette 标志（1=共享角色1P色表，0=帧自带独立色表），用于精准还原移植技能颜色
-    private java.util.HashMap<String, Boolean> readSffV1SamePalMap(File sffFile) {
-        java.util.HashMap<String, Boolean> map = new java.util.HashMap<>();
-        if (sffFile == null || !sffFile.exists() || sffFile.length() < 512) return map;
+    // 按 MUGEN / Ikemen GO SFFv1 真实规范追踪色表继承链：
+    // samePalette=1 表示继承“上一帧的色表链”而非一律套 pal1.act！
+    // 只有与角色本体(Group 0)同链的帧才使用 pal1.act，特效/火焰/光束帧则直接从其色表链首帧 PCX 尾部提取原版 768 字节色表，100% 还原原色！
+    private java.util.HashMap<String, String> readSffV1PaletteActMap(File sffFile, File tmpDir, String srcCharActPath) {
+        java.util.HashMap<String, String> result = new java.util.HashMap<>();
+        if (sffFile == null || !sffFile.exists() || sffFile.length() < 512) return result;
         try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(sffFile, "r")) {
             byte[] hdr = new byte[32];
             raf.readFully(hdr);
-            if (!"ElecbyteSpr".equals(new String(hdr, 0, 11, "US-ASCII"))) return map;
+            if (!"ElecbyteSpr".equals(new String(hdr, 0, 11, "US-ASCII"))) return result;
             int verHi = hdr[15] & 0xFF;
-            if (verHi != 1) return map;
+            if (verHi != 1) return result; // SFFv2 每帧自带 palIndex，走原生解码即可
+
             int numImages = readLe32Bytes(hdr, 20);
             int nextOff = readLe32Bytes(hdr, 24);
             long fileLen = raf.length();
             byte[] sub = new byte[32];
             int guard = Math.min(Math.max(numImages + 64, 4096), 200000);
+
+            java.util.ArrayList<int[]> sprMeta = new java.util.ArrayList<>(); // [g, i, chainId, subLen, linkIdx]
+            java.util.HashMap<Integer, byte[]> chainPalBytes = new java.util.HashMap<>();
+            int curChain = 0;
+            int bodyChainId = -1;
+
             for (int c = 0; c < guard && nextOff >= 32 && nextOff + 32 <= fileLen; c++) {
                 raf.seek(nextOff);
                 raf.readFully(sub);
                 int nNext = readLe32Bytes(sub, 0);
+                int subLen = readLe32Bytes(sub, 4);
                 int g = readLe16Bytes(sub, 12);
                 int i = readLe16Bytes(sub, 14);
+                int linkIdx = readLe16Bytes(sub, 16);
                 boolean samePal = (sub[18] != 0);
-                map.put(g + "," + i, samePal);
+
+                int assignedChain;
+                if (subLen == 0 && linkIdx >= 0 && linkIdx < sprMeta.size()) {
+                    // 链接帧继承被链接帧的色表链（若 samePal=1 则维持当前链）
+                    assignedChain = samePal ? curChain : sprMeta.get(linkIdx)[2];
+                } else {
+                    if (c == 0 || !samePal) {
+                        curChain++;
+                        // 尝试从当前 PCX 数据末尾读取 0x0C + 768 字节标准 256 色调色板
+                        long pcxStart = (long) nextOff + 32L;
+                        long pcxEnd = (subLen > 0) ? (pcxStart + subLen) : ((nNext > pcxStart) ? nNext : fileLen);
+                        if (pcxEnd > fileLen) pcxEnd = fileLen;
+                        if (pcxEnd - pcxStart >= 769) {
+                            try {
+                                raf.seek(pcxEnd - 769);
+                                if ((raf.read() & 0xFF) == 0x0C) {
+                                    byte[] pal768 = new byte[768];
+                                    raf.readFully(pal768);
+                                    chainPalBytes.put(curChain, pal768);
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+                    assignedChain = curChain;
+                }
+
+                if ((g == 0 && i == 0) || (bodyChainId < 0 && g == 0)) {
+                    bodyChainId = assignedChain;
+                }
+                sprMeta.add(new int[]{g, i, assignedChain, subLen, linkIdx});
                 if (nNext <= nextOff) break;
                 nextOff = nNext;
             }
+            if (bodyChainId < 0 && !sprMeta.isEmpty()) bodyChainId = sprMeta.get(0)[2];
+
+            // 为每个非本体色表链导出一次临时 .act 文件（复用于该链全部帧）
+            java.util.HashMap<Integer, String> chainActFile = new java.util.HashMap<>();
+            if (tmpDir != null && !tmpDir.exists()) tmpDir.mkdirs();
+            for (java.util.Map.Entry<Integer, byte[]> en : chainPalBytes.entrySet()) {
+                int cid = en.getKey();
+                if (cid == bodyChainId && srcCharActPath != null && !srcCharActPath.isEmpty()) {
+                    chainActFile.put(cid, srcCharActPath);
+                } else if (tmpDir != null) {
+                    try {
+                        File actF = new File(tmpDir, "sff1_chain_" + cid + ".act");
+                        try (FileOutputStream fos = new FileOutputStream(actF, false)) {
+                            fos.write(en.getValue());
+                        }
+                        chainActFile.put(cid, actF.getAbsolutePath());
+                    } catch (Throwable ignored) {}
+                }
+            }
+            if (bodyChainId >= 0 && srcCharActPath != null && !srcCharActPath.isEmpty() && !chainActFile.containsKey(bodyChainId)) {
+                chainActFile.put(bodyChainId, srcCharActPath);
+            }
+
+            for (int[] m : sprMeta) {
+                String key = m[0] + "," + m[1];
+                String actPath = chainActFile.get(m[2]);
+                if (actPath != null && !actPath.isEmpty()) {
+                    result.put(key, actPath);
+                }
+            }
         } catch (Throwable ignored) {}
-        return map;
+        return result;
     }
 
     // 自动关闭当前游戏 save/config.ini 中的 PngSpriteFilter，防止 Ikemen GO 对 SFFv2 PNG32 精灵施加双线性模糊
@@ -8396,16 +8466,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                 }
             }
             final java.util.LinkedHashMap<CharStateItem, String> childLinks = new java.util.LinkedHashMap<>();
-            // 广度优先多级递归探测（最多 5 层、40 个状态），把超杀/飞行道具的全部后继子状态完整找出来，避免漏选导致放一半中断
+            // 广度优先全链路递归探测（最多 10 层、80 个状态），把超杀/飞行道具/投技的全部后继子状态完整找齐，绝不漏项
             java.util.ArrayDeque<CharStateItem> bfsQ = new java.util.ArrayDeque<>();
             java.util.HashMap<Integer, Integer> bfsDepth = new java.util.HashMap<>();
             bfsQ.add(st);
             bfsDepth.put(st.stateNo, 0);
-            String[] depthTags = {"", "", "二级·", "三级·", "四级·", "五级·"};
-            while (!bfsQ.isEmpty() && childLinks.size() < 40) {
+            String[] depthTags = {"", "", "二级·", "三级·", "四级·", "五级·", "六级·", "七级·", "八级·", "九级·", "十级·"};
+            while (!bfsQ.isEmpty() && childLinks.size() < 80) {
                 CharStateItem curNode = bfsQ.poll();
                 int d = bfsDepth.get(curNode.stateNo);
-                if (d >= 5) continue;
+                if (d >= 10) continue;
                 java.util.LinkedHashMap<Integer, String> subRefs = extractSkillCallRefs(curNode);
                 for (java.util.Map.Entry<Integer, String> en : subRefs.entrySet()) {
                     CharStateItem ch = stateByNoMap.get(en.getKey());
@@ -8415,7 +8485,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                         childLinks.put(ch, prefix + en.getValue());
                         bfsDepth.put(ch.stateNo, nd);
                         bfsQ.add(ch);
-                        if (childLinks.size() >= 40) break;
+                        if (childLinks.size() >= 80) break;
                     }
                 }
             }
@@ -8982,17 +9052,18 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
 
                         if (!childLinks.isEmpty()) {
                             TextView cSub = new TextView(getContext());
-                            cSub.setText(L("⬇️ 子技能（当前技能调用的飞行体/命中派生/收尾状态）："));
+                            cSub.setText(L("⬇️ 子技能（已默认全选以保证完整移植，含全部飞行体/命中派生/收尾状态）："));
                             applyGlobalFontSettings(cSub, 0.78f, false); cSub.setTextColor(Color.parseColor("#5EEAD4"));
                             cSub.setPadding(0, (int)(4*density), 0, 0);
                             relCard.addView(cSub);
                             int cCap = 0;
                             for (java.util.Map.Entry<CharStateItem, String> ce : childLinks.entrySet()) {
-                                if (++cCap > 40) break;
+                                if (++cCap > 80) break;
                                 final CharStateItem cs = ce.getKey();
                                 android.widget.CheckBox cb = new android.widget.CheckBox(getContext());
                                 String cLbl = "State " + cs.stateNo + (cs.title.isEmpty() ? "" : " · " + cs.title) + " [" + ce.getValue() + "]";
                                 cb.setText(cLbl); cb.setTextColor(Color.WHITE); cb.setTextSize(11.5f);
+                                cb.setChecked(true);
                                 childChecks.put(cs, cb);
                                 relCard.addView(cb);
                             }
@@ -9087,6 +9158,20 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 bundleStates.add(ce.getKey());
                             }
                         }
+                        // 自动执行全链路传递闭包：凡是被已选状态（含所选父技能）直接或间接调用的子状态，全部自动补齐，一个不漏！
+                        java.util.ArrayDeque<CharStateItem> closureQ = new java.util.ArrayDeque<>(bundleStates);
+                        while (!closureQ.isEmpty() && bundleStates.size() < 120) {
+                            CharStateItem curS = closureQ.poll();
+                            java.util.LinkedHashMap<Integer, String> refs = extractSkillCallRefs(curS);
+                            for (Integer refNo : refs.keySet()) {
+                                CharStateItem refItem = stateByNoMap.get(refNo);
+                                if (refItem != null && bundleSeen.add(refItem.stateNo)) {
+                                    bundleStates.add(refItem);
+                                    closureQ.add(refItem);
+                                    if (bundleStates.size() >= 120) break;
+                                }
+                            }
+                        }
                         final CharStateItem entryStateItem = (firstCheckedParent != null) ? firstCheckedParent : st;
                         final boolean hasBundledParent = (firstCheckedParent != null);
                         final boolean useForcedAct = forceSrcAct[0];
@@ -9126,7 +9211,63 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 }
                                 final int entryNewStateNo = stateRemap.get(entryStateItem.stateNo);
 
-                                // ① 全量收集全部捆绑状态的关联动作（主动作 + Explod特效 + HitDef自制火花S + Projectile飞道 + ChangeAnim）并分配不冲突编号
+                                // 0-B 扫描源角色 [Statedef -2] / [Statedef -3] 中与本技能状态号或 Helper ID 强绑定的全局特效/判定控制器，一并打包移植
+                                java.util.HashSet<Integer> origSkillHelperIds = new java.util.HashSet<>();
+                                for (CharStateItem bs : bundleStates) {
+                                    String bc = bs.codePreview.replace("\r\n", "\n");
+                                    boolean inHlp = false;
+                                    for (String bl : bc.split("\n")) {
+                                        int ci = bl.indexOf(';');
+                                        String tr = (ci >= 0 ? bl.substring(0, ci) : bl).trim().toLowerCase();
+                                        if (tr.startsWith("[state ")) inHlp = false;
+                                        else if (tr.matches("^type\\s*=\\s*helper$")) inHlp = true;
+                                        else if (inHlp && tr.matches("^id\\s*=\\s*\\d+$")) {
+                                            try {
+                                                int hid = Integer.parseInt(tr.substring(tr.indexOf('=') + 1).trim());
+                                                if (hid >= 100) origSkillHelperIds.add(hid);
+                                            } catch (Exception ignored) {}
+                                        }
+                                    }
+                                }
+                                final java.util.ArrayList<String> extractedNeg2Blocks = new java.util.ArrayList<>();
+                                if (!srcIsZss) {
+                                    for (CharStateItem negSt : stateItems) {
+                                        if (negSt.stateNo != -2 && negSt.stateNo != -3) continue;
+                                        if (negSt.sourceFile != null && negSt.sourceFile.getName().toLowerCase().endsWith(".zss")) continue;
+                                        String nRaw = negSt.codePreview.replace("\r\n", "\n");
+                                        StringBuilder curNBlk = new StringBuilder();
+                                        java.util.ArrayList<String> nBlks = new java.util.ArrayList<>();
+                                        for (String nl : nRaw.split("\n", -1)) {
+                                            String nlw = nl.trim().toLowerCase();
+                                            if (nlw.startsWith("[state ") && curNBlk.length() > 0) {
+                                                nBlks.add(curNBlk.toString());
+                                                curNBlk.setLength(0);
+                                            }
+                                            if (!nlw.startsWith("[statedef ")) curNBlk.append(nl).append("\n");
+                                        }
+                                        if (curNBlk.length() > 0) nBlks.add(curNBlk.toString());
+                                        for (String nb : nBlks) {
+                                            String nbClean = nb.replaceAll(";[^\\n]*", "");
+                                            if (!nbClean.toLowerCase().contains("type")) continue;
+                                            boolean matched = false;
+                                            for (Integer origNo : stateRemap.keySet()) {
+                                                if (java.util.regex.Pattern.compile("(?i)\\b(?:stateno|prevstateno|p2stateno)\\s*(?:=|!=)\\s*(?:[\\[\\(][^\\]\\)\\r\\n]*?)?\\b" + origNo + "\\b").matcher(nbClean).find()) {
+                                                    matched = true; break;
+                                                }
+                                            }
+                                            if (!matched) {
+                                                for (Integer hid : origSkillHelperIds) {
+                                                    if (java.util.regex.Pattern.compile("(?i)\\b(?:numhelper|helper)\\s*\\(\\s*" + hid + "\\s*\\)").matcher(nbClean).find()) {
+                                                        matched = true; break;
+                                                    }
+                                                }
+                                            }
+                                            if (matched) extractedNeg2Blocks.add(nb.trim());
+                                        }
+                                    }
+                                }
+
+                                // ① 全量收集全部捆绑状态 + 关联 -2/-3 块的动作（主动作 + Explod/SuperPause/火花S/Projectile/ChangeAnim 含 ifelse/S前缀表达式）并分配不冲突编号
                                 java.util.LinkedHashMap<Integer, Integer> animRemap = new java.util.LinkedHashMap<>();
                                 java.util.HashSet<Integer> allocUsedAnims = new java.util.HashSet<>(usedAnims);
                                 if (finalResolvedAnim >= 0) {
@@ -9134,41 +9275,66 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                     allocUsedAnims.add(newAnimNo);
                                 }
                                 java.util.LinkedHashSet<Integer> extraAnims = new java.util.LinkedHashSet<>();
+                                java.util.ArrayList<String> allCodeChunksForAnim = new java.util.ArrayList<>();
                                 for (CharStateItem bs : bundleStates) {
                                     if (bs.anim >= 0) extraAnims.add(bs.anim);
                                     for (int ca : bs.changeAnimTargets) if (ca >= 0) extraAnims.add(ca);
                                     if (airActionRawText.containsKey(bs.stateNo)) extraAnims.add(bs.stateNo);
-                                    String bsCode = bs.codePreview.replace("\r\n", "\n");
-                                    boolean bsIsZss = (bs.sourceFile != null && bs.sourceFile.getName().toLowerCase().endsWith(".zss"))
-                                            || java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+-?\\d+\\s*;").matcher(bsCode).find();
+                                    allCodeChunksForAnim.add(bs.codePreview.replace("\r\n", "\n"));
+                                }
+                                allCodeChunksForAnim.addAll(extractedNeg2Blocks);
+
+                                java.util.regex.Pattern anyIntPat = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])(\\d+)(?![A-Za-z0-9_])");
+                                for (String bsCode : allCodeChunksForAnim) {
+                                    boolean bsIsZss = java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+-?\\d+\\s*;").matcher(bsCode).find();
                                     if (bsIsZss) {
-                                        java.util.regex.Matcher em1 = java.util.regex.Pattern.compile("(?i)(?:explod|changeanim2?)\\s*\\{[^}]*?(?:anim|value)\\s*:\\s*(\\d+)").matcher(bsCode);
-                                        while (em1.find()) { try { extraAnims.add(Integer.parseInt(em1.group(1))); } catch (Exception ignored) {} }
-                                        java.util.regex.Matcher em2 = java.util.regex.Pattern.compile("(?i)\\b(?:projanim|projhitanim|projremanim|projcancelanim)\\s*:\\s*(\\d+)").matcher(bsCode);
-                                        while (em2.find()) { try { extraAnims.add(Integer.parseInt(em2.group(1))); } catch (Exception ignored) {} }
+                                        java.util.regex.Matcher em1 = java.util.regex.Pattern.compile("(?i)(?:explod|modifyexplod|changeanim2?|superpause)\\s*\\{[^}]*?(?:anim|value)\\s*:\\s*([^;}\\n]+)").matcher(bsCode);
+                                        while (em1.find()) {
+                                            String rhs = em1.group(1).trim();
+                                            if (rhs.toUpperCase().startsWith("F")) continue;
+                                            java.util.regex.Matcher nm = anyIntPat.matcher(rhs.replaceAll("(?i)\\bS\\s*(\\d+)", "$1"));
+                                            while (nm.find()) { try { int a = Integer.parseInt(nm.group(1)); if (airActionRawText.containsKey(a)) extraAnims.add(a); } catch (Exception ignored) {} }
+                                        }
+                                        java.util.regex.Matcher em2 = java.util.regex.Pattern.compile("(?i)\\b(?:projanim|projhitanim|projremanim|projcancelanim)\\s*:\\s*([^;}\\n]+)").matcher(bsCode);
+                                        while (em2.find()) {
+                                            java.util.regex.Matcher nm = anyIntPat.matcher(em2.group(1));
+                                            while (nm.find()) { try { int a = Integer.parseInt(nm.group(1)); if (airActionRawText.containsKey(a)) extraAnims.add(a); } catch (Exception ignored) {} }
+                                        }
                                         java.util.regex.Matcher em3 = java.util.regex.Pattern.compile("(?i)\\b(?:sparkno|guard\\.sparkno)\\s*:\\s*S\\s*(\\d+)").matcher(bsCode);
                                         while (em3.find()) { try { extraAnims.add(Integer.parseInt(em3.group(1))); } catch (Exception ignored) {} }
                                     } else {
                                         String[] scanL = bsCode.split("\n", -1);
                                         String scType = "";
-                                        java.util.regex.Pattern pAnimNum = java.util.regex.Pattern.compile("(?i)^\\s*(anim|value|projanim|projhitanim|projremanim|projcancelanim)\\s*=\\s*(\\d+)\\s*$");
+                                        java.util.regex.Pattern pAnimExpr = java.util.regex.Pattern.compile("(?i)^\\s*(anim|value|projanim|projhitanim|projremanim|projcancelanim)\\s*=\\s*(.+)$");
                                         java.util.regex.Pattern pSparkS = java.util.regex.Pattern.compile("(?i)^\\s*(?:sparkno|guard\\.sparkno)\\s*=\\s*S\\s*(\\d+)");
                                         for (String sl : scanL) {
                                             int ci = sl.indexOf(';');
                                             String sc = (ci >= 0 ? sl.substring(0, ci) : sl).trim();
                                             String slow = sc.toLowerCase();
-                                            if (slow.startsWith("[state ")) scType = "";
+                                            if (slow.startsWith("[state ") || slow.startsWith("[statedef ")) scType = "";
                                             else if (slow.matches("^type\\s*=\\s*[a-z0-9_]+$")) scType = slow.substring(slow.indexOf('=') + 1).trim();
                                             else {
                                                 java.util.regex.Matcher ms = pSparkS.matcher(sc);
                                                 if (ms.find()) { try { extraAnims.add(Integer.parseInt(ms.group(1))); } catch (Exception ignored) {} }
-                                                java.util.regex.Matcher ma = pAnimNum.matcher(sc);
+                                                java.util.regex.Matcher ma = pAnimExpr.matcher(sc);
                                                 if (ma.find()) {
                                                     String kn = ma.group(1).toLowerCase();
+                                                    String rhs = ma.group(2).trim();
+                                                    boolean isFightFx = rhs.matches("(?i)^F\\s*\\d+.*");
                                                     boolean okAnim = kn.startsWith("proj")
-                                                            || (kn.equals("anim") && (scType.equals("explod") || scType.equals("modifyexplod")))
+                                                            || (kn.equals("anim") && (scType.isEmpty() || scType.equals("explod") || scType.equals("modifyexplod") || scType.equals("superpause")))
                                                             || (kn.equals("value") && (scType.equals("changeanim") || scType.equals("changeanim2")));
-                                                    if (okAnim) { try { extraAnims.add(Integer.parseInt(ma.group(2))); } catch (Exception ignored) {} }
+                                                    if (okAnim && !isFightFx) {
+                                                        // 兼容 S8000 前缀、ifelse(cond, a, b)、a + (random%3) 等全部动画表达式
+                                                        String cleanedRhs = rhs.replaceAll("(?i)\\bS\\s*(\\d+)", "$1");
+                                                        java.util.regex.Matcher nm = anyIntPat.matcher(cleanedRhs);
+                                                        while (nm.find()) {
+                                                            try {
+                                                                int a = Integer.parseInt(nm.group(1));
+                                                                if (airActionRawText.containsKey(a)) extraAnims.add(a);
+                                                            } catch (Exception ignored) {}
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -9232,7 +9398,7 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             occSff.add(tf.group + "," + tf.item);
                                             if (tf.group > maxG && tf.group < 9000) maxG = tf.group;
                                         }
-                                        java.util.HashMap<String, Boolean> sffV1SamePalMap = readSffV1SamePalMap(sffFileRef[0]);
+                                        java.util.HashMap<String, String> sffV1PalActMap = readSffV1PaletteActMap(sffFileRef[0], tmpDir, srcActPath);
                                         for (java.util.Map.Entry<String, int[]> en : uniqSff.entrySet()) {
                                             int og = en.getValue()[0], oi = en.getValue()[1];
                                             int ng = og, ni = oi;
@@ -9250,10 +9416,10 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             }
                                             occSff.add(ng + "," + ni);
                                             sffRemap.put(og + "," + oi, new int[]{ng, ni});
-                                            // 精准色表分流：SFFv1 共享色表帧自动走源角色 1P 色表，独立色表帧/SFFv2 走原生内置色表，绝不偏色！
-                                            boolean frameNeedsCharAct = useForcedAct || Boolean.TRUE.equals(sffV1SamePalMap.get(og + "," + oi));
-                                            String primaryAct = frameNeedsCharAct ? srcActPath : "";
-                                            String fallbackAct = frameNeedsCharAct ? "" : srcActPath;
+                                            // 按真实 SFFv1 色表继承链精准匹配每帧原版色表（本体链走 pal1.act，火焰/光束等特效链走其原版 PCX 色表；SFFv2 走内置 palIndex）
+                                            String chainAct = sffV1PalActMap.get(og + "," + oi);
+                                            String primaryAct = useForcedAct ? srcActPath : (chainAct != null ? chainAct : "");
+                                            String fallbackAct = primaryAct.isEmpty() ? srcActPath : "";
                                             byte[] pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, primaryAct);
                                             if ((pngBytes == null || pngBytes.length == 0) && !fallbackAct.equals(primaryAct)) {
                                                 pngBytes = Api.decodeSffFrame(sffFileRef[0].getAbsolutePath(), og, oi, fallbackAct);
@@ -9302,10 +9468,11 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 int sndOk = 0, sndRemapped = 0;
                                 if (sndFileRef[0] != null && sndFileRef[0].exists() && tSnd != null && tSnd.exists()) {
                                     java.util.LinkedHashMap<String, int[]> foundSnds = new java.util.LinkedHashMap<>();
-                                    for (CharStateItem bs : bundleStates) {
-                                        String bsCode = bs.codePreview.replace("\r\n", "\n");
-                                        boolean bsIsZss = (bs.sourceFile != null && bs.sourceFile.getName().toLowerCase().endsWith(".zss"))
-                                                || java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+-?\\d+\\s*;").matcher(bsCode).find();
+                                    java.util.ArrayList<String> allCodeChunksForSnd = new java.util.ArrayList<>();
+                                    for (CharStateItem bs : bundleStates) allCodeChunksForSnd.add(bs.codePreview.replace("\r\n", "\n"));
+                                    allCodeChunksForSnd.addAll(extractedNeg2Blocks);
+                                    for (String bsCode : allCodeChunksForSnd) {
+                                        boolean bsIsZss = java.util.regex.Pattern.compile("(?i)\\[\\s*statedef\\s+-?\\d+\\s*;").matcher(bsCode).find();
                                         if (bsIsZss) {
                                             java.util.regex.Matcher zm1 = java.util.regex.Pattern.compile("(?i)playsnd\\s*\\{[^}]*?value\\s*:\\s*(?:S\\s*)?(\\d+)\\s*,\\s*(\\d+)").matcher(bsCode);
                                             while (zm1.find()) {
@@ -9431,23 +9598,33 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                                 inPs = true;
                                             } else if (low.matches("^type\\s*=\\s*changeanim2?$")) {
                                                 inCa = true;
-                                            } else if (low.matches("^type\\s*=\\s*(?:explod|modifyexplod)$")) {
+                                            } else if (low.matches("^type\\s*=\\s*(?:explod|modifyexplod|superpause)$")) {
                                                 inExp = true;
                                             } else if (inHead && low.matches("^anim\\s*=\\s*-?\\d+$")) {
                                                 try {
                                                     int oldA = Integer.parseInt(trimmed.substring(trimmed.indexOf('=') + 1).trim());
                                                     if (animRemap.containsKey(oldA)) codePart = "anim = " + animRemap.get(oldA);
                                                 } catch (Exception ignored) {}
-                                            } else if (inExp && low.matches("^anim\\s*=\\s*\\d+$")) {
-                                                try {
-                                                    int oldA = Integer.parseInt(trimmed.substring(trimmed.indexOf('=') + 1).trim());
-                                                    if (animRemap.containsKey(oldA)) codePart = "anim = " + animRemap.get(oldA);
-                                                } catch (Exception ignored) {}
-                                            } else if (inCa && low.matches("^value\\s*=\\s*-?\\d+$")) {
-                                                try {
-                                                    int vOld = Integer.parseInt(trimmed.substring(trimmed.indexOf('=') + 1).trim());
-                                                    if (animRemap.containsKey(vOld)) codePart = "value = " + animRemap.get(vOld);
-                                                } catch (Exception ignored) {}
+                                            } else if (inExp && low.startsWith("anim") && codePart.contains("=")) {
+                                                int eqIdx = codePart.indexOf('=');
+                                                String rhs = codePart.substring(eqIdx + 1).trim();
+                                                if (!rhs.matches("(?i)^F\\s*\\d+.*")) {
+                                                    for (java.util.Map.Entry<Integer, Integer> am : animRemap.entrySet()) {
+                                                        int oa = am.getKey(), na = am.getValue();
+                                                        if (oa == na) continue;
+                                                        rhs = rhs.replaceAll("(?i)(?<![A-Za-z0-9_])(S\\s*)?" + oa + "(?![A-Za-z0-9_])", "$1" + na);
+                                                    }
+                                                    codePart = codePart.substring(0, eqIdx + 1) + " " + rhs;
+                                                }
+                                            } else if (inCa && low.startsWith("value") && codePart.contains("=")) {
+                                                int eqIdx = codePart.indexOf('=');
+                                                String rhs = codePart.substring(eqIdx + 1).trim();
+                                                for (java.util.Map.Entry<Integer, Integer> am : animRemap.entrySet()) {
+                                                    int oa = am.getKey(), na = am.getValue();
+                                                    if (oa == na) continue;
+                                                    rhs = rhs.replaceAll("(?<![A-Za-z0-9_])" + oa + "(?![A-Za-z0-9_])", String.valueOf(na));
+                                                }
+                                                codePart = codePart.substring(0, eqIdx + 1) + " " + rhs;
                                             } else {
                                                 java.util.regex.Matcher smSpark = sparkRepPat.matcher(codePart);
                                                 if (smSpark.find()) {
@@ -9514,7 +9691,9 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             boolean isAfterImgBlk = curScType.equals("afterimage");
                                             boolean hasOwnPal = java.util.regex.Pattern.compile("(?im)^\\s*ownpal\\s*=").matcher(blk).find();
                                             boolean hasRemOnHit = java.util.regex.Pattern.compile("(?im)^\\s*removeongethit\\s*=").matcher(blk).find();
+                                            boolean hasCtrlInBlk = java.util.regex.Pattern.compile("(?im)^\\s*ctrl\\s*=").matcher(blk).find();
                                             boolean disableBrokenHelper = false;
+                                            boolean needRestoreCtrl = false;
 
                                             StringBuilder blkOut = new StringBuilder();
                                             for (String sl : blk.split("\n", -1)) {
@@ -9542,12 +9721,16 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                                             boolean okTgt = (allocUsedStates.contains(tgt) || (tgt >= 0 && tgt <= 199) || (tgt >= 5000 && tgt <= 5999));
                                                             if (!okTgt) {
                                                                 if (curScType.equals("changestate")) {
-                                                                    // 绝不让 Helper 跳进 State 0 变成站立分身残影！
-                                                                    cp = mvn.group(1) + "ifelse(IsHelper, " + mappedStNo + ", ifelse(Pos Y < 0, 50, 0)) ; [IK防分身: 原目标状态 " + tgt + " 不存在]";
+                                                                    // 绝不让 Helper 跳进 State 0 变成站立分身残影，同时确保主角色回归时恢复 ctrl=1 不卡住！
+                                                                    cp = mvn.group(1) + "ifelse(IsHelper, " + mappedStNo + ", ifelse(Pos Y < 0, 50, 0)) ; [IK防分身防卡死: 原目标状态 " + tgt + " 不存在]";
+                                                                    needRestoreCtrl = true;
                                                                 } else {
                                                                     cp = mvn.group(1) + "0 ; [IK防卡死: 原目标状态 " + tgt + " 不存在]";
                                                                 }
                                                                 fixedMissingTargets++;
+                                                            } else if (curScType.equals("changestate") && (tgt == 0 || tgt == 11 || tgt == 12 || tgt == 50) && !hasCtrlInBlk) {
+                                                                // 凡是收招回站立/下蹲/空中但未显式写 ctrl= 的 ChangeState，自动补齐 ctrl，杜绝站立锁死！
+                                                                needRestoreCtrl = true;
                                                             }
                                                         } catch (Exception ignored) {}
                                                     }
@@ -9565,15 +9748,17 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                                         } catch (Exception ignored) {}
                                                     }
                                                 } else if (isExplodBlk && lw.matches("^removetime\\s*=\\s*-1\\b.*")) {
-                                                    // 防止永久滞留型 Explod（如插在身上的刀/光效）在技能结束后永不消失
-                                                    cp = "removetime = -2 ; [IK防残影: 永久特效改为播完自动消失]";
+                                                    // 将永久滞留型 Explod 设为上限 180 帧（3 秒），既保证单帧背景闪光/大招特写正常显示，又绝不永久滞留
+                                                    cp = "removetime = 180 ; [IK防残影: 永久特效改上限180帧]";
                                                 } else if (isAfterImgBlk && lw.matches("^time\\s*=\\s*-1\\b.*")) {
-                                                    // 防止永久残影 AfterImage time=-1 永不清除
                                                     cp = "time = 30 ; [IK防残影: 永久残影改为有限时长]";
                                                 }
                                                 blkOut.append(cp).append(cm).append("\n");
                                             }
                                             String finalBlk = blkOut.toString().trim();
+                                            if (needRestoreCtrl && !hasCtrlInBlk) {
+                                                finalBlk += "\nctrl = ifelse(IsHelper, 0, 1) ; [IK防卡死: 确保收招恢复操控]";
+                                            }
                                             if (disableBrokenHelper) {
                                                 finalBlk = finalBlk.replaceFirst("(?im)^(\\s*type\\s*=\\s*helper.*)", "$1\ntriggerall = 0 ; [IK防分身屏蔽]");
                                             }
@@ -9585,19 +9770,25 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                             }
                                             safeCns.append(finalBlk).append("\n\n");
                                         }
-                                        // 为所有移植状态追加 Helper 自动清场与自毁兜底（先清 Helper 自身 Explod，1帧后自毁，杜绝分身与滞留飞刀！）
+                                        // Helper 安全清场兜底：仅在非攻击态满 240 帧（4秒）且主角色已回站立，或满 480 帧（8秒）硬上限时清场，绝不提前斩断多段飞行道具！
                                         safeCns.append("[State ").append(mappedStNo).append(", IK_HelperAutoCleanExplod]\n")
                                                .append("type = RemoveExplod\n")
-                                               .append("trigger1 = IsHelper && ((Root, Ctrl = 1 && Time >= 45) || (Root, StateNo = 0 && Time >= 60) || Time >= 360)\n\n")
+                                               .append("trigger1 = IsHelper && ((MoveType != A && Time >= 240 && (Root, Ctrl = 1 || Root, StateNo = 0)) || Time >= 480)\n\n")
                                                .append("[State ").append(mappedStNo).append(", IK_HelperAutoDestroy]\n")
                                                .append("type = DestroySelf\n")
-                                               .append("trigger1 = IsHelper && ((Root, Ctrl = 1 && Time >= 46) || (Root, StateNo = 0 && Time >= 61) || Time >= 361)\n\n")
+                                               .append("trigger1 = IsHelper && ((MoveType != A && Time >= 241 && (Root, Ctrl = 1 || Root, StateNo = 0)) || Time >= 481)\n\n")
                                                .append("[State ").append(mappedStNo).append(", IK_AfterImageSafeClear]\n")
                                                .append("type = AfterImageTime\n")
                                                .append("trigger1 = !IsHelper && (AnimTime = 0 || MoveType = H)\n")
-                                               .append("value = 0\n");
+                                               .append("value = 0\n\n")
+                                               .append("[State ").append(mappedStNo).append(", IK_AntiSoftlockReturn]\n")
+                                               .append("type = ChangeState\n")
+                                               .append("trigger1 = !IsHelper && MoveType != H && Time >= 480\n")
+                                               .append("value = ifelse(Pos Y < 0, 50, 0)\n")
+                                               .append("ctrl = 1\n");
                                         cnsBodyStr = safeCns.toString().trim();
                                     }
+
 
                                     boolean bsHasDestroy = cnsBodyStr.toLowerCase().contains("destroyself");
                                     boolean bsIsAir = "A".equalsIgnoreCase(bs.type)
@@ -9640,6 +9831,43 @@ btnImportMenu.setOnClickListener(clickImpMenu -> {
                                 final String activeSkillKey = doOverwrite
                                         ? (!existOldKey.isEmpty() ? existOldKey : baseSkillKey)
                                         : (hasExistingClone ? (baseSkillKey + "_" + entryNewStateNo) : baseSkillKey);
+                                // 为 CNS 移植技能追加：1) 从源角色 -2/-3 提取的技能专属联动控制器；2) 防放完技能回 State 0 后 Ctrl=0 锁死的终极保险
+                                if (!srcIsZss) {
+                                    StringBuilder neg2Out = new StringBuilder();
+                                    neg2Out.append("\n\n; === [自动移植联动与防卡死保险] ").append(cmdName).append(" ===\n[Statedef -2]\n");
+                                    StringBuilder prevCond = new StringBuilder();
+                                    int pCnt = 0;
+                                    for (Integer mappedNo : stateRemap.values()) {
+                                        if (pCnt++ > 0) prevCond.append(" || ");
+                                        prevCond.append("PrevStateNo = ").append(mappedNo);
+                                    }
+                                    if (prevCond.length() > 0) {
+                                        neg2Out.append("[State -2, IK_FixStuckCtrl_").append(entryNewStateNo).append("]\n")
+                                               .append("type = CtrlSet\n")
+                                               .append("trigger1 = !IsHelper && StateNo = 0 && Ctrl = 0 && Time >= 2 && (").append(prevCond).append(")\n")
+                                               .append("value = 1\n\n");
+                                    }
+                                    for (String nb : extractedNeg2Blocks) {
+                                        String rwNb = rewriteSkillCrossStateRefs(nb, false, stateRemap, animRemap);
+                                        if (!sndRemap.isEmpty()) {
+                                            for (java.util.Map.Entry<String, int[]> rm : sndRemap.entrySet()) {
+                                                String[] op = rm.getKey().split(",");
+                                                int ng = rm.getValue()[0], ni = rm.getValue()[1];
+                                                if (!op[0].equals(String.valueOf(ng)) || !op[1].equals(String.valueOf(ni))) {
+                                                    rwNb = rwNb.replaceAll("(?im)^(\\s*(?:value|hitsound|guardsound|sound)\\s*=\\s*(?:S\\s*)?)" + op[0] + "(\\s*,\\s*)" + op[1] + "\\b", "$1" + ng + "$2" + ni);
+                                                }
+                                            }
+                                        }
+                                        for (java.util.Map.Entry<Integer, Integer> am : animRemap.entrySet()) {
+                                            int oa = am.getKey(), na = am.getValue();
+                                            if (oa != na) {
+                                                rwNb = rwNb.replaceAll("(?im)^(\\s*anim\\s*=\\s*(?:S\\s*)?)" + oa + "\\b", "$1" + na);
+                                            }
+                                        }
+                                        neg2Out.append(rwNb).append("\n\n");
+                                    }
+                                    allStatesBlock.append(neg2Out);
+                                }
                                 final String stateCmtPfx = srcIsZss ? "# " : "; ";
                                 String wrappedStatesBlock = "\n" + stateCmtPfx + "[IK_CLONE_BEGIN:" + activeSkillKey + "] cmd=" + cmdName + " entry=" + entryNewStateNo
                                         + allStatesBlock.toString()
